@@ -1,0 +1,4 @@
+interface:
+  display_name: "Video Flow"
+  short_description: "Four-agent AI video prompt pipeline."
+  default_prompt: "Use $video-flow to run a four-agent AI video prompt pipeline."

@@ -1,0 +1,11 @@
+﻿{
+  "project_name": "",
+  "canvas": "9:16",
+  "visual_style": "现代都市/古风/赛博朋克",
+  "max_shot_duration": 15,
+  "total_duration_limit": 600,
+  "target_platform": "即梦",
+  "output_type": "动态视频",
+  "character_list": [],
+  "global_negative_prompt": "肢体畸形，面部崩坏，画面闪烁，剧烈抖动，水印文字，模糊虚化，色彩杂乱，人物虚化，帧间跳变，动作卡顿"
+}

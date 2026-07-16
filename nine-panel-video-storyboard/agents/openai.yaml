@@ -1,0 +1,4 @@
+interface:
+  display_name: "剧情九宫格分镜"
+  short_description: "剧情九宫格与单镜头9关键帧拆解"
+  default_prompt: "Use $nine-panel-video-storyboard to turn this rough scene into a strict nine-panel AI video storyboard."

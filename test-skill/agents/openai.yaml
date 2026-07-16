@@ -1,0 +1,4 @@
+interface:
+  display_name: "Test Skill"
+  short_description: "Minimal empty skill for local loading tests."
+  default_prompt: "Use test-skill to verify that a minimal local skill can load."

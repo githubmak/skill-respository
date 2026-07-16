@@ -1,0 +1,7 @@
+interface:
+  display_name: "角色生图Prompt"
+  short_description: "电影级角色画像与人物生图提示词"
+  default_prompt: "Use $cinematic-character-prompt to create a /角色生图Prompt with cinematic character design, costume, expression, lighting, camera language, and negative prompts."
+
+policy:
+  allow_implicit_invocation: true

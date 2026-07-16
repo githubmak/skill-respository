@@ -1,0 +1,7 @@
+interface:
+  display_name: "Natural Emotion Performance"
+  short_description: "Natural emotion and speech performance"
+  default_prompt: "Use $natural-emotion-performance to refine the scene's emotions, expressions, body actions, and speaking tone."
+
+policy:
+  allow_implicit_invocation: true

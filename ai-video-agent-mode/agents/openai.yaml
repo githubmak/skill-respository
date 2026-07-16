@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Video Agent Mode"
+  short_description: "Four-agent AI video prompt workflow."
+  default_prompt: "Use $ai-video-agent-mode to convert source material into aligned AI video prompt packages."

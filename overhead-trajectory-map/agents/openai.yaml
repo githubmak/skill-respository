@@ -1,0 +1,4 @@
+interface:
+  display_name: "俯视轨迹图"
+  short_description: "生成俯视场景调度人物走位与摄像机运动轨迹统一参考图"
+  default_prompt: "Use $overhead-trajectory-map or /俯视 to turn this storyboard shot into a top-down trajectory reference map."

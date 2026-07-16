@@ -1,0 +1,7 @@
+interface:
+  display_name: "九宫格剧情包"
+  short_description: "分镜先拆剧情包，再批量生成九宫格"
+  default_prompt: "Use $storyboard-to-nine-panel-pipeline to convert this storyboard or beat bundle into /九宫格剧情包 JSON, splitting into story beat bundles before generating nine-panel grids."
+
+policy:
+  allow_implicit_invocation: true

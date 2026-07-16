@@ -1,0 +1,4 @@
+interface:
+  display_name: "小说改动态漫剧本"
+  short_description: "严格按照参考格式将小说文段转换为标准动态漫剧本输出"
+  default_prompt: "使用 $dynamic-manga-script 将小说文本转换为符合参考格式的动态漫剧本"

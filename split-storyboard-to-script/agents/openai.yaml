@@ -1,0 +1,6 @@
+interface:
+  display_name: "镜头拆分与AI视频提示词"
+  short_description: "拆分大镜头、设计行内子镜头并生成多镜头视频提示词"
+  default_prompt: "Use $split-storyboard-to-script to first ask for my final export directory, then split this scene into time-coded subshots and a production-ready AI video prompt while storing all cache data inside that directory."
+policy:
+  allow_implicit_invocation: true
