@@ -5,13 +5,43 @@ from validator.quality import quality_check_director, quality_check_prompt
 from validate_agent_output import validate as validate_agent
 
 GATES = {
+    "user_confirm": {
+        "input": [],
+        "output": ["project_config.json"],
+        "validator": None
+    },
+    "orchestrator": {
+        "input": [],
+        "output": [".cache/orchestrator/shot_plan.json"],
+        "validator": None
+    },
+    "emotion_analysis": {
+        "input": ["shot_plan.json"],
+        "output": ["analysis/emotion_output.json"],
+        "validator": None
+    },
+    "scene_analysis": {
+        "input": ["shot_plan.json"],
+        "output": ["analysis/scene_output.json"],
+        "validator": None
+    },
+    "camera_movement": {
+        "input": ["shot_plan.json"],
+        "output": ["analysis/camera_output.json"],
+        "validator": None
+    },
+    "qa_integration": {
+        "input": [".cache/analysis/emotion_output.json", ".cache/analysis/scene_output.json", ".cache/analysis/camera_output.json"],
+        "output": ["director/director_pass.json"],
+        "validator": None
+    },
     "director": {
         "input": ["shot_plan.json", "project_config.json"],
         "output": ["director_pass.json"],
         "validator": "director"
     },
     "continuity": {
-        "input": ["director_pass.json", "shot_plan.json"],
+        "input": [".cache/director/director_pass.json", ".cache/orchestrator/shot_plan.json"],
         "output": [],
         "validator": None
     },
@@ -87,3 +117,4 @@ def get_retry_decision(result, max_retries=2):
     if result["retry_needed"]:
         return "retry"
     return "pass"
+

@@ -1,0 +1,64 @@
+{
+  "items": [
+    {
+      "subshot_id": "S1-01-01",
+      "space_type": "indoor_hallway",
+      "space_name": "玄关",
+      "char_positions": [
+        "秦展-画面中央推门入画"
+      ],
+      "char_wardrobes": [
+        "秦展-深色机能风外套，短发挺拔"
+      ],
+      "bg_foreground": "门槛、拖鞋架",
+      "bg_midground": "玄关廊灯昏黄",
+      "bg_background": "餐厅暖光从门缝透出",
+      "light_type": "混合光玄关冷清顶灯+餐厅暖黄透出",
+      "light_temp": 4000,
+      "light_direction": "侧前方从餐厅透出",
+      "light_hardness": "soft",
+      "light_effect_primary_char": "冷清顶灯从上方照亮秦展肩线",
+      "light_effect_other_chars": "无",
+      "color_contrast_desc": "冷清玄关 vs 暖黄餐厅",
+      "mood_atmosphere": "冷清疏离",
+      "bgm_style": "极简电子pad长音",
+      "ambient_sound": "低频嗡鸣+远处汽笛",
+      "sfx_timing": "推门声+脚步0.35s/步",
+      "audio_foreground": "秦展靴子踩木地板-15dB",
+      "audio_midground": "外套布料轻微摩擦",
+      "audio_background": "窗外城市低频嗡鸣持续"
+    },
+    {
+      "subshot_id": "S1-01-02",
+      "space_type": "indoor_dining",
+      "space_name": "餐厅",
+      "char_positions": [
+        "秦成伟-右侧餐桌近端",
+        "徐慧-左侧餐桌近端",
+        "秦昕-远侧餐桌"
+      ],
+      "char_wardrobes": [
+        "秦成伟-破旧衬衫",
+        "徐慧-深色家居服",
+        "秦昕-素色便服"
+      ],
+      "bg_foreground": "餐桌居中，酒瓶散落，筷子搁碗沿",
+      "bg_midground": "墙面挂钟，家庭照片框",
+      "bg_background": "半掩窗帘，窗外城市夜景",
+      "light_type": "暖黄吊灯顶光",
+      "light_temp": 3200,
+      "light_direction": "正顶光向下",
+      "light_hardness": "soft",
+      "light_effect_primary_char": "顶光从上方照亮秦成伟头顶和桌面",
+      "light_effect_other_chars": "徐慧和秦昕面部在顶光下形成半明半暗",
+      "color_contrast_desc": "暖黄顶光聚焦餐桌，四周昏暗",
+      "mood_atmosphere": "压抑紧张",
+      "bgm_style": "极简电子pad长音",
+      "ambient_sound": "低频嗡鸣+远处汽笛",
+      "sfx_timing": "推门声+脚步0.35s/步",
+      "audio_foreground": "秦展靴子踩木地板-15dB",
+      "audio_midground": "外套布料轻微摩擦",
+      "audio_background": "窗外城市低频嗡鸣持续"
+    }
+  ]
+}

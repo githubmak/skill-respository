@@ -1,101 +1,106 @@
-﻿# Agent Protocol — 子Agent通信与调度协议
+# Agent Protocol — 子Agent调度协议
 
-Phase 2（Director）和 Phase 4（Prompt Composer）需要派发子Agent时加载。
+## 子Agent类型
 
-## 子Agent调度规则
+| 类型 | 技能 | 产出 | 并行 |
+|------|------|------|------|
+| 情绪分析 | emotion-analysis | emotion_output.json | 与2b/2c并行 |
+| 场景分析 | frames-analysis | scene_output.json | 与2a/2c并行 |
+| 镜头运镜 | camera-analysis | camera_output.json | 与2a/2b并行 |
+| QA/整合 | content-review | director_pass.json | 串行依赖前3个 |
 
-### 1. 创建子Agent线程
+## 输出字段规范
 
-调用 `create_thread` 创建新的子Agent线程。每批 Director 子Agent 4-6 个，Composer 每批 1 镜。
+### emotion_output.json 每项：
+shot_id, subshot_id
+emotion: {cause, expression_chain, micro_expression, psychology_flow, performance_anchor}
+character_action (>=50), micro_actions (>=15)
+performance_plan: {body_action, facial_expression, micro_actions, voice_performance, end_state}
 
-```json
-create_thread {
-  "title": "Director — {shot_id}",
-  "content": "[完整的系统提示词 + 镜头数据]"
+### scene_output.json 每项：
+shot_id, subshot_id
+axis_space (>=30), composition, lighting (>=30), audio_design (>=20)
+
+### camera_output.json 每项：
+shot_id, subshot_id
+shot_size, camera_position (>=20)
+camera: {lens, angle, movement, axis, transition, virtual_camera}
+
+### director_pass.json（由QA/整合Agent产出）
+包含以上全部字段 + dialogue_audio + negative_risks + commercial_quality
+
+## 失败重派
+- 超时(>5min)或输出不存在 → 重派(最多2次)
+- 分析矛盾 → 记录矛盾点，请求主Agent决策
+
+
+## Agent ID 追踪与复用
+
+每次 spawn_agent 返回的 agent_id 必须通过 agent_registry.py 记录，确保可在同一独立上下文中复呼。
+
+### 标准流程
+
+1. 创建子Agent，记录ID:
+   result = spawn_agent(agent_type="worker", message="...")
+   register(run_dir, "emotion_analysis", result.agent_id)
+
+2. 后续复用（同一上下文）:
+   agent_id = get_agent_id(run_dir, "emotion_analysis")
+   send_input(target=agent_id, message="继续分析下一批镜头...")
+
+3. 完成后标记:
+   set_status(run_dir, "emotion_analysis", "completed")
+   close_agent(agent_id)
+
+### 关闭后恢复
+
+close_agent(agent_id) 后可通过 resume_agent 恢复:
+resume_agent(agent_id)
+send_input(target=agent_id, message="新任务...")
+
+### 注册表文件位置
+
+.cache/agents.json:
+{
+  "emotion_analysis": {"agent_id": "xxx", "status": "active"},
+  "scene_analysis": {"agent_id": "yyy", "status": "active"},
+  "camera_movement": {"agent_id": "zzz", "status": "active"},
+  "qa_integration": {"agent_id": null, "status": "pending"}
 }
-```
 
-### 2. 系统提示词结构
+### 角色命名规范
+- emotion_analysis, scene_analysis, camera_movement
+- qa_integration, prompt_composer
 
-每个子Agent必须收到明确的角色定义和输入数据：
+## 子Agent输出格式契约
 
-```
-# 角色定义
-你是 {role_name}，负责 {role_description}。
+所有子Agent输出的JSON必须遵守以下格式规范，否则QA/整合Agent拒绝读取。
 
-## 输入数据
-{shot_plan 中该镜的完整数据}
+### 格式总则
+1. 所有文本字段必须是纯字符串，不得嵌套JSON对象/数组
+2. 不得包含XYZ坐标或工程术语（vector/coordinate/axis_line）
+3. 使用自然语言描述空间位置：左/右/前/后/上/下
+4. items数组条目顺序必须与shot_plan的subshots顺序一致
 
-## 输出要求
-- 输出格式：JSON（写入指定路径）
-- 必须包含的字段：{根据角色定义}
-- 不得输出与要求无关的内容
+### emotion_output.json（Phase 2a）
 
-## 质量门槛
-- {quality_thresholds}
-- 字段类型约束：{field_type_constraints}
+{"items": [{"shot_id": "S1-01", "subshot_id": "S1-01-01", "emotion": {"cause": "string", "expression_chain": "string", "micro_expression": "string", "psychology_flow": "string", "performance_anchor": "string"}, "character_action": "string >=50字", "micro_actions": "string >=15字", "performance_plan": {"body_action": "string", "facial_expression": "string", "micro_actions": "string", "voice_performance": "string", "end_state": "string"}}]}
 
-## 输出路径
-文件写入: {output_path}
-```
+### scene_output.json（Phase 2b）
 
-### 3. 输出格式规范
+{"items": [{"shot_id": "S1-01", "subshot_id": "S1-01-01", "axis_space": "string >=30字", "composition": "string", "lighting": "string >=30字", "audio_design": "string >=20字"}]}
 
-#### Director Agent 输出格式
-每镜输出为 director_packet.json，items 数组中每项必须含以下字段：
+### camera_output.json（Phase 2c）
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| shot_id | str | 镜头编号 |
-| subshot_id | str | 子镜头编号 |
-| duration | float | 时长 |
-| shot_size | str | 景别(中英文) |
-| camera_position | str | 机位描述 |
-| camera | dict | 镜头参数：lens/angle/movement/axis/transition/virtual_camera |
-| axis_space | str | 轴线与空间描述 |
-| composition | str | 构图描述 |
-| character_action | str | 角色动作描述(>=50 chars) |
-| action_beats | dict | start/transition/contact_or_peak/end_state |
-| micro_actions | str | 微动作(>=15 chars) |
-| emotion | dict | cause/expression_chain/micro_expression/psychology_flow/performance_anchor |
-| dialogue_audio | dict | dialogue_refs/raw_text/dubbing_text/pause_plan/mouth_visibility/voice_performance/timing |
-| lighting | str | 灯光描述(>=30 chars) |
-| audio_design | str | 音效描述(>=20 chars) |
-| negative_risks | list[str] | 风险列表 |
-| commercial_quality | dict | camera_compatibility/continuity_axis/lighting_logic/performance_specificity/action_boundary/shot_size_facing/repair_notes |
-| performance_plan | dict | body_action/facial_expression/micro_actions/voice_performance/end_state |
+{"items": [{"shot_id": "S1-01", "subshot_id": "S1-01-01", "shot_size": "string", "camera_position": "string >=20字", "camera": {"lens": "string", "angle": "string", "movement": "string", "axis": "string", "transition": "string", "virtual_camera": "string"}}]}
 
-#### Prompt Composer Agent 输出格式
-每镜输出为 prompt_package.json，items 数组中每项必须含：
+### 污染检测规则
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| shot_id | str | 镜头编号 |
-| subshot_id | str | 子镜头编号 |
-| duration | float | 时长 |
-| shot_size | str | 景别 |
-| camera_position | str | 机位 |
-| camera | str | 运镜描述 |
-| axis_space | str | 空间描述(>=30 chars) |
-| character_action | str | 动作描述(>=50 chars) |
-| lighting | str | 灯光(>=30 chars) |
-| audio_design | str | 音效(>=20 chars) |
-| full_prompt | str | 完整提示词(>=500 chars) |
+由 validator/contamination.py 在编排引擎中自动检查：
 
-### 4. 失败重派协议
-
-```
-成功: 子Agent退出码0 + 输出文件存在 + 字段校验通过 + 质量检查通过
-     → 标记完成，继续下一批
-
-失败: 子Agent退出码非0 / 输出文件不存在 / 校验失败
-     → 记录失败原因
-     → 重新创建子Agent线程（最多重试2次）
-     → 第3次失败则标记为BLOCKED，通知主Agent
-```
-
-### 5. 并行合并
-
-Director 子Agent 的 items 数组按 shot_id 分组，同 shot_id 的 items 合并为一个 director_pass.json。
-
-Prompt Composer 子Agent 的输出直接存入 `.cache/composer/`，由 Editor Pass 1 汇总。 
+| 检测项 | 违规示例 | 处理 |
+|--------|---------|------|
+| XYZ坐标 | "X: 2.5, Y: 1.8" | 打回重做 |
+| 工程术语 | "vector", "coordinate" | 打回重做 |
+| JSON嵌入文本 | "{\"lens\": \"50mm\"}" | 打回重做 |
+| 嵌套dict | camera.movement是对象而非字符串 | 打回重做 |

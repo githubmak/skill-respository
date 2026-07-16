@@ -1,0 +1,156 @@
+"""Gate check - validates pipeline phase integrity before proceeding.
+Ensures: input files exist, agent was spawned, output created BY agent, validation passes.
+Exits with code 1 on failure in --strict mode."""
+import json, os, sys, time
+
+# Add parent to path
+sys.path.insert(0, os.path.dirname(__file__))
+from pipeline_state import load_state, PHASE_ORDER
+from pipeline_templates import GATES
+from validate_agent_output import validate as val_agent
+from sources import get_sources_path
+from validator.contamination import check_contamination
+
+SPAWN_TOLERANCE = 0.3  # seconds: output must be created at least this long after spawn
+
+
+def check(run_dir, phase=None, strict=False):
+    """Run gate checks for a pipeline phase.
+    
+    Args:
+        run_dir: Run directory path
+        phase: Phase name to check. If None, uses current_phase from state.
+        strict: If True, returns exit code 1 on failure.
+    
+    Returns:
+        dict {pass: bool, bypass_detected: bool, issues: list}
+    """
+    state = load_state(run_dir)
+    if not phase:
+        phase = state["current_phase"]
+    
+    phase_config = GATES.get(phase)
+    if not phase_config:
+        return {"pass": True, "bypass_detected": False, "issues": []}
+    
+    result = {"pass": True, "bypass_detected": False, "issues": []}
+    phase_info = state["phases"].get(phase, {})
+    
+    # ==== CHECK 1: Input files exist ====
+    for inp in phase_config.get("input", []):
+        p = os.path.join(run_dir, inp)
+        if not os.path.exists(p):
+            result["issues"].append({
+                "check": "INPUT_EXISTS",
+                "file": inp,
+                "severity": "blocking",
+                "msg": "Missing input: %s" % inp
+            })
+    
+    # ==== CHECK 2: Agent was spawned (for phases that need one) ====
+    agent_id = phase_info.get("agent_id")
+    spawn_time = phase_info.get("spawn_time")
+    status = phase_info.get("status", "pending")
+    
+    # Phases that require a sub-agent
+    agent_phases = ["emotion_analysis", "scene_analysis", "camera_movement", "qa_integration", "prompt_composer"]
+    
+    if phase in agent_phases:
+        if not agent_id:
+            result["issues"].append({
+                "check": "AGENT_SPAWNED",
+                "severity": "blocking",
+                "msg": "No agent spawned for phase %s" % phase
+            })
+        elif not spawn_time:
+            result["issues"].append({
+                "check": "AGENT_SPAWN_TIME",
+                "severity": "warning",
+                "msg": "Agent spawned but no spawn_time recorded (can't verify provenance)"
+            })
+    
+    # ==== CHECK 3: Output provenance (timestamp check) ====
+    outputs = phase_config.get("output", [])
+    for out in outputs:
+        p = os.path.join(run_dir, ".cache", out)
+        if os.path.exists(p) and spawn_time:
+            file_mtime = os.path.getmtime(p)
+            if file_mtime <= spawn_time:
+                result["bypass_detected"] = True
+                result["issues"].append({
+                    "check": "OUTPUT_BYPASS",
+                    "file": out,
+                    "severity": "blocking",
+                    "msg": "Output %s was created BEFORE agent spawn (mtime=%.3f, spawn=%.3f). Main agent bypass!" % (
+                        out, file_mtime, spawn_time)
+                })
+    
+    # ==== CHECK 4: Output validation + contamination ====
+    for out in outputs:
+        p = os.path.join(run_dir, ".cache", out)
+        if not os.path.exists(p):
+            continue  # not created yet, not a violation
+        
+        # Skip validation if provenance failed (no point validating fake data)
+        if result["bypass_detected"]:
+            continue
+        
+        validator_role = phase_config.get("validator")
+        if validator_role:
+            vr = val_agent(p, role=validator_role)
+            for iss in vr["issues"]:
+                result["issues"].append({
+                    "check": "VALIDATE",
+                    "file": out,
+                    "severity": "blocking" if vr["retry_needed"] else "warning",
+                    "msg": "[%s] %s: got %s, expected %s" % (iss[1], iss[0], iss[2], iss[3])
+                })
+            
+            # Contamination check for director-level outputs
+            if validator_role in ("director", "emotion_analysis", "scene_analysis", "camera_movement"):
+                try:
+                    with open(p, "r", encoding="utf-8-sig") as f:
+                        data = json.load(f)
+                    for item in data.get("items", []):
+                        for ciss in check_contamination(item):
+                            result["issues"].append({
+                                "check": "CONTAMINATION",
+                                "file": out,
+                                "severity": "blocking",
+                                "msg": "[%s] %s: %s" % (ciss[1], ciss[0], ciss[2])
+                            })
+                except (json.JSONDecodeError, IOError):
+                    result["issues"].append({
+                        "check": "JSON_PARSE",
+                        "file": out,
+                        "severity": "blocking",
+                        "msg": "Cannot parse JSON"
+                    })
+    
+    # ==== RESULT ====
+    blocking = [i for i in result["issues"] if i["severity"] == "blocking"]
+    result["pass"] = len(blocking) == 0
+    
+    if result["bypass_detected"]:
+        print("[GATE] BYPASS DETECTED in %s! Output existed before agent spawn." % phase)
+    
+    if result["issues"]:
+        for iss in result["issues"]:
+            print("[GATE] [%s] %s" % (iss["severity"].upper(), iss["msg"]))
+    
+    if strict and not result["pass"]:
+        print("[GATE] STRICT MODE: failing with exit code 1")
+        sys.exit(1)
+    
+    return result
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("usage: gate_check.py <run_dir> [phase] [--strict]")
+        sys.exit(1)
+    run_dir = sys.argv[1]
+    phase = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else None
+    strict = "--strict" in sys.argv
+    result = check(run_dir, phase, strict=strict)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
