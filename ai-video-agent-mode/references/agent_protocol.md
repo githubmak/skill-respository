@@ -29,19 +29,69 @@ camera: {lens, angle, movement, axis, transition, virtual_camera}
 ### director_pass.json（由QA/整合Agent产出）
 包含以上全部字段 + dialogue_audio + negative_risks + commercial_quality
 
-## 失败重派
-- 超时(>5min)或输出不存在 → 重派(最多2次)
-- 分析矛盾 → 记录矛盾点，请求主Agent决策
+## 失败重派与超时
+
+| 条件 | 处理方式 |
+|------|---------|
+| 超时(>5min) | 自动重派，最多 4 次 |
+| 连续超时 3 次 | 强制推进到下一阶段（带警告） |
+| Agent 失活(>10min) | 触发 recover → 重派新Agent |
+| 输出不存在 | 重派（与超时共用计数器） |
+| 分析矛盾 | 通过 qa_integration 的 repair_notes 记录 |
+| 质量门禁失败 | 增量重试：只发失败子镜头 + 当前仍失败的问题 |
+
+### 增量重试规则
+
+1. 验证失败时，标记通过的子镜头为 passed，不参与后续重试
+2. send_back 只包含仍失败的子镜头
+3. 修正消息只包含本轮仍失败的问题（已修正的不重复发送）
+4. 重试次数用尽后 pipeline blocked，不自动降级
+
+
+## 上下文溢出预防
+
+| 策略 | 操作 |
+|------|------|
+| 分批处理 | subshots > 15 个时拆分为多批，通过 send_input 逐批处理 |
+| 增量追加 | 每批结果追加到同一JSON数组，最后统一写入 |
+| 重试刷新 | send_back 发现原 Agent 失活时，重新 spawn_agent 并附带 `.cache/handoff/*_handoff.json` 中的上下文摘要 |
+| 轻量化输入 | 每批只传当前需要处理的 subshot 数据，不重复全量 shot_plan |
+| 文件化记忆 | 每个子Agent输出后必须生成 handoff 摘要，禁止只依赖聊天上下文 |
+
+## Handoff 记忆协议
+
+每个子Agent完成一批输出后，必须确保主Agent可从输出生成或直接写入 `.cache/handoff/{role}_handoff.json`。handoff 是恢复上下文的轻量记忆，不替代正式 JSON 输出。
+
+每个 subshot 的 handoff 至少包含：
+
+```json
+{
+  "subshot_id": "S1-01-01",
+  "summary": "本镜头最终选择摘要",
+  "decision_basis": "为什么这样选表情/灯光/运镜/提示词",
+  "continuity_anchors": "起幅、落幅、人物位置、视线、光源、轴线等连续性锚点",
+  "open_questions": "仍需确认或下游注意的问题",
+  "do_not_change": "台词、OV/OS、轴线、人物位置等不可改边界"
+}
+```
+
+恢复规则：
+
+1. 原子Agent失活或上下文丢失时，主Agent重新 spawn 新Agent，并把失败 subshot、qa_issues、对应 handoff 摘要一起发送。
+2. 新Agent必须先读取 handoff，再修正当前失败点；不得重新自由发挥已通过镜头。
+3. handoff 只保存决策摘要和连续性锚点，不保存大段完整提示词，避免污染和重复。
+4. 若 handoff 与正式 JSON 冲突，以正式 JSON 为准，并在 repair_notes 中标记冲突。
 
 
 ## Agent ID 追踪与复用
 
-每次 spawn_agent 返回的 agent_id 必须通过 agent_registry.py 记录，确保可在同一独立上下文中复呼。
+每次 spawn_agent 返回的 agent_id 通过 agent_registry.py 记录到 .cache/agents.json，
+后续用 send_input 在同一上下文中继续对话。
 
 ### 标准流程
 
 1. 创建子Agent，记录ID:
-   result = spawn_agent(agent_type="worker", message="...")
+   result = spawn_agent(agent_type="worker", items=[...])
    register(run_dir, "emotion_analysis", result.agent_id)
 
 2. 后续复用（同一上下文）:
@@ -52,11 +102,10 @@ camera: {lens, angle, movement, axis, transition, virtual_camera}
    set_status(run_dir, "emotion_analysis", "completed")
    close_agent(agent_id)
 
-### 关闭后恢复
-
-close_agent(agent_id) 后可通过 resume_agent 恢复:
-resume_agent(agent_id)
-send_input(target=agent_id, message="新任务...")
+4. Agent 失活恢复:
+   收到 recover 动作后 → 重新 spawn_agent（旧agent_id视为失效）
+   register(run_dir, role, new_agent_id)
+   同时读取 `.cache/handoff/{role}_handoff.json`，把相关 subshot 摘要传给新Agent
 
 ### 注册表文件位置
 
@@ -68,10 +117,6 @@ send_input(target=agent_id, message="新任务...")
   "qa_integration": {"agent_id": null, "status": "pending"}
 }
 
-### 角色命名规范
-- emotion_analysis, scene_analysis, camera_movement
-- qa_integration, prompt_composer
-
 ## 子Agent输出格式契约
 
 所有子Agent输出的JSON必须遵守以下格式规范，否则QA/整合Agent拒绝读取。
@@ -82,25 +127,4 @@ send_input(target=agent_id, message="新任务...")
 3. 使用自然语言描述空间位置：左/右/前/后/上/下
 4. items数组条目顺序必须与shot_plan的subshots顺序一致
 
-### emotion_output.json（Phase 2a）
-
-{"items": [{"shot_id": "S1-01", "subshot_id": "S1-01-01", "emotion": {"cause": "string", "expression_chain": "string", "micro_expression": "string", "psychology_flow": "string", "performance_anchor": "string"}, "character_action": "string >=50字", "micro_actions": "string >=15字", "performance_plan": {"body_action": "string", "facial_expression": "string", "micro_actions": "string", "voice_performance": "string", "end_state": "string"}}]}
-
-### scene_output.json（Phase 2b）
-
-{"items": [{"shot_id": "S1-01", "subshot_id": "S1-01-01", "axis_space": "string >=30字", "composition": "string", "lighting": "string >=30字", "audio_design": "string >=20字"}]}
-
-### camera_output.json（Phase 2c）
-
-{"items": [{"shot_id": "S1-01", "subshot_id": "S1-01-01", "shot_size": "string", "camera_position": "string >=20字", "camera": {"lens": "string", "angle": "string", "movement": "string", "axis": "string", "transition": "string", "virtual_camera": "string"}}]}
-
-### 污染检测规则
-
-由 validator/contamination.py 在编排引擎中自动检查：
-
-| 检测项 | 违规示例 | 处理 |
-|--------|---------|------|
-| XYZ坐标 | "X: 2.5, Y: 1.8" | 打回重做 |
-| 工程术语 | "vector", "coordinate" | 打回重做 |
-| JSON嵌入文本 | "{\"lens\": \"50mm\"}" | 打回重做 |
-| 嵌套dict | camera.movement是对象而非字符串 | 打回重做 |
+（以下子Agent输出格式示例保持不变）

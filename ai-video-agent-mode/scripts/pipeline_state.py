@@ -1,13 +1,59 @@
 """Pipeline state machine - phase progress, retries, agent ID tracking."""
 import json, os, time
 
+# ========== Constants ==========
+MAX_RETRIES = 4          # Sub-agent retries before escalation
+TIMEOUT_SECONDS = 300    # Default sub-agent timeout
+TOTAL_ATTEMPTS = 5       # 1 initial + 4 retries
+AGENT_STALE_SECONDS = 600  # 10min: agent considered stale, force re-spawn
+BATCH_SIZE = 15          # Max subshots per sub-agent spawn
+
+PHASE_TIMEOUT_SECONDS = {
+    "emotion_analysis": 900,
+    "scene_analysis": 600,
+    "camera_movement": 600,
+    "prompt_composer": 600,
+}
+
+PHASE_BATCH_SIZE = {
+    "emotion_analysis": 15,
+    "scene_analysis": 20,
+    "camera_movement": 25,
+    "prompt_composer": 15,
+}
+
+AGENT_PHASES = {
+    "emotion_analysis",
+    "scene_analysis",
+    "camera_movement",
+    "prompt_composer",
+    "editor_pass2",
+}
+
+LOCAL_PHASES = {
+    "user_confirm",
+    "orchestrator",
+    "qa_integration",
+    "director",
+    "continuity",
+    "editor_pass1",
+    "validate",
+    "export",
+}
+
 PHASE_ORDER = [
     "user_confirm", "orchestrator",
     "emotion_analysis", "scene_analysis", "camera_movement",
     "qa_integration",
+    "director",
     "continuity", "prompt_composer",
-    "editor_pass1", "validate", "export"
+    "editor_pass1", "editor_pass2", "validate", "export"
 ]
+
+# Phases that can be spawned in parallel (group name -> member phases)
+PARALLEL_GROUPS = {
+    "analysis_group": ["emotion_analysis", "scene_analysis", "camera_movement"],
+}
 
 
 def get_state_path(run_dir):
@@ -21,7 +67,7 @@ def init_state(run_dir):
     state = {
         "current_phase": PHASE_ORDER[0],
         "phase_order": PHASE_ORDER,
-        "phases": {p: {"status": "pending", "agent_id": None, "retries": 0} for p in PHASE_ORDER}
+        "phases": {p: {"status": "pending", "agent_id": None, "retries": 0, "spawn_time": None, "timeout_count": 0} for p in PHASE_ORDER}
     }
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -68,6 +114,36 @@ def mark_failed(run_dir, phase):
     state["phases"][phase]["status"] = "failed"
     state["phases"][phase]["retries"] += 1
     save_state(run_dir, state)
+
+
+def mark_timeout(run_dir, phase):
+    """Mark a phase as timed out and increment timeout counter."""
+    state = load_state(run_dir)
+    state["phases"][phase]["status"] = "timeout"
+    state["phases"][phase]["timeout_count"] = state["phases"][phase].get("timeout_count", 0) + 1
+    save_state(run_dir, state)
+
+
+def is_timed_out(run_dir, phase):
+    """Check if a running phase has exceeded the timeout."""
+    state = load_state(run_dir)
+    info = state["phases"].get(phase, {})
+    spawn_time = info.get("spawn_time")
+    if not spawn_time or info.get("status") not in ("running", "waiting"):
+        return False
+    elapsed = time.time() - spawn_time
+    return elapsed > PHASE_TIMEOUT_SECONDS.get(phase, TIMEOUT_SECONDS)
+
+
+def is_agent_stale(run_dir, phase):
+    """Check if a spawned agent has gone stale (no update for too long)."""
+    state = load_state(run_dir)
+    info = state["phases"].get(phase, {})
+    spawn_time = info.get("spawn_time")
+    if not spawn_time:
+        return False
+    elapsed = time.time() - spawn_time
+    return elapsed > AGENT_STALE_SECONDS
 
 
 def advance(run_dir):

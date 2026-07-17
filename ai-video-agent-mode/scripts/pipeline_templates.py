@@ -1,4 +1,4 @@
-﻿"""Pipeline templates + validation gates with retry support."""
+"""Pipeline templates + validation gates with retry support."""
 import json, os, sys
 from validator.field_types import validate_field_types
 from validator.quality import quality_check_director, quality_check_prompt
@@ -16,57 +16,57 @@ GATES = {
         "validator": None
     },
     "emotion_analysis": {
-        "input": ["shot_plan.json"],
+        "input": [".cache/orchestrator/shot_plan.json"],
         "output": ["analysis/emotion_output.json"],
         "validator": None
     },
     "scene_analysis": {
-        "input": ["shot_plan.json"],
+        "input": [".cache/orchestrator/shot_plan.json"],
         "output": ["analysis/scene_output.json"],
         "validator": None
     },
     "camera_movement": {
-        "input": ["shot_plan.json"],
+        "input": [".cache/orchestrator/shot_plan.json"],
         "output": ["analysis/camera_output.json"],
         "validator": None
     },
     "qa_integration": {
         "input": [".cache/analysis/emotion_output.json", ".cache/analysis/scene_output.json", ".cache/analysis/camera_output.json"],
         "output": ["director/director_pass.json"],
-        "validator": None
+        "validator": "director"
     },
     "director": {
-        "input": ["shot_plan.json", "project_config.json"],
-        "output": ["director_pass.json"],
+        "input": [".cache/director/director_pass.json"],
+        "output": ["director/director_pass.json"],
         "validator": "director"
     },
     "continuity": {
         "input": [".cache/director/director_pass.json", ".cache/orchestrator/shot_plan.json"],
-        "output": [],
-        "validator": None
+        "output": ["continuity/report.json"],
+        "validator": "continuity"
     },
     "prompt_composer": {
-        "input": ["director_pass.json"],
+        "input": [".cache/director/director_pass.json"],
         "output": ["prompt_package.json"],
         "validator": "prompt"
     },
     "editor_pass1": {
-        "input": ["prompt_package.json"],
+        "input": [".cache/prompt_package.json"],
         "output": ["prompt_package.json"],
         "validator": None
     },
     "editor_pass2": {
-        "input": ["prompt_package.json"],
-        "output": ["prompt_package.json"],
+        "input": [".cache/prompt_package.json"],
+        "output": ["review/llm_gate_result.json"],
         "validator": None
     },
     "validate": {
-        "input": ["prompt_package.json", "project_config.json"],
+        "input": [".cache/prompt_package.json", "project_config.json"],
         "output": [],
         "validator": None
     },
     "export": {
-        "input": ["prompt_package.json", "shot_plan.json"],
+        "input": [".cache/prompt_package.json", ".cache/orchestrator/shot_plan.json"],
         "output": [],
         "validator": None
     }
@@ -110,7 +110,7 @@ def check_gate(run_dir, phase, strict=True):
     return result
 
 
-def get_retry_decision(result, max_retries=2):
+def get_retry_decision(result, max_retries=None):
     """Given a gate result, decide what to do. Returns 'retry', 'block', or 'pass'."""
     if result["blocked"]:
         return "block"

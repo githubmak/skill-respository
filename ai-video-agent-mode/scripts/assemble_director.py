@@ -3,11 +3,47 @@ import re
 Uses expanded fields from skill-loaded sub-agents to generate detailed cinematic text."""
 import json, os, sys
 
+if not os.environ.get("PYTHONPYCACHEPREFIX") and not getattr(sys, "pycache_prefix", None):
+    sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(__file__))
+from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_prefix_from_path
+
+block_source_pycache_until_run_dir()
+from shot_semantics import is_true_non_action_subshot, render_anchor
+
+# ====== Shot size normalization: output only Chinese ======
+SHOT_SIZE_TO_CN = {
+    "ECU": "大特写", "CU": "特写", "MCU": "中近景", "MS": "中景",
+    "FS": "全", "LS": "全景", "ELS": "大全景",
+    "大特写": "大特写", "特写": "特写", "中近景": "中近景", "中景": "中景",
+    "全": "全", "全景": "全景", "大全景": "大全景",
+}
+
+def _cn_shot_size(raw):
+    """Convert any shot size format to pure Chinese label."""
+    if not raw:
+        return "中景"
+    cleaned = raw.strip().split("(")[0].strip().upper()
+    if cleaned in SHOT_SIZE_TO_CN:
+        return SHOT_SIZE_TO_CN[cleaned]
+    for en in sorted(SHOT_SIZE_TO_CN, key=len, reverse=True):
+        if en in cleaned:
+            return SHOT_SIZE_TO_CN[en]
+    return raw
+
+def _clean_char_prefix(text):
+    """Remove character-name prefix from text fields like "角色A：..."."""
+    if not isinstance(text, str):
+        return text
+    # Match 1-6 chars followed by full-width or ASCII colon at start
+    return re.sub(r"^[^：，，！？\n]{1,6}[：:]\s*", "", text)
+
+
 
 
 def run(emotion_path, scene_path, camera_path, shot_plan_path, output_path,
-        canvas="16:9", visual_style="", shared_settings=""):
+        canvas="16:9", visual_style="", shared_settings="", project_config_path=None):
+    ensure_pycache_prefix_from_path(output_path or shot_plan_path)
     emotion = _load_json(emotion_path) if emotion_path and os.path.exists(emotion_path) else None
     scene = _load_json(scene_path) if scene_path and os.path.exists(scene_path) else None
     camera = _load_json(camera_path) if camera_path and os.path.exists(camera_path) else None
@@ -30,8 +66,19 @@ def run(emotion_path, scene_path, camera_path, shot_plan_path, output_path,
             item = _assemble_item(shot_index, ss, ei, si, ci, shot, dialogue_map)
             items.append(item)
 
-    negative = shot_plan.get("negative_prompt",
-        "画面崩坏，面部扭曲，多余肢体，手指畸形，道具漂移，服饰闪烁错乱，穿模穿帮，现代物件，字幕水印，低清画质，塑料质感")
+    _apply_axis_warnings(items)
+
+    negative = None
+    if project_config_path and os.path.exists(project_config_path):
+        try:
+            with open(project_config_path, "r", encoding="utf-8-sig") as f:
+                cfg = json.load(f)
+            negative = cfg.get("global_negative_prompt")
+        except Exception:
+            pass
+    if not negative:
+        negative = shot_plan.get("negative_prompt",
+            "画面崩坏，面部扭曲，多余肢体，手指畸形，道具漂移，服饰闪烁错乱，穿模穿帮，现代物件，字幕水印，低清画质，塑料质感")
     full_prompts = _build_full_prompts(items, canvas, visual_style, shared_settings, negative)
 
     result = {"items": items, "merged_full_prompts": full_prompts}
@@ -48,6 +95,8 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
     sid = ss.get("shot_id", ssid.rsplit("-", 1)[0])
     dur = ss.get("duration", 0)
     action = ss.get("base_action", "")
+    non_action = is_true_non_action_subshot(ss)
+    visual_anchor = render_anchor(ss)
     chars = ss.get("characters", [])
     tone = ss.get("emotion_tone", "平静")
     scene_name = shot.get("scene", "")
@@ -111,7 +160,7 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
     # ====== GENERATE TEXT FIELDS ======
 
     # 景别
-    shot_size_text = ci.get("shot_size", ss.get("shot_size", "MS"))
+    shot_size_text = _cn_shot_size(ci.get("shot_size", ss.get("shot_size", "MS")))
 
     # 机位 (expanded)
     if isinstance(dist_steps, (int, float)):
@@ -130,19 +179,22 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
             movement_text += "，速度%s" % mov_speed
     else:
         mov_map = {"fixed": "固定镜头", "push_in": "缓慢向前推镜（dolly in）", "pull_out": "缓慢向后拉镜（dolly out）",
-                    "track": "横向跟随平移", "pan": "水平摇镜", "tilt": "垂直摇镜", "handheld": "手持摄影，极轻呼吸感晃动"}
+                    "track": "横向跟随平移", "pan": "水平摇镜", "tilt": "垂直摇镜", "handheld": "手持摄影，极轻呼吸感晃动",
+                    "whip_pan": "快速甩镜（whip pan）",
+                    "zoom": "变焦推拉"}
         movement_text = mov_map.get(mov_type, "固定镜头")
         if mov_arc and mov_type != "fixed":
             movement_text += "，%s°弧线" % int(mov_arc)
 
     # 轴线与空间 (expanded with bg layers + mood)
-    pos_desc = "；".join(char_pos) if char_pos else "%s在画面%s" % (chars[0] if chars else "人物", "中央偏右")
+    pos_desc = "；".join(char_pos) if char_pos else "%s在画面%s" % (chars[0] if chars else "画面主体", "中央偏右")
     bg_parts = []
     if bg_fg: bg_parts.append("前景：%s" % bg_fg)
     if bg_mg: bg_parts.append("中景：%s" % bg_mg)
     if bg_bg: bg_parts.append("背景：%s" % bg_bg)
     bg_text = "；".join(bg_parts)
-    axis_text = "%s。%s。场景：%s。" % (action, pos_desc, scene_name)
+    axis_seed = action or visual_anchor or "非人物镜头以环境和物件状态承接叙事"
+    axis_text = "%s。%s。场景：%s。" % (axis_seed, pos_desc, scene_name)
     if bg_text:
         axis_text += " %s。" % bg_text
     if mood:
@@ -156,34 +208,55 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
     else:
         char_text = "（无可见人物）"
 
-    # 动作过程 (expanded with beats + body parts + performance note)
+    # 动作过程 (expanded with beats + char prefix)
+    char_name = chars[0] if chars else "画面主体"
     action_parts = []
     if beat_start:
-        action_parts.append("起：%s" % beat_start)
+        if any(beat_start.startswith(c + "：") or beat_start.startswith(c + ":") for c in chars):
+            action_parts.append(beat_start)
+        else:
+            action_parts.append("%s：%s" % (char_name, beat_start))
     if beat_trans:
-        action_parts.append("承：%s" % beat_trans)
+        if any(beat_trans.startswith(c + "：") or beat_trans.startswith(c + ":") for c in chars):
+            action_parts.append(beat_trans)
+        else:
+            action_parts.append("%s：%s" % (char_name, beat_trans))
     if beat_end:
-        action_parts.append("转：%s" % beat_end)
-    action_text = "%s。%s" % (action, " | ".join(action_parts)) if action_parts else "%s。" % action
+        if any(beat_end.startswith(c + "：") or beat_end.startswith(c + ":") for c in chars):
+            action_parts.append(beat_end)
+        else:
+            action_parts.append("%s：%s" % (char_name, beat_end))
+    if non_action:
+        action_text = "无人物动作；%s。画面重点保持在环境、物件或转场氛围上，不加入人物表演。" % (
+            visual_anchor or action or "非动作画面"
+        )
+    elif action_parts:
+        action_text = "%s：%s，%s" % (char_name, action, "，".join(action_parts))
+    else:
+        action_text = "%s：%s" % (char_name, action)
+    detail_items = []
     if body_parts:
-        action_text += "身体语言：%s。" % body_parts
+        detail_items.append(_clean_char_prefix(body_parts))
     if body_ext:
-        action_text += "动作细节：%s。" % body_ext
+        detail_items.append(_clean_char_prefix(body_ext))
     if perf_note:
-        action_text += "表演提示：%s。" % perf_note
-
+        detail_items.append(_clean_char_prefix(perf_note))
+    if detail_items:
+        action_text += "，" + "，".join(detail_items)
     # 台词与声音
-    has_ov = any("OV" in r for r in refs)
+    has_ov = any(("OV" in r or "OS" in r) for r in refs)
+    dialogue_raw_lines = []
     if refs:
         lines = []
         for r in refs:
             txt = (dialogue_map or {}).get(r, "")
             if txt:
                 lines.append("[%s] %s" % (r, txt))
+                dialogue_raw_lines.append(txt)
             else:
                 lines.append(r)
         dialogue_text = "\n".join(lines)
-        dialogue_text += "\n（%s）\n" % ("OV旁白画外音，无口型同步" if has_ov else "日常对话语气")
+        dialogue_text += "\n（%s）\n" % ("OV/OS画外音或内心声，无口型同步，不驱动嘴唇开合" if has_ov else "日常对话语气，口型只匹配原始台词")
     else:
         dialogue_text = "无对白。\n"
     if voice_tone and voice_tone not in ("none", "none_无台词", ""):
@@ -219,7 +292,7 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
         entry_text += "出画：%s。" % char_exit
 
     return {
-        "shot_id": sid, "subshot_id": ssid, "duration": dur,
+        "shot_id": sid, "subshot_id": ssid, "scene": scene_name, "duration": dur,
         "shot_size": shot_size_text,
         "camera_position": camera_pos_text,
         "camera": movement_text,
@@ -227,8 +300,16 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
         "visible_characters": char_text,
         "character_action": action_text,
         "dialogue_audio": dialogue_text,
+        "dialogue_refs": refs,
+        "dialogue_raw_text": "\n".join(dialogue_raw_lines),
         "lighting": lighting_text,
         "char_entry_exit": entry_text,
+        "axis_start": axis_start,
+        "axis_end": axis_end,
+        "axis_start": axis_start,
+        "axis_end": axis_end,
+        "movement_type": mov_type,
+        "movement_detail": mov_detail,
         "end_state": end_state,
         "full_prompt": "",
     }
@@ -272,6 +353,55 @@ def _build_full_prompts(items, canvas, visual_style, shared_settings, negative):
     return merged
 
 
+
+def _parse_axis_positions(text):
+    import re
+    chars = []
+    if not text:
+        return chars
+    pos_part = text.split("　，处理")[0] if "，" in text else text
+    pos_part = text.split("，")[0] if "，" in text else text
+    for seg in pos_part.split("/"):
+        seg = seg.strip()
+        m = re.search(r"([^画外]+?)(画[外左右中]+)", seg)
+        if m:
+            chars.append((m.group(1).strip(), m.group(2)))
+    return chars
+
+
+def _describe_axis_crossing(prev_item, curr_item):
+    for key in ["axis_start", "axis_end"]:
+        prev_text = prev_item.get(key, "")
+        curr_text = curr_item.get(key, "")
+        if not prev_text or not curr_text:
+            continue
+        for p_dir, c_dir in [("画左", "画右"), ("画右", "画左")]:
+            if p_dir in prev_text and c_dir in curr_text:
+                prev_chars = _parse_axis_positions(prev_text)
+                curr_chars = _parse_axis_positions(curr_text)
+                changes = []
+                for cn, cp in curr_chars:
+                    for pn, pp in prev_chars:
+                        if cn in pn or pn in cn:
+                            if pp != cp and any(d in pp + cp for d in ["左", "右"]):
+                                changes.append("%s从%s→%s" % (cn, pp, cp))
+                            break
+                p_sum = "/".join("%s(%s)" % x for x in prev_chars) if prev_chars else prev_text[:20]
+                c_sum = "/".join("%s(%s)" % x for x in curr_chars) if curr_chars else curr_text[:20]
+                desc = "前镜角色：%s；本镜角色：%s" % (p_sum[:50], c_sum[:50])
+                if changes:
+                    desc += "。变化：%s。镜头在%s→%s之间跨越轴线，摄像机改变了视角方向。请确认此跳轴是否为有意设计。" % (
+                        "；".join(changes), prev_item["subshot_id"], curr_item["subshot_id"])
+                return desc
+    return ""
+
+
+def _apply_axis_warnings(items):
+    for i in range(1, len(items)):
+        desc = _describe_axis_crossing(items[i-1], items[i])
+        if desc:
+            items[i]["camera"] = items[i]["camera"].rstrip("。") + "。" + desc
+
 def _load_json(path):
     with open(path, "r", encoding="utf-8-sig") as f:
         return json.load(f)
@@ -282,3 +412,24 @@ if __name__ == "__main__":
         print("usage: assemble_director.py <emotion.json> <scene.json> <camera.json> <shot_plan.json> <output.json>")
         sys.exit(1)
     run(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])
+# Register as plugin handler for qa_integration phase
+from handler_registry import register_handler
+
+@register_handler("qa_integration")
+def _qa_integration_handler(run_dir):
+    """Registered handler for qa_integration phase."""
+    import os, json
+    paths = {
+        "emotion": os.path.join(run_dir, ".cache", "analysis", "emotion_output.json"),
+        "scene": os.path.join(run_dir, ".cache", "analysis", "scene_output.json"),
+        "camera": os.path.join(run_dir, ".cache", "analysis", "camera_output.json"),
+        "plan": os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"),
+    }
+    out = os.path.join(run_dir, ".cache", "director", "director_pass.json")
+    ep = paths["emotion"] if os.path.exists(paths["emotion"]) else None
+    sp = paths["scene"] if os.path.exists(paths["scene"]) else None
+    cp = paths["camera"] if os.path.exists(paths["camera"]) else None
+    if os.path.exists(paths["plan"]):
+        pcfg = os.path.join(run_dir, "..", "project_config.json")
+        run(ep, sp, cp, paths["plan"], out,
+            project_config_path=pcfg if os.path.exists(pcfg) else None)

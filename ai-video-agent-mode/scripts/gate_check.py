@@ -10,6 +10,7 @@ from pipeline_templates import GATES
 from validate_agent_output import validate as val_agent
 from sources import get_sources_path
 from validator.contamination import check_contamination
+from hybrid_gate import run as hybrid_gate
 
 SPAWN_TOLERANCE = 0.3  # seconds: output must be created at least this long after spawn
 
@@ -38,7 +39,7 @@ def check(run_dir, phase=None, strict=False):
     
     # ==== CHECK 1: Input files exist ====
     for inp in phase_config.get("input", []):
-        p = os.path.join(run_dir, inp)
+        p = _resolve_input_path(run_dir, inp)
         if not os.path.exists(p):
             result["issues"].append({
                 "check": "INPUT_EXISTS",
@@ -72,7 +73,7 @@ def check(run_dir, phase=None, strict=False):
     # ==== CHECK 3: Output provenance (timestamp check) ====
     outputs = phase_config.get("output", [])
     for out in outputs:
-        p = os.path.join(run_dir, ".cache", out)
+        p = _resolve_output_path(run_dir, out)
         if os.path.exists(p) and spawn_time:
             file_mtime = os.path.getmtime(p)
             if file_mtime <= spawn_time:
@@ -87,7 +88,7 @@ def check(run_dir, phase=None, strict=False):
     
     # ==== CHECK 4: Output validation + contamination ====
     for out in outputs:
-        p = os.path.join(run_dir, ".cache", out)
+        p = _resolve_output_path(run_dir, out)
         if not os.path.exists(p):
             continue  # not created yet, not a violation
         
@@ -127,9 +128,23 @@ def check(run_dir, phase=None, strict=False):
                         "msg": "Cannot parse JSON"
                     })
     
+    # ==== CHECK 5: Hybrid deterministic + LLM review packet ====
+    if phase in ("qa_integration", "prompt_composer", "editor_pass2", "validate"):
+        require_llm = phase in ("editor_pass2",)
+        hg = hybrid_gate(run_dir, phase=phase, require_llm=require_llm)
+        for iss in hg.get("issues", []):
+            result["issues"].append({
+                "check": "HYBRID_%s" % iss.get("check", "gate").upper(),
+                "severity": iss.get("severity", "warning"),
+                "msg": iss.get("msg", "")
+            })
+        if hg.get("llm_review_packet"):
+            result["llm_review_packet"] = hg["llm_review_packet"]
+
     # ==== RESULT ====
     blocking = [i for i in result["issues"] if i["severity"] == "blocking"]
     result["pass"] = len(blocking) == 0
+    result["per_subshot"] = _track_per_subshot(run_dir, phase)
     
     if result["bypass_detected"]:
         print("[GATE] BYPASS DETECTED in %s! Output existed before agent spawn." % phase)
@@ -145,6 +160,24 @@ def check(run_dir, phase=None, strict=False):
     return result
 
 
+def _resolve_input_path(run_dir, path):
+    if path == "project_config.json":
+        return os.path.join(run_dir, path)
+    if os.path.isabs(path):
+        return path
+    return os.path.join(run_dir, path)
+
+
+def _resolve_output_path(run_dir, path):
+    if path == "project_config.json":
+        return os.path.join(run_dir, path)
+    if os.path.isabs(path):
+        return path
+    if path.startswith(".cache"):
+        return os.path.join(run_dir, path)
+    return os.path.join(run_dir, ".cache", path)
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("usage: gate_check.py <run_dir> [phase] [--strict]")
@@ -154,3 +187,47 @@ if __name__ == "__main__":
     strict = "--strict" in sys.argv
     result = check(run_dir, phase, strict=strict)
     print(json.dumps(result, ensure_ascii=False, indent=2))
+
+def _track_per_subshot(run_dir, phase):
+    """Identify which subshots passed vs failed validation.
+    Returns dict: {subshot_id: "passed"|"failed"} for output items."""
+    from pipeline_state import load_state
+    from pipeline_templates import GATES
+    state = load_state(run_dir)
+    phase_config = GATES.get(phase)
+    if not phase_config:
+        return {}
+    result = {}
+    for out in phase_config.get("output", []):
+        p = _resolve_output_path(run_dir, out)
+        if not os.path.exists(p):
+            continue
+        try:
+            with open(p, "r", encoding="utf-8-sig") as f:
+                data = json.load(f)
+            items = data.get("items", [])
+            # Re-run validation on each item to determine pass/fail
+            for item in items:
+                ssid = item.get("subshot_id", "?")
+                if _validate_item(item, phase):
+                    result[ssid] = "passed"
+                else:
+                    result[ssid] = "failed"
+        except Exception:
+            pass
+        break
+    return result
+
+def _validate_item(item, phase):
+    """Quick per-item validation check. Returns True if item passes basic checks."""
+    fp = item.get("full_prompt", "")
+    dur = item.get("duration", 0)
+    if phase == "prompt_composer":
+        return len(fp) >= 500 and isinstance(dur, (int, float)) and dur > 0
+    # director level: check key fields have content
+    for key in ["shot_size", "camera_position", "character_action", "lighting"]:
+        val = item.get(key, "")
+        if isinstance(val, str) and len(val) < 5:
+            return False
+    return True
+

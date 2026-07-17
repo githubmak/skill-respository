@@ -1,4 +1,4 @@
-﻿# Export Spec — 导出格式规范
+# Export Spec — 导出格式规范
 
 Phase 8 导出前加载。
 

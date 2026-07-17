@@ -1,4 +1,4 @@
-﻿{
+{
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "AI Video Agent Mode Pipeline Schema",
   "description": "Pipeline data structures for ai-video-agent-mode",
@@ -36,6 +36,10 @@
         "duration": {"type": "number"},
         "shot_size": {"type": "string"},
         "base_action": {"type": "string"},
+        "shot_type": {"type": "string"},
+        "visual_intent": {"type": "string"},
+        "image_subject": {"type": "string"},
+        "atmosphere": {"type": "string"},
         "characters": {"type": "array", "items": {"type": "string"}},
         "dialogue_refs": {"type": "array", "items": {"type": "string"}},
         "emotion_tone": {"type": "string"}

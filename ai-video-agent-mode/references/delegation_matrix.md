@@ -1,4 +1,4 @@
-﻿# Delegation Matrix — 镜头分发矩阵
+# Delegation Matrix — 镜头分发矩阵
 
 决定子Agent分配策略时加载。
 

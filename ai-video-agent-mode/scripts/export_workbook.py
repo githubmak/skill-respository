@@ -1,5 +1,11 @@
 """Enhanced Excel export with 7 sheets, styling, and proper layout."""
 import json, os, sys
+if not os.environ.get("PYTHONPYCACHEPREFIX") and not getattr(sys, "pycache_prefix", None):
+    sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(__file__))
+from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_prefix_from_path
+
+block_source_pycache_until_run_dir()
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
@@ -52,6 +58,7 @@ def auto_width(ws, max_width=60, min_width=8):
 
 def export(pkg_path, plan_path, out):
     """Generate styled 7-sheet Excel workbook."""
+    ensure_pycache_prefix_from_path(out)
     with open(pkg_path, "r", encoding="utf-8-sig") as f:
         pp = json.load(f)
     with open(plan_path, "r", encoding="utf-8-sig") as f:

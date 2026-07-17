@@ -1,4 +1,4 @@
-﻿# Director Enhancement Agent（已废弃，保留作参考）
+# Director Enhancement Agent（已废弃，保留作参考）
 
 ## 该 Agent 已被拆分为 3 个专用分析 Agent：
 

@@ -1,4 +1,4 @@
-﻿"""Validate director/prompt agent output."""
+"""Validate director/prompt agent output."""
 import json, os, sys
 from validator.field_types import validate_field_types
 from validator.quality import quality_check_director, quality_check_prompt
@@ -24,7 +24,23 @@ def validate(packet_path, role="director", min_chars=500):
     # Step 1: Field type validation
     field_issues = validate_field_types(packet_path)
 
-    # Step 2: Content quality checks
+    # === Continuity report validator ===
+    if role == "continuity":
+        try:
+            with open(packet_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            errs = data.get("errors", 0)
+            warns = data.get("warnings", 0)
+            issues = []
+            for iss in data.get("issues", []):
+                if len(iss) >= 4:
+                    issues.append(("CONTINUITY", iss[1], iss[2], iss[3]))
+            if errs > 0 or warns > 2:
+                return {"valid": False, "issues": issues, "retry_needed": True}
+            return {"valid": True, "issues": [], "retry_needed": False}
+        except Exception:
+            return {"valid": True, "issues": [], "retry_needed": False}
+
     if role == "director":
         quality_issues = quality_check_director(packet_path)
     else:

@@ -1,4 +1,4 @@
-﻿"""Merge all prompt packages into a single unified output."""
+"""Merge all prompt packages into a single unified output."""
 import json, os, sys
 
 
