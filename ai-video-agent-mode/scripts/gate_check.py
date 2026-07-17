@@ -54,7 +54,7 @@ def check(run_dir, phase=None, strict=False):
     status = phase_info.get("status", "pending")
     
     # Phases that require a sub-agent
-    agent_phases = ["emotion_analysis", "scene_analysis", "camera_movement", "qa_integration", "prompt_composer"]
+    agent_phases = ["emotion_analysis", "scene_analysis", "camera_movement", "prompt_composer", "editor_pass2"]
     
     if phase in agent_phases:
         if not agent_id:
@@ -95,7 +95,10 @@ def check(run_dir, phase=None, strict=False):
         # Skip validation if provenance failed (no point validating fake data)
         if result["bypass_detected"]:
             continue
-        
+
+        if phase in ("emotion_analysis", "scene_analysis", "camera_movement"):
+            result["issues"].extend(_validate_analysis_items(run_dir, phase, p))
+
         validator_role = phase_config.get("validator")
         if validator_role:
             vr = val_agent(p, role=validator_role)
@@ -158,6 +161,102 @@ def check(run_dir, phase=None, strict=False):
         sys.exit(1)
     
     return result
+
+
+def _validate_analysis_items(run_dir, phase, output_path):
+    issues = []
+    try:
+        with open(output_path, "r", encoding="utf-8-sig") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return [{
+            "check": "ANALYSIS_JSON",
+            "file": os.path.basename(output_path),
+            "severity": "blocking",
+            "msg": "Cannot parse analysis output JSON"
+        }]
+
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return [{
+            "check": "ANALYSIS_ITEMS",
+            "file": os.path.basename(output_path),
+            "severity": "blocking",
+            "msg": "%s output root must be an object with items[]" % phase
+        }]
+
+    seen = set()
+    for idx, item in enumerate(items):
+        if not isinstance(item, dict):
+            issues.append({
+                "check": "ANALYSIS_ITEM_TYPE",
+                "file": os.path.basename(output_path),
+                "severity": "blocking",
+                "msg": "%s items[%d] must be object" % (phase, idx)
+            })
+            continue
+        shot_id = item.get("shot_id")
+        subshot_id = item.get("subshot_id")
+        if not isinstance(shot_id, str) or not shot_id:
+            issues.append({
+                "check": "ANALYSIS_SHOT_ID",
+                "file": os.path.basename(output_path),
+                "severity": "blocking",
+                "msg": "%s items[%d] missing shot_id" % (phase, idx)
+            })
+        if not isinstance(subshot_id, str) or not subshot_id:
+            issues.append({
+                "check": "ANALYSIS_SUBSHOT_ID",
+                "file": os.path.basename(output_path),
+                "severity": "blocking",
+                "msg": "%s items[%d] missing subshot_id" % (phase, idx)
+            })
+        elif subshot_id in seen:
+            issues.append({
+                "check": "ANALYSIS_SUBSHOT_DUP",
+                "file": os.path.basename(output_path),
+                "severity": "blocking",
+                "msg": "%s duplicate subshot_id %s" % (phase, subshot_id)
+            })
+        seen.add(subshot_id)
+
+    expected = _expected_subshot_ids(run_dir)
+    if expected:
+        output_ids = {item.get("subshot_id") for item in items if isinstance(item, dict)}
+        missing = sorted(expected - output_ids)
+        extra = sorted(output_ids - expected)
+        if missing:
+            issues.append({
+                "check": "ANALYSIS_COVERAGE",
+                "file": os.path.basename(output_path),
+                "severity": "blocking",
+                "msg": "%s missing subshot_id(s): %s" % (phase, ", ".join(missing[:10]))
+            })
+        if extra:
+            issues.append({
+                "check": "ANALYSIS_EXTRA",
+                "file": os.path.basename(output_path),
+                "severity": "blocking",
+                "msg": "%s unknown subshot_id(s): %s" % (phase, ", ".join(extra[:10]))
+            })
+    return issues
+
+
+def _expected_subshot_ids(run_dir):
+    path = os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json")
+    if not os.path.exists(path):
+        return set()
+    try:
+        with open(path, "r", encoding="utf-8-sig") as f:
+            plan = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return set()
+    return {
+        ss.get("subshot_id")
+        for shot in plan.get("shots", [])
+        for ss in shot.get("subshots", [])
+        if ss.get("subshot_id")
+    }
 
 
 def _resolve_input_path(run_dir, path):

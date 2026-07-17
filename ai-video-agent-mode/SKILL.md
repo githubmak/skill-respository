@@ -14,6 +14,42 @@ description: >
 
 Use this skill as the top-level coordinator for commercial AI-video prompt production.
 
+## 主镜头划分优先级（Orchestrator 拆镜时按此顺序决定是否拆分）
+
+Orchestrator 将剧本拆为 shot_plan.json 时，主镜头的划分必须按以下优先级自上而下执行，**不得跳过**：
+
+**概念边界：**
+- **主镜头 shot**：一个完整剧情节拍，必须能独立表达一个动作/台词/反应/情绪变化单元，并且总时长不得超过用户在 Phase 0 输入的 `project_config.max_shot_duration`。
+- **子镜头 subshot**：主镜头内部的可视化执行单元，用于同一节拍内的景别变化、插入特写、反应镜头、手机屏幕/物件镜头、OS承接等。
+- 不得因为一次推拉、一次景别变化或一个表情补充就拆成新主镜头；只有剧情节拍、场景或时长约束触发时才拆主镜头。
+- 不得为了凑满时长把不同剧情节拍合并到同一主镜头。
+
+**第一优先：剧情节拍**
+一个主镜头对应一个独立的剧情节拍（一个动作 + 台词 + 反应的最小戏剧单元）。
+- 每个剧情节拍包括：一个动作发生、一段对话完成、一个情绪转折或一个角色反应
+- 不同的节拍必须拆成不同的主镜头，不得为了凑满用户输入的最大时长而把两个节拍塞进同一主镜头
+- 示例：「向云初撞上江训」是一个节拍 → 单独一个主镜头；「系统上线激动大喊」是另一个节拍 → 另一个主镜头
+
+**第二优先：场景切换**
+场景切换（日/夜、内/外、地点变化）是硬性分割点，自动产生新的主镜头。
+
+**第三优先：台词时长**
+如果一个剧情节拍内的所有子镜头台词朗读时长总和 > `project_config.max_shot_duration`，则在句子边界拆分：
+1. 先把长段台词在句号（。）/ 感叹号（！）/ 问号（？）/ 省略号（……）处切分成更短的最小语义单元（存入 dialogue_map）
+2. 把这些单元分配到两个或多个子镜头中，每个子镜头配对应的动作/反应
+3. 如果拆分后单个子镜头的时长仍 > `project_config.max_shot_duration`，则拆成两个主镜头，前一镜头结束时后一镜头对应角色的准备/反应状态作为承接
+
+**禁止行为：**
+- 禁止因时长不足把两个不相干的节拍合并到一个主镜头
+- 禁止剪短台词原文来凑时长
+- 禁止在逗号、顿号、冒号等句内停顿处拆分台词
+
+**计算公式（子镜头时长）：**
+有效语速 = 4.5 × 情绪系数
+台词朗读时间 = ∑(每段台词字数) / 有效语速 + 标点停顿
+如果对话和动作同时发生（边说边做），子镜头时长 = max(台词朗读时间, 动作耗时) + 反应空白(0.5s)
+如果动作需要独立视觉焦点（如特写手部），子镜头时长 = 台词朗读时间 + 动作耗时 + 反应空白(0.5s)
+
 ## 管线执行阶段（严格顺序,不可跳过）
 
 ### Phase 0: 用户确认（每次启动必走）
@@ -23,7 +59,7 @@ Use this skill as the top-level coordinator for commercial AI-video prompt produ
 |--------|------|------|
 | 画布/画幅 | 选择: 9:16 / 16:9 / 1:1 | `16:9` |
 | 视觉风格 | 用户输入文字 | `现代都市/冷幽默` |
-| 单条视频最大时长 | 选择: 5/8/10/15/18/20/25/30 秒 | `15` |
+| 单条视频最大时长 | 用户输入或选择: 5/8/10/15/18/20/25/30 秒 | `15` |
 | 最终存放位置 | 用户输入目录路径 | `C:\path\to\export` |
 
 若用户重复输入（修改上面任何一项），用 `_run_{timestamp}` 形式创建新文件夹，将本次输出放进去。
@@ -167,14 +203,14 @@ Phase 1:  Orchestrator (本地)               → shot_plan.json
 Phase 2a: 情绪分析 子Agent ($emotion-analysis)  → emotion_output.json
 Phase 2b: 场景分析 子Agent ($frames-analysis)   → scene_output.json
 Phase 2c: 镜头运镜 子Agent ($camera-analysis)   → camera_output.json
-Phase 3:  QA/整合 (本地+handler)            → director_pass.json
+Phase 3:  QA/整合 (本地 handler，不 spawn)    → director_pass.json
 Phase 4:  Director 质量验证 (本地门禁)       → 校验通过才继续
 Phase 5:  连续性检查 (不可跳过)               → continuity_check.py
-Phase 6:  数据清洗+自动分组+Prompt Composer (全走子Agent)   → pipeline.py --clean --group → prompt_package.json → 校验失败重派
+Phase 6:  Prompt Composer 子Agent             → prompt_package.json → 校验失败重派
 Phase 7:  Editor Pass 1 (不可跳过)            → merge_prompts.py
-Phase 8:  Editor Pass 2 表演增强\+LLM评审 \(不可跳过\)     → enhance_performance.py + hybrid_gate.py + LLM review
+Phase 8:  Editor Pass 2 子Agent+LLM评审 \(不可跳过\)       → review/llm_gate_result.json
 Phase 9:  最终验证 (不可跳过·含语义校验)                 → pipeline.py --validate + validate_prompt_package.py + hybrid_gate.py
-Phase 10: 导出 (不可跳过)                    → export_workbook.py → Excel+Markdown
+Phase 10: 导出 (不可跳过)                    → export_workbook.py → 写入用户确认的导出目录
 
 ### Phase 2a/2b/2c 并行下发
 
@@ -188,9 +224,9 @@ Phase 10: 导出 (不可跳过)                    → export_workbook.py → Ex
 
 | 技能 | 单批上限 | wait_agent 超时 | 原因 |
 |------|---------|----------------|------|
-| emotion-analysis（情绪） | 20 镜 | 900s（15min） | 每镜需生成大量自由文本（facial_4d/causality/pause/intonation），≤10镜可降至600s |
-| frames-analysis（场景） | 25 镜 | 600s（10min） | 结构化为主含空间分层+光影，≤10镜可降至300s |
-| camera-analysis（运镜） | 30 镜 | 600s（10min） | 定量参数为主，≤10镜可降至300s |
+| emotion-analysis（情绪） | 20 个子镜头 | 900s（15min） | 每镜需生成大量自由文本，≤10个子镜头可降至600s |
+| frames-analysis（场景） | 25 个子镜头 | 600s（10min） | 结构化为主含空间分层+光影，≤10个子镜头可降至300s |
+| camera-analysis（运镜） | 30 个子镜头 | 600s（10min） | 定量参数为主，≤10个子镜头可降至300s |
 
 超出单批上限时，主Agent按以下模式分批投递，所有批次写入同一 JSON 文件（增量追加模式）：
 
@@ -257,7 +293,7 @@ send_input(avicenna, "第2批...")
   ...
 ]
 
-输出必须按照 "### 子Agent输出JSON格式规范" 中的字段定义，一个shot_id对应一个输出元素，
+输出必须按照 "### 子Agent输出JSON格式规范" 中的字段定义，一个 subshot_id 对应一个输出元素，
 确保所有字段类型和键名严格匹配，主Agent会在 merge 阶段直接读取。
 '''
 
@@ -321,13 +357,14 @@ Phase 1:  Orchestrator (本地)               → shot_plan.json
 Phase 2a: 情绪分析 子Agent ($emotion-analysis)  → emotion_output.json
 Phase 2b: 场景分析 子Agent ($frames-analysis)   → scene_output.json
 Phase 2c: 镜头运镜 子Agent ($camera-analysis)   → camera_output.json
-Phase 3:  QA/整合 子Agent ($content-review)    → director_pass.json
-Phase 4:  连续性检查 (不可跳过)               → continuity_check.py --live
-Phase 5:  Prompt Composer (全走子Agent)       → prompt_package.json → 校验失败重派
-Phase 6:  数据清洗+自动分组+Editor Pass 1 (不可跳过)  → pipeline.py --clean --group → merge_prompts.py
-Phase 7:  Editor Pass 2 LLM评审 (不可跳过·自动调用质感参考指南)  → hybrid_gate.py → editor_pass2_prompt()
-Phase 8:  最终验证 (不可跳过·含语义校验)      → pipeline.py --validate + validate_prompt_package.py + hybrid_gate.py
-Phase 9:  导出 (不可跳过)                    → pipeline.py --export
+Phase 3:  QA/整合 本地 handler                → director_pass.json
+Phase 4:  Director 质量验证 (本地门禁)         → 校验通过才继续
+Phase 5:  连续性检查 (不可跳过)               → continuity_check.py
+Phase 6:  Prompt Composer 子Agent             → prompt_package.json → 校验失败重派
+Phase 7:  Editor Pass 1 (不可跳过)            → merge_prompts.py
+Phase 8:  Editor Pass 2 子Agent/LLM评审        → review/llm_gate_result.json
+Phase 9:  最终验证 (不可跳过·含语义校验)       → validate_prompt_package.py + hybrid_gate.py
+Phase 10: 导出 (不可跳过)                    → export_workbook.py
 ```
 
 
@@ -337,7 +374,7 @@ Phase 9:  导出 (不可跳过)                    → pipeline.py --export
 Orchestrator 在拆镜时必须按以下优先级自动区分动作与台词：
 
 1. **动作标记前缀优先**：段落以 `△`、`动作：`、`字幕：` 或 `△闪回` 开头 → 标记为动作描述，`description` 字段写入去除前缀后的文本。**不解析台词。**
-2. **冒号检测**：段落包含 `：` → 检查冒号前方的文本是否在已知角色名列表中（沈星雨/宋南枝/江训/向云初/许承/系统/陆序/同学/路人/室友等）
+2. **冒号检测**：段落包含 `：` → 检查冒号前方的文本是否在 `project_config.character_list`、源文本角色表、已出现说话人集合或本段上下文实体中
    - 是角色名 → 解析为台词，`dialogue` 写入冒号后方文本
    - 不是角色名（如"动作"、"字幕"、"旁白"、"画外音"）→ 标记为动作描述，不解析台词
 3. **口语特征二次校验**：已解析为台词的文本，执行二次校验——是否含有口语特征词（`我`/`你`/`啦`/`啊`/`吗`/`吧`/`了`/`！`/`？`/`「」` /`~`）
@@ -345,6 +382,89 @@ Orchestrator 在拆镜时必须按以下优先级自动区分动作与台词：
    - 不含口语特征且为第三人称叙事（含`打量`/`看向`/`走向`/`走过`/`站在`/`坐着`/`路过`等动作词，且语法主语不是第一人称）→ 改为动作描述，`dialogue` 清空，文本追加到 `description`
 4. **OS/内心独白检测**：段落包含 `（OS）` 或 `（内心独白）` → 文本写入 `narration` 数组，不写入 `dialogue`
 
+
+
+
+### 对话时长约束（Orchestrator 拆镜时必须计算）
+
+### dialogue_map 解析规则（pipeline.py clean() 必须遵守）
+shot_plan.json 中台词的存储格式为 subshots[].dialogue_refs（字符串索引数组）+ 顶层 dialogue_map（索引到原文字典）。
+pipeline.py clean() 读取台词时，不得依赖 s.dialogues 或 s.dialogue 等扁平字段——
+shot 层级不存在这些字段。clean() 必须：
+1. 从 shot_plan 根层读取 dialogue_map
+2. 遍历每个 shot 的 subshots，收集 subshot.dialogue_refs
+3. 用 dialogue_map[ref] 解析原文
+4. 从 subshot.characters 取说话人，按 角色 原文 格式填入 dia 字段
+5. 以 [character:角色名,text:原文] 格式填入 narr 字段
+注意：同一 shot 内有多段分属不同角色的台词时，每段前标注对应的说话角色，不可全部归给第一个角色。
+
+
+Orchestrator 为每个子镜头分配 duration 时，必须按台词量验证时长是否足够。
+
+**台词语速基准：**
+- 正常语速：**4.5 字/秒**
+- 情绪系数调整：
+  - 情绪偏快（激动/兴奋/慌乱）→ ×1.1~1.2
+  - 情绪正常（平静/叙述）→ ×1.0
+  - 情绪偏慢（迟疑/压抑/嘲讽/威胁）→ ×0.8~0.9
+
+**计算公式：**
+`
+有效语速 = 4.5 × 情绪系数
+台词所需时长 = ⌈∑(每段台词字数) / 有效语速⌉
+子镜头总时长 = max(台词时长, 动作时长) + 反应空白(0.5s)  —— 对话与动作重叠时取最大值
+子镜头总时长 = 台词时长 + 动作时长 + 0.5s  —— 动作需独立视觉焦点时（特写手部等）
+`
+
+**验证与拆分规则：**
+- 每个 shot_plan.dialogues[] 条目已经是剧本的最小语义单元，优先按条目拆分
+- 如果单条 dialogue 本身的台词时长就超了子镜头配额：
+  1. 先在句号（。）/ 感叹号（！）/ 问号（？）/ 省略号（……）处拆分为更短的 dialogue 条目
+  2. 如果拆分后仍超出用户输入的 `project_config.max_shot_duration`，则将该 dialogue 独立成一个新主镜头
+- **拆分点优先级**（仅适用于存在自然断句的长段落）：
+  1. 剧本段落分割（每段本身就是独立台词单元）—— 最优先
+  2. 句号（。）/ 感叹号（！）/ 问号（？）—— 完整语义边界
+  3. 省略号（……）/ 破折号（——）—— 语气中断边界
+- **禁止拆分点**：逗号（，）、顿号（、）、冒号（：）、分号（；）—— 这些是同一语义单元内部的停顿，拆开会破坏语句连贯性
+- 如果整条台词没有任何可拆分标记（无 。！？……——），则该条台词不可拆分，只能通过加长子镜头时长或独立成组来解决
+- 台词原文不允许删减、修改，只能按完整语义单元拆分到不同子镜头
+- 拆分后的新主镜头之间用"角色准备/反应 + 承接动作"连接，不使用硬切或黑场
+
+**示例：**
+`
+子镜头 S3-02-01 原设计：
+  碰撞动作约 2s
+  系统台词①「啊啊女主出现了！男女主线终于要展开了啊！」18字 × 1.2 = 3.3s
+  系统台词②「幸好幸好，虽然男主被你包养过，但男女主线还是正常在走。」25字 × 1.2 = 4.6s
+  剩余空间 = 15 - max(2, 3.3+4.6) - 0.5 = 15 - 7.9 - 0.5 = 6.6s
+  还在配额内，可以放在同一个主镜头。
+
+  如果系统台词还有第三段且超出用户输入的最大时长：
+  在句号处分隔 → 系统①② 放在前一主镜头，系统③独立成新主镜头+沈星雨沉默反应
+`
+
+
+
+### 镜头时长预算与 shot_plan 规范化
+
+Orchestrator 先根据用户源文本生成 `<run_dir>\.cache\orchestrator\shot_plan.draft.json`，再用 `scripts/build_shotplan.py` 做机械规范化和引用校验。`build_shotplan.py` 不生成剧情内容，不写死角色/场景/项目名。
+
+**预算规则：**
+- 每个主镜头先按剧情节拍生成，再检查 `total_duration <= project_config.max_shot_duration`
+- 若单个剧情节拍超出上限，只能按完整语义边界拆成多个连续主镜头，不得把台词删减或改写
+- 若同一节拍内有多个视觉焦点，保留为同一主镜头下的多个 subshot
+- 反应空白 0.5s 仅在整个 batch 提交时加一次，不在每个 ref 上单独加
+- 台词时长累加是 ∑(每条台词的 _estimate_dialogue_seconds)，动作时长取 batch 内最大值
+- nd(batch) = max(∑dialogue, action) + 0.5
+- 切分新主镜头之间用"角色准备/反应 + 承接动作"连接
+
+**使用方法：**
+```powershell
+$env:PYTHONPYCACHEPREFIX = "<run_dir>\.cache\pycache"
+python scripts/build_shotplan.py <run_dir> [<run_dir>\.cache\orchestrator\shot_plan.draft.json]
+```
+
+它只规范化主Agent Orchestrator 已经根据用户源文件生成的 draft，并输出 `<run_dir>\.cache\orchestrator\shot_plan.json`。
 
 ### 上下文与批量管理
 
@@ -430,11 +550,13 @@ Orchestrator 在拆镜时必须按以下优先级自动区分动作与台词：
 | `analysis[].angle` | 机位 | 值为字符串（如"平视"），直接写入 |
 | `analysis[].movement` | 运镜 | 值为字符串（如"固定镜头"），直接写入 |
 | `analysis[].focal_length` | 机位补充 | 可选写入 |
+| `analysis[].axis_rule` | 轴线与空间 | 必填。子Agent必须产出，clean()必须提取并传递至export() |
 
-**数据访问路径总结（三个子Agent输出结构不统一，主Agent必须按各自路径访问）：**
-1. emotion_output.json → `d["shots"]` → 数组，每元素在**顶层**有 emotion_level/facial_4d/expression_causality（没有`analysis`嵌套）
-2. scene_output.json → `d["analyses"]` → 数组，每元素用**中文键名**（空间分层/光影设计/构图等）
-3. camera_output.json → `d["analysis"]` → 数组，每元素用**英文键名**（shot_size/angle/movement 等），且值多为**字符串**而非字典
+**数据访问路径总结（三个子Agent输出结构统一）：**
+1. emotion_output.json → `d["items"]` → 数组，每元素必须有 `shot_id` + `subshot_id`
+2. scene_output.json → `d["items"]` → 数组，每元素必须有 `shot_id` + `subshot_id`
+3. camera_output.json → `d["items"]` → 数组，每元素必须有 `shot_id` + `subshot_id`
+4. 主Agent和本地整合只能按 `subshot_id` 做一一对齐，`shot_id` 仅用于分组和合并主镜头提示词
 
 
 ### 子Agent输出JSON格式规范（Phase 2 spawn时必须包含）
@@ -444,22 +566,22 @@ Orchestrator 在拆镜时必须按以下优先级自动区分动作与台词：
 **emotion-analysis 子Agent输出格式：**
 ```json
 {
-  "shots": [
+  "items": [
     {
       "shot_id": "S1-01",
-      "emotion_level": "1-4分级+中文描述（如"2(微动)——视线相遇激发的隐秘兴趣"）",
-      "facial_4d": {
-        "角色名": {          // 单人镜时键名为"眼神/嘴角/呼吸/面肌"
-          "眼神": "眼睑状态+视线方向+瞳孔反应",
-          "嘴角": "唇线开合+嘴角走向",
-          "呼吸": "鼻翼节奏+胸廓起伏幅度",
-          "面肌": "眉/颊/下颌的收紧或放松状态"
-        }
-      },
-      "expression_causality": "触发事件→情绪反应→外显表现（每角色用【】包裹，多人镜用 / 分隔）",
-      "surface_vs_deep": "表层：可见行为 ｜ 深层：心理动机（每角色用【】包裹）",
-      "pause_annotations": "【角色】台词中的停顿/换气位置，标【呼吸停顿Xs】/【情绪停顿Xs】（有台词镜头必填）",
-      "intonation": "角色：语气描述（有台词镜头必填，无台词写"无台词镜头"）"
+      "subshot_id": "S1-01-01",
+      "emotion_type": "中文情绪类型",
+      "expression_level": "micro/visible/strong",
+      "gaze": "视线方向与可见性",
+      "micro_expression": "可见微表情",
+      "body_tension": "身体张力",
+      "body_parts_focus": "可见身体部位动作",
+      "voice_tone": "台词/OV/OS语气；无台词写 none_无台词",
+      "action_beat_start": "起幅状态",
+      "action_beat_transition": "动作推进",
+      "action_beat_end": "落幅状态",
+      "emotion_trigger_short": "触发事件",
+      "performance_note": "表演注意"
     }
   ]
 }
@@ -468,24 +590,22 @@ Orchestrator 在拆镜时必须按以下优先级自动区分动作与台词：
 **frames-analysis 子Agent输出格式：**
 ```json
 {
-  "analyses": [
+  "items": [
     {
       "shot_id": "S1-01",
-      "空间分层": {
-        "前景": "虚化物体+位置（40字内）",
-        "中景": "角色位置+主要叙事动作+道具（50字内）",
-        "背景": "环境信息+配色（40字内）"
-      },
-      "构图": "三分法/中心/对角线/引导线/三角等",
-      "光影设计": {
-        "主光源": "方向+类型（如"午后侧逆日光"）",
-        "色温": "数值K（如"5200K暖白"）",
-        "光质": "硬光/柔光+参数",
-        "情绪光影类别": "温暖琥珀/自然日常/冷暖对比等",
-        "轮廓光": "光源方向+颜色+强弱"
-      },
-      "场景氛围": "场景情绪定位（如"校园日常温馨漫步，闺蜜闲聊的松弛感"）",
-      "色彩基调": "暖调/冷调/对比调+主色描述（如"暖色调自然，奶白浅杏主调"）"
+      "subshot_id": "S1-01-01",
+      "space_type": "内/外/转场/物件等",
+      "space_name": "场景名称",
+      "char_positions": ["角色站位/坐位/视线"],
+      "char_wardrobes": ["角色服装与外观连续性"],
+      "bg_foreground": "前景",
+      "bg_midground": "中景",
+      "bg_background": "背景",
+      "light_type": "主光源类型",
+      "light_temp": 5200,
+      "light_direction": "光源方向",
+      "light_hardness": "soft/hard/mixed",
+      "mood_atmosphere": "场景氛围"
     }
   ]
 }
@@ -494,21 +614,32 @@ Orchestrator 在拆镜时必须按以下优先级自动区分动作与台词：
 **camera-analysis 子Agent输出格式：**
 ```json
 {
-  "analysis": [
+  "items": [
     {
       "shot_id": "S1-01",
+      "subshot_id": "S1-01-01",
       "shot_size": "中文景别（全景/中景/中近景/特写/大特写）",
-      "angle": "角度（平视/俯视/仰视/偏侧+度数）",
-      "movement": "运镜类型+参数（如"横向跟拍——水平偏移50cm"）",
-      "focal_length": "mm值（如"35mm"）",
-      "axis_rule": "180度轴线描述（同场景相邻镜头必须延续）"
+      "camera_lens_mm": 35,
+      "camera_relative_pos": "相对主体位置",
+      "camera_distance_steps": 2,
+      "camera_height_relative": "齐眼/略高/略低",
+      "angle_str": "平视/俯视/仰视/偏侧",
+      "camera_facing_desc": "镜头朝向",
+      "movement_type": "fixed/push_in/pull_out/track/pan/tilt/handheld",
+      "movement_detail": "运镜参数",
+      "movement_speed": "速度",
+      "axis_start": "起始轴线",
+      "axis_end": "结束轴线",
+      "char_entry": "入画",
+      "char_exit": "出画",
+      "end_state": "落幅状态"
     }
   ]
 }
 ```
 
 **各子Agent必须遵守：**
-- `shot_id` 必须匹配 shot_plan.json 中的 shot_id，一一对应，不可缺失
+- `shot_id` 和 `subshot_id` 必须匹配 shot_plan.json，一一对应，不可缺失
 - 所有字段值使用自然语言描述，禁止纯标签堆砌
 - 多人镜时 `facial_4d` 的键名使用角色名（如"沈星雨"），值取"眼神/嘴角/呼吸/面肌"
 - 单人镜时 `facial_4d` 的键名直接写"眼神/嘴角/呼吸/面肌"
@@ -538,6 +669,20 @@ Orchestrator 在拆镜时必须按以下优先级自动区分动作与台词：
 - 示例：`虚化林荫树叶与零星行人背影|虚实:虚化65%|叙事功能:建立` → `虚化林荫树叶与零星行人背影`
 
 **camera_output.json 焦距清洗：**
+
+pipeline.py clean() 台词解析规则：
+- 必须从 shot_plan.json 顶层读取 dialogue_map，不得依赖 shot 级 dialogues 字段
+- 遍历 shot.subshots[].dialogue_refs，用 dialogue_map[ref] 获取原文
+- dia 字段格式：角色 原文，换行用换行符隔开，同镜多段台词各自标注对应角色
+- narr 字段格式：[character:角色名,text:原文]，仅含 OS/内心独白类 refs（D-MAIN-* 及类似）
+- 说话角色优先使用 subshot.characters[0]，不可回退到 shot 级 intonation 字段（后者只含主角色名）
+
+pipeline.py clean() 动作三段式构建规则：
+- beat_start：从 emotion 子Agent 的 facial_4d 字典提取所有角色的初始面部状态，合并为起幅描述
+- beat_end：从 facial_4d 字典的角色收束状态或从 action_beat_end 字段提取
+- 若 facial_4d 字典包含多人，每角色的状态都写入，不可只写第一个角色
+- export() 中 beat_start 为空时回退到 facial_4d 初始描述的模板化渲染（禁止输出空字段）
+
 - `focal_length` 的值可能包含"标准"、"广角"等描述性后缀（如 `50标准`、`35广角`）
 - **清洗规则**：只保留数字部分 + "mm"，删除"标准"、"广角"、"长焦"等后缀
 - 示例：`50标准` → `50mm`，`35广角` → `35mm`

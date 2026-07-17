@@ -71,6 +71,43 @@ description: >
 
 # Emotion Analysis — 单镜情绪表演分析器
 
+## AI Video Agent Mode 输出覆盖规则
+
+当由 `ai-video-agent-mode` 作为 Phase 2a 子Agent调用，并收到 dispatch packet 路径时，本技能必须服从调用方 packet，不使用下方独立 Markdown Output Contract。
+
+- 读取 packet JSON。
+- 只处理 `packet.items` 列出的子镜头。
+- 输出写入 `packet.output_path`。
+- 根对象必须为 `{"items": [...]}`。
+- 每个输入 `subshot_id` 必须且只能对应一个输出 item。
+- 每个 item 必须包含 `shot_id` 和 `subshot_id`。
+- 不要在聊天回复中粘贴完整 JSON，只报告写入完成和阻塞问题。
+
+最小输出形态：
+
+```json
+{
+  "items": [
+    {
+      "shot_id": "S1-01",
+      "subshot_id": "S1-01-01",
+      "emotion_type": "淡漠",
+      "expression_level": "micro",
+      "gaze": "forward",
+      "micro_expression": "none",
+      "body_tension": "moderate",
+      "body_parts_focus": "肩背紧绷，呼吸浅促",
+      "voice_tone": "none_无台词",
+      "action_beat_start": "起幅状态",
+      "action_beat_transition": "动作推进",
+      "action_beat_end": "落幅状态",
+      "emotion_trigger_short": "触发事件",
+      "performance_note": "表演要点"
+    }
+  ]
+}
+```
+
 ## Core Use
 
 将单个分镜中的人物表演、台词表达、情绪变化、心理流转化为可执行的导演级表演指令。输入是一个镜头的角色信息和语境，输出是结构化的情绪分析结果。

@@ -6,7 +6,8 @@ ENGG_PATTERN = re.compile(r"\b(vector|coordinate|coordinates|xyz|coord)\b", re.I
 
 FORBIDDEN_TEXT_FIELDS = [
     "axis_space", "camera_position", "composition", "character_action",
-    "shot_size", "lighting", "audio_design", "micro_actions"
+    "shot_size", "lighting", "dialogue_audio", "visible_characters",
+    "camera", "char_entry_exit", "end_state", "movement_detail"
 ]
 
 
@@ -40,21 +41,6 @@ def check_contamination(item):
                     issues.append((ssid, field, "JSON_IN_STRING", "do not embed JSON in text"))
                 except json.JSONDecodeError:
                     pass
-
-    # 3. Nested dicts inside dict-fields (must be plain text)
-    for parent, children in [
-        ("camera", ["lens","angle","movement","axis","transition","virtual_camera"]),
-        ("emotion", ["cause","expression_chain","micro_expression","psychology_flow","performance_anchor"]),
-        ("performance_plan", ["body_action","facial_expression","micro_actions","voice_performance","end_state"]),
-    ]:
-        pobj = item.get(parent, {})
-        if isinstance(pobj, dict):
-            for subf in children:
-                val = pobj.get(subf)
-                if isinstance(val, dict):
-                    issues.append((ssid, "%s.%s" % (parent, subf), "NESTED_DICT", "must be plain text"))
-                elif isinstance(val, list):
-                    issues.append((ssid, "%s.%s" % (parent, subf), "NESTED_LIST", "must be plain text"))
 
     return issues
 

@@ -50,9 +50,9 @@ def run(emotion_path, scene_path, camera_path, shot_plan_path, output_path,
     shot_plan = _load_json(shot_plan_path)
     dialogue_map = shot_plan.get("dialogue_map", {})
 
-    emap = {e["subshot_id"]: e for e in (emotion.get("items", []) if emotion else [])}
-    smap = {s["subshot_id"]: s for s in (scene.get("items", []) if scene else [])}
-    cmap = {c["subshot_id"]: c for c in (camera.get("items", []) if camera else [])}
+    emap = _items_by_subshot(emotion, "shots") if emotion else {}
+    smap = _items_by_subshot(scene, "analyses") if scene else {}
+    cmap = _items_by_subshot(camera, "analysis") if camera else {}
 
     items = []
     shot_index = 0
@@ -407,6 +407,18 @@ def _load_json(path):
         return json.load(f)
 
 
+def _items_by_subshot(data, legacy_key):
+    items = data.get("items")
+    if items is None:
+        items = data.get(legacy_key, [])
+    result = {}
+    for item in items:
+        ssid = item.get("subshot_id")
+        if ssid:
+            result[ssid] = item
+    return result
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 6:
         print("usage: assemble_director.py <emotion.json> <scene.json> <camera.json> <shot_plan.json> <output.json>")
@@ -430,6 +442,6 @@ def _qa_integration_handler(run_dir):
     sp = paths["scene"] if os.path.exists(paths["scene"]) else None
     cp = paths["camera"] if os.path.exists(paths["camera"]) else None
     if os.path.exists(paths["plan"]):
-        pcfg = os.path.join(run_dir, "..", "project_config.json")
+        pcfg = os.path.join(run_dir, "project_config.json")
         run(ep, sp, cp, paths["plan"], out,
             project_config_path=pcfg if os.path.exists(pcfg) else None)

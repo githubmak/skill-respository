@@ -64,94 +64,23 @@
         "duration": {"type": "number"},
         "shot_size": {"type": "string"},
         "camera_position": {"type": "string"},
-        "camera": {"$ref": "#/definitions/camera"},
+        "camera": {"type": "string"},
         "axis_space": {"type": "string"},
-        "composition": {"type": "string"},
+        "visible_characters": {"type": "string"},
         "character_action": {"type": "string"},
-        "action_beats": {"$ref": "#/definitions/action_beats"},
-        "micro_actions": {"type": "string"},
-        "emotion": {"$ref": "#/definitions/emotion"},
-        "dialogue_audio": {"$ref": "#/definitions/dialogue_audio"},
-        "lighting": {"type": "string"},
-        "audio_design": {"type": "string"},
-        "negative_risks": {"type": "array", "items": {"type": "string"}},
-        "commercial_quality": {"$ref": "#/definitions/commercial_quality"},
-        "performance_plan": {"$ref": "#/definitions/performance_plan"}
-      },
-      "required": ["shot_id", "subshot_id", "duration"]
-    },
-    "camera": {
-      "type": "object",
-      "properties": {
-        "lens": {"type": "string"},
-        "angle": {"type": "string"},
-        "movement": {"type": "string"},
-        "axis": {"type": "string"},
-        "transition": {"type": "string"},
-        "virtual_camera": {"type": "string"}
-      }
-    },
-    "action_beats": {
-      "type": "object",
-      "properties": {
-        "start": {"type": "string"},
-        "transition": {"type": "string"},
-        "contact_or_peak": {"type": "string"},
-        "end_state": {"type": "string"}
-      }
-    },
-    "emotion": {
-      "type": "object",
-      "properties": {
-        "cause": {"type": "string"},
-        "expression_chain": {"type": "string"},
-        "micro_expression": {"type": "string"},
-        "psychology_flow": {"type": "string"},
-        "performance_anchor": {"type": "string"}
-      }
-    },
-    "dialogue_audio": {
-      "type": "object",
-      "properties": {
+        "dialogue_audio": {"type": "string"},
         "dialogue_refs": {"type": "array", "items": {"type": "string"}},
-        "raw_text": {"type": "string"},
-        "dubbing_text": {"type": "string"},
-        "pause_plan": {"type": "string"},
-        "mouth_visibility": {"type": "string"},
-        "voice_performance": {"type": "string"},
-        "timing": {"$ref": "#/definitions/timing"}
-      }
-    },
-    "timing": {
-      "type": "object",
-      "properties": {
-        "char_count": {"type": "integer"},
-        "estimated_seconds": {"type": "number"},
-        "available_seconds": {"type": "number"},
-        "status": {"type": "string", "enum": ["ok", "tight", "over_limit"]}
-      }
-    },
-    "commercial_quality": {
-      "type": "object",
-      "properties": {
-        "camera_compatibility": {"type": "string"},
-        "continuity_axis": {"type": "string"},
-        "lighting_logic": {"type": "string"},
-        "performance_specificity": {"type": "string"},
-        "action_boundary": {"type": "string"},
-        "shot_size_facing": {"type": "string"},
-        "repair_notes": {"type": "array", "items": {"type": "string"}}
-      }
-    },
-    "performance_plan": {
-      "type": "object",
-      "properties": {
-        "body_action": {"type": "string"},
-        "facial_expression": {"type": "string"},
-        "micro_actions": {"type": "string"},
-        "voice_performance": {"type": "string"},
-        "end_state": {"type": "string"}
-      }
+        "dialogue_raw_text": {"type": "string"},
+        "lighting": {"type": "string"},
+        "char_entry_exit": {"type": "string"},
+        "axis_start": {"type": "string"},
+        "axis_end": {"type": "string"},
+        "movement_type": {"type": "string"},
+        "movement_detail": {"type": "string"},
+        "end_state": {"type": "string"},
+        "full_prompt": {"type": "string"}
+      },
+      "required": ["shot_id", "subshot_id", "duration", "shot_size", "camera_position", "camera", "axis_space", "character_action", "dialogue_audio", "lighting", "end_state"]
     },
     "prompt_package": {
       "type": "object",

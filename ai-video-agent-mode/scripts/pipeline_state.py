@@ -16,9 +16,9 @@ PHASE_TIMEOUT_SECONDS = {
 }
 
 PHASE_BATCH_SIZE = {
-    "emotion_analysis": 15,
-    "scene_analysis": 20,
-    "camera_movement": 25,
+    "emotion_analysis": 20,
+    "scene_analysis": 25,
+    "camera_movement": 30,
     "prompt_composer": 15,
 }
 

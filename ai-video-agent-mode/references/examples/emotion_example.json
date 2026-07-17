@@ -1,6 +1,7 @@
 {
   "items": [
     {
+      "shot_id": "S1-01",
       "subshot_id": "S1-01-01",
       "emotion_type": "淡漠",
       "expression_level": "zero",
@@ -16,6 +17,7 @@
       "performance_note": "不反应即为反应"
     },
     {
+      "shot_id": "S1-01",
       "subshot_id": "S1-01-02",
       "emotion_type": "愤怒",
       "expression_level": "extreme",
@@ -31,6 +33,7 @@
       "performance_note": "借砸酒瓶释放积压愤怒"
     },
     {
+      "shot_id": "S2-03",
       "subshot_id": "S2-03-02",
       "emotion_type": "怯弱",
       "expression_level": "full",

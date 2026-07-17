@@ -74,7 +74,7 @@
 ## 上下文管理与分批处理
 
 为避免上下文溢出，支持以下分批策略：
-- 若 shot_plan 中的 subshots 数量超过 15 个，请分批处理
+- 按主Agent派发的 dispatch packet 分批处理；不要自行按固定数量重新分批
 - 每批处理完成后，通过 send_input 请求下一批
 - 每批输出追加到同一 JSON 文件中
 - 所有批次处理完成后，写入完整输出文件
@@ -83,27 +83,36 @@
 
 ## 输出格式
 
-{
-  "subshot_id": "S1-01-01",
-  "shot_size": "FS全/LS全景/MCU/CU/MS",
-  "camera_lens_mm": 35,
-  "camera_relative_pos": "左侧后方/右侧前方/正前方/正后方",
-  "camera_distance_steps": 3,
-  "camera_height_relative": "齐肩/齐眼/平胸/齐腰",
-  "angle_str": "平视/微俯/微仰/俯拍/仰拍",
-  "camera_facing_desc": "朝画面右侧餐桌方向",
-  "movement_type": "fixed/push_in/pull_out/track/pan/tilt/handheld/whip_pan",
-  "movement_detail": "从4步处缓慢推至2步，速度0.05m/s，约3秒完成，焦点从环境收窄到面部",
-  "movement_arc_deg": 30,
-  "movement_speed": "平缓匀速/缓慢/中速/快速",
-  "axis_start": "角色A面朝左侧餐桌区域",
-  "axis_end": "角色A面朝楼梯方向",
-  "composition": "三分/中央/对称/引导线",
-  "char_entry": "从画面左侧入画",
-  "char_exit": "走向画面右侧消失/无",
-  "lens_effect": "空间压缩感强/透视变形/正常视域",
-  "body_extra": "简短动作特征15字以内",
-  "end_state": "角色A侧转身背对餐桌，右脚向前迈出"
-}
+写入 packet.output_path 指向的 camera_output.json。根对象必须是 `{"items": [...]}`，不得输出裸数组或 Markdown。
 
-items 数组顺序与 shot_plan 的 subshots 一致。
+```json
+{
+  "items": [
+    {
+      "shot_id": "S1-01",
+      "subshot_id": "S1-01-01",
+      "shot_size": "全景/中景/中近景/特写/大特写",
+      "camera_lens_mm": 35,
+      "camera_relative_pos": "左侧后方/右侧前方/正前方/正后方",
+      "camera_distance_steps": 3,
+      "camera_height_relative": "齐肩/齐眼/平胸/齐腰",
+      "angle_str": "平视/微俯/微仰/俯拍/仰拍",
+      "camera_facing_desc": "朝画面右侧餐桌方向",
+      "movement_type": "fixed/push_in/pull_out/track/pan/tilt/handheld/whip_pan",
+      "movement_detail": "从4步处缓慢推至2步，速度0.05m/s，约3秒完成，焦点从环境收窄到面部",
+      "movement_arc_deg": 30,
+      "movement_speed": "平缓匀速/缓慢/中速/快速",
+      "axis_start": "角色A面朝左侧餐桌区域",
+      "axis_end": "角色A面朝楼梯方向",
+      "composition": "三分/中央/对称/引导线",
+      "char_entry": "从画面左侧入画",
+      "char_exit": "走向画面右侧消失/无",
+      "lens_effect": "空间压缩感强/透视变形/正常视域",
+      "body_extra": "简短动作特征15字以内",
+      "end_state": "角色A侧转身背对餐桌，右脚向前迈出"
+    }
+  ]
+}
+```
+
+`items` 数组顺序必须与 dispatch packet 的 `items` 顺序一致；每个输入 `subshot_id` 必须且只能对应一个输出 item。

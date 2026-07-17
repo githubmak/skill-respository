@@ -17,10 +17,11 @@ from pipeline_state import (
 from sources import init_sources, set_batch_agent, get_failed_subshots, get_passed_subshots, mark_subshot_failed, mark_subshot_passed
 from gate_check import check as gate_check
 from agent_handoff import build_items_from_output, write_handoff
-from dispatch_cache import prepare_dispatch_packet, prepare_parallel_dispatch
+from dispatch_cache import prepare_dispatch_packet, prepare_dispatch_packets, prepare_parallel_dispatch
 
 # Plugin registry: phase handlers extend this dict
 from handler_registry import PHASE_HANDLERS
+import assemble_director  # registers qa_integration handler
 
 def register_handler(phase_name):
     """Decorator: register a handler function for a pipeline phase."""
@@ -120,6 +121,7 @@ def run(run_dir):
             "batch_size": PHASE_BATCH_SIZE.get(phase, BATCH_SIZE),
             "timeout": PHASE_TIMEOUT_SECONDS.get(phase, TIMEOUT_SECONDS),
             "dispatch_packet": prepare_dispatch_packet(run_dir, phase, PHASE_BATCH_SIZE.get(phase, BATCH_SIZE)),
+            "dispatch_packets": prepare_dispatch_packets(run_dir, phase, PHASE_BATCH_SIZE.get(phase, BATCH_SIZE)),
         }
 
     # ==== Stale agent check (agent too old, force recovery) ====
@@ -167,6 +169,7 @@ def run(run_dir):
             "batch_size": PHASE_BATCH_SIZE.get(phase, BATCH_SIZE),
             "timeout": PHASE_TIMEOUT_SECONDS.get(phase, TIMEOUT_SECONDS),
             "dispatch_packet": prepare_dispatch_packet(run_dir, phase, PHASE_BATCH_SIZE.get(phase, BATCH_SIZE)),
+            "dispatch_packets": prepare_dispatch_packets(run_dir, phase, PHASE_BATCH_SIZE.get(phase, BATCH_SIZE)),
         }
     if phase not in AGENT_PHASES and not agent_id:
         return {"action": "blocked", "phase": phase, "reason": "phase_not_marked_agent_or_local"}
@@ -336,14 +339,13 @@ def _assemble_analysis(run_dir):
     handler = PHASE_HANDLERS.get(phase)
     if handler:
         return handler(run_dir)
-    # Default: old hardcoded assemble logic for backward compat
+    # Built-in fallback if handler registration is unavailable.
     if phase == "qa_integration":
         _default_assemble(run_dir)
 
 
 def _default_assemble(run_dir):
-    """Default qa_integration handler (hardcoded emotion+scene+camera merge).
-    Replace by registering a handler for "qa_integration" phase."""
+    """Default qa_integration handler."""
     from assemble_director import run as assemble_director
     paths = {
         "emotion": os.path.join(run_dir, ".cache", "analysis", "emotion_output.json"),
@@ -356,6 +358,6 @@ def _default_assemble(run_dir):
     sp = paths["scene"] if os.path.exists(paths["scene"]) else None
     cp = paths["camera"] if os.path.exists(paths["camera"]) else None
     if os.path.exists(paths["plan"]):
-        pcfg = os.path.join(run_dir, "..", "project_config.json")
+        pcfg = os.path.join(run_dir, "project_config.json")
         assemble_director(ep, sp, cp, paths["plan"], out,
                           project_config_path=pcfg if os.path.exists(pcfg) else None)

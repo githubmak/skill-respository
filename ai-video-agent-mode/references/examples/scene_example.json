@@ -1,6 +1,7 @@
 {
   "items": [
     {
+      "shot_id": "S1-01",
       "subshot_id": "S1-01-01",
       "space_type": "indoor_hallway",
       "space_name": "玄关",
@@ -29,6 +30,7 @@
       "audio_background": "窗外城市低频嗡鸣持续"
     },
     {
+      "shot_id": "S1-01",
       "subshot_id": "S1-01-02",
       "space_type": "indoor_dining",
       "space_name": "餐厅",

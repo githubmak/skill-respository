@@ -20,7 +20,7 @@
 ## 上下文管理与分批处理
 
 为避免上下文溢出，支持以下分批策略：
-- 若 shot_plan 中的 subshots 数量超过 15 个，请分批处理
+- 按主Agent派发的 dispatch packet 分批处理；不要自行按固定数量重新分批
 - 每批处理完成后，通过 send_input 请求下一批
 - 每批输出追加到同一 JSON 文件中
 - 所有批次处理完成后，写入完整输出文件
@@ -29,29 +29,38 @@
 
 ## 输出格式
 
-{
-  "subshot_id": "S1-01-01",
-  "space_type": "indoor/outdoor/hallway/stairwell/doorway",
-  "space_name": "玄关/餐厅/卧室/走廊",
-  "char_positions": ["角色A-画面中央推门入画"],
-  "char_wardrobes": ["角色A-深色机能风外套，短发"],
-  "bg_foreground": "餐桌居中，酒瓶散落",
-  "bg_midground": "墙面挂钟，家庭照片",
-  "bg_background": "窗外城市夜景",
-  "light_type": "暖黄吊灯顶光/冷白管灯/混合光",
-  "light_temp": 3200,
-  "light_direction": "正顶光向下/侧前方45度",
-  "light_hardness": "soft/hard/mixed",
-  "light_effect_primary_char": "冷蓝光从头顶偏后打下",
-  "light_effect_other_chars": "暖色钨丝灯从侧方照亮餐桌",
-  "color_contrast_desc": "冷蓝角色A vs 暖色餐桌区",
-  "mood_atmosphere": "压抑紧张/暖黄温馨/冷清疏离",
-  "bgm_style": "极简电子pad长音/钢琴独奏/弦乐铺垫/低频sub-bass/无",
-  "ambient_sound": "走廊管灯低频嗡鸣/窗外城市霓虹/室内静默/楼道回声",
-  "sfx_timing": "脚步声每步0.35s/拍桌声+共振余韵0.3s/关门声轻响",
-  "audio_foreground": "角色A靴子踩木地板硬底声/碗筷碰撞声/脚步声",
-  "audio_midground": "外套布料摩擦沙沙声/桌椅挪动声",
-  "audio_background": "窗外城市低频电气嗡鸣/远处电轨刹车声/室内钟摆滴答"
-}
+写入 packet.output_path 指向的 scene_output.json。根对象必须是 `{"items": [...]}`，不得输出裸数组或 Markdown。
 
-items 数组顺序与 shot_plan 的 subshots 一致。
+```json
+{
+  "items": [
+    {
+      "shot_id": "S1-01",
+      "subshot_id": "S1-01-01",
+      "space_type": "indoor/outdoor/hallway/stairwell/doorway",
+      "space_name": "玄关/餐厅/卧室/走廊",
+      "char_positions": ["角色A-画面中央推门入画"],
+      "char_wardrobes": ["角色A-深色机能风外套，短发"],
+      "bg_foreground": "餐桌居中，酒瓶散落",
+      "bg_midground": "墙面挂钟，家庭照片",
+      "bg_background": "窗外城市夜景",
+      "light_type": "暖黄吊灯顶光/冷白管灯/混合光",
+      "light_temp": 3200,
+      "light_direction": "正顶光向下/侧前方45度",
+      "light_hardness": "soft/hard/mixed",
+      "light_effect_primary_char": "冷蓝光从头顶偏后打下",
+      "light_effect_other_chars": "暖色钨丝灯从侧方照亮餐桌",
+      "color_contrast_desc": "冷蓝角色A vs 暖色餐桌区",
+      "mood_atmosphere": "压抑紧张/暖黄温馨/冷清疏离",
+      "bgm_style": "极简电子pad长音/钢琴独奏/弦乐铺垫/低频sub-bass/无",
+      "ambient_sound": "走廊管灯低频嗡鸣/窗外城市霓虹/室内静默/楼道回声",
+      "sfx_timing": "脚步声每步0.35s/拍桌声+共振余韵0.3s/关门声轻响",
+      "audio_foreground": "角色A靴子踩木地板硬底声/碗筷碰撞声/脚步声",
+      "audio_midground": "外套布料摩擦沙沙声/桌椅挪动声",
+      "audio_background": "窗外城市低频电气嗡鸣/远处电轨刹车声/室内钟摆滴答"
+    }
+  ]
+}
+```
+
+`items` 数组顺序必须与 dispatch packet 的 `items` 顺序一致；每个输入 `subshot_id` 必须且只能对应一个输出 item。

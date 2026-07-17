@@ -59,6 +59,9 @@ def auto_width(ws, max_width=60, min_width=8):
 def export(pkg_path, plan_path, out):
     """Generate styled 7-sheet Excel workbook."""
     ensure_pycache_prefix_from_path(out)
+    out_dir = os.path.dirname(os.path.abspath(out))
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     with open(pkg_path, "r", encoding="utf-8-sig") as f:
         pp = json.load(f)
     with open(plan_path, "r", encoding="utf-8-sig") as f:

@@ -41,7 +41,7 @@ items=[
 ## 上下文管理与分批处理
 
 为避免上下文溢出，支持以下分批策略：
-- 若 shot_plan 中的 subshots 数量超过 15 个，请分批处理
+- 按主Agent派发的 dispatch packet 分批处理；不要自行按固定数量重新分批
 - 每批处理完成后，通过 send_input 请求下一批
 - 每批输出追加到同一 JSON 文件中
 - 所有批次处理完成后，写入完整输出文件
@@ -50,22 +50,29 @@ items=[
 
 ## 输出格式（结构化JSON）
 
-写入 emotion_output.json。每项必须含以下字段：
+写入 packet.output_path 指向的 emotion_output.json。根对象必须是 `{"items": [...]}`，不得输出裸数组或 Markdown。每项必须含以下字段：
 
+```json
 {
-  "subshot_id": "S1-01-01",
-  "emotion_type": "淡漠/愤怒/失落/怯弱/愧疚/欣喜",
-  "expression_level": "zero/micro/full/extreme",
-  "gaze": "forward/down/away/at_[target]/up/avoid",
-  "micro_expression": "none/brief_[type]",
-  "body_tension": "relaxed/moderate/tense/extreme",
-  "body_parts_focus": "手指攥紧领口/肩背紧绷/呼吸浅促",
-  "voice_tone": "none/calm/trembling/sharp/warm/flat/cold",
-  "action_beat_start": "角色A推门站定玄关，15字以内",
-  "action_beat_transition": "目光从左至右缓缓扫过，15字以内",
-  "action_beat_end": "转身走向楼梯方向，15字以内",
-  "emotion_trigger_short": "看到角色D担忧的眼神，15字以内",
-  "performance_note": "冷漠通过减少动作传递，25字以内"
+  "items": [
+    {
+      "shot_id": "S1-01",
+      "subshot_id": "S1-01-01",
+      "emotion_type": "淡漠/愤怒/失落/怯弱/愧疚/欣喜",
+      "expression_level": "zero/micro/full/extreme",
+      "gaze": "forward/down/away/at_[target]/up/avoid",
+      "micro_expression": "none/brief_[type]",
+      "body_tension": "relaxed/moderate/tense/extreme",
+      "body_parts_focus": "手指攥紧领口/肩背紧绷/呼吸浅促",
+      "voice_tone": "none/calm/trembling/sharp/warm/flat/cold",
+      "action_beat_start": "角色推门站定玄关，15字以内",
+      "action_beat_transition": "目光从左至右缓缓扫过，15字以内",
+      "action_beat_end": "转身走向楼梯方向，15字以内",
+      "emotion_trigger_short": "看到对方担忧眼神，15字以内",
+      "performance_note": "冷漠通过减少动作传递，25字以内"
+    }
+  ]
 }
+```
 
-items 数组顺序必须与 shot_plan 的 subshots 顺序一致。
+`items` 数组顺序必须与 dispatch packet 的 `items` 顺序一致；每个输入 `subshot_id` 必须且只能对应一个输出 item。

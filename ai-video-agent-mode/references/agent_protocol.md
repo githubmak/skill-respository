@@ -7,34 +7,31 @@
 | 情绪分析 | emotion-analysis | emotion_output.json | 与2b/2c并行 |
 | 场景分析 | frames-analysis | scene_output.json | 与2a/2c并行 |
 | 镜头运镜 | camera-analysis | camera_output.json | 与2a/2b并行 |
-| QA/整合 | content-review | director_pass.json | 串行依赖前3个 |
+| Prompt Composer | prompt-composer | prompt_package.json | 串行依赖本地整合 |
+| Editor Pass 2 | editor-review | review/llm_gate_result.json | 串行依赖 Editor Pass 1 |
 
 ## 输出字段规范
 
-### emotion_output.json 每项：
-shot_id, subshot_id
-emotion: {cause, expression_chain, micro_expression, psychology_flow, performance_anchor}
-character_action (>=50), micro_actions (>=15)
-performance_plan: {body_action, facial_expression, micro_actions, voice_performance, end_state}
+所有子Agent输出统一使用 `items[]`。每个 item 必须包含 `shot_id` 和 `subshot_id`，主Agent和本地整合只按 `subshot_id` 对齐。
 
-### scene_output.json 每项：
-shot_id, subshot_id
-axis_space (>=30), composition, lighting (>=30), audio_design (>=20)
+### emotion_output.json
+`items[]`: shot_id, subshot_id, emotion_type, expression_level, gaze, micro_expression, body_tension, body_parts_focus, voice_tone, action_beat_start, action_beat_transition, action_beat_end, emotion_trigger_short, performance_note
 
-### camera_output.json 每项：
-shot_id, subshot_id
-shot_size, camera_position (>=20)
-camera: {lens, angle, movement, axis, transition, virtual_camera}
+### scene_output.json
+`items[]`: shot_id, subshot_id, space_type, space_name, char_positions, char_wardrobes, bg_foreground, bg_midground, bg_background, light_type, light_temp, light_direction, light_hardness, mood_atmosphere, audio_* fields
 
-### director_pass.json（由QA/整合Agent产出）
-包含以上全部字段 + dialogue_audio + negative_risks + commercial_quality
+### camera_output.json
+`items[]`: shot_id, subshot_id, shot_size, camera_lens_mm, camera_relative_pos, camera_distance_steps, camera_height_relative, angle_str, camera_facing_desc, movement_type, movement_detail, movement_speed, axis_start, axis_end, char_entry, char_exit, end_state
+
+### director_pass.json（由本地 qa_integration handler 产出）
+`items[]` 按 subshot_id 合并以上字段，并生成 `merged_full_prompts[]`。
 
 ## 失败重派与超时
 
 | 条件 | 处理方式 |
 |------|---------|
-| 超时(>5min) | 自动重派，最多 4 次 |
-| 连续超时 3 次 | 强制推进到下一阶段（带警告） |
+| 超时 | 按阶段超时自动重派，最多 4 次 |
+| 连续超时 3 次 | blocking，不自动带问题推进 |
 | Agent 失活(>10min) | 触发 recover → 重派新Agent |
 | 输出不存在 | 重派（与超时共用计数器） |
 | 分析矛盾 | 通过 qa_integration 的 repair_notes 记录 |
@@ -52,7 +49,7 @@ camera: {lens, angle, movement, axis, transition, virtual_camera}
 
 | 策略 | 操作 |
 |------|------|
-| 分批处理 | subshots > 15 个时拆分为多批，通过 send_input 逐批处理 |
+| 分批处理 | 按阶段上限拆分为多个 `.cache/dispatch/*_batchNNN_packet.json`，通过 send_input 逐批处理 |
 | 增量追加 | 每批结果追加到同一JSON数组，最后统一写入 |
 | 重试刷新 | send_back 发现原 Agent 失活时，重新 spawn_agent 并附带 `.cache/handoff/*_handoff.json` 中的上下文摘要 |
 | 轻量化输入 | 每批只传当前需要处理的 subshot 数据，不重复全量 shot_plan |

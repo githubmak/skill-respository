@@ -43,6 +43,46 @@ description: >
 
 # Camera Analysis — 单镜运镜景别分析器
 
+## AI Video Agent Mode 输出覆盖规则
+
+当由 `ai-video-agent-mode` 作为 Phase 2c 子Agent调用，并收到 dispatch packet 路径时，本技能必须服从调用方 packet，不使用下方独立 Markdown Output Contract。
+
+- 读取 packet JSON。
+- 只处理 `packet.items` 列出的子镜头。
+- 输出写入 `packet.output_path`。
+- 根对象必须为 `{"items": [...]}`。
+- 每个输入 `subshot_id` 必须且只能对应一个输出 item。
+- 每个 item 必须包含 `shot_id` 和 `subshot_id`。
+- 不要在聊天回复中粘贴完整 JSON，只报告写入完成和阻塞问题。
+
+最小输出形态：
+
+```json
+{
+  "items": [
+    {
+      "shot_id": "S1-01",
+      "subshot_id": "S1-01-01",
+      "shot_size": "中近景",
+      "camera_lens_mm": 35,
+      "camera_relative_pos": "正前方",
+      "camera_distance_steps": 2,
+      "camera_height_relative": "齐眼",
+      "angle_str": "平视",
+      "camera_facing_desc": "朝向主体面部",
+      "movement_type": "fixed",
+      "movement_detail": "固定镜头，保留轻微呼吸感",
+      "movement_speed": "无",
+      "axis_start": "轴线起点",
+      "axis_end": "轴线终点",
+      "char_entry": "无",
+      "char_exit": "无",
+      "end_state": "落幅状态"
+    }
+  ]
+}
+```
+
 ## Core Use
 
 将单个分镜的摄影机需求转化为可执行的量化指令。不处理情绪（`$emotion-analysis`）、画面内容（`$frames-analysis`）、多镜编排（`$split-script-to-storyboard`）。独立调用时作为摄影机/运镜规划工具使用。
@@ -269,3 +309,9 @@ Ladder: `大远景 → 远景 → 全景 → 中景 → 中近景 → 近景 →
 3. 按输入契约组装后执行完整分析
 4. 前镜信息不完整→标注"首镜"，注明"单镜分析，无前后对照"
 5. 单镜场景规划：跳过连续性检查，专注景别/角度/焦段/运镜核心输出
+
+
+## Structured JSON Reminder
+
+独立调用时可使用上方 Markdown Output Contract。  
+被 `ai-video-agent-mode` 调用时，必须使用本文开头的 **AI Video Agent Mode 输出覆盖规则**：根对象为 `{"items": [...]}`，每项包含 `shot_id` 和 `subshot_id`，并写入 dispatch packet 的 `output_path`。

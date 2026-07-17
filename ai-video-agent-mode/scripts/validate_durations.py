@@ -9,16 +9,42 @@ block_source_pycache_until_run_dir()
 from shot_semantics import is_true_non_action_subshot
 
 # Chinese dialogue delivery speed: chars/sec
-DIALOGUE_CHARS_PER_SEC = 3.5
+DIALOGUE_CHARS_PER_SEC = 4.5
 PAUSE_PER_PUNCTUATION = 0.3     # seconds per ,/、/；
 PAUSE_PER_SENTENCE_END = 0.5     # seconds per 。/！/？/……
 ACTION_TIME_BASE = 2.0           # default action time per subshot (seconds)
+
+# Emotion-based speed adjustment (multiplier on base 4.5 chars/sec)
+EMOTION_SPEED = {
+    "激动": 1.2, "兴奋": 1.2, "慌乱": 1.1, "炸裂": 1.2,
+    "崩溃": 1.1, "热情": 1.1, "愉快": 1.1, "急切": 1.2,
+    "催促": 1.2,
+    "迟疑": 0.85, "压抑": 0.85, "阴沉": 0.85, "低落": 0.8,
+    "委屈": 0.85, "嘲讽": 0.8, "威胁": 0.8, "冷淡": 0.85,
+    "忰忐": 0.85, "隐忍": 0.85, "暗沉": 0.85, "失落": 0.85,
+    "无奈": 0.9, "无语": 0.9, "吐槽": 0.95,
+}
+DEFAULT_SPEED_FACTOR = 1.0
+
+
+# Emotion-based speed adjustment (multiplier on base 4.5 chars/sec)
+EMOTION_SPEED = {
+    "激动": 1.2, "兴奋": 1.2, "慌乱": 1.1, "炸裂": 1.2,
+    "崩溃": 1.1, "热情": 1.1, "愉快": 1.1, "急切": 1.2,
+    "催促": 1.2,
+    "迟疑": 0.85, "压抑": 0.85, "阴沉": 0.85, "低落": 0.8,
+    "委屈": 0.85, "嘲讽": 0.8, "威胁": 0.8, "冷淡": 0.85,
+    "忰忐": 0.85, "隐忍": 0.85, "暗沉": 0.85, "失落": 0.85,
+    "无奈": 0.9, "无语": 0.9, "吐槽": 0.95,
+}
+DEFAULT_SPEED_FACTOR = 1.0
+
 
 PUNCTUATION_CHARS = set(",，、；")
 SENTENCE_ENDS = set("。！？…\u2026")
 
 
-def _estimate_dialogue_seconds(dialogue_text):
+def _estimate_dialogue_seconds(dialogue_text, emotion_tone=""):
     """Calculate minimum time needed to deliver a line of dialogue naturally.
     Accounts for: character count at speaking rate + punctuation pauses + sentence-end dwell."""
     if not dialogue_text:
@@ -30,7 +56,14 @@ def _estimate_dialogue_seconds(dialogue_text):
     chars = len(text)
     punct_pauses = sum(1 for c in text if c in PUNCTUATION_CHARS)
     sent_pauses = sum(1 for c in text if c in SENTENCE_ENDS)
-    duration = chars / DIALOGUE_CHARS_PER_SEC + punct_pauses * PAUSE_PER_PUNCTUATION + sent_pauses * PAUSE_PER_SENTENCE_END
+    speed_factor = DEFAULT_SPEED_FACTOR
+    if emotion_tone:
+        for keyword in EMOTION_SPEED:
+            if keyword in emotion_tone:
+                speed_factor = EMOTION_SPEED[keyword]
+                break
+    effective_speed = DIALOGUE_CHARS_PER_SEC * speed_factor
+    duration = chars / effective_speed + punct_pauses * PAUSE_PER_PUNCTUATION + sent_pauses * PAUSE_PER_SENTENCE_END
     return max(round(duration, 1), 0.5)
 
 
@@ -117,15 +150,16 @@ def validate(sp_path, max_per_shot=15, max_total=600, project_config_path=None):
             # === Dialogue-content timing check ===
             dialogue_refs = ss.get("dialogue_refs", [])
             total_dialogue_secs = 0.0
+            emotion_tone = ss.get("emotion_tone", "")
             for ref in dialogue_refs:
                 dia_text = dialogue_map.get(ref, "")
                 if dia_text:
-                    total_dialogue_secs += _estimate_dialogue_seconds(dia_text)
+                    total_dialogue_secs += _estimate_dialogue_seconds(dia_text, emotion_tone)
 
             action_secs = _estimate_action_seconds(ss.get("base_action", ""), ss)
-            needed_secs = total_dialogue_secs + action_secs * 0.5  # actions overlap with dialogue
+            needed_secs = max(total_dialogue_secs, action_secs) + 0.5  # per SKILL.md: max(dialogue,action)+reaction_blank
 
-            if total_dialogue_secs > 0 and d < needed_secs:
+            if total_dialogue_secs > 0 and d + 0.001 < needed_secs:
                 issues.append(("%s/%s" % (sid, ssid), "duration_too_short",
                     d, ">=%.1f (dialogue %.1fs + action %.1fs)" % (
                         needed_secs, total_dialogue_secs, action_secs)))

@@ -1,6 +1,7 @@
 {
   "items": [
     {
+      "shot_id": "S1-01",
       "subshot_id": "S1-01-01",
       "shot_size": "FS全",
       "camera_lens_mm": 24,
@@ -23,6 +24,7 @@
       "end_state": "到达特写位置，角色A面部占画面1/3"
     },
     {
+      "shot_id": "S1-01",
       "subshot_id": "S1-01-02",
       "shot_size": "LS全景",
       "camera_lens_mm": 24,
@@ -45,6 +47,7 @@
       "end_state": "酒瓶落在桌面后震动消失，恢复微晃持镜"
     },
     {
+      "shot_id": "S2-03",
       "subshot_id": "S2-03-02",
       "shot_size": "MS双人",
       "camera_lens_mm": 35,

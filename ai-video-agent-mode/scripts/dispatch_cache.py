@@ -31,6 +31,54 @@ PHASE_INPUTS = {
 }
 
 
+def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
+    """Materialize one or more phase input packets and return their paths.
+
+    Each packet contains only the items for that batch. The full source_path is
+    still included so a worker can recover surrounding context when needed, but
+    packet.items is the authority for what the worker may write.
+    """
+    ensure_pycache_prefix(run_dir)
+    source_path = os.path.join(run_dir, PHASE_INPUTS.get(phase, ""))
+    if not source_path or not os.path.exists(source_path):
+        return []
+
+    data = _load_json(source_path)
+    wanted = set(subshot_ids or [])
+    items = _extract_items(data, wanted)
+    if not items:
+        return []
+
+    size = int(batch_size or len(items) or 1)
+    size = max(size, 1)
+    chunks = [items[i:i + size] for i in range(0, len(items), size)]
+    out_dir = os.path.join(run_dir, ".cache", "dispatch")
+    os.makedirs(out_dir, exist_ok=True)
+    paths = []
+
+    for idx, chunk in enumerate(chunks, 1):
+        packet = {
+            "phase": phase,
+            "run_dir": run_dir,
+            "source_path": source_path,
+            "project_config_path": os.path.join(run_dir, "project_config.json"),
+            "output_path": os.path.join(run_dir, PHASE_OUTPUTS.get(phase, ".cache/%s_output.json" % phase)),
+            "batch_index": idx,
+            "total_batches": len(chunks),
+            "batch_size": size,
+            "total_item_count": len(items),
+            "subshot_count": len(chunk),
+            "items": chunk,
+            "instruction": "Read source_path for context, process only packet.items, and append or merge results into output_path by subshot_id. Do not paste unchanged source content back into chat.",
+        }
+        suffix = "" if len(chunks) == 1 else "_batch%03d" % idx
+        out_path = os.path.join(out_dir, "%s%s_packet.json" % (phase, suffix))
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(packet, f, ensure_ascii=False, indent=2)
+        paths.append(out_path)
+    return paths
+
+
 def prepare_dispatch_packet(run_dir, phase, batch_size=None, subshot_ids=None):
     """Materialize a phase input packet and return its path.
 
@@ -38,38 +86,14 @@ def prepare_dispatch_packet(run_dir, phase, batch_size=None, subshot_ids=None):
     A worker should read source files from the paths in the packet instead of
     receiving full source text in the spawn message.
     """
-    ensure_pycache_prefix(run_dir)
-    source_path = os.path.join(run_dir, PHASE_INPUTS.get(phase, ""))
-    if not source_path or not os.path.exists(source_path):
-        return None
-
-    data = _load_json(source_path)
-    wanted = set(subshot_ids or [])
-    items = _extract_items(data, wanted)
-    packet = {
-        "phase": phase,
-        "run_dir": run_dir,
-        "source_path": source_path,
-        "project_config_path": os.path.join(run_dir, "project_config.json"),
-        "output_path": os.path.join(run_dir, PHASE_OUTPUTS.get(phase, ".cache/%s_output.json" % phase)),
-        "batch_size": batch_size,
-        "subshot_count": len(items),
-        "items": items,
-        "instruction": "Read source_path and process only items listed here. Do not paste unchanged source content back into chat; write the output_path JSON file.",
-    }
-
-    out_dir = os.path.join(run_dir, ".cache", "dispatch")
-    os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, "%s_packet.json" % phase)
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(packet, f, ensure_ascii=False, indent=2)
-    return out_path
+    paths = prepare_dispatch_packets(run_dir, phase, batch_size, subshot_ids)
+    return paths[0] if paths else None
 
 
 def prepare_parallel_dispatch(run_dir, phases, batch_sizes=None):
     batch_sizes = batch_sizes or {}
     return {
-        phase: prepare_dispatch_packet(run_dir, phase, batch_sizes.get(phase))
+        phase: prepare_dispatch_packets(run_dir, phase, batch_sizes.get(phase))
         for phase in phases
     }
 

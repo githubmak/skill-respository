@@ -155,7 +155,7 @@ def _write_llm_review_packet(run_dir, phase, prompt_path, shot_plan_path, direct
             "  \"blocking\": [],",
             "  \"warnings\": [],",
             "  \"repair_targets\": [",
-            "    {\"subshot_id\": \"S1-01-01\", \"send_back_to\": \"camera-analysis|emotion-analysis|frames-analysis|prompt-composer|qa-integration\", \"reason\": \"...\"}",
+            "    {\"subshot_id\": \"S1-01-01\", \"send_back_to\": \"camera_movement|emotion_analysis|scene_analysis|prompt_composer|editor_pass2\", \"reason\": \"...\"}",
             "  ]",
             "}",
             "```",
