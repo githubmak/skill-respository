@@ -57,6 +57,106 @@ $env:PYTHONPYCACHEPREFIX = "C:\path\to\export\.cache\pycache"
    - `.cache/analysis/*.json`：三路分析结果。
    - `.cache/handoff/*_handoff.json`：短摘要恢复记忆。
    - `.cache/review/*`：脚本门禁与LLM审查结果。
+### 落盘调度优化（数据文件+子Agent文件读写）
+
+从 2026-07-17 起，子Agent采用**落盘调度**代替全量文本嵌入：
+
+#### 原理
+子Agent通过 spawn_agent 启动后，可以使用 shell_command 读取和写入本地文件。
+利用这一能力，将镜头数据写入紧凑 JSON 文件再派发，取代将全部数据嵌入 spawn message。
+
+#### 优势对比
+| 对比项 | 传统方式（全量嵌入） | 落盘调度方式 |
+|--------|-------------------|------------|
+| spawn message 大小 | ~2000 tokens | ~200 tokens |
+| 数据格式 | 文本中混合 JSON | 纯 JSON 文件 |
+| 子Agent解析成本 | 需从文本拆JSON | 直接 json.load() |
+| 批量处理 | 需分批 send_input | 一次读完整个文件 |
+| 重试效率 | 需重发完整数据 | 文件不动，只发失败shot_id |
+
+#### 调度流程
+
+Phase 1（Orchestrator 本地）：
+  拆镜 → shot_plan.json
+
+Pre-Dispatch（Orchestrator 本地）：
+  → 为每个子Agent生成紧凑 JSON：emotion_data.json / scene_data.json / camera_data.json
+  → 写入 .cache/dispatch/{phase}_data.json
+  → 每个JSON只包含该子Agent需要的字段，字段名用缩写（id/chars/acts/diags/narrs/dur/desc）
+
+Phase 2a/2b/2c（并行 spawn 子Agent）：
+  → spawn_agent 的 task 中写：
+    "读取 {export_root}\.cache\dispatch\{phase}_data.json 处理所有镜头
+     输出 JSON 写入 C:\path\to\.cache\analysis\{phase}_output.json
+     格式要求见子Agent输出JSON格式规范"
+  → 子Agent用 python -c "import json; json.load(open(path))" 读取
+  → 处理后用 json.dump() 写入输出文件
+  → 最后在主Agent的完成消息中回传 "已完成 N 镜，输出到 {path}"
+
+#### 紧凑JSON格式约定
+
+字段名缩写规则（所有子Agent通用）：
+- id → shot_id
+- chars → characters（数组）
+- acts → actions（数组）
+- diags → dialogues（数组，每元素含 char/text/tone）
+- narrs → narrations（数组，每元素含 ch/t）
+- dur → duration（数字）
+- desc → description（字符串）
+
+各子Agent dispatch 文件只包含该子Agent所需的字段：
+- emotion_data.json: id, chars, acts, diags, narrs, desc, dur
+- scene_data.json: id, chars, acts, desc
+- camera_data.json: id, chars, desc, dur, acts
+
+示例 emotion_data.json：
+```json
+[
+  {"id":"S1-01","chars":["沈星雨","宋南枝"],"acts":["...走路..."],"diags":[],"narrs":[{"ch":"沈星雨","t":"说起沈星州..."}],"desc":"...","dur":8},
+  {"id":"S1-02","chars":["沈星雨","宋南枝","江训"],"acts":["...江训闯入...","...偷拍..."],"diags":[{"ch":"宋南枝","t":"那不是江训么？","tone":"凑在沈星雨耳边小声嘀咕"}],"narrs":[{"ch":"沈星雨","t":"啧，就是这种劲儿劲儿的样子"}],"desc":"...","dur":10}
+]
+```
+
+#### 子Agent操作指令模板
+
+子Agent收到 spawn 后的标准读取-处理-写入流程：
+
+```python
+import json, sys
+
+# 读取数据
+try:
+    with open("<dispatch_path>", "r", encoding="utf-8") as f:
+        shots = json.load(f)
+except Exception as e:
+    print(f"ERROR: cannot read dispatch file: {e}")
+    sys.exit(1)
+
+# 逐镜分析
+output = {"shots": []}
+for s in shots:
+    analysis = {
+        "shot_id": s["id"],
+        # ... 按输出格式规范填充各字段
+    }
+    output["shots"].append(analysis)
+
+# 写入输出
+with open("<output_path>", "w", encoding="utf-8") as f:
+    json.dump(output, f, ensure_ascii=False, indent=2)
+# 格式校验
+with open("<output_path>", "r", encoding="utf-8") as f:
+    verify = json.load(f)
+if len(verify.get("shots", verify.get("analyses", verify.get("analysis", [])))) != len(shots):
+    raise RuntimeError(f"Output shot count mismatch: expected {len(shots)}, got {len(verify)}")
+
+print(f"完成 {len(shots)} 镜分析，输出到 <output_path>")
+```
+
+主Agent通过 wait_agent 拿到子Agent的完成消息后，
+用相同方式读取 `<output_path>` 获取分析结果，
+无需从消息文本中解析 JSON。
+
 
 如果 packet 存在，主Agent必须优先让子Agent读 packet；只有 packet 缺失或损坏时，才回退到直接下发最小必要镜头数据。
 
@@ -70,10 +170,10 @@ Phase 2c: 镜头运镜 子Agent ($camera-analysis)   → camera_output.json
 Phase 3:  QA/整合 (本地+handler)            → director_pass.json
 Phase 4:  Director 质量验证 (本地门禁)       → 校验通过才继续
 Phase 5:  连续性检查 (不可跳过)               → continuity_check.py
-Phase 6:  Prompt Composer (全走子Agent·自动调用质感参考指南)  → prompt_package.json → 校验失败重派
+Phase 6:  数据清洗+自动分组+Prompt Composer (全走子Agent)   → pipeline.py --clean --group → prompt_package.json → 校验失败重派
 Phase 7:  Editor Pass 1 (不可跳过)            → merge_prompts.py
 Phase 8:  Editor Pass 2 表演增强\+LLM评审 \(不可跳过\)     → enhance_performance.py + hybrid_gate.py + LLM review
-Phase 9:  最终验证 (不可跳过)                 → validate_prompt_package.py + hybrid_gate.py
+Phase 9:  最终验证 (不可跳过·含语义校验)                 → pipeline.py --validate + validate_prompt_package.py + hybrid_gate.py
 Phase 10: 导出 (不可跳过)                    → export_workbook.py → Excel+Markdown
 
 ### Phase 2a/2b/2c 并行下发
@@ -88,9 +188,9 @@ Phase 10: 导出 (不可跳过)                    → export_workbook.py → Ex
 
 | 技能 | 单批上限 | wait_agent 超时 | 原因 |
 |------|---------|----------------|------|
-| emotion-analysis（情绪） | 15 镜 | 900s（15min） | 每镜需生成大量自由文本（面部四维+因果链+心理流+语调标注） |
-| frames-analysis（场景） | 20 镜 | 600s（10min） | 结构化填空为主，画面模板可复用 |
-| camera-analysis（运镜） | 25 镜 | 600s（10min） | 定量参数为主，负载最轻 |
+| emotion-analysis（情绪） | 20 镜 | 900s（15min） | 每镜需生成大量自由文本（facial_4d/causality/pause/intonation），≤10镜可降至600s |
+| frames-analysis（场景） | 25 镜 | 600s（10min） | 结构化为主含空间分层+光影，≤10镜可降至300s |
+| camera-analysis（运镜） | 30 镜 | 600s（10min） | 定量参数为主，≤10镜可降至300s |
 
 超出单批上限时，主Agent按以下模式分批投递，所有批次写入同一 JSON 文件（增量追加模式）：
 
@@ -108,6 +208,58 @@ wait_agent(agent_id, timeout=900s)
 - 但首批仅下发单批上限以内的镜头数据
 - wait_agent 的超时时间必须使用上表对应技能的数值，不可统一用默认值
 - send_input 的 message 末尾必须明确已通过镜头数 + 剩余批次数
+- send_input 的 message 末尾必须明确已通过镜头数 + 剩余批次数
+
+### 独立调度规则（减少串行等待时间）
+
+主Agent在派发子Agent批次时，不必等待所有三个子Agent完成再发下一批。
+
+**独立调度规则：**
+每个子Agent独立完成一批后，立即发下一批，不等其他子Agent。
+
+正确做法（推荐）：
+```
+# camera 第1批先完成
+send_input(target=avicenna, message="第2批...")  # 不等 emotion
+send_input(target=confucius, message="第2批...")  # 不等 emotion
+# emotion 完成后
+send_input(target=bohr, message="第2批...")
+```
+
+错误做法（禁止）：
+```
+wait_agent(bohr, confucius, avicenna)  # 等最慢的
+send_input(bohr, "第2批...")            # camera 空等 7 分钟
+send_input(confucius, "第2批...")
+send_input(avicenna, "第2批...")
+```
+
+**预嵌入数据规则（落盘优先·嵌入后备）：**
+
+默认方式：通过 dispatch 文件传递数据（推荐）：
+  send_input 的 message 中写 "读取 {export_root}\.cache\dispatch\{phase}_data.json"
+  子Agent用 json.load(open(path)) 读取紧凑JSON，无需从文本解析。
+  dispatch 文件由 generate_dispatches(export_root, shot_plan) 在 spawn 前生成。
+  字段名使用缩写（id/chars/acts/diags/narrs/dur/desc），文件比 shot_plan.json 小约60%。
+
+后备方式：dispatch 文件不存在时，直接嵌入本批镜头完整字段数据：
+  send_input 的 message 中嵌入该批镜头的全部字段数据（shot_id, characters, actions, 
+  dialogues（含 tone）, narrations, description, duration）。
+  子Agent收到消息后直接处理，无需读取文件。
+
+两种方式互斥：dispatch 文件存在时优先用文件，不存在时才嵌入。
+
+示例：
+```
+第N批：以下为本批 N 个镜头的完整数据（已嵌入，无需读取 shot_plan.json）：
+[
+  {"shot_id":"S1-XX","description":"...","characters":["..."],"duration":4,"dialogues":[{"character":"...","text":"...","tone":"..."}],"narrations":[{"character":"...","text":"..."}],"actions":["..."]},
+  ...
+]
+
+输出必须按照 "### 子Agent输出JSON格式规范" 中的字段定义，一个shot_id对应一个输出元素，
+确保所有字段类型和键名严格匹配，主Agent会在 merge 阶段直接读取。
+'''
 
 
 - emotion-analysis 子Agent必须读取 `references/dynamic_performance_reference.md` 中的面部表情与台词语气同步章节，将可见的微表情、语气和生理时序按剧情改写后写入情绪分析输出
@@ -117,8 +269,8 @@ wait_agent(agent_id, timeout=900s)
 
 ### 子Agent重试与超时
 
-- 子Agent最多重试 4 次（共 5 次尝试）
-- 每阶段超时时间按技能复杂度设定（参见上方"分批派发规则"表格），不可统一用默认值
+- 子Agent最多重试 4 次（共 5 次尝试），每次重试使用 send_back 只传本批仍失败的 shot_id
+- 每阶段超时时间按技能复杂度设定（参见上方"分批派发规则"表格）。超时后主Agent应：1) send_input 询问状态；2) 如3次无响应则重新spawn
 - 超时后自动重派，连续超时 3 次后强制推进
 - Agent 失活（10 分钟无响应）自动触发 recover 动作 → 重派新 Agent
 
@@ -172,11 +324,26 @@ Phase 2c: 镜头运镜 子Agent ($camera-analysis)   → camera_output.json
 Phase 3:  QA/整合 子Agent ($content-review)    → director_pass.json
 Phase 4:  连续性检查 (不可跳过)               → continuity_check.py --live
 Phase 5:  Prompt Composer (全走子Agent)       → prompt_package.json → 校验失败重派
-Phase 6:  Editor Pass 1 (不可跳过·自动调用质感参考指南)  → merge_prompts.py
+Phase 6:  数据清洗+自动分组+Editor Pass 1 (不可跳过)  → pipeline.py --clean --group → merge_prompts.py
 Phase 7:  Editor Pass 2 LLM评审 (不可跳过·自动调用质感参考指南)  → hybrid_gate.py → editor_pass2_prompt()
-Phase 8:  最终验证 (不可跳过)                 → validate_prompt_package.py + hybrid_gate.py
-Phase 9:  导出 (不可跳过)                    → export_workbook.py → Excel+Markdown
+Phase 8:  最终验证 (不可跳过·含语义校验)      → pipeline.py --validate + validate_prompt_package.py + hybrid_gate.py
+Phase 9:  导出 (不可跳过)                    → pipeline.py --export
 ```
+
+
+
+### Phase 1 拆镜解析规则
+
+Orchestrator 在拆镜时必须按以下优先级自动区分动作与台词：
+
+1. **动作标记前缀优先**：段落以 `△`、`动作：`、`字幕：` 或 `△闪回` 开头 → 标记为动作描述，`description` 字段写入去除前缀后的文本。**不解析台词。**
+2. **冒号检测**：段落包含 `：` → 检查冒号前方的文本是否在已知角色名列表中（沈星雨/宋南枝/江训/向云初/许承/系统/陆序/同学/路人/室友等）
+   - 是角色名 → 解析为台词，`dialogue` 写入冒号后方文本
+   - 不是角色名（如"动作"、"字幕"、"旁白"、"画外音"）→ 标记为动作描述，不解析台词
+3. **口语特征二次校验**：已解析为台词的文本，执行二次校验——是否含有口语特征词（`我`/`你`/`啦`/`啊`/`吗`/`吧`/`了`/`！`/`？`/`「」` /`~`）
+   - 含口语特征 → 保留为台词
+   - 不含口语特征且为第三人称叙事（含`打量`/`看向`/`走向`/`走过`/`站在`/`坐着`/`路过`等动作词，且语法主语不是第一人称）→ 改为动作描述，`dialogue` 清空，文本追加到 `description`
+4. **OS/内心独白检测**：段落包含 `（OS）` 或 `（内心独白）` → 文本写入 `narration` 数组，不写入 `dialogue`
 
 
 ### 上下文与批量管理
@@ -231,7 +398,154 @@ Phase 9:  导出 (不可跳过)                    → export_workbook.py → Ex
 - 细腻度：每镜提示词 ≥ 500 字符（不含镜头ID和分隔线）
 - 每镜必须含：至少3个面部特征 + 具体光源设置（方向/色温/光质）+ 场景空间结构 + 角色姿态
 
+
+
+### 分析字段 → 提示词字段映射表（Phase 6 核心执行规则）
+
+主Agent在合并提示词时，必须按以下映射将三个子Agent的输出写入对应字段。
+
+**emotion_output.json 字段映射（数据结构：shots[]，字段在顶层）：**
+| 子Agent输出字段 | 写入提示词位置 | 特殊说明 |
+|----------------|--------------|---------|
+| `shots[].emotion_level` | 动作过程→情绪等级 | 单人镜直接取值，多人镜同上 |
+| `shots[].facial_4d` | 动作过程→表演控制 | **注意数据结构**：单人镜时facial_4d的键名为"眼神/嘴角/呼吸/面肌"；多人镜时facial_4d的键名为**角色名**，取值后再取"眼神/嘴角/呼吸/面肌" |
+| `shots[].expression_causality` | 动作过程→因果链 | 可能为字符串或字典（多人镜时以角色名为键），主Agent需做类型判断 |
+| `shots[].surface_vs_deep` | 动作过程→表层≠底层 | 直接写入 |
+| `shots[].pause_annotations` | 台词字段→停顿 | 有台词镜头必写 |
+| `shots[].intonation` | 台词字段→语调 | 有台词镜头必写 |
+
+**scene_output.json 字段映射（数据结构：analyses[]，键名为中文）：**
+| 子Agent输出字段 | 写入提示词位置 | 特殊说明 |
+|----------------|--------------|---------|
+| `analyses[].空间分层.前景/中景/背景` | 轴线与空间→空间 | 写入"前景=...；中景=...；背景=..." |
+| `analyses[].构图` | 机位补充 | 可选写入 |
+| `analyses[].光影设计` | 光照字段 | 提取主光源方向/色温/光质/情绪光影类别/轮廓光，写入"光照：..." |
+| `analyses[].场景氛围` | 动作过程→氛围前缀 | 写入角色描述前，作为"暮色冷蓝光中——"氛围前缀（无硬编码，直接取原文） |
+| `analyses[].色彩基调` | 时间标签推断 | 用于推断场景时间（"冷蓝"→暮色、"暖橘"→落日），不做提示词直接输出 |
+
+**camera_output.json 字段映射（数据结构：analysis[]，键名为英文，值为字符串）：**
+| 子Agent输出字段 | 写入提示词位置 | 特殊说明 |
+|----------------|--------------|---------|
+| `analysis[].shot_size` | 景别 | 值为字符串（如"中景"），直接写入；如为字典取`.层级` |
+| `analysis[].angle` | 机位 | 值为字符串（如"平视"），直接写入 |
+| `analysis[].movement` | 运镜 | 值为字符串（如"固定镜头"），直接写入 |
+| `analysis[].focal_length` | 机位补充 | 可选写入 |
+
+**数据访问路径总结（三个子Agent输出结构不统一，主Agent必须按各自路径访问）：**
+1. emotion_output.json → `d["shots"]` → 数组，每元素在**顶层**有 emotion_level/facial_4d/expression_causality（没有`analysis`嵌套）
+2. scene_output.json → `d["analyses"]` → 数组，每元素用**中文键名**（空间分层/光影设计/构图等）
+3. camera_output.json → `d["analysis"]` → 数组，每元素用**英文键名**（shot_size/angle/movement 等），且值多为**字符串**而非字典
+
+
+### 子Agent输出JSON格式规范（Phase 2 spawn时必须包含）
+
+主Agent在 spawn_agent 的 items[text] 中必须按以下格式要求嵌入输出规范。
+
+**emotion-analysis 子Agent输出格式：**
+```json
+{
+  "shots": [
+    {
+      "shot_id": "S1-01",
+      "emotion_level": "1-4分级+中文描述（如"2(微动)——视线相遇激发的隐秘兴趣"）",
+      "facial_4d": {
+        "角色名": {          // 单人镜时键名为"眼神/嘴角/呼吸/面肌"
+          "眼神": "眼睑状态+视线方向+瞳孔反应",
+          "嘴角": "唇线开合+嘴角走向",
+          "呼吸": "鼻翼节奏+胸廓起伏幅度",
+          "面肌": "眉/颊/下颌的收紧或放松状态"
+        }
+      },
+      "expression_causality": "触发事件→情绪反应→外显表现（每角色用【】包裹，多人镜用 / 分隔）",
+      "surface_vs_deep": "表层：可见行为 ｜ 深层：心理动机（每角色用【】包裹）",
+      "pause_annotations": "【角色】台词中的停顿/换气位置，标【呼吸停顿Xs】/【情绪停顿Xs】（有台词镜头必填）",
+      "intonation": "角色：语气描述（有台词镜头必填，无台词写"无台词镜头"）"
+    }
+  ]
+}
+```
+
+**frames-analysis 子Agent输出格式：**
+```json
+{
+  "analyses": [
+    {
+      "shot_id": "S1-01",
+      "空间分层": {
+        "前景": "虚化物体+位置（40字内）",
+        "中景": "角色位置+主要叙事动作+道具（50字内）",
+        "背景": "环境信息+配色（40字内）"
+      },
+      "构图": "三分法/中心/对角线/引导线/三角等",
+      "光影设计": {
+        "主光源": "方向+类型（如"午后侧逆日光"）",
+        "色温": "数值K（如"5200K暖白"）",
+        "光质": "硬光/柔光+参数",
+        "情绪光影类别": "温暖琥珀/自然日常/冷暖对比等",
+        "轮廓光": "光源方向+颜色+强弱"
+      },
+      "场景氛围": "场景情绪定位（如"校园日常温馨漫步，闺蜜闲聊的松弛感"）",
+      "色彩基调": "暖调/冷调/对比调+主色描述（如"暖色调自然，奶白浅杏主调"）"
+    }
+  ]
+}
+```
+
+**camera-analysis 子Agent输出格式：**
+```json
+{
+  "analysis": [
+    {
+      "shot_id": "S1-01",
+      "shot_size": "中文景别（全景/中景/中近景/特写/大特写）",
+      "angle": "角度（平视/俯视/仰视/偏侧+度数）",
+      "movement": "运镜类型+参数（如"横向跟拍——水平偏移50cm"）",
+      "focal_length": "mm值（如"35mm"）",
+      "axis_rule": "180度轴线描述（同场景相邻镜头必须延续）"
+    }
+  ]
+}
+```
+
+**各子Agent必须遵守：**
+- `shot_id` 必须匹配 shot_plan.json 中的 shot_id，一一对应，不可缺失
+- 所有字段值使用自然语言描述，禁止纯标签堆砌
+- 多人镜时 `facial_4d` 的键名使用角色名（如"沈星雨"），值取"眼神/嘴角/呼吸/面肌"
+- 单人镜时 `facial_4d` 的键名直接写"眼神/嘴角/呼吸/面肌"
+- 非实体角色（系统/UI等）在 `facial_4d` 中写 "N/A"
+- "空间分层"中的管道符标记（`|虚实:XX%|`）属于工程残留，不应输出
+
 ## 动作与运镜描述规范
+
+
+### 数据清洗规则（Phase 6 合并时必须执行）
+### 数据清洗规则（Phase 6 合并时必须执行）
+
+### AI渲染避坑规则（Phase 6 合并时检查）
+
+1. **非物理角色过滤**：`characters` 列表中带 `（消息）`、`（UI语音）`、`（特效）` 后缀的角色，在生成机位描述时**不作为镜头主体**。机位应指向持有手机的物理人物，或使用"手机屏幕特写"等描述。
+2. **轴线动态规则**：景别为"特写"、"大特写"、"近景"时，轴线描述应省略或写"不适用（特写镜头，无轴线约束）"。轴线信息只在"中景"及以上景别的双人/多人镜头中写入。
+3. **占位文本过滤**：`expression_causality` 中如包含 `→→`、`正在待机→`、`...→` 等模式，该字段无效，跳过不写入提示词。
+4. **手机屏幕+人脸分离原则**：同一镜头内，手机屏幕文字与人物面部表情不应同时作为视觉焦点。需要在特写镜头中看清文字的，中景镜头只展示"手机亮起+人物反应"，文字内容交给下一镜的特写处理。
+5. **轴线的承上启下**：手机屏幕特写/插入镜头不传递前一镜的轴线信息，轴线在特写镜头中重置。
+
+
+以下为子Agent输出数据中常见的"工程残留"，合并到提示词前必须清理：
+
+**scene_output.json 空间分层清洗：**
+- `前景/中景/背景` 的值可能包含 `|虚实:XX%|叙事功能:XX` 等管道符标记（由 frames-analysis 子Agent产出）
+- **清洗规则**：合并时只保留管道符 `|` 前的纯文本内容，删除 `|虚实:`、`|叙事功能:`、`|占画面比例:` 等工程标签
+- 示例：`虚化林荫树叶与零星行人背影|虚实:虚化65%|叙事功能:建立` → `虚化林荫树叶与零星行人背影`
+
+**camera_output.json 焦距清洗：**
+- `focal_length` 的值可能包含"标准"、"广角"等描述性后缀（如 `50标准`、`35广角`）
+- **清洗规则**：只保留数字部分 + "mm"，删除"标准"、"广角"、"长焦"等后缀
+- 示例：`50标准` → `50mm`，`35广角` → `35mm`
+
+**emotion_output.json 因果链清洗：**
+- `expression_causality` 的值可能为字典（多人镜时以角色名为键）或字符串
+- **清洗规则**：如为字典，转为 `角色名：因果描述 | 角色名：因果描述` 格式；如为字符串直接使用
+
 
 ### `base_action` 可空规则
 
