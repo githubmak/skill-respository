@@ -113,6 +113,9 @@ def validate(sp_path, max_per_shot=15, max_total=600, project_config_path=None):
             m = cfg.get("max_shot_duration")
             if m:
                 max_per_shot = int(m)
+            mt = cfg.get("max_total_duration")
+            if mt:
+                max_total = int(mt)
         except Exception:
             pass
 

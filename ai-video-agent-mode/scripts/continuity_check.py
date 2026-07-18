@@ -1,4 +1,4 @@
-"""Cross-shot continuity check."""
+﻿"""Cross-shot continuity check."""
 import json, os, re, sys
 
 
@@ -110,6 +110,28 @@ def run(run_dir, dry=False):
             char_state = {}
         _save_report(run_dir, warnings, errors, issues, char_state)
         return (warnings, errors, issues)
+
+    # Shot-size repetition detection (P0#5): flag 3+ consecutive same shot_size
+    shot_sizes = []
+    for pkt in packets:
+        for item in pkt.get("items", []):
+            sz = item.get("shot_size", "")
+            if sz:
+                shot_sizes.append((item.get("subshot_id", "?"), sz))
+    rep_start = 0
+    for i in range(1, len(shot_sizes)):
+        if shot_sizes[i][1] != shot_sizes[rep_start][1]:
+            run_len = i - rep_start
+            if run_len >= 3:
+                issues.append((shot_sizes[rep_start][0], "SHOT_SIZE_REPEAT", run_len, 
+                    "连续%d镜相同景别%s，建议第%d镜起插入不同景别打破单调" % (run_len, shot_sizes[rep_start][1], rep_start + 3)))
+                warnings += 1
+            rep_start = i
+    run_len = len(shot_sizes) - rep_start
+    if run_len >= 3:
+        issues.append((shot_sizes[rep_start][0], "SHOT_SIZE_REPEAT", run_len,
+            "连续%d镜相同景别%s，建议插入不同景别" % (run_len, shot_sizes[rep_start][1])))
+        warnings += 1
 
     prev_size = None
     for pkt in packets:

@@ -27,7 +27,7 @@ def validate(packet_path, role="director", min_chars=500):
     # === Continuity report validator ===
     if role == "continuity":
         try:
-            with open(packet_path, "r", encoding="utf-8") as f:
+            with open(packet_path, "r", encoding="utf-8-sig") as f:
                 data = json.load(f)
             errs = data.get("errors", 0)
             warns = data.get("warnings", 0)

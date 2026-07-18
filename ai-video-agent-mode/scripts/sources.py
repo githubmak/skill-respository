@@ -118,7 +118,7 @@ def _load(run_dir):
     path = get_sources_path(run_dir)
     if not os.path.exists(path):
         return {}
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8-sig") as f:
         return json.load(f)
 
 

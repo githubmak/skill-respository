@@ -41,6 +41,7 @@ def normalize(run_dir, draft_path=None):
     plan.setdefault("shots", [])
 
     _normalize_ids_and_durations(plan)
+    _normalize_scene_names(plan)
     _validate_dialogue_refs(plan)
 
     out_path = os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json")
@@ -67,11 +68,26 @@ def _normalize_ids_and_durations(plan):
             ss["subshot_id"] = ssid
             ss.setdefault("shot_id", shot_id)
             ss.setdefault("duration", 0)
+            ss.setdefault("duration_sec", ss.get("duration", 0))
             ss.setdefault("characters", [])
             ss.setdefault("dialogue_refs", [])
             ss.setdefault("base_action", "")
         shot["total_duration"] = round(sum(float(ss.get("duration", 0) or 0) for ss in subshots), 2)
     plan["total_shots"] = len(plan.get("shots", []))
+
+
+def _normalize_scene_names(plan):
+    scene_names = {}
+    for shot in plan.get("shots", []):
+        raw = shot.get("scene", "").strip()
+        if not raw:
+            continue
+        cleaned = raw.rstrip("0123456789 ").rstrip("-").strip()
+        scene_names[raw] = cleaned
+    for shot in plan.get("shots", []):
+        raw = shot.get("scene", "").strip()
+        if raw in scene_names:
+            shot["scene"] = scene_names[raw]
 
 
 def _validate_dialogue_refs(plan):
@@ -86,7 +102,39 @@ def _validate_dialogue_refs(plan):
         raise ValueError("dialogue_refs missing from dialogue_map: %s" % ", ".join(missing[:20]))
 
 
+
+
+
+def split_dialogue(text, max_chars_per_segment=60):
+    """Split dialogue text at sentence boundaries, merging consecutive punctuation.
+    Consecutive "！！" / "？？" / "？！" / "……" are treated as ONE boundary.
+    Returns list of (text_segment, estimated_seconds) tuples.
+    """
+    import re as _re_sd
+    collapsed = _re_sd.sub(r"([！？…])\1+", r"\1", text)
+    segments = _re_sd.split(r"(?<=[。！？…])", collapsed)
+    segments = [s.strip() for s in segments if s.strip()]
+    result = []
+    buf = ""
+    for seg in segments:
+        if len(buf + seg) <= max_chars_per_segment:
+            buf += seg
+        else:
+            if buf:
+                result.append(buf)
+            buf = seg
+    if buf:
+        result.append(buf)
+    output = []
+    for s in result:
+        chars = len(s)
+        sentences = sum(1 for c in s if c in "。！？…")
+        seconds = max(round(chars / 4.5 + sentences * 0.5, 1), 0.5)
+        output.append((s, seconds))
+    return output
+
 if __name__ == "__main__":
+    import sys
     if len(sys.argv) < 2:
         print("usage: build_shotplan.py <run_dir> [draft_shot_plan.json]")
         sys.exit(1)

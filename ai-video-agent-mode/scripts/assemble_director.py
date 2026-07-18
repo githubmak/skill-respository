@@ -19,6 +19,14 @@ SHOT_SIZE_TO_CN = {
     "全": "全", "全景": "全景", "大全景": "大全景",
 }
 
+def _flatten_char_dict(val):
+    """Flatten character-keyed dict to 角色:desc;角色:desc string."""
+    if isinstance(val, str):
+        return val
+    if isinstance(val, dict):
+        return "；".join("%s：%s" % (k, v) for k, v in val.items() if v)
+    return str(val) if val else ""
+
 def _cn_shot_size(raw):
     """Convert any shot size format to pure Chinese label."""
     if not raw:
@@ -52,7 +60,7 @@ def run(emotion_path, scene_path, camera_path, shot_plan_path, output_path,
 
     emap = _items_by_subshot(emotion, "shots") if emotion else {}
     smap = _items_by_subshot(scene, "analyses") if scene else {}
-    cmap = _items_by_subshot(camera, "analysis") if camera else {}
+    cmap = _items_by_subshot(camera, "analyses") if camera else {}
 
     items = []
     shot_index = 0
@@ -130,30 +138,55 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
     amg = si.get("audio_midground", "")
     abg = si.get("audio_background", "")
     char_pos = si.get("char_positions", [])
+    if isinstance(char_pos, str):
+        import re as _re_cp
+        # Split "A(desc1)，B(desc2)" into ["A(desc1)", "B(desc2)"]
+        char_pos = [m.strip() for m in _re_cp.split(r'[\)）]\s*[，,]\s*', char_pos) if m.strip()]
+        char_pos = [s + '）' if not s.endswith(')') and not s.endswith('）') else s for s in char_pos]
     char_wardrobes = si.get("char_wardrobes", [])
+    if isinstance(char_wardrobes, dict):
+        char_wardrobes = ['%s：%s' % (k, v) for k, v in char_wardrobes.items() if v]
     bg_fg = si.get("bg_foreground", "")
     bg_mg = si.get("bg_midground", "")
     bg_bg = si.get("bg_background", "")
-    light_type = si.get("light_type", "暖黄室内顶光")
-    lt_v = si.get("light_temp", 3200); light_temp = str(lt_v).replace("K","").replace(" ","").strip() if not isinstance(lt_v, (int,float)) else lt_v
-    light_dir = si.get("light_direction", "侧前方45度")
-    light_hard = si.get("light_hardness", "soft")
-    light_effect_primary = si.get("light_effect_primary_char", "")
-    light_effect_others = si.get("light_effect_other_chars", "")
-    contrast = si.get("color_contrast_desc", "")
-    mood = si.get("mood_atmosphere", "")
+    _lighting_nested = si.get("lighting", {}) or {}
+    if isinstance(_lighting_nested, dict) and _lighting_nested:
+        light_type = _lighting_nested.get("light_type", "暖黄室内顶光")
+        lt_v = _lighting_nested.get("light_temp_k", 3200); light_temp = str(lt_v).replace("K","").replace(" ","").strip() if not isinstance(lt_v, (int,float)) else lt_v
+        light_dir = _lighting_nested.get("light_direction", "侧前方45度")
+        light_hard = _lighting_nested.get("light_hardness", "soft")
+        light_effect_primary = si.get("light_effect_primary_char", "")
+        light_effect_others = si.get("light_effect_other_chars", "")
+        contrast = si.get("color_contrast_desc", "")
+        mood = si.get("mood_atmosphere", "") or _lighting_nested.get("light_mood", "")
+    else:
+        light_type = si.get("light_type", "自然光")
+        lt_v = si.get("light_temp", 3200); light_temp = str(lt_v).replace("K","").replace(" ","").strip() if not isinstance(lt_v, (int,float)) else lt_v
+        light_dir = si.get("light_direction", "侧前方45度")
+        light_hard = si.get("light_hardness", "soft")
+        light_effect_primary = si.get("light_effect_primary_char", "")
+        light_effect_others = si.get("light_effect_other_chars", "")
+        contrast = si.get("color_contrast_desc", "")
+        mood = si.get("mood_atmosphere", "")
+    
 
     # ====== EMOTION FIELDS ======
     em_type = ei.get("emotion_type", tone)
     expr_level = ei.get("expression_level", "micro")
     gaze = ei.get("gaze", "forward")
-    micro_exp = ei.get("micro_expression", "none")
+    micro_exp = _flatten_char_dict(ei.get("micro_expression", "none"))
     body_tension = ei.get("body_tension", "moderate")
-    body_parts = ei.get("body_parts_focus", "")
+    body_parts = _flatten_char_dict(ei.get("body_parts_focus", ""))
     voice_tone = ei.get("voice_tone", "")
-    beat_start = ei.get("action_beat_start", "")
-    beat_trans = ei.get("action_beat_transition", "")
-    beat_end = ei.get("action_beat_end", "")
+    ab = ei.get("action_beats")
+    if isinstance(ab, dict):
+        beat_start = ab.get("beat_start", "")
+        beat_trans = ab.get("beat_transition", "")
+        beat_end = ab.get("beat_end", "")
+    else:
+        beat_start = ei.get("action_beat_start", "")
+        beat_trans = ei.get("action_beat_transition", "")
+        beat_end = ei.get("action_beat_end", "")
     em_trigger = ei.get("emotion_trigger_short", "")
     perf_note = ei.get("performance_note", "")
 
@@ -193,8 +226,7 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
     if bg_mg: bg_parts.append("中景：%s" % bg_mg)
     if bg_bg: bg_parts.append("背景：%s" % bg_bg)
     bg_text = "；".join(bg_parts)
-    axis_seed = action or visual_anchor or "非人物镜头以环境和物件状态承接叙事"
-    axis_text = "%s。%s。场景：%s。" % (axis_seed, pos_desc, scene_name)
+    axis_text = "轴线：%s。%s。场景：%s。" % (ci.get("axis_start", "") or "标准拍摄轴", pos_desc, scene_name)
     if bg_text:
         axis_text += " %s。" % bg_text
     if mood:
@@ -211,6 +243,33 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
     # 动作过程 (expanded with beats + char prefix)
     char_name = chars[0] if chars else "画面主体"
     action_parts = []
+    # Fallback: synthesize beat data from emotion fields when beats are empty
+    _beat_fallback = False
+    if not beat_start and not beat_trans and not beat_end:
+        _beat_fallback = True
+        _pc = ei.get("performance_control", {}) or {}
+        # 1. beat_start from micro_expression (dict: {char: {face, gaze, body}})
+        _me = ei.get("micro_expression", {}) or ei.get("micro_expressions", {})
+        if _me and isinstance(_me, dict):
+            for _cn, _cd in _me.items():
+                if isinstance(_cd, dict):
+                    beat_start = _cd.get("face", "") or _cd.get("gaze", "") or ""
+                    if beat_start: break
+        if not beat_start:
+            _me2 = _pc.get("micro_expression", {}) or {}
+            if _me2 and isinstance(_me2, dict):
+                for _cn, _cd in _me2.items():
+                    if isinstance(_cd, dict):
+                        beat_start = _cd.get("face", "") or _cd.get("gaze", "") or ""
+                        if beat_start: break
+        # 2. beat_trans from body_parts_focus (skip N/A)
+        _bpf = _pc.get("body_parts_focus", "") or body_parts
+        if _bpf and _bpf != "N/A" and "N/A" not in str(_bpf):
+            beat_trans = str(_bpf)
+        # 3. beat_end from performance_note
+        _pn = _pc.get("performance_note", "") or perf_note
+        if _pn:
+            beat_end = str(_pn)
     if beat_start:
         if any(beat_start.startswith(c + "：") or beat_start.startswith(c + ":") for c in chars):
             action_parts.append(beat_start)
@@ -231,20 +290,46 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
             visual_anchor or action or "非动作画面"
         )
     elif action_parts:
-        action_text = "%s：%s，%s" % (char_name, action, "，".join(action_parts))
+        # Structured: 起幅 -> 动作推进 -> 落幅
+        lines = []
+        bs_text = action_parts[0] if len(action_parts) >= 1 else beat_start
+        lines.append("起幅画面——%s。" % _clean_char_prefix(bs_text))
+        bt_text = action_parts[1] if len(action_parts) >= 2 else beat_trans
+        if bt_text:
+            bt_clean = _clean_char_prefix(bt_text)
+            lines.append("动作推进——【%s】：%s。" % (char_name, bt_clean))
+        be_text = action_parts[2] if len(action_parts) >= 3 else beat_end
+        if be_text:
+            lines.append("落幅画面——%s。" % _clean_char_prefix(be_text))
+        action_text = "\n".join(lines)
     else:
-        action_text = "%s：%s" % (char_name, action)
-    detail_items = []
+        action_text = "%s：%s" % (char_name, action or visual_anchor or beat_start or "")
+    # Body details + performance note (separated)
+    body_items = []
     if body_parts:
-        detail_items.append(_clean_char_prefix(body_parts))
+        body_items.append(_clean_char_prefix(body_parts))
     if body_ext:
-        detail_items.append(_clean_char_prefix(body_ext))
+        body_items.append(_clean_char_prefix(body_ext))
+    if body_items:
+        safe_body = [str(x) for x in body_items if x]
+        if safe_body:
+            action_text += "\n肢体细节：" + "，".join(safe_body) + "。"
     if perf_note:
-        detail_items.append(_clean_char_prefix(perf_note))
-    if detail_items:
-        action_text += "，" + "，".join(detail_items)
+        action_text += "\n表演注意：" + _clean_char_prefix(perf_note) + "。"
     # 台词与声音
-    has_ov = any(("OV" in r or "OS" in r) for r in refs)
+    has_ov = any(("OV" in r or "OS" in r or r.startswith("D-MAIN-") or r.startswith("D-SYS-")) for r in refs)
+    # Fallback: check dialogue content for OS keywords
+    if not has_ov and refs and dialogue_map:
+        for r in refs:
+            txt = (dialogue_map or {}).get(r, "")
+            if not txt:
+                continue
+            if any(kw in txt for kw in ["系统说", "系统提示", "原剧情", "OS", "旁白", "内心"]):
+                has_ov = True
+                break
+    # D-SYS refs are always system/OS narration
+    if not has_ov:
+        has_ov = any(r.startswith("D-SYS-") for r in refs)
     dialogue_raw_lines = []
     if refs:
         lines = []
@@ -304,8 +389,6 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
         "dialogue_raw_text": "\n".join(dialogue_raw_lines),
         "lighting": lighting_text,
         "char_entry_exit": entry_text,
-        "axis_start": axis_start,
-        "axis_end": axis_end,
         "axis_start": axis_start,
         "axis_end": axis_end,
         "movement_type": mov_type,
@@ -413,7 +496,7 @@ def _items_by_subshot(data, legacy_key):
         items = data.get(legacy_key, [])
     result = {}
     for item in items:
-        ssid = item.get("subshot_id")
+        ssid = item.get("subshot_id") or item.get("shot_id")
         if ssid:
             result[ssid] = item
     return result

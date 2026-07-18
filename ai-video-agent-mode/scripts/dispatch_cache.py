@@ -21,6 +21,7 @@ PHASE_OUTPUTS = {
     "scene_analysis": ".cache/analysis/scene_output.json",
     "camera_movement": ".cache/analysis/camera_output.json",
     "prompt_composer": ".cache/prompt_package.json",
+    "editor_pass2": ".cache/review/llm_gate_result.json",
 }
 
 PHASE_INPUTS = {
@@ -28,6 +29,7 @@ PHASE_INPUTS = {
     "scene_analysis": ".cache/orchestrator/shot_plan.json",
     "camera_movement": ".cache/orchestrator/shot_plan.json",
     "prompt_composer": ".cache/director/director_pass.json",
+    "editor_pass2": ".cache/prompt_package.json",
 }
 
 
@@ -40,7 +42,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
     """
     ensure_pycache_prefix(run_dir)
     source_path = os.path.join(run_dir, PHASE_INPUTS.get(phase, ""))
-    if not source_path or not os.path.exists(source_path):
+    if not source_path or not os.path.isfile(source_path):
         return []
 
     data = _load_json(source_path)
@@ -63,6 +65,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             "source_path": source_path,
             "project_config_path": os.path.join(run_dir, "project_config.json"),
             "output_path": os.path.join(run_dir, PHASE_OUTPUTS.get(phase, ".cache/%s_output.json" % phase)),
+            "_batch_output_path": os.path.join(run_dir, (PHASE_OUTPUTS.get(phase, ".cache/%s_output.json" % phase)).replace(".json", "_batch%03d.json" % idx) if len(chunks) > 1 else PHASE_OUTPUTS.get(phase, ".cache/%s_output.json" % phase)),
             "batch_index": idx,
             "total_batches": len(chunks),
             "batch_size": size,
@@ -108,10 +111,11 @@ def _extract_items(data, wanted):
                     continue
                 items.append({
                     "shot_id": shot.get("shot_id", ""),
-                    "subshot_id": ssid,
-                    "scene": shot.get("scene", ""),
-                    "duration": ss.get("duration", 0),
-                    "shot_size": ss.get("shot_size", ""),
+                   "subshot_id": ssid,
+                   "scene": shot.get("scene", ""),
+                   "duration": ss.get("duration", 0),
+                   "duration_sec": ss.get("duration", 0),
+                   "shot_size": ss.get("shot_size", ""),
                     "base_action": ss.get("base_action", ""),
                     "shot_type": ss.get("shot_type", "") or ss.get("visual_type", "") or ss.get("purpose", ""),
                     "visual_intent": ss.get("visual_intent", "") or ss.get("image_subject", "") or ss.get("atmosphere", ""),
@@ -122,10 +126,11 @@ def _extract_items(data, wanted):
         return items
     return [
         {
-            "shot_id": item.get("shot_id", ""),
-            "subshot_id": item.get("subshot_id", ""),
-            "duration": item.get("duration", 0),
-            "shot_size": item.get("shot_size", ""),
+           "shot_id": item.get("shot_id", ""),
+           "subshot_id": item.get("subshot_id", ""),
+           "duration": item.get("duration", 0),
+           "duration_sec": item.get("duration", 0),
+           "shot_size": item.get("shot_size", ""),
         }
         for item in data.get("items", [])
         if not wanted or item.get("subshot_id") in wanted

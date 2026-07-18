@@ -69,7 +69,7 @@ def validate(pkg_path, shot_plan_path=None):
         dialogue_map = data.get("dialogue_map", {}) or {}
     items = data.get("items", [])
     shot_ids = set()
-    required_prompt_fields = ["full_prompt", "shot_id", "subshot_id", "duration"]
+    required_prompt_fields = ["full_prompt", "shot_id", "subshot_id", "duration", "duration_sec"]
 
     for item in items:
         sid = item.get("subshot_id", "?")

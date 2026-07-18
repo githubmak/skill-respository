@@ -22,6 +22,7 @@ from dispatch_cache import prepare_dispatch_packet, prepare_dispatch_packets, pr
 # Plugin registry: phase handlers extend this dict
 from handler_registry import PHASE_HANDLERS
 import assemble_director  # registers qa_integration handler
+import enrich_prompt_package  # registers enrich_prompt handler
 
 def register_handler(phase_name):
     """Decorator: register a handler function for a pipeline phase."""
@@ -74,6 +75,7 @@ def run(run_dir):
         if issues:
             mark_failed(run_dir, phase)
             return {"action": "failed", "phase": phase, "issues": issues[:10]}
+        _merge_batch_outputs(run_dir, phase)
         mark_done(run_dir, phase)
         advance(run_dir)
         new_phase = load_state(run_dir)["current_phase"]
@@ -189,11 +191,67 @@ def run(run_dir):
         return {"action": "failed", "phase": phase, "issues": issues[:10]}
 
     # ==== Phase passed ====
+    _merge_batch_outputs(run_dir, phase)
     mark_done(run_dir, phase)
     advance(run_dir)
     new_phase = load_state(run_dir)["current_phase"]
     return {"action": "advance", "next": new_phase, "from": phase}
 
+
+
+def _merge_batch_outputs(run_dir, phase):
+    """Merge batch output files into the main output for a phase."""
+    import glob as _glob
+    phase_config = GATES.get(phase, {})
+    outputs = phase_config.get("output", [])
+    if not outputs:
+        return
+    main_out = os.path.join(run_dir, outputs[0])
+    batch_dir = os.path.dirname(main_out)
+    pattern = os.path.basename(main_out).replace(".json", "_batch*.json")
+    batch_files = sorted(_glob.glob(os.path.join(batch_dir, pattern)))
+    if not batch_files:
+        return
+    merged = {"items": []}
+    for bf in batch_files:
+        try:
+            with open(bf, "r", encoding="utf-8-sig") as f:
+                bd = json.load(f)
+            merged["items"].extend(bd.get("items", []))
+        except Exception:
+            pass
+    # Deduplicate by subshot_id (keep last)
+    seen = {}
+    for item in merged["items"]:
+        ssid = item.get("subshot_id", "")
+        if ssid:
+            seen[ssid] = item
+    merged["items"] = sorted(seen.values(), key=lambda x: x.get("subshot_id", ""))
+    # Also merge full prompts
+    all_fp = []
+    fp_seen = set()
+    for bf in batch_files:
+        try:
+            with open(bf, "r", encoding="utf-8-sig") as f:
+                bd = json.load(f)
+            for fp in bd.get("merged_full_prompts", []):
+                sid = fp.get("shot_id", "")
+                if sid not in fp_seen:
+                    fp_seen.add(sid)
+                    all_fp.append(fp)
+        except Exception:
+            pass
+    merged["merged_full_prompts"] = sorted(all_fp, key=lambda x: x.get("shot_id", ""))
+    os.makedirs(os.path.dirname(main_out), exist_ok=True)
+    with open(main_out, "w", encoding="utf-8") as f:
+        json.dump(merged, f, ensure_ascii=False, indent=2)
+    print("[MERGE] %d batch files -> %d items to %s" % (len(batch_files), len(merged["items"]), main_out))
+    # Clean up batch files
+    for bf in batch_files:
+        try:
+            os.remove(bf)
+        except Exception:
+            pass
 
 def _track_subshot_results(run_dir, issues, phase_config):
     """Mark which subshots failed vs passed for incremental retry."""

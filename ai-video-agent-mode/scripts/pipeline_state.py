@@ -2,25 +2,20 @@
 import json, os, time
 
 # ========== Constants ==========
-MAX_RETRIES = 4          # Sub-agent retries before escalation
-TIMEOUT_SECONDS = 300    # Default sub-agent timeout
+MAX_RETRIES = 3          # Sub-agent retries before escalation (3 attempts: initial + 2 retries)
+TIMEOUT_SECONDS = 480    # Default sub-agent timeout
 TOTAL_ATTEMPTS = 5       # 1 initial + 4 retries
 AGENT_STALE_SECONDS = 600  # 10min: agent considered stale, force re-spawn
-BATCH_SIZE = 15          # Max subshots per sub-agent spawn
+BATCH_SIZE = 60          # Max subshots per sub-agent spawn (balanced quality/efficiency)
 
 PHASE_TIMEOUT_SECONDS = {
-    "emotion_analysis": 900,
-    "scene_analysis": 600,
-    "camera_movement": 600,
-    "prompt_composer": 600,
+    "emotion_analysis": 900,  # kept high for quality
+    "scene_analysis": 900,
+    "camera_movement": 900,
+    "prompt_composer": 900,
 }
 
-PHASE_BATCH_SIZE = {
-    "emotion_analysis": 20,
-    "scene_analysis": 25,
-    "camera_movement": 30,
-    "prompt_composer": 15,
-}
+PHASE_BATCH_SIZE = {"prompt_composer": 8}  # Natural language generation is slow; 30/batch prevents timeout
 
 AGENT_PHASES = {
     "emotion_analysis",
@@ -33,7 +28,7 @@ AGENT_PHASES = {
 LOCAL_PHASES = {
     "user_confirm",
     "orchestrator",
-    "qa_integration",
+    "qa_integration", "enrich_prompt",
     "director",
     "continuity",
     "editor_pass1",
@@ -44,7 +39,7 @@ LOCAL_PHASES = {
 PHASE_ORDER = [
     "user_confirm", "orchestrator",
     "emotion_analysis", "scene_analysis", "camera_movement",
-    "qa_integration",
+    "qa_integration", "enrich_prompt",
     "director",
     "continuity", "prompt_composer",
     "editor_pass1", "editor_pass2", "validate", "export"
@@ -79,7 +74,7 @@ def load_state(run_dir):
     path = get_state_path(run_dir)
     if not os.path.exists(path):
         init_state(run_dir)
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8-sig") as f:
         return json.load(f)
 
 

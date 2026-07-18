@@ -9,5 +9,15 @@
   "export_base": "",
   "run_timestamp": "",
   "character_list": [],
-  "global_negative_prompt": "肢体畸形，面部崩坏，画面闪烁，剧烈抖动，水印文字，模糊虚化，色彩杂乱，人物虚化，帧间跳变，动作卡顿，多指，五官扭曲"
+  "global_negative_prompt": "肢体畸形，面部崩坏，画面闪烁，剧烈抖动，水印文字，模糊虚化，色彩杂乱，人物虚化，帧间跳变，动作卡顿，多指，五官扭曲",
+ "costume_map": {},
+ "_costume_map_desc": "角色服装表。key为角色名，value为该角色在各场景中的服装描述。Prompt Composer生成提示词时必须从costume_map中匹配角色服装，禁止自行编造。示例：{沈星雨: {校园: 米白色宽松针织开衫内搭浅灰吊带、深蓝高腰阔腿牛仔裤、白色板鞋、马尾黑长直, 教室: 同校园装}}",
+
+  "source_rules": {
+    "characters": [],
+    "action_keywords": [],
+    "scene_header_pattern": "^\\d+-\\d+",
+    "dialogue_pattern": "角色名（语气）：台词"
+  },
+  "_source_rules_desc": "剧本解析规则。Phase 0 时由 detect_source_rules.py 自动从源文提取填充。characters=角色列表，action_keywords=动作行关键词（用于区分动作行和对话行），scene_header_pattern=场景头正则，dialogue_pattern=对话行格式描述。generate_shotplan.py 从 project_config.json 读取此字段，不再硬编码项目特定规则。"
 }

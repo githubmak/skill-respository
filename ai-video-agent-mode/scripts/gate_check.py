@@ -103,10 +103,18 @@ def check(run_dir, phase=None, strict=False):
         if validator_role:
             vr = val_agent(p, role=validator_role)
             for iss in vr["issues"]:
+                severity = "blocking" if vr["retry_needed"] else "warning"
+                check_name = iss[1] if len(iss) > 1 else ""
+                gate_rule = phase_config.get(check_name, {})
+                if gate_rule:
+                    max_strict = gate_rule.get("max_strict")
+                    value = iss[2] if len(iss) > 2 else 0
+                    if max_strict is not None and isinstance(max_strict, (int, float)):
+                        severity = "blocking" if value > max_strict else "warning"
                 result["issues"].append({
                     "check": "VALIDATE",
                     "file": out,
-                    "severity": "blocking" if vr["retry_needed"] else "warning",
+                    "severity": severity,
                     "msg": "[%s] %s: got %s, expected %s" % (iss[1], iss[0], iss[2], iss[3])
                 })
             
@@ -147,7 +155,7 @@ def check(run_dir, phase=None, strict=False):
     # ==== RESULT ====
     blocking = [i for i in result["issues"] if i["severity"] == "blocking"]
     result["pass"] = len(blocking) == 0
-    result["per_subshot"] = _track_per_subshot(run_dir, phase)
+    result["per_subshot"] = {}
     
     if result["bypass_detected"]:
         print("[GATE] BYPASS DETECTED in %s! Output existed before agent spawn." % phase)

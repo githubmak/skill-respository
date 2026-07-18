@@ -68,3 +68,8 @@ Before final output, verify:
 - Expression and body action are visible, specific, and not repetitive.
 - Performance does not contradict posture, injury, prop state, blocking, or social rank.
 - Final AI prompts do not rely on abstract emotion words alone.
+
+
+---
+
+> **质量标准**：本技能输出需符合主 SKILL.md（ai-video-agent-mode）的铁律 14（物理表情 + 氛围感双结合）。每镜动作过程段必须同时包含 >=5 项物理表情/角色和 >=2 句氛围文字。

@@ -1,12 +1,12 @@
 ﻿import json, os, re, sys
 
 def run(d):
-    p = json.load(open(d+"/shot_plan.json","r",encoding="utf-8"))
+    p = json.load(open(d+"/shot_plan.json","r",encoding="utf-8-sig"))
     shots = {s["shot_id"]:s for s in p["shots"]}
     E = {}; S = {}; C = {}
-    for s in json.load(open(d+"/emotion_output.json","r",encoding="utf-8")).get("shots",[]): E[s["shot_id"]] = s
-    for s in json.load(open(d+"/scene_output.json","r",encoding="utf-8")).get("analyses",[]): S[s["shot_id"]] = s
-    for s in json.load(open(d+"/camera_output.json","r",encoding="utf-8")).get("analysis",[]): C[s["shot_id"]] = s
+   for s in json.load(open(d+"/emotion_output.json","r",encoding="utf-8-sig")).get("shots",[]): E[s["shot_id"]] = s
+   for s in json.load(open(d+"/scene_output.json","r",encoding="utf-8-sig")).get("analyses",[]): S[s["shot_id"]] = s
+    for s in json.load(open(d+"/camera_output.json","r",encoding="utf-8-sig")).get("analyses",[]): C[s["shot_id"]] = s
     c = json.load(open(d+"/project_config.json","r",encoding="utf-8-sig"))
     st = c.get("visual_style","")
     neg = "画面崩坏面部扭曲多余肢体手指畸形道具漂移服饰闪烁错乱穿模穿帮字幕水印低清画质塑料质感"

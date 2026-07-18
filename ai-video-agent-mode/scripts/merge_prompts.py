@@ -56,6 +56,7 @@ def run(export_dir):
         merged_full_prompts.append({
             "shot_id": sid,
             "duration": total_dur,
+            "duration_sec": total_dur,
             "full_prompt": combined,
         })
 

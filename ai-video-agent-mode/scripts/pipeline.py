@@ -22,7 +22,7 @@ def generate_dispatches(export_root, shot_plan):
             desc = act or ss.get("visual_intent", "") or s.get("core_action", "")
             dur = ss.get("duration", 0)
             em.append({"id": ssid, "shot_id": sid, "chars": chars, "acts": [act] if act else [], "diags": diags, "narrs": [], "desc": desc, "dur": dur})
-            sc.append({"id": ssid, "shot_id": sid, "chars": chars, "acts": [act] if act else [], "desc": desc})
+            sc.append({"id": ssid, "shot_id": sid, "chars": chars, "acts": [act] if act else [], "desc": desc, "emotion_tone": ss.get("emotion_tone", "")})
             ca.append({"id": ssid, "shot_id": sid, "chars": chars, "desc": desc, "dur": dur, "acts": [act] if act else []})
     dd = os.path.join(export_root, ".cache", "dispatch")
     os.makedirs(dd, exist_ok=True)
@@ -33,7 +33,7 @@ def generate_dispatches(export_root, shot_plan):
         # 写入后回读校验
     for name in ["emotion_data.json", "scene_data.json", "camera_data.json"]:
         fpath = os.path.join(dd, name)
-        with open(fpath, "r", encoding="utf-8") as f:
+        with open(fpath, "r", encoding="utf-8-sig") as f:
             verify = json.load(f)
         expected = sum(len(s.get("subshots", []) or []) for s in shots)
         if len(verify) != expected:
@@ -51,10 +51,9 @@ def clean(d):
     E,S,C = {},{},{}
     for s in json.load(open(os.path.join(d, ".cache", "analysis", "emotion_output.json"),"r",encoding="utf-8")).get("shots",[]): E[s.get("shot_id", "")] = s
     for s in json.load(open(os.path.join(d, ".cache", "analysis", "scene_output.json"),"r",encoding="utf-8")).get("analyses",[]): S[s.get("shot_id", "")] = s
-    for s in json.load(open(os.path.join(d, ".cache", "analysis", "camera_output.json"),"r",encoding="utf-8")).get("analysis",[]): C[s.get("shot_id", "")] = s
+    for s in json.load(open(os.path.join(d, ".cache", "analysis", "camera_output.json"),"r",encoding="utf-8")).get("analyses",[]): C[s.get("shot_id", "")] = s
     c = json.load(open(os.path.join(d, "project_config.json"),"r",encoding="utf-8"))
-    STYLE = c.get("visual_style","")
-    NEG = "画面崩坏 面部扭曲 多余肢体 手指畸形 道具漂移 服饰闪烁错乱 穿模穿帮 字幕水印 低清画质 塑料质感 像素噪点 人物变形 身体融合 脸型混淆 光影闪烁"
+    STYLE = c.get("visual_style",""); NEG = c.get("global_negative_prompt", "画面崩坏 面部扭曲 多余肢体 手指畸形 道具漂移 服饰闪烁错乱")
     SCR = re.compile(r"\|?(叙事功能|虚实|占画面比例|氛围|动作)[：:][^\|]*")
     FCR = re.compile(r"(标准|广角|长焦|中长焦|微距|超广角)")
     PLH = re.compile(r"→\.\.\.→|正在[待机发]|等待.*→|现在打字→")
@@ -401,7 +400,7 @@ def export(groups, STYLE, NEG, run_dir, export_dir=None):
     md_path = os.path.join(export_dir, "prompts.md")
     with open(md_path, "w", encoding="utf-8") as f:
         f.write("\n".join(MD))
-    with open(md_path, "r", encoding="utf-8") as f:
+    with open(md_path, "r", encoding="utf-8-sig") as f:
         verify = f.read()
     if len(verify) < 100:
         raise RuntimeError(f"prompts.md write may have failed: only {len(verify)} chars")
@@ -465,5 +464,5 @@ if __name__ == "__main__":
         shot_map = {s.get("sid", ""):s for s in out}
         groups = [(gid, gname, [shot_map[sid] for sid in sids]) for gid,gname,sids in groups_data if all(sid in shot_map for sid in sids)]
         c = json.load(open(os.path.join(run_dir, "project_config.json"),"r",encoding="utf-8"))
-        STYLE = c.get("visual_style",""); NEG = "画面崩坏 面部扭曲 多余肢体 手指畸形 道具漂移 服饰闪烁错乱 穿模穿帮 字幕水印 低清画质 塑料质感 像素噪点 人物变形 身体融合 脸型混淆 光影闪烁"
+        STYLE = c.get("visual_style",""); NEG = c.get("global_negative_prompt", c.get("negative_prompt", "")); NEG = "画面崩坏 面部扭曲 多余肢体 手指畸形 道具漂移 服饰闪烁错乱 穿模穿帮 字幕水印 低清画质 塑料质感 像素噪点 人物变形 身体融合 脸型混淆 光影闪烁"
         export(groups, STYLE, NEG, run_dir, _resolve_export_dir(run_dir, c))

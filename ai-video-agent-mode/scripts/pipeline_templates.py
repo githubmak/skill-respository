@@ -43,7 +43,8 @@ GATES = {
     "continuity": {
         "input": [".cache/director/director_pass.json", ".cache/orchestrator/shot_plan.json"],
         "output": ["continuity/report.json"],
-        "validator": "continuity"
+        "validator": "continuity",
+        "SHOT_SIZE_REPEAT": {"max_strict": 4}
     },
     "prompt_composer": {
         "input": [".cache/director/director_pass.json"],
