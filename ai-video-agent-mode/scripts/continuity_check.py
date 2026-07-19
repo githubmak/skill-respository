@@ -1,4 +1,4 @@
-﻿"""Cross-shot continuity check."""
+"""Cross-shot continuity check."""
 import json, os, re, sys
 
 

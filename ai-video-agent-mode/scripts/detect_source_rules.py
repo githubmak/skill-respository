@@ -1,4 +1,4 @@
-﻿import json, os, re, sys
+import json, os, re, sys
 from collections import Counter
 
 def detect_source_rules(source_path):

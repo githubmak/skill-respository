@@ -1,5 +1,5 @@
 """Merge all prompt packages into a single unified output."""
-import json, os, sys
+import json, os, sys, re, re
 
 
 def run(export_dir):
@@ -48,6 +48,13 @@ def run(export_dir):
         return None
 
     # Build merged_full_prompts (one per shot_id)
+    # Phase 7: convert 【板块N-标题】 to **标题** section headers
+    for item in all_items:
+        fp = item.get("full_prompt", "")
+        fp = re.sub(r'【板块\d+-(\S+)】\s*', r'\n**\1**\n', fp)
+        fp = re.sub(r'【板块\d+[^】]*】\s*', '', fp)
+        item["full_prompt"] = fp
+
     merged_full_prompts = []
     for sid in sorted(shot_map.keys()):
         subshots = shot_map[sid]

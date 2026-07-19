@@ -49,6 +49,44 @@ When a line is present, add a delivery note without rewriting the line:
 
 Use these as patterns, not fixed phrases. Match them to the line's cause and relationship.
 
+
+## Genre-Specific Calibration - Conditional by project genre
+
+Only apply rules matching the genre passed by the main agent.
+
+IF genre = modern-urban-light-comedy:
+- Micro before macro: 0.3-0.5s micro-reaction first
+- Deadpan for comedy: stillness + slow blink = funniest reaction
+- Suppress not express: one physiological leak IS the performance
+- Every background character >=1 independent micro-reaction
+- System voices: N/A for all facial/body fields
+- Every action beat states standing/sitting/walking explicitly
+
+IF genre = historical / court: Default Naturalness Rules apply unchanged.
+IF genre = action / fantasy: Default rules. Impact reactions may be amplified.
+
+### Modern Urban Light Comedy (Campus / Workplace / Romance-Drama / System-Comedy)
+
+This genre requires the most restrained performance style of all. All emotional leakage must be measured in millimeters and microseconds, not centimeters and seconds.
+
+Core principle: The audience should work to read the emotion. If it's obvious at first glance, it's too big.
+
+- **Micro before macro**: Always show a 0.3-0.5s micro-reaction (eyelid twitch, breathing pause, finger pressure change) BEFORE any larger movement. The micro IS the performance.
+- **Deadpan for comedy**: When the script calls for comedic reaction, use stillness. The funniest possible reaction to absurdity is a 1.5s pause with zero muscle movement, followed by a single slow blink. Let the audience fill the gap.
+- **Suppress, don't express**: High-status or prideful characters (like Jiang Xun) suppress emotion until a single physiological leak betrays them (ear reddening, throat swallow, finger tightening). That ONE leak IS the scene.
+- **Background characters have inner lives**: Every visible non-speaking character must have >=1 independent micro-reaction per shot. A classmate hearing gossip must show: neck extension toward sound -> eye shuttle between speakers -> mouth slightly open but NO lip movement. Never "standing still watching".
+- **System voices**: System character has NO physical body. Write "N/A" for all facial/body fields. System exists as floating UI text + voiceover only.
+- **Physical grounding**: Every action beat MUST state standing/sitting/walking/crouching. Never let AI guess classroom = sitting or outdoor = standing. Explicit: "sitting at desk, back against chair, elbows on table" or "standing in hallway, weight on right foot, leaning against doorframe".
+
+### Historical / Costume / Court Drama
+
+[Existing rules for ancient settings remain unchanged - see Naturalness Rules above]
+
+### Action / Combat
+
+[Existing rules for action remain unchanged]
+
+
 ## Shot And Panel Integration
 
 When working inside a shot table or nine-panel grid:

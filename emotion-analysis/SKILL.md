@@ -17,6 +17,21 @@ description: >
 
 ## PIPELINE KERNEL: 情绪表演核心规则 (v11.2)
 
+
+### Genre Calibration (v11.4) - Conditional by project_config.genre
+
+Only apply rules matching the genre passed by the main agent. If no match, use default templates above.
+
+IF genre = modern-urban-light-comedy (campus, workplace, system-comedy):
+- Naturalistic micro-expressions (mm-scale, not poetic)
+- Humor from reaction gaps, not exaggerated faces
+- Every action beat must state physical position (standing/sitting/walking)
+- System characters: facial fields = N/A
+- Causal chain: trigger -> expression -> body -> voice
+
+IF genre = historical / costume / court: Use default poetic templates above.
+IF genre = action / fantasy / wuxia: Use default templates. Heightened but motivated.
+
 ### 多人镜情绪归属铁律（v11.2 约束 #5·#12）
 **≥2人同镜时，所有情绪/微表情必须标注【角色名】归属。** 禁止笼统写"愤怒:眉头紧锁…不动如山:眼睑微动"，必须写成"【红袖】愤怒:眉头紧锁… | 【纪茯苓】不动如山:眼睑微动…"。标注规则：`【角色名】情绪标签: 部位=状态 | 部位=状态`。
 

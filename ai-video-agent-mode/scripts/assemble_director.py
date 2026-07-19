@@ -152,7 +152,7 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
     _lighting_nested = si.get("lighting", {}) or {}
     if isinstance(_lighting_nested, dict) and _lighting_nested:
         light_type = _lighting_nested.get("light_type", "暖黄室内顶光")
-        lt_v = _lighting_nested.get("light_temp_k", 3200); light_temp = str(lt_v).replace("K","").replace(" ","").strip() if not isinstance(lt_v, (int,float)) else lt_v
+        lt_v = _lighting_nested.get("light_temp", 3200); light_temp = str(lt_v).replace("K","").replace(" ","").strip() if not isinstance(lt_v, (int,float)) else lt_v
         light_dir = _lighting_nested.get("light_direction", "侧前方45度")
         light_hard = _lighting_nested.get("light_hardness", "soft")
         light_effect_primary = si.get("light_effect_primary_char", "")
@@ -211,10 +211,24 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
         if mov_speed and mov_speed != "none" and mov_speed not in movement_text:
             movement_text += "，速度%s" % mov_speed
     else:
-        mov_map = {"fixed": "固定镜头", "push_in": "缓慢向前推镜（dolly in）", "pull_out": "缓慢向后拉镜（dolly out）",
-                    "track": "横向跟随平移", "pan": "水平摇镜", "tilt": "垂直摇镜", "handheld": "手持摄影，极轻呼吸感晃动",
-                    "whip_pan": "快速甩镜（whip pan）",
-                    "zoom": "变焦推拉"}
+        mov_map = {
+    "固定": "固定镜头",
+    "推": "向前缓推（dolly in），摄影机沿光轴向前移动",
+    "拉": "向后缓拉（dolly out），摄影机沿光轴向后移动",
+    "摇": "水平摇镜（pan），摄影机原地左右转动",
+    "移": "横向移动（track），摄影机沿轨道平移",
+    "跟": "跟随拍摄（follow），摄影机与被摄主体同步运动",
+    "升": "上升（pedestal up），摄影机垂直上升",
+    "降": "下降（pedestal down），摄影机垂直下降",
+    "俯": "俯拍（tilt down），镜头向下倾斜",
+    "仰": "仰拍（tilt up），镜头向上倾斜",
+    "环绕": "环绕运动（orbital），摄影机围绕被摄主体弧线运动",
+    "甩": "甩镜（whip pan），极快速摇镜产生运动模糊转场",
+    "变焦": "变焦推拉（zoom），通过改变镜头焦距实现的推进或拉远效果",
+    "旋转": "旋转镜头（roll），摄影机绕光轴旋转",
+    "手持": "手持摄影，保留轻微呼吸感晃动",
+    "穿梭": "穿梭变焦（dolly zoom/希区柯克变焦），摄影机前进同时变焦后退，制造空间扭曲眩晕效果"
+}
         movement_text = mov_map.get(mov_type, "固定镜头")
         if mov_arc and mov_type != "fixed":
             movement_text += "，%s°弧线" % int(mov_arc)

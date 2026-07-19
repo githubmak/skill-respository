@@ -128,10 +128,13 @@ def generate_exports(run_dir, md_path):
         return str(val)
     
     def get_scene(sid):
-        n = int(sid.split("-")[1])
-        if n <= 15: return "酒店VIP宴会厅"
-        elif n <= 75: return "食堂"
-        else: return "校门外"
+        parts = sid.split("-")
+        if len(parts) < 2:
+            return "场景"
+        n = int(parts[1])
+        if n <= 15: return "场景A"
+        elif n <= 75: return "场景B"
+        else: return "场景C"
     
     # Group by scene
     scene_shots = {}
@@ -149,7 +152,7 @@ def generate_exports(run_dir, md_path):
     lines.append("---")
     lines.append("")
     
-    for scene_name in ["酒店VIP宴会厅", "食堂", "校门外"]:
+    for scene_name in sorted(set(s.get("scene","场景") for s in shots)):
         if scene_name not in scene_shots: continue
         lines.append(f"## {scene_name}")
         lines.append("")
@@ -243,11 +246,11 @@ def generate_exports(run_dir, md_path):
             # Extract negative prompt
             if ss:
                 fp = ss.get("full_prompt", "")
-                neg_match = re.search(r"(?:负面提示词|负面提示|消极提示|negative prompt)[：:】]\s*(.+?)(?:
-|$)", fp)
-
-|\$)", fp)
-|$)", fp)
+                neg_match = re.search(r"(?:\u8d1f\u9762\u63d0\u793a\u8bcd|\u8d1f\u9762\u63d0\u793a|\u6d88\u6781\u63d0\u793a|negative.prompt)[\uff1a:]\s*(.+)", fp)
+                if neg_match:
+                    fp = fp.replace(neg_match.group(0), "")
+                fp += "\u8d1f\u9762\u63d0\u793a\u8bcd\uff1a" + standard_neg + "\n"
+                ss["full_prompt"] = fp
                 if neg_match:
                     neg_text = neg_match.group(1).strip()[:200]
                     lines.append(f"> **负面提示词**：{neg_text}")
@@ -277,7 +280,7 @@ def generate_exports(run_dir, md_path):
     ws.title = "提示词包"
     ws.append(["主镜头", "子镜头", "时长(s)", "台词", "说话人", "景别", "机位", "运镜", "动作过程"])
     
-    for scene_name in ["酒店VIP宴会厅", "食堂", "校门外"]:
+    for scene_name in sorted(set(s.get("scene","场景") for s in shots)):
         for shot in scene_shots.get(scene_name, []):
             for ss in shot["subshots"]:
                 ssid = ss["subshot_id"]

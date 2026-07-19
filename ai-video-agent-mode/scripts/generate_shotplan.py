@@ -1,4 +1,4 @@
-﻿"""generate_shotplan.py - Phase 1 shot plan generation from source script.
+"""generate_shotplan.py - Phase 1 shot plan generation from source script.
 Usage: python generate_shotplan.py <source.txt> <output_dir> [--config config.json] [--max-dur 15]
 
 Reads project-specific rules (characters, action keywords) from project_config.json.

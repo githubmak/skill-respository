@@ -27,7 +27,8 @@ description: >
 | 5 | 连续性检查（不可跳过） | 连续性检查 | `continuity_check.py` | 景别/轴线/光照连续 |
 | 6 | Prompt Composer（不可跳过） | Prompt Composer | spawn Agent | director_pass → `prompt_package.json` |
 | 6a | 后处理 | `enrich_prompt_package.py` | 固化 shot_id/运镜/轴线 |
-| 7 | Editor Pass 1（不可跳过） | Editor Pass 1 | `merge_prompts.py` | Python 清理工程术语 |
+| 6b | 运镜强制注入（不可跳过） | `enforce_camera_detail.py` | composer_output.json → 全镜注入完整运镜描述 |
+| 7 | Editor Pass 1（不可跳过） | Editor Pass 1 | `merge_prompts.py` | 合并多包 + 【板块】→**标题**保留章节结构 |
 | 8 | Editor Pass 2（不可跳过） | Editor Pass 2 | spawn Agent (LLM审查) | 穿帮审查 + 语义修复 |
 | 9 | 最终验证（不可跳过） | 最终验证 | `check_export.py` + 门禁 | 20 项自检 |
 | 10 | 导出（不可跳过） | 导出 | `export_with_validation.py` | Markdown + XLSX |
@@ -63,6 +64,16 @@ description: >
 
 ## 三、Phase 2: 子Agent分析
 
+### Phase 2 派发前置验证（强制）
+
+派发 emotion/scene/camera 三路 Agent 之前，必须先 spawn 一个轻量测试 Agent：
+
+```
+Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}. Confirm in final answer.
+```
+
+等待测试 Agent 完成、文件落盘确认后，才派发正式三路 Agent。若测试 Agent 超时或文件未落盘，blocking 等待用户确认，不得继续派发正式 Agent。
+
 ### 落盘调度
 
 子Agent 通过 spawn_agent 启动，读取 `.cache/dispatch/*_data.json` 紧凑 JSON（字段：id/chars/acts/diags/narrs/dur/desc），处理后将结果写入 `.cache/analysis/*_output.json`。主Agent 从文件读取结果，不从消息文本解析。
@@ -76,12 +87,12 @@ description: >
 
 **frames-analysis**:
 ```json
-{"items":[{"shot_id":"","subshot_id":"","space_type":"","space_name":"","char_positions":[],"char_wardrobes":[],"bg_foreground":"","bg_midground":"","bg_background":"","light_type":"","light_temp":5200,"light_direction":"","light_hardness":"soft/hard/mixed","mood_atmosphere":""}]}
+{"items":[{"shot_id":"","subshot_id":"","space_type":"","space_name":"","char_positions":[],"char_wardrobes":[],"bg_foreground":"","bg_midground":"","bg_background":"","light_type":"","light_temp":5200,"light_direction":"","light_hardness":"soft/hard/mixed","mood_atmosphere":"","ambient_sound":"","audio_background":"","audio_foreground":"","audio_midground":"","bgm_style":"","color_contrast_desc":"","light_effect_primary_char":"","light_effect_other_chars":"","lighting":"","sfx_timing":""}]}
 ```
 
 **camera-analysis**:
 ```json
-{"items":[{"shot_id":"","subshot_id":"","shot_size":"","camera_lens_mm":35,"camera_relative_pos":"","camera_distance_steps":2,"camera_height_relative":"","angle_str":"","camera_facing_desc":"","movement_type":"fixed/push_in/pull_out/track/pan/tilt/handheld","movement_detail":"","movement_speed":"","axis_start":"","axis_end":"","char_entry":"","char_exit":"","end_state":""}]}
+{"items":[{"shot_id":"","subshot_id":"","shot_size":"","camera_lens_mm":35,"camera_relative_pos":"","camera_distance_steps":2,"camera_height_relative":"","angle_str":"","camera_facing_desc":"","movement_type":"固定/推/拉/摇/移/跟/升/降/俯/仰/环绕/甩/变焦/旋转/手持/穿梭","movement_detail":"","movement_speed":"","axis_start":"","axis_end":"","char_entry":"","char_exit":"","end_state":"","composition":"","lens_effect":"","movement_arc_deg":0,"body_extra":""}]}
 ```
 
 约束：每角色跨镜 micro_expression 和 body_parts_focus 不得重复；多人镜 beat_transition 独立。
@@ -206,79 +217,81 @@ description: >
 
 ### Prompt Composer Agent（Phase 6）
 
+> **[DISCIPLINE] Record agent_id on spawn, call close_agent immediately on completion.**
+
 ```
-你是资深 AI 视频提示词工程师，同时具备导演思维。
-你擅长将分镜表、情绪分析和运镜方案融合为一条紧凑高效的 AI 视频生成指令。
-你深谙 AI 视觉模型的行为模式——知道它需要空间坐标而非叙事文字，需要量化面部参数而非含糊的情绪形容词。
-现在将导演数据转化为可直接用于 AI 视频生成的完整提示词。
+你是资深 AI 视频提示词工程师与短剧导演，将导演数据转化为可直接投喂即梦平台的单镜融合提示词。
+本次使用 ai-prompt-builder 的模式 C（导演级叙事融合提示词）。
 
 项目：{project_name} | {canvas} | {visual_style}
 角色：{character_list}
 
 任务：
 1. 读取 `{run_dir}/.cache/dispatch/prompt_composer_merged_{N}.json`
-2. 逐子镜生成完整 AI 视频提示词
+2. 逐子镜生成完整的 AI 视频提示词，按模式 C 叙事融合格式输出
 3. 输出 JSON 写入 `{run_dir}/.cache/composer/composer_merged_{N}_output.json`
+   **（如多 Agent 并行，必须各写独立文件）**
 
-每镜必须包含（13项要件）：
-- 画幅与风格声明 | 场景/空间/氛围 | 所有角色位置与服装 | 动作过程三段式（起幅→推进→落幅，三段不同）
-- 每角色 >=5 面部特征（物理表情，见下方示例）
-- 每镜 >=2 句氛围文字（感官隐喻，禁止用概括形容词，见下方示例）
-- 多人镜含【叙事推进】段
+每镜提示词必须是一条完整的叙事文本，按以下信息量组织但不标注段落标题：
 
-物理表情逐项示例（每项必须量化）：
-  眼睑：「上眼睑微垂约2mm，遮盖虹膜上缘1/3」→ 合格
-  眼睑：「眼睛半闭」→ 不合格（无量化）
-  瞳孔：「瞳孔向右下偏转15°，聚焦对方领口第二颗纽扣」→ 合格
-  瞳孔：「看向对方」→ 不合格（无方向+对象）
-  唇线：「唇线从微弧松弛→平直紧抿，左唇角单侧上扬约2mm」→ 合格
-  唇线：「嘴角微动」→ 不合格（无量化）
-  鼻翼：「鼻翼静止，无扩张」→ 合格
-  呼吸：「呼吸从均匀15次/分→一次刻意延长吐息3.5秒，胸廓随之缓慢下沉约0.8cm」→ 合格
-  呼吸：「深呼吸」→ 不合格（无量化）
+全局声明：16:9 画幅 + 3D 韩漫精致 CG + 风格 + 情绪因果链规则（每个情绪由触发原因->面部微表情->肢体动作->说话语气驱动）+ 光照规则 + 系统仅以悬浮文字和画外声出现
 
-氛围文字示例（感官隐喻，禁止抽象形容词）：
-  「暖金色灯光在两人之间切割出一片琥珀色沉默，空气密度变大，周围嘈杂退化为低频嗡鸣」→ 合格
-  「他笑意尚未到达眼底就被对方的平静截停——石子投进深潭没有涟漪」→ 合格
-  「气氛紧张」→ 不合格（抽象形容词，AI 无法翻译为像素）
-  「温馨的氛围」→ 不合格（同上）
-- 机位四项（位置/高度/焦距/取景范围） | 运镜（类型+参数+速度）
-- 轴线与空间 | 光照（类型/色温/方向/硬度）
-- 对白标注（说话人+台词原文，OS标无口型同步） | AI 避坑负面提示词（见 SKILL.md 第四节）
-- 动作空间坐标（方向/距离/速度/轨迹） | 关键帧时间标记（0s→Xs→Ys→Zs）
-- 每镜：目标 >=800 字符，门禁 >=500 字符（check_export #15）
+群像动态铁律：画面中每个出现的人物，每镜必须有至少 1 项独立微反应。微反应必须因果链明确——A 的台词->B 的微表情->C 的肢体调整->D 的视线转移。禁止任何角色在镜中“等待被看”或“背景站桩”。
 
-输出格式：{"shots":[{"shot_id":"","subshot_id":"","full_prompt":"完整提示词"}]}
+人物站位+服装+连续：所有人物的画面位置、朝向、当前服装状态（含跨镜延续：延续上一镜头的站位和表演节奏，人物不重置动作）。服装从 costume_map 取，禁止编造。
 
-完成前自检（写入输出前逐项确认）：
+时长+运镜+场景目的：此镜要建立/表现/通过什么引出什么的戏剧目标。
+
+情绪因果链：触发原因->面部微表情（量化至 mm/°/次/分）->肢体动作->说话语气。
+
+时间分段（主体），每段内容：
+- X.X-X.X 秒：段落名，景别，运镜参数
+- 画面：前景/中景/背景分层 + 角色构图
+- 表情：量化微表情（眼睑开合 mm/瞳孔偏转°/唇线弧度/鼻翼张缩/呼吸频率+胸廓幅度）
+- 群像因果链：A 的台词或动作->B 的微反应->C 的肢体调整->D 的视线转移
+- 动作：空间轨迹（方向+距离+速度+轨迹类型）
+- 语气/声音：说话角色语气（含重音/停顿/尾音）+ 无台词角色口型闭合声明
+- 原文声音/台词：逐字保留原始对话
+
+光照：源类型+色温（K）+方向+硬度 + 明暗分割在面部或空间上的具体效果。保持我们管线级别的光影精度。
+
+环境音：基底环境音 + 关键音频事件及其叙事功能。
+
+禁止项：单条超 15s；漏对白/系统声；抽象情绪标签代替具体量化；非说话人嘴部做口型同步；背景人物变成木头人（每个出现的人必须有微反应）；左右站位无理由突变；服装道具状态重置。
+负面提示词模板：画面崩坏 面部扭曲 五官错位 多余肢体 手指畸形 角色换脸 人物闪烁 鬼影重叠 道具漂移 服饰闪烁错乱 穿模穿帮 物体悬浮 运动模糊过度 动作抽搐 光照闪烁 低清画质 像素化 水印 字幕残留 背景扭曲 非说话人嘴部动作 禁止未说话角色口型同步 OS系统声无需口型
+
+
+每镜自包含：每个full_prompt开头必须包含完整的全局声明（16:9画幅+风格+情绪因果链规则+光照规则+系统规则），禁止依赖上一镜的上下文。任何一镜单独投喂Seedance应能独立运行。
+每镜字数 800-1800 chars。
+
+禁止模板套话：场景目的必须是此镜特有的戏剧目标，禁止“通过对白完成当前叙事情节节点的人物塑造与信息传递”等通用模板句式。固定镜头不需要“机位轮换”——这是跨镜规则不是单镜描述。关键量化表情 2-3 项/角色即可，不必堆砌数字。触发链和时间分段中不要重复描述同一量化数据——合并在时间分段里一次写清。保持叙事流畅，不堆砌数字。
+表情必须是动词和数值序列（如“上眼睥微抬 1.5mm->瞳孔偏转 15°”），非名词标签“紧张”。
+群像中每个角色可独立追踪其微反应随时间的变化。
+
+输出格式：{"shots":[{"shot_id":"","subshot_id":"","full_prompt":""}]}
+
+完成前自检：
 1. shot 数量匹配 dispatch
-2. 每个 full_prompt >=500 字符
-3. 每个 full_prompt 中，每角色 >=5 个量化物理表情项（眼睑/瞳孔/唇线/鼻翼/呼吸至少各一，且含数值或精确方位）
-4. 每个 full_prompt 中，>=2 句感官隐喻氛围文字（不是「气氛紧张」「温馨的氛围」等抽象形容词）
-5. 负面提示词已注入（含「画面崩坏 面部扭曲 多余肢体」等 20+ 关键词）
+2. 每 full_prompt >=800 字符
+3. 每角色 >=5 个量化物理表情项（眼睑/瞳孔/唇线/鼻翼/呼吸各至少一，含数值或精确方位）
+4. 每 full_prompt 中 >=2 句感官隱喻氛围文字
+5. 每出场角色 >=1 项独立微反应，含因果链
+6. 无抽象情绪标签，表情以动词/数值序列呈现
+7. 有场景目的句 + 环境音层 + 非说话人口型控制
+8. 负面提示词已注入
 自检通过后写入输出文件。
 
 额外修正要求（仅在上一轮自检发现系统性缺口时填写，不超过 200 字，不填则省略本段）：
 {extra}
 ```
 
-### Editor 审查 Agent（Phase 8）
 
-```
-你是资深剪辑指导/后期总监，负责短剧成片前的最后一轮质量审查。
-你的眼睛能捕捉到观众不会注意到但会感觉不对的一切——角色位置的微妙跳切、
-视线的方向错位、光源突然的冷暖翻转。你的工作是守护画面连续性。
-现在对已合成的提示词包进行语义修复和穿帮审查。
+---
 
-项目：{project_name} | {canvas}
+## 四、Phase 7-8: Editor Pass
 
-任务：
-1. 读取 `{run_dir}/.cache/composer/composer_merged_{N}_output.json`
-2. 修复 Python 清理遗留的孤立标点/数字/不通顺句子
-3. 执行 10 项穿帮审查（详见下）
-4. 输出修复后的 JSON，写入 `{run_dir}/.cache/composer/composer_merged_{N}_output.json`（原地覆盖）
+### 穿帮审查 10 项（Phase 8）
 
-穿帮审查 10 项（blocking 问题必须修正）：
 1. 位置跳位：同一场景同组人物画左/画右无理由翻转
 2. 视线断裂：注视方向与对话对象不一致
 3. 表情跳跃：情绪强度无递进逻辑
@@ -290,375 +303,229 @@ description: >
 9. 焦距合理：<=28mm 用于面部特写
 10. 推拉速度：推 >0.3m/s 或拉 >0.2m/s
 
-发现 blocking 问题时，在输出 JSON 中追加 "穿帮":[{"subshot_id":"","type":"","severity":"blocking","desc":""}]。
+### 模式 C 专属审查（Phase 8 追加，Composer 使用 narrative fusion 时必查）
 
+11. 群像反应链断裂：在场角色无独立微反应，或因果链中断（A→B→C→D 缺环）
+12. 场景目的缺失：Prompt 中没有说明此镜要建立/表现/引出的戏剧目标
+13. 环境音层缺失：没有写基底环境音或关键音频事件
+14. 非说话人口型控制缺失：无台词角色无口型闭合声明
+15. 触发链-时间分段重复：同一量化数据在触发段和时间分段各写一遍
+16. 木头人角色：出场角色被描述为「保持静止」「不做反应」「等待」
+17. 表情名词标签：出现「紧张」「开心」「慌乱」等裸标签而非动词+数值序列
+18. 物理状态缺失：未标注角色的站/坐/走/蹲/靠等基础身体状态
+
+## 五、Phase 9: 最终验证
+
+### Quality Gates（22 项）
+
+| # | 检查项 | 门禁 |
+|---|---|---|
+| 1-8 | 格式完整 | 主镜头/时长/台词对象/场景标记/角色名/标点/blockquote/子镜覆盖 100% |
+| 9 | 对白准确 | 0 mismatch |
+| 10 | 机位完整 | <=10 欠项 |
+| 11 | 动作三段 | 0 复用 |
+| 12 | 景别中文 | 0 英文残留 |
+| 13 | XLSX | 行数 >= 子镜数 |
+| 14 | 编码 | UTF-8 |
+| 15 | 提示词长度 | >=500 字符/镜 |
+| 16 | 面部细节 | >=3 面部关键词/镜 >=70% |
+| 17 | 焦距合理 | 0 超广角用于特写 |
+| 18 | 轴线连续 | <=5 |
+| 19 | 景别多样 | <=2 单调组 |
+| 20 | 光照连续 | 相邻镜色温差 <=2000K |
+
+### 模式 C 补充验证（Composer 使用 narrative fusion 时追加）
+
+| # | 检查项 | 门禁 |
+|---|---|---|
+| C1 | 无抽象情绪标签 | 0 |
+| C2 | 每出场角色 >=1 独立微反应 | 100% |
+| C3 | 微反应含因果链 | >=80% |
+| C4 | 表情以动词/数值序列呈现 | 0 名词标签 |
+| C5 | 有场景目的句 | 100% |
+| C6 | 有环境音层 | 100% |
+| C7 | 非说话人口型闭合声明 | >=90% |
+| C8 | 单镜字数 1200-1800 | 100% |
+
+## 六、Phase 10: 导出
+
+导出通过 export_with_validation.py（22+8 项自检→自动修→再检→全过才写盘）。不得直接调用 export_workbook.py。
+
+## 七、Agent 编排策略（实战固化）
+
+### 文件策略
+- 多 Agent 并行必须各写**独立输出文件**（如 emotion_b12.json）
+- 全部完成后用 merge_agent_outputs.py 合并去重
+- 禁止多 Agent 写同一文件
+
+### 线程管理
+
+> [THREAD LEAK RED LINE - 2026-07-19 incident] Agent completion notification arrives in the SAME turn -> immediately call close_agent(target=agent_id). No deferral, no batching. This pipeline previously suffered a 15-minute outage from 6 leaked thread slots.
+- Agent 完成通知到达的同一轮，立即 close_agent(target=agent_id)
+- 单轮最多 spawn 3 个 Agent
+- 完成→关闭→再派下一批
+
+### 分批策略
+| Phase | 单批上限 | 并行 Agent | 文件命名 |
+|---|---|---|---|
+| emotion/scene/camera | 20 镜 | 3 | {type}_b{NN}.json |
+| prompt_composer | 36 镜(3批) | 3 | composer_v2_b{NNN}.json |
+
+
+
+## 附：Editor 审查 Agent 派发模板（Phase 8）
+
+> **[DISCIPLINE] Record agent_id on spawn, call close_agent immediately on completion.**
+
+`
+你是资深剪辑指导/后期总监，负责短剧成片前的最后一轮质量审查。
+你的眼睛能捕捉到观众不会注意到但会感觉不对的一切——角色位置的微妙跳切、
+视线的方向错位、光源突然的冷暖翻转。你的工作是守护画面连续性。
+现在对已合成的提示词包进行语义修复和穿帮审查。
+
+项目：{project_name} | {canvas}
+
+任务：
+1. 读取 {run_dir}/.cache/composer/composer_v2_{N}.json（或合并后的 prompt_package）
+2. 修复 Python 清理遗留的孤立标点/数字/不通顺句子
+3. 执行以下审查
+4. 输出修复后的 JSON，原地覆盖或写入 {run_dir}/.cache/composer/prompt_package_final.json
+
+穿帮审查 18 项（blocking 问题必须修正）：
+
+【传统 10 项】
+1. 位置跳位：同一场景同组人物画左/画右无理由翻转
+2. 视线断裂：注视方向与对话对象不一致
+3. 表情跳跃：情绪强度无递进逻辑
+4. 服装连续性：同场景服装颜色/款式/配饰变化
+5. 道具稳定：手持道具消失/出现/换手
+6. 色温连续：相邻镜色温差 >1500K
+7. 光源方向：主光源 180 度翻转无过渡
+8. 景别跳切：相邻镜跨度 >3 级
+9. 焦距合理：<=28mm 用于面部特写
+10. 推拉速度：推 >0.3m/s 或拉 >0.2m/s
+
+【Mode C 叙事融合专属 8 项（使用 narrative fusion 格式时必查）】
+11. 群像反应链断裂：在场角色无独立微反应，或因果链 A→B→C→D 缺环
+12. 场景目的缺失：Prompt 中没有此镜的戏剧目标
+13. 环境音层缺失：没有基底环境音或关键音频事件
+14. 非说话人口型控制缺失：无台词角色无口型闭合声明
+15. 触发链-时间分段重复：同一量化数据在两处各写一遍
+16. 木头人角色：出场角色被描述为「保持静止」「不做反应」「等待被看」
+17. 表情名词标签：出现「紧张」「开心」等裸标签而非动词+数值序列
+18. 物理状态缺失：未标注角色的站/坐/走/蹲/靠等基础身体状态
+
+发现 blocking 问题时，在输出 JSON 中追加修正确认标记。
 完成前验证：所有 blocking 问题已修正或标注。
 
 额外修正要求（仅在上一轮自检发现系统性缺口时填写，不超过 200 字，不填则省略本段）：
 {extra}
-```
-
-## 四、Phase 6: Prompt Composer
-
-### 动作过程三段式（多人镜）
-
-```
-起幅画面（0~Xs）——角色初始姿态
-动作推进（Xs~Ys）——
-【角色1】：眼睑/瞳孔/唇线/鼻翼/呼吸等逐项
-【角色2】：同上
-【叙事推进】：整体动线+情绪变化（→连接）
-落幅画面（Ys~Zs）——结束状态
-```
-
-### 非说话角色强制反应规则
-
-多人镜中，非说话角色**禁止静止**。按场景类型分级要求：
-
-**对话/日常场景**：非说话角色每阶段至少一个可见微反应（视线转移/呼吸节奏变化/重心微调/手部微动/面部微表情，至少一维有变化）。禁止项：「面无表情站立」「双手垂放不动」「视线锁定不变」。
-
-**动作/打斗/追逐场景**：非出手角色每阶段有完整身体响应：
-- 待命角色：呼吸幅度较日常明显加大 + 重心周期性微调
-- 即将接敌：防御预动作（手臂微抬/身体微侧/膝盖微屈至少一项）
-- 被击退或闪避：完整位移轨迹（方向+距离+速度）
-- 画面边缘角色：标注退出方向和回归时机
-
-打斗/追逐场景追加负面提示词：`角色定格 打斗脱节 动作不同步 围观静止 悬浮待机`
-
-### 物理表情 + 氛围感双结合（强制）
-
-每镜必须同时覆盖两类描述：
-- **物理表情**（>=5 项/角色）：眼睑开合幅度、瞳孔聚焦方向、唇线弧度与张力、鼻翼扩张/收缩、呼吸节奏与胸廓起伏幅度、眉毛走向
-- **氛围文字**（>=2 句/镜）：光的情绪重量、空气密度感、空间压迫/舒展、未言明的情绪暗流、感官隐喻
-
-### AI 视频避坑负面提示词（每镜注入）
-
-```
-画面崩坏 面部扭曲 五官错位 多余肢体 手指畸形 角色换脸 人物闪烁 鬼影重叠
-道具漂移 服饰闪烁错乱 穿模穿帮 物体悬浮 运动模糊过度 动作抽搐 光照闪烁
- 低清画质 像素化 水印 字幕残留 背景扭曲 非说话人嘴部动作 禁止未说话角色口型同步 OS系统声无需口型
-```
-- 多人镜追加：`多人物重叠 人物融合 角色混淆`
-- 手部特写追加：`手指粘连 手指数错误 关节弯曲异常`
-- 快速运镜追加：`运动重影 动态模糊过度 背景撕裂`
-
-### 动作空间坐标规范
-
-位移描述必须包含：方向（起点→终点）、距离（~X步/X米）、速度（X m/s或定性）、轨迹（直线/弧线/折线）。
-
-### 动作描述数据清洗
-
-`scene_output.json` 空间分层去管道符（`|虚实:XX%|`），`camera_output.json` 焦距去后缀（`50标准`→`50mm`）。
+`
 
 ---
 
-## 五、Phase 7-8: Editor Pass
+## 十、铁律（25 条）
 
-### Pass 1 (Python 清理)
-
-`merge_prompts.py` 去除 dB/Hz/混响等音频工程术语。
-
-### Pass 2 (LLM 穿帮审查)
-
-Agent 逐镜检查：
-- 人物连续性：位置跳位、视线断裂、表情跳跃
-- 道具服装：服装连续性、道具稳定
-- 光照氛围：色温连续（<=1500K）、光源方向稳定
-- 运镜合理性：景别跳切<=3级、超广角不得用于特写、推镜<=0.3m/s
-
----
-
-## 六、导出格式规范
-
-### Markdown 结构
-
-```
-# 项目名 AI视频提示词包
-画幅 | 风格 | 主镜头数 | 子镜头数
----
-## 场景名
-
-### S1-XX（Xs，N个镜头）
-
-#### **子镜头 S1-XX-XX** **时长**：Xs
-> **景别**：。> **机位**：。> **运镜**：。
-> **轴线与空间**：。> **场景层次**：前景= | 中景= | 背景=
-> **可见人物**：。> **动作过程**：。> **落幅**：。
-> **对白声音（角色名）**：。> **光照**：。> **负面提示词**：画面崩坏 面部扭曲...
-```
-
-### XLSX 结构
-
-主镜头 | 子镜头 | 时长(s) | 台词 | 说话人 | 景别 | 机位 | 运镜 | 动作过程
-
----
-
-## 七、技术规范
-
-### 景别（仅中文）
-大特写 / 特写 / 中近景 / 中景 / 全景 / 大远景。禁止英文缩写（CU/ECU/MS等）。
-
-### 机位（四项缺一不可）
-镜头位置（角色/方向/距离）+ 高度（站姿/坐姿）+ 焦距（mm）+ 取景范围（面部/胸部以上/腰部以上/全身）。
-
-### 运镜
-固定镜头标注呼吸感参数（±0.5cm），推拉标注速度（0.1m/3s），摇镜标注方向角度（PAN 20°-30°），跟拍标注偏移距离（水平30cm）。
-
-### 台词标注
-对白格式：`**对白声音（角色名）**：原文`；OS格式：`**OS（角色名）**：原文（无口型同步）`。D-MAIN/D-SYS 引用强制标注 OS。台词原文禁止改写/新增/删除。
-
-### 轴线与空间
-同一场景同组人物相邻镜头保持180度轴线。越轴需过渡理由（角色转身/镜头绕行/空镜转场）。特写/大特写标「不适用」。
-
-### 视觉风格贯穿
-`visual_style` 全文嵌入每条提示词风格约束行。每镜 >=3 面部部位描述、眼神高光描述、动作幅度量化、光源设置。
-
----
-
-## 八、Quality Gates（导出前必过）
-
-| # | 类别 | 检查项 | 门禁 |
-|---|---|---|---|
-| 01-08 | 格式完整 | 主镜头/时长/台词对象/场景标记/角色名/标点/blockquote/子镜覆盖 | 100% |
-| 09 | 对白准确 | Dialogue ref ID 逐条校验 | 0 mismatch |
-| 10 | 机位完整 | 四字段（位置/高度/焦距/景别） | <=10 欠项 |
-| 11 | 动作三段 | 起幅/推进/落幅 | 0 复用 |
-| 12 | 规范遵守 | 英文景别残留 | 0 |
-| 13 | XLSX | 行数 >= 子镜数 | 通过 |
-| 14 | 编码 | UTF-8 | 通过 |
-| 15 | 提示词长度 | >=500 字符/镜 | 100% |
-| 16 | 面部细节 | >=3 面部关键词/镜 | >=70% |
-| 17 | 焦距合理 | 禁止 <=28mm 用于特写 | 0 |
-| 18 | 轴线连续 | 逐角色解析位置，同场景未标记翻转 | <=5 |
-| 19 | 景别多样 | 多子镜主镜内景别不重复 | <=2 单调组 |
-| 20 | 光照连续 | 相邻镜色温跳跃 | <=2000K |
-
-
-### 目标/门禁双层标准
-
-模板中的质量标准采用双层标注：
-
-- **目标**：Agent 应追求的产出水平（如 >=5 面部特征/角色）
-- **门禁**：check_export.py 的阻断阈值（如 >=3 面部关键词/镜，>=70%覆盖率）
-
-两者之间的差距是质量缓冲区——Agent 尽力追目标，门禁兜底防止退化。差距过大的项目（如当前 3→5 面部特征）会在铁律审查中被标记。
-
-### 强制验证出口
-
-Phase 10 必须通过 `export_with_validation.py`（导出→22项自检→自动修→再检→22/22才写盘）。不得直接调用 `export_workbook.py`。
-
-### 面部细节自动修复
-
-Check #16 不达标时 `enrich_facial_detail.py` 从 `emotion_output.json` 注入 `micro_expression` 到 director_pass 的 `character_action`。
-
-
-- **负面提示词缺失**：`inject_negative_prompts()` 在导出前自动扫描 `prompt_package.json`，缺失时注入标准模板（`画面崩坏 面部扭曲 五官错位...` 20+ 关键词）。Markdown 导出时自动从 `full_prompt` 提取 `【负面提示词】` 段落渲染为独立 blockquote。---
-
-## 九、Agent 生命周期管理
-
-### spawn + close 流程
-
-> **THREAD LEAK RED LINE (2026-07-19 incident): When a subagent_notification arrives, the main agent MUST call close_agent(target=agent_id) in the SAME turn. Failure = thread slot leak = all future spawns blocked. This pipeline previously suffered a 15-minute outage from 6 leaked slots.**
-
-1. `spawn_agent(items=[skill+text], fork_context=True)` — record the returned agent_id
-2. 子Agent 读取 dispatch JSON，写入 output JSON，通知完成
-3. On subagent_notification arrival, **immediately in the same turn** call `close_agent(target=agent_id)` — no deferral, no batching
-4. 禁止批量延迟关闭；禁止在 Agent 完成前派接替 Agent
-
-### 增量重试（send_back）
-
-仅传失败子镜的 handoff 摘要和新要求，不重复发送已通过镜的完整数据。
-
-### Agent ID 追踪
-
-Agent ID 通过 `spawn_agent` 返回的 `agent_id` 追踪。失活通过 recover 动作自动重派。
-
----
-
-## 十、铁律（25条）
+**铁律前置声明：以下所有铁律为硬约束，权重高于一切技术判断。在任何行动之前，主Agent 必须逐条自检铁律清单。若拟执行的动作与任意一条铁律冲突——无论基于何种技术理由——该动作禁止执行。铁律不可被任何情境判断覆盖。违反铁律的处理：立即停止当前 Phase、撤回已执行的替代输出、回到合规状态重新执行。**
 
 **管线纪律：**
-1. Phase 0 必须先 `tool_search("spawn_agent")` 确认子Agent可用性
+1. Phase 0 必须先确认子Agent可用性
 2. 子Agent未完成时禁止派接替Agent
 3. Agent线程满时禁止降级为本地合成
-4. Agent完成后立即 `close_agent`，禁止批量延迟关闭
-5. 任何Phase失败（包括数据结构不匹配、字段缺失、JSON解析错误等）禁止以「输出已足够」为由跳过，必须修复后重试
+4. Agent完成后立即 close_agent，禁止批量延迟关闭
+5. 任何Phase失败禁止以「输出已足够」为由跳过，必须修复后重试
 6. Phase 2/6/8 的 spawn 阶段禁止用本地脚本替代
 
 **Orchestrator：**
 7. 拆镜按 剧情节拍→场景切换→台词时长 优先级，禁止跨节拍合并
-8. 拆镜后执行相邻单子镜主镜头合并
+8. 拆镜后执行相邻单子镜主镜头合并（合并须在时长重算和超标拆分之后）
 9. 合并前备份原始 shot_plan.original.json
 
 **内容质量：**
-10. 每镜 >=500 字符，含 visual_style 全文。面部特征：门禁 >=3 项（目标 >=5）。光源必须具体化
+10. 每镜 >=1200 字符（Mode C）。面部特征：门禁 >=3 项。光源必须具体化
 11. 动作过程起幅/推进/落幅三段必须不同，多人镜每角色有独立行为
 12. 机位四项缺一不可；景别仅用中文；负面提示词空格隔断
-13. AI视频避坑负面提示词模板每镜注入（门禁 check_export #22）
-14. 物理表情（>=5项/角色）+ 氛围文字（>=2句/镜）双结合
+13. AI视频避坑负面提示词模板每镜注入
+14. 物理表情（>=2项量化/角色）+ 氛围文字（>=2句/镜）双结合
 15. 动作位移必须含方向/距离/速度/轨迹四要素
 
 **人物与连续性：**
 16. 台词/OV/OS 禁止新增/删除/改写原文
 17. OV/OS 标注「无口型同步」，禁止写嘴唇开合
 18. 同一场景同组人物保持180度轴线，越轴需要过渡理由
-19. 多人镜所有出场角色均有行为描述，按场景类型分级：
-    **对话/日常场景**：非说话角色每阶段有可见微反应（视线转移/呼吸节奏变化/重心微调/手部微动/面部微表情，至少一维有变化），禁止任何角色完全静止
-    **动作/打斗/追逐场景**：非出手角色每阶段有完整身体响应——防御姿态调整/重心转移/步法变化/反击预备至少择一，含空间轨迹（方向/距离/速度）；禁止「围观静止」「站在原地观看」；退出画面边缘的角色标注退出方向和回归时机
+19. 多人镜所有出场角色均有行为描述，禁止任何角色完全静止或「背景站桩」。非说话角色每阶段有可见微反应（视线转移/呼吸节奏变化/重心微调/手部微动至少一维有变化）
 20. 同一角色跨镜的 micro_expression 和 body_parts_focus 禁止复用
 
 **穿帮审查（Phase 8）：**
-21. 位置跳位/视线断裂/表情跳跃/服装连续/道具稳定/色温/光源/景别/焦距/推拉速度 共10项检查
+21. 传统 10 项 + Mode C 专属 8 项 = 共 18 项检查
 22. blocking 问题必须退回修正后方可进入 Phase 9
 
 **导出铁律：**
 23. 导出必须含主镜头分组（含时长）、每子镜时长标注、对白说话人标注
-24. Phase 10 必须通过 `export_with_validation.py`，20/20 才写盘
-25. 导出后 `check_export.py` 自检，任何一项 <100% 必须修复后重新导出
+24. Phase 10 必须通过 export_with_validation.py，全部 30 项（22 传统 + 8 Mode C）才写盘
+25. 导出后自检，任何一项 <100% 必须修复后重新导出
 
----
+**运行时纪律（2026-07-19 固化）：**
+26. Phase 2/6/8 子Agent 运行期间，主Agent 严禁以任何方式本地生成替代输出文件（Python 脚本、inline 代码、手动 JSON 拼装均禁止）。必须轮询等待全部 Agent 写完对应阶段目录后进入下一 Phase。超时等待用户确认，不得自行跳过。
+27. 源文件 BOM 检测为 Phase 0 必做项。字节级剥离 EF BB BF 后再喂入 generate_shotplan.py，否则 scene_header_pattern 正则因 BOM 偏移失效。
+28. Phase 0 必须先确认用户输出目录（export_base），所有项目文件落盘到该目录，禁止在用户未确认前创建默认路径。
+
+以上 25 条铁律中标注「不可跳过」的阶段，主Agent在任何情况下不得静默省略。
+
+## 十一、多 Agent 并行写入反模式
+
+**问题**：多个 Agent 同时写同一个输出文件 → 后写覆盖先写 → 数据丢失（曾导致 103 项→40 项→10 项连锁覆盖）
+
+**修复**：
+- 每个 Agent 写独立文件（如 emotion_b12.json / emotion_b34.json / emotion_b56.json）
+- 全部完成后用 scripts/merge_agent_outputs.py <merged.json> <file1.json> <file2.json> ... 合并去重
+- 合并按 subshot_id 去重，先到者保留，重复丢弃
+
+**派发模板注意事项**：
+- 写入路径必须带独立后缀（如 _b12.json），禁止直接写 emotion_output.json
+- 派发文本中明确：「写入（独立文件，不要碰其他文件）」
+
+群像禁止项（移入负面提示词，正文不写）：禁止角色静止站桩、禁止表情冻结、禁止背景人物无反应、禁止等待被看，这四个关键词直接追加到每镜负面提示词末尾。正文只保留正面群像描述。
+叙事优先风格规则：表情描述优先使用自然语言叙事（如「眼睫微颤→唇线收紧→呼吸从均匀加快至浅促」），仅在关键情绪锚点补充1-2项mm/度级量化。禁止将物理表情拆为独立的「量化表情」/「肢体细节」/「表演增强」格子式分节——统一融在时间分段的叙事流里。技术风格只做点缀不做骨架，整体读感应像导演笔记而非数据库字段。
 
 
-以上 25 条铁律中标注「不可跳过」的阶段，主Agent在任何情况下不得静默省略。违反任何一条铁律视为管线执行失败。
+时间分段硬性禁令：必须是完整叙事段落，禁用‘/’做段内分隔，禁‘画面分层：’等标签前缀。示例：‘⸮.前景叶片虚化如柔焦滤镜⸮.’
+## 附：Prompt Composer 标准化派发模板（v3 固化版）
 
----
-
-## 十A、管线调度纪律（防阻塞）
-
-| 规则 | 内容 |
-|---|---|
-| **派发上限** | 单批 dispatch 不超过 **20 个子镜**；超过自动拆批。主Agent生成 dispatch 时强制检查 |
-| **增量写盘** | 子Agent 每处理 10~15 镜必须增量写盘一次（追加模式），写后验证 JSON 合法，再继续。禁止全量内存堆积后一次性写入 |
-| **分批派发** | 主Agent 每轮最多 spawn 3 个 Agent（并行），前一组成品验证通过后再派下一组。禁止一次性占满全部线程槽位 |
-| **静默超时** | 子Agent 派发后 3 分钟内输出文件无增长 → 视为阻塞，主Agent 降级为本地合成推进管线 |
-| **输出即终止** | 子Agent 完成最终写盘后立即终止，不进行额外推理或自评 |
-
-## 十一、动态表演参考
-
-`references/dynamic_performance_reference.md` 提供动作/表情/运镜/光影候选模板。子Agent 按职责读取对应章节，改写为贴合本镜剧本的具体表演，禁止照抄模板。发生冲突时优先级：剧情真实 > 角色性格 > 镜头叙事功能 > 平台稳定性 > 参考模板。
-
----
-
-## 十二、核心脚本
-
-| 脚本 | 用途 |
-|---|---|
-| `scripts/generate_shotplan.py` | Phase 1 拆镜 |
-| `scripts/build_shotplan.py` | 台词拆分 |
-| `scripts/dispatch_cache.py` | 落盘调度 |
-| `scripts/assemble_director.py` | Phase 3 整合 |
-| `scripts/continuity_check.py` | Phase 5 连续检查 |
-| `scripts/merge_prompts.py` | Phase 7 清理 |
-| `scripts/enrich_prompt_package.py` | Phase 6a 后处理 |
-| `scripts/enrich_facial_detail.py` | 面部细节自动修复 |
-| `scripts/export_workbook.py` | Phase 10 XLSX导出 |
-| `scripts/export_with_validation.py` | 强制验证出口 |
-| `scripts/check_export.py` | 22项自检 |
-| `scripts/pipeline_runner.py` | 管线状态机 |
-| `scripts/validate_agent_output.py` | 子Agent输出验证 |
-| `scripts/gate_check.py` | 门禁检查 |
-| `scripts/hybrid_gate.py` | 混合门禁 |
-| `scripts/pipeline_state.py` | 管线状态持久化 |
----
-### 主镜头合并（Phase 1 后必执行 — 须在时长重算+拆分之后）
-
-## 十三、Phase 1-2 间关键补充（实战固化）
-
-### 时长重算（Phase 1 后必执行，preflight 通过前）
-
-`build_shotplan.py` 标准化后所有子镜 `duration` 字段均为默认 2.5s。必须根据 `dialogue_map` 逐镜重算：
+此模板为 Phase 6 Composer Agent 的唯一合法派发文本。主Agent 派发时只替换 {变量}，不得即兴修改正文。
 
 ```
-dialogue_time = chars/4.5 + 标点停顿(0.3s/个) + 句末停顿(0.5s/个)
-action_time = 2.0s 基础 + 动作关键词加成（走1.5/跑1.0/坐1.5/看0.8/递1.0/接1.0…）
-needed = max(dialogue_time, action_time) + 0.5s（反应空白）
-capped = min(needed, max_shot_duration)
+你是资深 AI 视频提示词工程师与短剧导演，目标平台即梦。将导演数据转化为可独立投喂的 Mode C 叙事融合提示词。
+
+项目：{project_name} | {canvas} | {visual_style}
+角色：{character_list}
+
+任务：
+1. 读取以下 dispatch 文件：
+{dispatch_file_list}
+2. 逐子镜生成完整 AI 视频提示词
+3. 输出 JSON 写入：{output_path}
+
+每镜必须包含以下 8 个板块（缺一不可）：
+
+板块1-全局声明：9:16竖屏开头，含画幅、风格、情绪因果链规则、光照规则、系统规则。人物与场景比例合理、人物与空间关系合理、镜头透视关系遵循物理规则。<=150字。
+
+板块2-人物站位服装连续：所有角色画面位置+朝向+服装（从costume_map取禁止编造）+跨镜连续声明。
+
+板块3-时长运镜场景目的：X.X秒.景别.运镜类型 + 运镜完整描述（从director_pass.json的camera字段取值，包含速度/距离/角度/焦段参数，禁止简化为仅运镜类型名如"推"/"拉"/"固定"） + 此镜的戏剧目标。禁止通用模板句式。
+
+板块4-时间分段(叙事段落)：必须是完整叙事文本。禁止/作为段内分隔符。禁止[画面分层：]等标签前缀。禁止[人物构图][起幅]等格子式分节。画面表情动作语气台词融合在一个自然段。格式示例：[X.X-X.X秒，景别，运镜。前景叶片虚化。她眉心微蹙又舒展。同伴目光扫过。语气压低，OS口型闭合。原文台词：...]
+
+板块5-光照：源类型+色温K+方向+硬度+明暗分割。管线级精度。
+
+板块6-环境音：基底环境音+关键音频事件+叙事功能。
+
+板块7-负面提示词：标准模板(画面崩坏 面部扭曲...完整40+关键词)。
+
+板块8-自包含验证：确认本镜可独立投喂即梦。
+
+每镜800-1800字。物理表情优先自然叙事语言，关键锚点补1-2项量化。
+
+输出：{"shots":[{"shot_id":"","subshot_id":"","full_prompt":""}]}
+一次性写入。写完终止。
 ```
-
-超 15s 主镜头必须拆分：按子镜累加时长为单位分组，每组 <=15s。超长单子镜台词（如 >13s）需在逗号/句号处拆分为两子镜。
-
-拆分后 `shot_plan.original.json` 始终备份最新版本。preflight 通过后方可进入 Phase 2 派发。
-
-### 调度数据生成（手动管线用）
-
-`dispatch_cache.py` 为 `pipeline_runner.py` 内部模块，无法独立运行。手动运行多agent管线时需自行生成：
-
-- `{emotion,scene,camera}_data.json` — 格式 `{"items":[{"shot_id","subshot_id","chars","acts","diags","narrs","dur","desc"}]}`
-- `prompt_composer_batch{{NNN}}_packet.json` — 建议 batch_size=12（100镜约9批）
-
-### 字段名统一
-
-shot_plan 子镜时长字段名为 `duration`（非 `duration_sec`），主镜头总时长字段名为 `total_duration`。`validate_durations.py` / `preflight_check.py` 均读取 `duration` 字段。
-
-### Phase 0 必确认项
-
-每次启动新管线必须逐项确认（来自 `project_config.template.json`）：项目名、画幅、视觉风格、体裁、单镜最长时长、输出类型、目标平台、角色列表（含服装表）、篇幅范围。不可跳过，不可推断后直接建目录。
-
-### Phase 0.5：源规则自动检测
-
-主Agent 在确认 `project_config.json` 后、运行 `generate_shotplan.py` 前，**必须**执行：
-
-```bash
-python scripts/detect_source_rules.py <source.txt> --output <run_dir>/detected_rules.json
-```
-
-检测脚本自动提取：角色列表（从 `人物：` 行和对话前缀）、动作关键词（从 `△`/`动作：` 行统计高频词）、场景头格式。主Agent 将检测结果合并到 `project_config.json` 的 `source_rules` 字段。
-
-`generate_shotplan.py`（重构后）从 `project_config.json` 读取 `source_rules`，不再硬编码任何项目特定规则。换项目只需换配置文件和源文，脚本通用。
-
----
-
-### 本回合实战发现（2026-07-18 第56集多agent跑管）
-
-#### 1. 情绪分析Agent批次拆分
-
-`emotion_analysis` Agent 处理 101 镜时频繁策略切换，最终只完成 16/101。建议将分析Agent的派发拆分为 3 批（~34镜/批），与 Prompt Composer 保持一致的批次粒度。
-
-#### 2. `export_with_validation.py` 变量名Bug
-
-第 244 行 `if es:` 应为 `if ss:`（`es` 未定义）。已修：`if ss:` + `fp = ss.get("full_prompt", "")`。
-
-#### 3. 负面提示词MD导出提取失败
-
-导出脚本 `inject_negative_prompts()` 检查 `if "负面提示词" not in fp` 跳过已有注入（Composer已写），但第246行正则 `(?:负面提示|消极提示|negative prompt)[：:]` 不匹配 Composer 的 `**负面提示词**：` 格式（`负面提示词` vs 正则的 `负面提示`，少一个 `词` 字）。短期方案：`inject_negative_prompts` 中 `re.sub(r"负面提示词[：:]\s*[^\n]*", "", fp)` 先清除再注入 `【负面提示词】` 模板；长期方案：修复第246行正则。
-
-#### 4. PowerShell 中文字符编码损坏
-#### 4. UTF-8 BOM 导致技能无法识别
-
-`Add-Content -Encoding UTF8` 和 `Set-Content -Encoding UTF8` 在 Windows PowerShell 中默认写入 UTF-8 with BOM（前三个字节 EF BB BF）。SKILL.md 带 BOM 会导致技能扫描器无法识别开头的 `---` YAML frontmatter，表现为技能列表里找不到该技能。
-
-**修复**：`[System.IO.File]::ReadAllBytes` 检测 BOM → `[System.IO.File]::WriteAllBytes` 去掉前三字节后回写。所有 `.md` 文件不得带 BOM。
-
-#### 5. PowerShell 中文字符编码损坏
-在 PowerShell 中用 `[System.IO.File]::WriteAllLines` 或 `Set-Content` 写 Python 文件时，含中文字符的行会被写入乱码（UTF-8 字节移位）。**正确做法**：使用 Python 脚本 file-as-bytes 读写，或 `apply_patch` 操作。
-
-#### 5. Composer输出格式对齐
-
-三个 Prompt Composer Agent 输出格式需要保持一致：`duration_sec` 字段名（非 `duration`）、负面提示词格式（统一用 `负面提示词：`）、物理表情量化格式。建议在 dispatch 中追加格式约束示例。
-17. OV/OS/系统声 标注「无口型同步」，禁止写嘴唇开合；所有非说话角色禁止口型动作，OS镜头画面人物嘴部必须静止
-#### 6. Scene 字段为空
-
-`generate_shotplan.py` 产出的 `shot_plan.json` 中 `scene` 字段为空字符串，导致导出 MD 无法渲染场景标题。修复方式：根据角色归属自动注入场景名（酒店角色=云顶酒店高端会场，其余=学校食堂）。建议 upstream 修复 `generate_shotplan.py` 使其从源文本解析场景名。
-
-#### 7. 静默通过的脚本
-
-- `continuity_check.py`：通过时无输出（exit 0），非 bug。
-- `enrich_prompt_package.py`：Composer 已填满字段时 enrich 计数为 0，属于正常行为。
-- `merge_prompts.py`：Composer 已清理完毕时输出 "No items found"，正常。
-
-#### 8. Editor Pass 2（Phase 8）跳过风险
-
-Phase 8 标注「不可跳过」但在续跑时容易被遗漏。建议在 Phase 7 出口处追加 `check_export.py` 自检，通过后再决定是否需要 Editor Pass 2 的 LLM 穿帮审查。
-8. 拆镜后执行相邻单子镜主镜头合并（合并须在时长重算和超标拆分之后执行，否则实际多子镜率不足 5%）
-#### 9. 主镜头合并时机错误（高优先级）
-
-当前管线设计：Phase 1（generate→build）→ Phase 1.5（合并）→ 时长重算 → 超标拆分 → preflight。
-
-问题：时长重算后的超标拆分会产生大量新主镜头（每拆分一个即增加一个单子镜主镜头），而合并**不会再次执行**。后果：100镜中 99% 为单子镜主镜头，SKILL.md 承诺的"45-55镜 / 65%多子镜占比"完全失效。
-
-**修复**：将合并移到时长重算和超标拆分**之后**，流水线顺序改为：
-```
-generate → build → 时长重算+超标拆分 → 合并 → preflight
-```
-合并参数：同场景 + 字符交集 + 合并后 <= max_shot_duration + <=4 子镜。拆分后 `shot_plan.original.json` 始终备份。
- 低清画质 像素化 水印 字幕残留 背景扭曲 非说话人嘴部动作 禁止未说话角色口型同步 OS系统声无需口型 OS独白时人物闭口不做口型 角色对旁白OS声音不做反应
