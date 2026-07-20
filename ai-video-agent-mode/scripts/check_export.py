@@ -89,7 +89,7 @@ def check_export(md_path, run_dir, quality_mode=False):
         chk(8, "Subshot coverage", not (plan_ids-md_ids), f"{len(md_ids)}/{len(plan_ids)}")
         
         used_refs = set()
-        for s in pkg["shots"]:
+        for s in pkg.get("shots", pkg.get("items", [])):
             used_refs.update(re.findall(r"\[(D\d+(?:-MAIN)?(?:-SYS)?)\]", s.get("full_prompt","")))
         bad = sum(1 for r in used_refs if r not in dm)
         chk(9, "Dialogue refs", bad==0, f"{len(used_refs)} refs, {bad} bad")
@@ -107,7 +107,7 @@ def check_export(md_path, run_dir, quality_mode=False):
         beat_issues = sum(1 for item in dp_items if len(str(item.get("character_action","")))>10 and len(set(re.findall(r"(起幅|推进|落幅)", str(item.get("character_action","")))))<2)
         chk(11, "Action 3-beat", beat_issues==0, str(beat_issues))
         
-        eng = sum(1 for s in pkg["shots"] if re.search(r"(?<![a-zA-Z])(CU|ECU|MCU|MS|LS|FS|ELS)(?![a-zA-Z])", s.get("full_prompt","")))
+        eng = sum(1 for s in pkg.get("shots", pkg.get("items", [])) if re.search(r"(?<![a-zA-Z])(CU|ECU|MCU|MS|LS|FS|ELS)(?![a-zA-Z])", s.get("full_prompt","")))
         chk(12, "English shot sizes", eng==0, str(eng))
         
         xlsx_path = md_path.replace(".md", ".xlsx")
@@ -127,7 +127,7 @@ def check_export(md_path, run_dir, quality_mode=False):
             except: pass
         chk(14, "Encoding", enc_ok, "utf-8" if enc_ok else "BAD")
         
-        short = sum(1 for s in pkg["shots"] if len(s.get("full_prompt",""))<500)
+        short = sum(1 for s in pkg.get("shots", pkg.get("items", [])) if len(s.get("full_prompt",""))<500)
         chk(15, "Prompt length", short==0, f"{short} under 500")
     
     # === QUALITY GATE CHECKS 16-20 ===
@@ -226,7 +226,7 @@ def check_export(md_path, run_dir, quality_mode=False):
     # === CHECK 22: Negative prompt presence ===
     neg_missing = 0
     neg_keywords = ["负面提示", "消极提示", "negative prompt", "画面崩坏", "面部扭曲", "多余肢体"]
-    for s in pkg["shots"]:
+    for s in pkg.get("shots", pkg.get("items", [])):
         fp = s.get("full_prompt", "")
         has_neg = any(kw in fp for kw in neg_keywords)
         if not has_neg:
@@ -239,7 +239,7 @@ def check_export(md_path, run_dir, quality_mode=False):
                     "无奈地", "坚定地", "温柔地", "冷漠地", "轻蔑地", "惊讶地", "尴尬地",
                     "得意地", "焦虑地", "烦躁地", "绝望地", "色地", "嫉妒地"]
     abstract_hits = 0
-    for s in pkg["shots"]:
+    for s in pkg.get("shots", pkg.get("items", [])):
         fp = s.get("full_prompt", "")
         # Only check content sections (before 负面提示词)
         neg_idx = fp.find("负面提示词")
@@ -272,7 +272,7 @@ def check_export(md_path, run_dir, quality_mode=False):
             if isinstance(chars, str):
                 chars = [c.strip() for c in chars.split(";")]
             # Find corresponding prompt
-            ps = next((s for s in pkg["shots"] if s.get("subshot_id") == ssid), None)
+            ps = next((s for s in pkg.get("shots", pkg.get("items", [])) if s.get("subshot_id") == ssid), None)
             if not ps or len(chars) < 2:
                 continue
             fp = ps.get("full_prompt", "")
@@ -301,7 +301,7 @@ def check_export(md_path, run_dir, quality_mode=False):
 
     # C3: Micro-reactions contain cause chain (trigger -> face -> body -> voice)
     cause_chain_missing = 0
-    for s in pkg["shots"]:
+    for s in pkg.get("shots", pkg.get("items", [])):
         fp = s.get("full_prompt", "")
         neg_idx = fp.find("负面提示词")
         time_seg = fp[fp.find("时间分段叙事"):neg_idx] if neg_idx > 0 else fp
@@ -317,7 +317,7 @@ def check_export(md_path, run_dir, quality_mode=False):
     # C4: Expressions as verb/number sequences, not noun labels
     noun_label_pattern = r"(?:紧张|开心|难过|悲伤|愤怒|害怕|惊慌|得意|尴尬|焦虑|温柔|冷漠|坚定)"
     noun_label_hits = 0
-    for s in pkg["shots"]:
+    for s in pkg.get("shots", pkg.get("items", [])):
         fp = s.get("full_prompt", "")
         neg_idx = fp.find("负面提示词")
         # Check time segment for standalone emotion nouns
@@ -332,7 +332,7 @@ def check_export(md_path, run_dir, quality_mode=False):
 
     # C5: Scene purpose sentence present
     purpose_missing = 0
-    for s in pkg["shots"]:
+    for s in pkg.get("shots", pkg.get("items", [])):
         fp = s.get("full_prompt", "")
         # Look for "此镜" or "戏剧目标" in block 3 (时长运镜场景目的)
         idx_purpose = fp.find("时长运镜场景目的")
@@ -349,7 +349,7 @@ def check_export(md_path, run_dir, quality_mode=False):
 
     # C6: Ambient sound layer
     ambient_missing = 0
-    for s in pkg["shots"]:
+    for s in pkg.get("shots", pkg.get("items", [])):
         fp = s.get("full_prompt", "")
         if "环境音设计" not in fp or "环境音" not in fp:
             ambient_missing += 1
@@ -365,7 +365,7 @@ def check_export(md_path, run_dir, quality_mode=False):
 
     # C7: Non-speaker mouth closed declaration
     nonspeaker_missing = 0
-    for s in pkg["shots"]:
+    for s in pkg.get("shots", pkg.get("items", [])):
         fp = s.get("full_prompt", "")
         sid = s.get("subshot_id", "?")
         # Check if shot has dialogue
@@ -382,7 +382,7 @@ def check_export(md_path, run_dir, quality_mode=False):
 
     # C8: Word count 800-1800 (reinforce validate_composer_output check)
     wc_issues = 0
-    for s in pkg["shots"]:
+    for s in pkg.get("shots", pkg.get("items", [])):
         fp = s.get("full_prompt", "")
         if len(fp) < 800 or len(fp) > 1800:
             wc_issues += 1

@@ -11,7 +11,7 @@ This script:
 5. Returns exit code 0 only when ALL 20 checks pass
 """
 
-import json, re, os, sys, subprocess
+import json, re, os, sys, subprocess, glob
 from collections import Counter
 
 CHECK_EXPORT = os.path.join(os.path.dirname(__file__), "check_export.py")
@@ -108,9 +108,10 @@ def inject_negative_prompts(run_dir):
     return fixed
 
 
-def generate_exports(run_dir, md_path):
+def generate_exports(run_dir, md_path, packages=None):
     """Regenerate markdown and xlsx from pipeline data."""
     print("[GEN] Generating exports...")
+    ss = None
     
     # Load data
     with open(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"), "r", encoding="utf-8") as f:
@@ -296,6 +297,7 @@ def generate_exports(run_dir, md_path):
     
     for scene_name in sorted(set(s.get("scene","场景") for s in shots)):
         for shot in scene_shots.get(scene_name, []):
+            ss = None
             for ss in shot["subshots"]:
                 ssid = ss["subshot_id"]
                 di = dp_map.get(ssid, {})
