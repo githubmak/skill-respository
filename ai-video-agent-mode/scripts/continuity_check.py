@@ -204,3 +204,4 @@ def _save_report(run_dir, warnings, errors, issues, char_state=None):
             report["character_state"] = char_state
         json.dump(report, f, ensure_ascii=False)
     print("[CONTINUITY] %d errors, %d warnings" % (errors, warnings))
+    return report_path

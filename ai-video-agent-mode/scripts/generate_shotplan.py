@@ -32,6 +32,7 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=15):
     lines = text.strip().split("\n")
 
     scenes, current_scene = [], None
+    scene_char_map = {}  # scene_name -> [chars]
     dialogue_counter, dialogue_map, beats = 1, {}, []
 
     for line in lines:
@@ -46,7 +47,11 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=15):
             # Extract scene name (rest of line after pattern match)
             name = line[m.end():].strip()
             scene_id = m.group(1) if m.lastindex else m.group(0)
+            # Build scene char map: extract chars separated by multiple spaces
+            scene_chars_list = [c.strip() for c in __import__("re").split(r'\s{2,}', name) if c.strip()]
             current_scene = {"id": scene_id, "name": name if name else scene_id}
+            if scene_chars_list:
+                scene_char_map[name] = scene_chars_list
             continue
 
         # Skip character list lines

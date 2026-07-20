@@ -1,4 +1,4 @@
-"""Gate check - validates pipeline phase integrity before proceeding.
+﻿"""Gate check - validates pipeline phase integrity before proceeding.
 Ensures: input files exist, agent was spawned, output created BY agent, validation passes.
 Exits with code 1 on failure in --strict mode."""
 import json, os, sys, time
@@ -245,7 +245,7 @@ def _validate_analysis_items(run_dir, phase, output_path):
                 "check": "ANALYSIS_EXTRA",
                 "file": os.path.basename(output_path),
                 "severity": "blocking",
-                "msg": "%s unknown subshot_id(s): %s" % (phase, ", ".join(extra[:10]))
+                "msg": "%s unknown subshot_id(s): %s" % (phase, ", ".join([str(e) for e in extra if e is not None][:10]))
             })
     return issues
 
@@ -337,4 +337,5 @@ def _validate_item(item, phase):
         if isinstance(val, str) and len(val) < 5:
             return False
     return True
+
 

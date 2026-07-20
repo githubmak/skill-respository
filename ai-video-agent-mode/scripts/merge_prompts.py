@@ -1,4 +1,4 @@
-"""Merge all prompt packages into a single unified output."""
+﻿"""Merge all prompt packages into a single unified output."""
 import json, os, sys, re, re
 
 
@@ -24,7 +24,7 @@ def run(export_dir):
     shot_map = {}
 
     for fn in sorted(os.listdir(composer_dir)):
-        if not fn.endswith(".prompt_package.json"):
+        if not (fn.endswith(".prompt_package.json") or fn == "prompt_package.json" or fn == "merged.prompt_package.json"):
             continue
         fp = os.path.join(composer_dir, fn)
         try:
@@ -87,3 +87,4 @@ if __name__ == "__main__":
         print("usage: merge_prompts.py <export_dir>")
         sys.exit(1)
     run(sys.argv[1])
+

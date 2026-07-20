@@ -1,9 +1,9 @@
-"""Pipeline state machine - phase progress, retries, agent ID tracking."""
+﻿"""Pipeline state machine - phase progress, retries, agent ID tracking."""
 import json, os, time
 
 # ========== Constants ==========
 MAX_RETRIES = 3          # Sub-agent retries before escalation (3 attempts: initial + 2 retries)
-TIMEOUT_SECONDS = 480    # Default sub-agent timeout
+TIMEOUT_SECONDS = 600    # Default sub-agent timeout
 TOTAL_ATTEMPTS = 5       # 1 initial + 4 retries
 AGENT_STALE_SECONDS = 600  # 10min: agent considered stale, force re-spawn
 BATCH_SIZE = 60          # Max subshots per sub-agent spawn (balanced quality/efficiency)
@@ -150,3 +150,4 @@ def advance(run_dir):
         state["current_phase"] = order[idx + 1]
         save_state(run_dir, state)
         print("[STATE] %s -> %s" % (current, order[idx + 1]))
+

@@ -1,4 +1,4 @@
----
+﻿---
 name: ai-video-agent-mode
 description: >
   4-agent pipeline for converting scripts/storyboards into AI video prompt packages.
@@ -13,26 +13,25 @@ description: >
 
 ## 一、管线阶段
 
-| Phase | 名称 | 执行方式 | 输入 → 输出 |
+| Phase | 名称 | 执行方式 | 输入 → 输出 | 门禁 |
 |---|---|---|---|
 | 0 | 用户确认 | 本地交互 | 用户输入 → `project_config.json` |
 | 0.5 | 源规则自动检测 | `detect_source_rules.py` | 源文 → 自动填充 `source_rules` 到 `project_config.json` |
-| 1 | Orchestrator 拆镜 | `generate_shotplan.py`（读 config）+ `build_shotplan.py` + 时长重算 | 剧本 → `shot_plan.json` |
+| 1 | Orchestrator 拆镜 | `generate_shotplan.py` + `build_shotplan.py` + 时长重算 | 剧本 → `shot_plan.json` | `preflight_check.py` |
 | 1.5 | 主镜头合并 | 本地脚本（合并规则见下） | `shot_plan.json` → 合并后 `shot_plan.json` |
-| 2a | 情绪分析 | spawn Agent | dispatch → `emotion_output.json` |
-| 2b | 场景分析 | spawn Agent | dispatch → `scene_output.json` |
-| 2c | 运镜分析 | spawn Agent | dispatch → `camera_output.json` |
-| 3 | QA/整合 | `assemble_director.py` | 三路分析 → `director_pass.json` |
-| 4 | Director 门禁 | 本地自检 | `director_pass.json` 字段校验 |
-| 5 | 连续性检查（不可跳过） | 连续性检查 | `continuity_check.py` | 景别/轴线/光照连续 |
-| 6 | Prompt Composer（不可跳过） | Prompt Composer | spawn Agent | director_pass → `prompt_package.json` |
+| 2a | 情绪分析 | spawn Agent | dispatch → `emotion_output.json` | `validate_agent_output.py` |
+| 2b | 场景分析 | spawn Agent | dispatch → `scene_output.json` | `validate_agent_output.py` |
+| 2c | 运镜分析 | spawn Agent | dispatch → `camera_output.json` | `validate_agent_output.py` |
+| 3 | QA/整合 | `assemble_director.py` | 三路分析 → `director_pass.json` | `gate_check.py` |
+| 5 | 连续性检查（不可跳过） | `continuity_check.py <shot_plan.json>` | 景别/轴线/光照连续 | `continuity_check.py` 报告文件检查 |
+| 6 | Prompt Composer（不可跳过） | spawn Agent | director_pass → `prompt_package.json` | `validate_composer_output.py` |
 | 6a | 后处理 | `enrich_prompt_package.py` | 固化 shot_id/运镜/轴线 |
 | 6b | 运镜强制注入（不可跳过） | `enforce_camera_detail.py` | composer_output.json → 全镜注入完整运镜描述 |
+| 6c | 格式归一化（不可跳过） | spawn Agent | prompt_package → 归一化 prompt_package（标题/换行/时间标注/全局声明/负面词） | `validate_composer_output.py` |
 | 7 | Editor Pass 1（不可跳过） | Editor Pass 1 | `merge_prompts.py` | 合并多包 + 【板块】→**标题**保留章节结构 |
-| 8 | Editor Pass 2（不可跳过） | Editor Pass 2 | spawn Agent (LLM审查) | 穿帮审查 + 语义修复 |
+| 8 | Editor Pass 2（不可跳过） | Editor Pass 2 | spawn Agent (LLM审查) | 穿帮审查 + 语义修复 | `validate_composer_output.py` |
 | 9 | 最终验证（不可跳过） | 最终验证 | `check_export.py` + 门禁 | 20 项自检 |
-| 10 | 导出（不可跳过） | 导出 | `export_with_validation.py` | Markdown + XLSX |
-| 10 | 导出（不可跳过） | 导出 | `export_with_validation.py` | Markdown + XLSX |
+| 10 | 导出（不可跳过） | `export_with_validation.py <run_dir>` | Markdown + XLSX | 30 项自检（内置） |
 
 ---
 
@@ -41,7 +40,7 @@ description: >
 ### 执行流程
 1. `generate_shotplan.py` → `shot_plan.draft.json`（全部默认 2.5s）
 2. `build_shotplan.py <run_dir>` → `shot_plan.json`（标准化，时长仍为默认值）
-3. **时长重算**（必须）：根据 `dialogue_map` 公式 `max(chars/4.5+停顿, action_time)+0.5s` 逐镜重算，超限主镜头拆分，详见第十三节。
+3. **时长重算**（必须）：根据 `dialogue_map` 公式 `max(chars/4.5+停顿, action_time)+0.5s` 逐镜重算（详见 `validate_durations.py`），超限主镜头拆分。公式含标点停顿（逗号 0.3s，句号 0.5s）和情绪调速系数。
 4. `preflight_check.py` 通过后进入 Phase 1.5 合并
 
 
@@ -66,7 +65,7 @@ description: >
 
 ### Phase 2 派发前置验证（强制）
 
-派发 emotion/scene/camera 三路 Agent 之前，必须先 spawn 一个轻量测试 Agent：
+派发 emotion/scene/camera 三路 Agent 之前，必须先通过 `multi_agent_v1__spawn_agent` 启动一个轻量测试 Agent：
 
 ```
 Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}. Confirm in final answer.
@@ -76,7 +75,7 @@ Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}
 
 ### 落盘调度
 
-子Agent 通过 spawn_agent 启动，读取 `.cache/dispatch/*_data.json` 紧凑 JSON（字段：id/chars/acts/diags/narrs/dur/desc），处理后将结果写入 `.cache/analysis/*_output.json`。主Agent 从文件读取结果，不从消息文本解析。
+子Agent 通过 `multi_agent_v1__spawn_agent` 启动，读取 `.cache/dispatch/*_data.json` 紧凑 JSON（字段：id/chars/acts/diags/narrs/dur/desc），处理后将结果写入 `.cache/analysis/*_output.json`。主Agent 从文件读取结果，不从消息文本解析。
 
 ### 输出格式
 
@@ -97,13 +96,37 @@ Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}
 
 约束：每角色跨镜 micro_expression 和 body_parts_focus 不得重复；多人镜 beat_transition 独立。
 
+> 📋 输出格式硬约束详见 [references/format_constraints.md §A](references/format_constraints.md)
+
+**输出格式补充约束**：
+- 每条 item 必须同时包含 `id` 和 `subshot_id` 字段（二者值相同），下游装配脚本通过 `id` 匹配。
+- 输出文件编码必须为纯 UTF-8（无 BOM），禁止 UTF-8 BOM 头（EF BB BF）。
+- 禁止在 `items` 之外附加任何顶层键（如 `global_arc`、`shot_pair_analysis`、`performance_risk_areas`），输出结构严格限于 `{"items":[...]}`。
+- 禁止在 item 内混合使用中英文键名。emotion/scene/camera 三路统一使用英文键名（如 `emotion_type`、`light_temp`、`shot_size`），与 SKILL.md 第三节所列格式完全一致。
+
 ---
 
 
 
 ---
+
+## 三.五、子Agent 工具速查（硬锚点 ⚓）
+
+管线所有 Phase 的子 Agent 操作必须使用以下完整工具名，禁止依赖 	ool_search 动态发现或 pipeline_runner.py 的 atch_spawn：
+
+| 操作 | 工具全名 |
+|---|---|
+| 派发子 Agent | multi_agent_v1__spawn_agent |
+| 等待子 Agent 完成 | multi_agent_v1__wait_agent |
+| 关闭子 Agent | multi_agent_v1__close_agent |
+| 向子 Agent 发送指令 | multi_agent_v1__send_input |
+
 
 ## 附：子Agent Spawn 标准指令模板
+
+> **⚠️ 派发前必须执行（铁律 #40）**：主Agent 先读取 eferences/format_constraints.md，找到该 Agent 对应的 § 章节，将约束文本完整追加到下方模板的 {extra} 之前或末尾。Agent 无法访问本地文件，必须由主Agent 主动注入。
+
+
 
 主Agent 派发子Agent 时，必须从以下模板中选择对应角色，填入 `{变量}` 后作为 `items[text]` 下发。不得即兴编写。
 
@@ -147,7 +170,7 @@ Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}
 
 - 多人镜非说话角色：per_char_actions 中每个非说话角色的 beat_transition 必须描述其对说话者台词/动作的微观反应（如「听对方说到XX时，视线微移」），禁止写「保持静止」「不做反应」。打斗/动作场景非出手角色需给出完整身体响应（防御姿态/重心转移/步法调整至少一项）和空间轨迹
 
-输出格式见 SKILL.md 第三节。
+输出格式严格锁定（与 SKILL.md 第三节 + 格式硬约束完全一致）：顶层键名必须为 `"items"` 即 `{"items":[...]}`，禁止 `shots`/`sub_shots`/`子镜分析` 等替代键名。每条 item 必须同时包含 `"id"` 和 `"subshot_id"`（二者值相同）。输出编码纯 UTF-8 无 BOM。禁止在 `"items"` 外附加任何顶层键。禁止 item 内使用中文键名——三路统一用英文键名与第三节字段名一致。
 
 完成前验证：Python json.load 后检查 items 数量 = dispatch 数量，无缺失 subshot_id。
 
@@ -175,7 +198,7 @@ Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}
 - 同一场景连续镜头的照明方案保持色温一致性（相邻镜色温差 <=1500K）。
 - 服装连续性：同一场景同角色服装描述一致。
 
-输出格式见 SKILL.md 第三节。
+输出格式严格锁定（与 SKILL.md 第三节 + 格式硬约束完全一致）：顶层键名必须为 `"items"` 即 `{"items":[...]}`，禁止 `shots`/`sub_shots`/`子镜分析` 等替代键名。每条 item 必须同时包含 `"id"` 和 `"subshot_id"`（二者值相同）。输出编码纯 UTF-8 无 BOM。禁止在 `"items"` 外附加任何顶层键。禁止 item 内使用中文键名——三路统一用英文键名与第三节字段名一致。
 
 完成前验证：子镜数量匹配，每个 item 含 subshot_id。
 
@@ -207,7 +230,7 @@ Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}
 - 固定镜头占比 60-70%，推镜仅用于情绪重音。
 - 焦距去后缀（50标准 → 50mm，35广角 → 35mm）。
 
-输出格式见 SKILL.md 第三节。
+输出格式严格锁定（与 SKILL.md 第三节 + 格式硬约束完全一致）：顶层键名必须为 `"items"` 即 `{"items":[...]}`，禁止 `shots`/`sub_shots`/`子镜分析` 等替代键名。每条 item 必须同时包含 `"id"` 和 `"subshot_id"`（二者值相同）。输出编码纯 UTF-8 无 BOM。禁止在 `"items"` 外附加任何顶层键。禁止 item 内使用中文键名——三路统一用英文键名与第三节字段名一致。
 
 完成前验证：子镜数量匹配，所有景别字段无英文缩写。
 
@@ -217,7 +240,7 @@ Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}
 
 ### Prompt Composer Agent（Phase 6）
 
-> **[DISCIPLINE] Record agent_id on spawn, call close_agent immediately on completion.**
+> **[DISCIPLINE] Record agent_id on spawn. Only call `multi_agent_v1__close_agent` after confirmed completed (via subagent_notification or wait_agent returning completed). Never close a running agent.**
 
 ```
 你是资深 AI 视频提示词工程师与短剧导演，将导演数据转化为可直接投喂即梦平台的单镜融合提示词。
@@ -236,7 +259,7 @@ Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}
 
 全局声明：16:9 画幅 + 3D 韩漫精致 CG + 风格 + 情绪因果链规则（每个情绪由触发原因->面部微表情->肢体动作->说话语气驱动）+ 光照规则 + 系统仅以悬浮文字和画外声出现
 
-群像动态铁律：画面中每个出现的人物，每镜必须有至少 1 项独立微反应。微反应必须因果链明确——A 的台词->B 的微表情->C 的肢体调整->D 的视线转移。禁止任何角色在镜中“等待被看”或“背景站桩”。
+群像动态铁律：画面中每一出场角色必须拥有至少一项独立且可视觉追踪的微反应，该微反应必须由明确的情绪触发事件驱动并通过因果链（触发→面部微表情→肢体→语气）完整呈现。任何角色不得处于静止站桩、被动等待被看或表情冻结的木头人状态。多人镜头中所有角色的微反应需在同一时间窗口内并行展开，形成交错的因果网络。
 
 人物站位+服装+连续：所有人物的画面位置、朝向、当前服装状态（含跨镜延续：延续上一镜头的站位和表演节奏，人物不重置动作）。服装从 costume_map 取，禁止编造。
 
@@ -258,7 +281,7 @@ Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}
 环境音：基底环境音 + 关键音频事件及其叙事功能。
 
 禁止项：单条超 15s；漏对白/系统声；抽象情绪标签代替具体量化；非说话人嘴部做口型同步；背景人物变成木头人（每个出现的人必须有微反应）；左右站位无理由突变；服装道具状态重置。
-负面提示词模板：画面崩坏 面部扭曲 五官错位 多余肢体 手指畸形 角色换脸 人物闪烁 鬼影重叠 道具漂移 服饰闪烁错乱 穿模穿帮 物体悬浮 运动模糊过度 动作抽搐 光照闪烁 低清画质 像素化 水印 字幕残留 背景扭曲 非说话人嘴部动作 禁止未说话角色口型同步 OS系统声无需口型
+负面提示词模板：详见 `references/format_constraints.md` §B3（40+ 关键词完整模板）
 
 
 每镜自包含：每个full_prompt开头必须包含完整的全局声明（16:9画幅+风格+情绪因果链规则+光照规则+系统规则），禁止依赖上一镜的上下文。任何一镜单独投喂Seedance应能独立运行。
@@ -360,22 +383,22 @@ Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}
 
 ### 线程管理
 
-> [THREAD LEAK RED LINE - 2026-07-19 incident] Agent completion notification arrives in the SAME turn -> immediately call close_agent(target=agent_id). No deferral, no batching. This pipeline previously suffered a 15-minute outage from 6 leaked thread slots.
-- Agent 完成通知到达的同一轮，立即 close_agent(target=agent_id)
+> [THREAD LEAK RED LINE - 2026-07-19 incident] Agent completion must be CONFIRMED before close. Never close a running agent (causes shutdown + data loss). Close individually, not in batch. Original outage: 15-minute from 6 leaked thread slots.
+- Agent 收到 completed 通知（subagent_notification 或 wait_agent 返回 completed）的同一轮，立即对该 Agent 调用 `multi_agent_v1__close_agent`。严禁对 running 状态的 Agent 调用 close_agent（触发 shutdown，工作丢失）。
 - 单轮最多 spawn 3 个 Agent
-- 完成→关闭→再派下一批
+- 确认 completed → 逐个关闭 → 再派下一批
 
 ### 分批策略
 | Phase | 单批上限 | 并行 Agent | 文件命名 |
 |---|---|---|---|
-| emotion/scene/camera | 20 镜 | 3 | {type}_b{NN}.json |
+| emotion/scene/camera | emotion:15 / scene:20 / camera:25 镜 | 3 | {type}_b{NN}.json |
 | prompt_composer | 36 镜(3批) | 3 | composer_v2_b{NNN}.json |
 
 
 
 ## 附：Editor 审查 Agent 派发模板（Phase 8）
 
-> **[DISCIPLINE] Record agent_id on spawn, call close_agent immediately on completion.**
+> **[DISCIPLINE] Record agent_id on spawn, call `multi_agent_v1__close_agent` immediately on completion.**
 
 `
 你是资深剪辑指导/后期总监，负责短剧成片前的最后一轮质量审查。
@@ -424,7 +447,7 @@ Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}
 
 ---
 
-## 十、铁律（25 条）
+## 十、铁律（39 条）
 
 **铁律前置声明：以下所有铁律为硬约束，权重高于一切技术判断。在任何行动之前，主Agent 必须逐条自检铁律清单。若拟执行的动作与任意一条铁律冲突——无论基于何种技术理由——该动作禁止执行。铁律不可被任何情境判断覆盖。违反铁律的处理：立即停止当前 Phase、撤回已执行的替代输出、回到合规状态重新执行。**
 
@@ -432,9 +455,9 @@ Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}
 1. Phase 0 必须先确认子Agent可用性
 2. 子Agent未完成时禁止派接替Agent
 3. Agent线程满时禁止降级为本地合成
-4. Agent完成后立即 close_agent，禁止批量延迟关闭
+4. `close_agent` 仅限已确认 completed 的 Agent。禁止对 running 状态 Agent 调用 close_agent（会触发 shutdown 丢弃未落盘输出）；禁止批量 close 多个 Agent——必须逐个确认 completed 状态后单独关闭。关闭前必须已收到该 Agent 的 subagent_notification 或 wait_agent 返回 completed。
 5. 任何Phase失败禁止以「输出已足够」为由跳过，必须修复后重试
-6. Phase 2/6/8 的 spawn 阶段禁止用本地脚本替代
+6. Phase 2/6/6c/8 的 spawn 阶段禁止用本地脚本替代
 
 **Orchestrator：**
 7. 拆镜按 剧情节拍→场景切换→台词时长 优先级，禁止跨节拍合并
@@ -470,8 +493,47 @@ Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}
 27. 源文件 BOM 检测为 Phase 0 必做项。字节级剥离 EF BB BF 后再喂入 generate_shotplan.py，否则 scene_header_pattern 正则因 BOM 偏移失效。
 28. Phase 0 必须先确认用户输出目录（export_base），所有项目文件落盘到该目录，禁止在用户未确认前创建默认路径。
 
-以上 25 条铁律中标注「不可跳过」的阶段，主Agent在任何情况下不得静默省略。
+**运行时纪律（2026-07-20 固化——本次执行总结）：**
+29. **preflight 门禁**：preflight_check.py 必须 0 issue 通过后才可进入 Phase 2。时长修复后必须重新运行 preflight，不得跳过也不得手动推算。
+30. **SSE 超时重试**：Agent 返回 errored（stream disconnected）时自动重派同一 batch，最多 2 次。超限后 blocking 等用户确认，不得自行降级为本地合成。
+31. **Agent 映射追踪**：spawn 后立即在主Agent 内存中记录 `{agent_id: batch_name}` 映射表。每次 wait/close 前先查映射确认 Agent 身份，不得盲猜。
+32. **文件落盘为唯一完成信号**：不依赖 subagent_notification 文本判断完成；以目标文件存在且 JSON 可解析为唯一完成标志。notification 仅用于触发 close 操作。
+33. **PowerShell heredoc 禁令**：含中文引号或多层嵌套大括号的 Python 代码禁止内联在 `@"..."@` 中执行。复杂 Python 逻辑一律写 `.py` 文件后 `python` 执行。
 
+    **自检机制**：每次准备调用 shell_command 执行含中文的 Python 时，先检查代码是否在 .py 文件中（命令以 python  开头）——不是则立即改写为文件方式。此检查为机械步骤，不得跳过。
+
+34. **脚本调用纪律**：调用任何管道脚本前，必须读取该脚本 `if __name__ == "__main__"` 段确认参数签名，禁止凭记忆或猜测传参。
+35. **连续性检查验证**：`continuity_check.py` 执行后检查 `.cache/continuity/report.json` 是否存在。无产出视为未执行，不得跳过。
+36. **场景头验证**：`detect_source_rules.py` 后必须人工验证 `scene_header_pattern` 对所有场景行的匹配结果。误匹配或漏匹配必须在 Phase 1 前修正。
+37. **角色列表补全**：`character_list` 自动检测后，人工审查是否遗漏对话中出现但未在「人物：」行声明的角色（如商界老总、路人、混混）。
+38. **dispatch_cache 键名适配**：`dispatch_cache._extract_items` 只匹配 `"shots"` 键。若 preceding Phase 输出用 `"items"`，必须在调用 dispatch 前注入 `"shots"` 别名或直接手动生成 dispatch 文件。
+39. **prompt_package 文件命名**：Composer 合并输出必须命名为 `merged.prompt_package.json`（含点号前缀），确保匹配 `merge_prompts.py` 和 `export_with_validation.py` 的 glob 模式 `*.prompt_package.json`。
+
+40. **格式约束注入**：派发**任何**子Agent 前，主Agent 必须读取 `references/format_constraints.md`，找到该阶段对应的 §X 章节，将约束文本**完整注入** spawn 消息中。禁止仅引用文件路径（Agent 无法读取本地文件）。禁止依赖 Agent 自身记忆或推测格式——主Agent 必须主动将规范喂入。
+
+41. **格式验证门禁**：Phase 2、Phase 6 子Agent 完成后，主Agent 必须立即运行对应验证脚本检查输出格式。Phase 6 使用 `validate_composer_output.py`。验证 FAIL 则自动修复（补标题/补换行/补负面提示词）或标记需重派。格式验证为硬门禁——未通过不得进入下一 Phase。
+
+以上 41 条铁律中标注「不可跳过」的阶段，主Agent在任何情况下不得静默省略。
+
+## 附：Phase 6 风格统一策略（路径 1+3）
+
+### 路径 1：Few-shot 示例注入
+
+Phase 6 Composer Agent spawn 消息中必须包含 1 个完整的 Bohr-格式提示词作为格式锚点，放在约束文本之后、任务描述之前。Agent 通过模仿示例遵守格式，比通过抽象规则可靠得多。
+
+### 路径 3：后归一化 Agent（Phase 6c）
+
+**职责范围**：标题注入 + 板块分隔 + 时间分段标注 + 全局声明统一 + 负面提示词补全 + 字数规范化。一次性完成全部格式处理，不拆分多个 Agent。
+
+后归一化 Agent（Phase 6c）
+
+全部 Composer Agent 完成后，额外 spawn **一个**格式归一化 Agent。此 Agent 不做内容创作，只做排版——读取全部 102 镜的 prompt_package，将其重排为统一格式。归一化模板见 eferences/format_example.txt。
+
+**归一化 Agent 职责**：
+- 保留所有原始内容，不增删不改写任何叙事文字
+- 统一 8 个板块的标题为：全局声明 / 人物站位与服装连续 / 时长运镜场景目的 / 时间分段叙事 / 光照方案 / 环境音设计 / 负面提示词 / 自包含验证
+- 将时间分段叙事重组为 X.X-X.X秒，景别，运镜参数 的标准时间分段格式
+- 输出写入 .cache/composer/prompt_package_normalized.json`n
 ## 十一、多 Agent 并行写入反模式
 
 **问题**：多个 Agent 同时写同一个输出文件 → 后写覆盖先写 → 数据丢失（曾导致 103 项→40 项→10 项连锁覆盖）
@@ -508,7 +570,7 @@ Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}
 
 每镜必须包含以下 8 个板块（缺一不可）：
 
-板块1-全局声明：9:16竖屏开头，含画幅、风格、情绪因果链规则、光照规则、系统规则。人物与场景比例合理、人物与空间关系合理、镜头透视关系遵循物理规则。<=150字。
+板块1-全局声明：{canvas}画幅开头，含画幅、风格、情绪因果链规则、光照规则、系统规则。人物与场景比例合理、人物与空间关系合理、镜头透视关系遵循物理规则。<=150字。
 
 板块2-人物站位服装连续：所有角色画面位置+朝向+服装（从costume_map取禁止编造）+跨镜连续声明。
 
@@ -524,8 +586,32 @@ Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}
 
 板块8-自包含验证：确认本镜可独立投喂即梦。
 
+**格式硬约束（强制）**：
+- 每个板块（板块1-板块8）之间必须用一个空行（两个连续换行符 `\n\n`）分隔。禁止板块间无空行直接连写。
+- 板块1 全局声明的第一句必须以「{canvas}画幅，{visual_style}」为固定开头，禁止自行改写该句的措辞、标点或添加渲染引擎名（如 C4D、Octane、Blender）。
+- 板块7 负面提示词必须包含完整的 40+ 关键词模板，禁止缩写为「同上」或省略。
+- 每个 full_prompt 内必须至少有 7 个空行（对应 8 个板块间的 7 个分隔），自检时数空行数量。
+- 禁止使用全角冒号（：）替代半角冒号（:）作为分隔符；数字与单位之间禁止空格（如 3200K 而非 3200 K）。
+
 每镜800-1800字。物理表情优先自然叙事语言，关键锚点补1-2项量化。
 
 输出：{"shots":[{"shot_id":"","subshot_id":"","full_prompt":""}]}
 一次性写入。写完终止。
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

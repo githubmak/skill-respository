@@ -152,6 +152,20 @@ def generate_exports(run_dir, md_path):
     lines.append("---")
     lines.append("")
     
+    if packages is None:
+        composer_dir = os.path.join(run_dir, ".cache", "composer")
+        paths = glob.glob(os.path.join(composer_dir, "*.prompt_package.json"))
+        packages = []
+        for p in paths:
+            with open(p, "r", encoding="utf-8-sig") as f:
+                packages.append(json.load(f))
+    shots = []
+    for pkg in packages:
+        shots.extend(pkg.get("shots", pkg.get("items", [])))
+    scene_shots = {}
+    for s in shots:
+        sn = s.get("scene", "场景")
+        scene_shots.setdefault(sn, []).append(s)
     for scene_name in sorted(set(s.get("scene","场景") for s in shots)):
         if scene_name not in scene_shots: continue
         lines.append(f"## {scene_name}")

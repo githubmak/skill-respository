@@ -72,6 +72,13 @@ def detect_source_rules(source_path):
             scene_headers.append(line)
     
     scene_pattern = r'^\d+-\d+' if scene_headers else r'^SCENE'
+
+    # 5. Check for dialogue speakers not declared in scene headers
+    scene_char_set = set(characters[:])
+    unlisted = dialog_speakers - scene_char_set - {"动作", "\u25b3", "1-1", "1-2"}
+    if unlisted:
+        print("[DETECT] WARNING: %d dialogue speakers not in character_list: %s" % (len(unlisted), ", ".join(sorted(unlisted))))
+        characters.extend(sorted(unlisted))
     
     return {
         "characters": characters,

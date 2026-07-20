@@ -1,4 +1,4 @@
-# Runbook — AI Video Agent Mode Pipeline
+﻿# Runbook — AI Video Agent Mode Pipeline
 
 本文件定义完整管线操作流程。启动新项目前必须加载。
 
@@ -144,3 +144,4 @@ preflight 有 blocking 时，不派发 emotion/scene/camera 子Agent，先回到
 ```
 
 handoff 只保存决策摘要、连续性锚点、不可改边界，不保存大段完整提示词。正式内容仍以 `shot_plan.json`、三路 analysis JSON、`director_pass.json`、`prompt_package.json` 为准。
+
