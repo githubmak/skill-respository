@@ -138,4 +138,14 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("usage: build_shotplan.py <run_dir> [draft_shot_plan.json]")
         sys.exit(1)
-    normalize(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)
+    run_dir = sys.argv[1]
+    normalize(run_dir, sys.argv[2] if len(sys.argv) > 2 else None)
+    # Phase 1.5: Inject spatial coordinates (铁律 #44)
+    try:
+        from spatial_registry import run as spatial_registry_run
+        spatial_registry_run(run_dir)
+    except ImportError:
+        print("[build_shotplan] spatial_registry.py not found — skipping spatial injection.")
+        print("[build_shotplan] Run spatial_registry.py manually after Phase 1.")
+    except Exception as e:
+        print(f"[build_shotplan] spatial_registry failed: {e} — continuing without spatial data.")

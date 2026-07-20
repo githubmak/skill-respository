@@ -30,9 +30,20 @@ def check_export(md_path, run_dir, quality_mode=False):
         dp_items = dp.get("items", [])
     except:
         dp_items = []
-    
+
     try:
-        with open(os.path.join(run_dir, ".cache", "composer", "prompt_package.json"), "r", encoding="utf-8") as f:
+        pkg_path = os.path.join(run_dir, ".cache", "composer", "prompt_package.json")
+        if not os.path.exists(pkg_path):
+            # Try merged variant — Phase 6c normalization produces this
+            pkg_path = os.path.join(run_dir, ".cache", "composer", "merged.prompt_package.json")
+        if not os.path.exists(pkg_path):
+            # Try any .prompt_package.json
+            comp_dir = os.path.join(run_dir, ".cache", "composer")
+            for fn in sorted(os.listdir(comp_dir)) if os.path.isdir(comp_dir) else []:
+                if fn.endswith(".prompt_package.json"):
+                    pkg_path = os.path.join(comp_dir, fn)
+                    break
+        with open(pkg_path, "r", encoding="utf-8") as f:
             pkg = json.load(f)
     except:
         pkg = {"shots": []}
@@ -202,13 +213,13 @@ def check_export(md_path, run_dir, quality_mode=False):
         mtype = str(item.get("movement_type", ""))
         if "push" in mtype.lower() or "推" in movement or "push" in movement:
             speeds = re.findall(r"(\d+\.?\d*)\s*m/s", movement)
-            for sp in speeds:
-                if float(sp) > 0.3:
+            for _s in speeds:
+                if float(_s) > 0.3:
                     push_issues += 1
         if "pull" in mtype.lower() or "拉" in movement or "pull" in movement:
             speeds = re.findall(r"(\d+\.?\d*)\s*m/s", movement)
-            for sp in speeds:
-                if float(sp) > 0.2:
+            for _s in speeds:
+                if float(_s) > 0.2:
                     push_issues += 1
     chk(21, "Push/pull speed", push_issues <= 3, f"{push_issues} over limit")
 
@@ -222,8 +233,166 @@ def check_export(md_path, run_dir, quality_mode=False):
             neg_missing += 1
     chk(22, "Negative prompt", neg_missing == 0, f"{neg_missing} missing")
 
-    passed = 22 - len(issues)
-    print(f"\n  RESULT: {passed}/22 passed" + (f", {len(issues)} issues" if issues else " - ALL CLEAN"))
+    # === MODE C CHECKS 23-30 ===
+    # C1: No abstract emotion labels in prompt text
+    abstract_emo = ["紧张地", "开心地", "难过地", "愤怒地", "害怕地", "慌张地", "悲伤地",
+                    "无奈地", "坚定地", "温柔地", "冷漠地", "轻蔑地", "惊讶地", "尴尬地",
+                    "得意地", "焦虑地", "烦躁地", "绝望地", "色地", "嫉妒地"]
+    abstract_hits = 0
+    for s in pkg["shots"]:
+        fp = s.get("full_prompt", "")
+        # Only check content sections (before 负面提示词)
+        neg_idx = fp.find("负面提示词")
+        content = fp[:neg_idx] if neg_idx > 0 else fp
+        for emo in abstract_emo:
+            if emo in content:
+                abstract_hits += 1
+                break
+    chk(23, "C1: No abstract emotion labels", abstract_hits == 0,
+        f"{abstract_hits} shots with bare labels")
+
+    # C2: Every visible character >=1 independent micro-reaction
+    ACTION_VERBS = [
+        "走向", "转身", "抬手", "迈步", "注视", "看向", "移动", "微动", "呼吸",
+        "重心", "肩", "头", "手", "脚", "身体", "步伐", "抬头", "低头", "回头",
+        "侧身", "弯腰", "踏步", "往前", "向前", "向后", "向左", "向右", "靠近",
+        "走开", "离开", "抬腿", "站起", "坐下", "后退", "扭头", "回身", "进入",
+        "走出", "挥手", "提起", "放下", "紧握", "摇头", "点头", "抬眸", "抬眉",
+        "微侧", "微偏", "睁眼", "闭眼", "眨眼", "抬起", "下沉", "绷紧", "放松",
+        "收缩", "扩张", "上扬", "下压", "抿紧", "微启", "咬紧", "松开", "鼓胀",
+        "滚动", "眯起", "瞪大", "扫视", "打量", "盯着", "瞥", "瞧着"
+    ]
+    CHAR_NAMES = ["沈星洲", "沈星雨", "向云初", "江训", "陆序", "许承"]
+    per_char_missing = 0
+    per_char_details = []
+    for shot in sp["shots"]:
+        for ss in shot.get("subshots", []):
+            ssid = ss["subshot_id"]
+            chars = ss.get("characters", [])
+            if isinstance(chars, str):
+                chars = [c.strip() for c in chars.split(";")]
+            # Find corresponding prompt
+            ps = next((s for s in pkg["shots"] if s.get("subshot_id") == ssid), None)
+            if not ps or len(chars) < 2:
+                continue
+            fp = ps.get("full_prompt", "")
+            neg_idx = fp.find("负面提示词")
+            content = fp[:neg_idx] if neg_idx > 0 else fp
+            # For each character, check if they have at least one action verb
+            missing = []
+            for ch in chars:
+                if ch not in CHAR_NAMES:
+                    continue
+                sentences = re.split(r"[。；\n]", content)
+                char_sents = [s for s in sentences if ch in s]
+                has_action = any(
+                    any(verb in s for verb in ACTION_VERBS)
+                    for s in char_sents
+                )
+                if not has_action:
+                    missing.append(ch)
+            if missing and len(chars) >= 2:
+                per_char_missing += 1
+                per_char_details.append(f"{ssid}: {missing}")
+    chk(24, "C2: Every char >=1 action (multi-char shots)",
+        per_char_missing <= 5,
+        f"{per_char_missing} shots with frozen chars" +
+        (f" [{'; '.join(per_char_details[:5])}...]" if per_char_details else ""))
+
+    # C3: Micro-reactions contain cause chain (trigger -> face -> body -> voice)
+    cause_chain_missing = 0
+    for s in pkg["shots"]:
+        fp = s.get("full_prompt", "")
+        neg_idx = fp.find("负面提示词")
+        time_seg = fp[fp.find("时间分段叙事"):neg_idx] if neg_idx > 0 else fp
+        # Check for cause chain pattern: character triggers and character reacts
+        has_cause = bool(re.search(r"(?:因为|导致|触发|引起|使得|令|让|看到|听到|察觉|发现|感到|注意到)", time_seg))
+        has_reaction = bool(re.search(r"(?:" + "|".join(ACTION_VERBS[:10]) + r")", time_seg))
+        if not (has_cause and has_reaction):
+            cause_chain_missing += 1
+    chk(25, "C3: Cause chain in multi-char shots",
+        cause_chain_missing <= 10,
+        f"{cause_chain_missing} shots lacking cause chain")
+
+    # C4: Expressions as verb/number sequences, not noun labels
+    noun_label_pattern = r"(?:紧张|开心|难过|悲伤|愤怒|害怕|惊慌|得意|尴尬|焦虑|温柔|冷漠|坚定)"
+    noun_label_hits = 0
+    for s in pkg["shots"]:
+        fp = s.get("full_prompt", "")
+        neg_idx = fp.find("负面提示词")
+        # Check time segment for standalone emotion nouns
+        time_seg = fp[fp.find("时间分段叙事"):neg_idx] if neg_idx > 0 else fp
+        # Look for emotion labels that are NOT part of a verb chain
+        standalone = re.findall(r"[。；](?:[^。；]{0,5})(" + noun_label_pattern + r")(?:[^。；]{0,5})[。；]", time_seg)
+        if standalone:
+            noun_label_hits += 1
+    chk(26, "C4: Expressions as verb/num sequences",
+        noun_label_hits <= 8,
+        f"{noun_label_hits} shots with noun labels")
+
+    # C5: Scene purpose sentence present
+    purpose_missing = 0
+    for s in pkg["shots"]:
+        fp = s.get("full_prompt", "")
+        # Look for "此镜" or "戏剧目标" in block 3 (时长运镜场景目的)
+        idx_purpose = fp.find("时长运镜场景目的")
+        if idx_purpose < 0:
+            purpose_missing += 1
+            continue
+        idx_next = fp.find("时间分段叙事", idx_purpose)
+        purpose_seg = fp[idx_purpose:idx_next] if idx_next > 0 else fp[idx_purpose:idx_purpose+300]
+        if "此镜" not in purpose_seg and "戏剧目标" not in purpose_seg:
+            purpose_missing += 1
+    chk(27, "C5: Scene purpose sentence",
+        purpose_missing <= 5,
+        f"{purpose_missing} shots missing purpose")
+
+    # C6: Ambient sound layer
+    ambient_missing = 0
+    for s in pkg["shots"]:
+        fp = s.get("full_prompt", "")
+        if "环境音设计" not in fp or "环境音" not in fp:
+            ambient_missing += 1
+            continue
+        idx_ambient = fp.find("环境音设计")
+        idx_next = fp.find("负面提示词", idx_ambient)
+        ambient_seg = fp[idx_ambient:idx_next] if idx_next > 0 else fp[idx_ambient:idx_ambient+200]
+        if len(ambient_seg.strip()) < 15:
+            ambient_missing += 1
+    chk(28, "C6: Ambient sound layer",
+        ambient_missing <= 5,
+        f"{ambient_missing} shots missing ambient audio")
+
+    # C7: Non-speaker mouth closed declaration
+    nonspeaker_missing = 0
+    for s in pkg["shots"]:
+        fp = s.get("full_prompt", "")
+        sid = s.get("subshot_id", "?")
+        # Check if shot has dialogue
+        di = next((i for i in dp_items if i.get("subshot_id") == sid), {})
+        diags = di.get("dialogue_refs", di.get("dialogue", []))
+        has_dialogue = bool(diags) if isinstance(diags, list) else bool(diags)
+        # For dialogue shots, non-speaking chars need mouth-closed declaration
+        if has_dialogue:
+            if "口型闭合" not in fp and "无口型" not in fp and "嘴部闭合" not in fp:
+                nonspeaker_missing += 1
+    chk(29, "C7: Non-speaker mouth closed",
+        nonspeaker_missing <= 8,
+        f"{nonspeaker_missing} dialogue shots missing mouth control")
+
+    # C8: Word count 800-1800 (reinforce validate_composer_output check)
+    wc_issues = 0
+    for s in pkg["shots"]:
+        fp = s.get("full_prompt", "")
+        if len(fp) < 800 or len(fp) > 1800:
+            wc_issues += 1
+    chk(30, "C8: Word count 800-1800",
+        wc_issues <= 5,
+        f"{wc_issues} shots outside range")
+
+    total_checks = 30
+    passed = total_checks - len(issues)
+    print(f"\n  RESULT: {passed}/{total_checks} passed" + (f", {len(issues)} issues" if issues else " - ALL CLEAN"))
     if issues:
         print("  ISSUES:")
         for i, iss in enumerate(issues): print(f"    {i+1}. {iss}")

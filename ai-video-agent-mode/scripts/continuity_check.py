@@ -159,6 +159,45 @@ def run(run_dir, dry=False):
                     errors += 1
             prev_item = item
 
+    # === GROUP ACTION CONTINUITY CHECK ===
+    # For multi-character shots, verify each visible character has an independent
+    # action beat — no character should be "frozen" or "standing still"
+    ACTION_VERBS_CONT = [
+        "走向", "转身", "抬手", "迈步", "注视", "看向", "移动", "微动", "呼吸",
+        "重心", "抬头", "低头", "回头", "侧身", "弯腰", "踏步", "往前", "向前",
+        "向左", "向右", "靠近", "走开", "离开", "站起", "坐下", "后退", "扭头",
+        "回身", "挥手", "提起", "放下", "紧握", "摇头", "点头", "抬眸", "抬眉",
+        "微侧", "微偏", "睁眼", "闭眼", "眨眼", "下沉", "绷紧", "放松", "收缩",
+        "上扬", "下压", "抿紧", "微启", "松开", "鼓胀", "滚动", "瞇起", "瞪大",
+        "扫视", "打量", "盯着", "瞄准", "瞧着", "听了", "听见", "察觉", "注意"
+    ]
+    for pkt in packets:
+        for item in pkt.get("items", []):
+            sid = item.get("subshot_id", "?")
+            ca = str(item.get("character_action", ""))
+            if not ca or len(ca) < 10:
+                continue
+            # Count distinct named characters in character_action
+            active_chars = [c for c in known_chars if c and c in ca[:200]]
+            if len(active_chars) < 2:
+                continue
+            # For each active character, check if they have action descriptions
+            frozen = []
+            for ch in active_chars:
+                # Find action segments for this character
+                ch_actions = re.findall(
+                    ch + r"[^。；\n]{0,80}(?:" + "|".join(ACTION_VERBS_CONT) + r")[^。；\n]{0,50}",
+                    ca
+                )
+                if not ch_actions:
+                    frozen.append(ch)
+            if frozen and len(active_chars) >= 3:
+                issues.append((sid, "GROUP_FROZEN_CHARS", len(frozen),
+                    "群像动作覆盖不足: %d/%d角色无独立动作节拍 [%s]" % (
+                        len(frozen), len(active_chars), ",".join(frozen)
+                    )))
+                warnings += 1
+
     if not dry:
         char_state = _track_characters(packets, shot_plan)
     else:

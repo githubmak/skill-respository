@@ -1,4 +1,4 @@
-﻿"""Export + auto-validate wrapper. The ONLY approved way to deliver exports.
+"""Export + auto-validate wrapper. The ONLY approved way to deliver exports.
 
 Usage: python export_with_validation.py <export_md_path> <run_dir>
        python export_with_validation.py --regenerate <run_dir>

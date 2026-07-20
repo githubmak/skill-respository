@@ -1,4 +1,4 @@
-﻿# Runbook — AI Video Agent Mode Pipeline
+# Runbook — AI Video Agent Mode Pipeline
 
 本文件定义完整管线操作流程。启动新项目前必须加载。
 

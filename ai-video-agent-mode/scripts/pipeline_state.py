@@ -1,4 +1,4 @@
-﻿"""Pipeline state machine - phase progress, retries, agent ID tracking."""
+"""Pipeline state machine - phase progress, retries, agent ID tracking."""
 import json, os, time
 
 # ========== Constants ==========

@@ -1,4 +1,4 @@
-﻿import json, os, re, sys
+import json, os, re, sys
 
 def enforce_camera_detail(run_dir):
     """After Phase 6 composer, inject full camera descriptions from director_pass.json

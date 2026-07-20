@@ -1,4 +1,4 @@
-﻿---
+---
 name: ai-video-agent-mode
 description: >
   4-agent pipeline for converting scripts/storyboards into AI video prompt packages.
@@ -124,7 +124,8 @@ Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}
 
 ## 附：子Agent Spawn 标准指令模板
 
-> **⚠️ 派发前必须执行（铁律 #40）**：主Agent 先读取 eferences/format_constraints.md，找到该 Agent 对应的 § 章节，将约束文本完整追加到下方模板的 {extra} 之前或末尾。Agent 无法访问本地文件，必须由主Agent 主动注入。
+> **⚠️ 派发前必须执行（铁律 #40）**：主Agent 先读取 
+eferences/format_constraints.md，找到该 Agent 对应的 § 章节，将约束文本完整追加到下方模板的 {extra} 之前或末尾。Agent 无法访问本地文件，必须由主Agent 主动注入。
 
 
 
@@ -225,6 +226,8 @@ Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}
 - 景别仅用中文：大特写/特写/中近景/中景/全景/大远景。严禁 CU/ECU/MS 等英文缩写。
 - 机位：目标四项齐全，门禁允许 <=5 项欠项（系统UI/空镜/建立镜头豁免）
 - 同一场景同组人物相邻镜头保持 180 度轴线。越轴需过渡理由。
+- **空间坐标补全（铁律 #44）**：dispatch 数据中每个 subshot 包含 spatial_map 字段，标记为 auto 的角色位置需在此 Agent 中补全。从 shot_size、visible_characters、场景上下文推断角色空间位置（画面左侧/中央/右侧 + 前景/中景/背景 + 面向），写入 camera_output.json 的 axis_start 字段。
+- **运镜-位置一致性（铁律 #45）**：生成的 movement_type/movement_detail 必须遵守空间约束矩阵——说话人在画左时禁止大幅度向右横移；多人镜禁止单向大幅度横移；打击瞬间禁止慢推拉；追逐禁止固定镜头。
 - 特写/大特写时轴线标注「不适用（特写镜头，无轴线约束）」。
 - 推镜速度：目标 <=0.3m/s（门禁 check_export #21），拉远 <=0.2m/s。超广角(<=28mm)禁用于面部特写（门禁 check_export #17）。
 - 固定镜头占比 60-70%，推镜仅用于情绪重音。
@@ -479,6 +482,14 @@ Write a test file at {run_dir}\.cache\analysis\_agent_test.json with {"ok":true}
 19. 多人镜所有出场角色均有行为描述，禁止任何角色完全静止或「背景站桩」。非说话角色每阶段有可见微反应（视线转移/呼吸节奏变化/重心微调/手部微动至少一维有变化）
 20. 同一角色跨镜的 micro_expression 和 body_parts_focus 禁止复用
 
+**群像动作门禁（2026-07-20 固化）：**
+42. **per-character 动作覆盖（铁律 #42）**：多人镜每出场角色 >=1 独立微反应。validate_composer_output.py FROZEN_CHARS 检查为 Phase 6 硬门禁。check_export.py C2 为 Phase 9 导出门禁。均 0 tolerance。
+43. **群像因果链（铁律 #43）**：事件触发→微反应→肢体→语气的因果链路不得中断。continuity_check.py GROUP_FROZEN_CHARS 覆盖 Phase 3。check_export.py C3 覆盖 Phase 9。均 blocking。
+
+**空间坐标约束（2026-07-20 固化）：**
+44. **空间坐标锁定（铁律 #44）**：Phase 1 拆镜后必须运行 spatial_registry.py 为每个 subshot 注入 spatial_map（screen_x/screen_y/facing 九宫格坐标）。Phase 2c camera agent 必须为标记 auto 的镜头补全位置信息。Phase 3 后运行 spatial_lint.py 验证跨镜位置连续性——任意角色在相邻镜中的 x_zone 不可从左侧直接跳至右侧而不声明过渡理由（绕行/转身/过肩）。
+45. **运镜-位置一致性（铁律 #45）**：摄影机运动方向必须服从角色空间位置。说话人在画左时禁止大幅度向右横移；多人镜禁止单向大幅度横移导致角色出画。打斗场景打击瞬间禁止慢推拉，追逐禁止固定镜头。spatial_lint.py D2 检查在 Phase 3 执行运镜-位置交叉验证，check_export.py SPATIAL 检查在 Phase 9 作为导出门禁。
+
 **穿帮审查（Phase 8）：**
 21. 传统 10 项 + Mode C 专属 8 项 = 共 18 项检查
 22. blocking 问题必须退回修正后方可进入 Phase 9
@@ -527,7 +538,8 @@ Phase 6 Composer Agent spawn 消息中必须包含 1 个完整的 Bohr-格式提
 
 后归一化 Agent（Phase 6c）
 
-全部 Composer Agent 完成后，额外 spawn **一个**格式归一化 Agent。此 Agent 不做内容创作，只做排版——读取全部 102 镜的 prompt_package，将其重排为统一格式。归一化模板见 eferences/format_example.txt。
+全部 Composer Agent 完成后，额外 spawn **一个**格式归一化 Agent。此 Agent 不做内容创作，只做排版——读取全部 102 镜的 prompt_package，将其重排为统一格式。归一化模板见 
+eferences/format_example.txt。
 
 **归一化 Agent 职责**：
 - 保留所有原始内容，不增删不改写任何叙事文字

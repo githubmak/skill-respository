@@ -1,4 +1,4 @@
-﻿"""Gate check - validates pipeline phase integrity before proceeding.
+"""Gate check - validates pipeline phase integrity before proceeding.
 Ensures: input files exist, agent was spawned, output created BY agent, validation passes.
 Exits with code 1 on failure in --strict mode."""
 import json, os, sys, time
