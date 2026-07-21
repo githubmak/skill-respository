@@ -5,7 +5,7 @@ Fixes shot_id, overrides camera/movement/axis/visible_chars from director_pass.
 import json, os, sys
 
 def enrich(run_dir):
-    pp_path = os.path.join(run_dir, ".cache", "composer", "prompt_package.json")
+    pp_path = _find_prompt_package(run_dir)
     dp_path = os.path.join(run_dir, ".cache", "director", "director_pass.json")
     sp_path = os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json")
 
@@ -53,6 +53,18 @@ def enrich(run_dir):
 
     json.dump(pp, open(pp_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     print(f"[ENRICH] shot_id={fixed_shot_id} camera={fixed_camera} axis={fixed_axis} vis={fixed_vis}")
+
+
+def _find_prompt_package(run_dir):
+    candidates = [
+        os.path.join(run_dir, ".cache", "composer", "merged.prompt_package.json"),
+        os.path.join(run_dir, ".cache", "composer", "prompt_package.json"),
+        os.path.join(run_dir, ".cache", "prompt_package.json"),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return candidates[0]
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

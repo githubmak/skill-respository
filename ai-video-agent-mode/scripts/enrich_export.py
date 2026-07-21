@@ -73,7 +73,7 @@ def run(d):
         out.append({"sid":sid,"scene":s["scene"],"desc":desc,"dia":s.get("dialogue",""),"narr":s.get("narration",[]),"chars":chars,"phys_chars":phys_chars,"main_ch":main_ch,"dur":s["duration"],"sz":sz,"a":a,"m":m,"f":f,"el":el,"fg":fg,"mg":mg,"bg":bg,"cs":cs,"istr":istr,"ldesc":ldesc,"sd":sd,"hs":("系统" in desc or "（UI" in str(chars)),"is_insert":is_insert,"sz_conflict":(sz in ["全景","远景"] and any(x in mg for x in ["面部近景","面部特写","中近景","胸部以上"]))})
     return out, st, neg
 if __name__=="__main__":
-    if len(sys.argv)<2: print("用法: python enrich_export.py <run_dir>"); sys.exit(1)
+    if len(sys.argv)<2: print("用法: python3 enrich_export.py <run_dir>"); sys.exit(1)
     out, st, neg = run(sys.argv[1])
     print(f'处理完成: {len(out)} 镜')
     for s in out[:3]: print(f'{s["sid"]} | 主体={s["main_ch"]} | 特写={s["is_insert"]} | 因果有效={bool(s["cs"])}')

@@ -19,7 +19,7 @@ emotion_b56.json  # Agent C: batches 5-6
 
 ### 2. 合并去重
 ```bash
-python scripts/merge_agent_outputs.py emotion_output.json emotion_b12.json emotion_b34.json emotion_b56.json
+python3 scripts/merge_agent_outputs.py emotion_output.json emotion_b12.json emotion_b34.json emotion_b56.json
 ```
 
 `merge_agent_outputs.py` 按 `subshot_id` 去重，自动选择先到者，丢弃重复项。

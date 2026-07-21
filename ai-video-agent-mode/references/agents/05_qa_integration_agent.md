@@ -43,7 +43,7 @@ Phase 3 是本地 handler，不 spawn 子Agent。它只负责把 Phase 2a/2b/2c 
       "char_entry_exit": "出入画",
       "axis_start": "起始轴线",
       "axis_end": "结束轴线",
-      "movement_type": "fixed",
+      "movement_type": "固定",
       "movement_detail": "运镜细节",
       "end_state": "落幅状态",
       "full_prompt": ""

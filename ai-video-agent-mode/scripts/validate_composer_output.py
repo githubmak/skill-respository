@@ -1,150 +1,362 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-'''validate_composer_output.py - Phase 6 format gate + per-character action coverage.
-Run after Prompt Composer agents complete. Returns non-zero exit if any shot fails.
-Usage: python validate_composer_output.py <composer_output.json> [--run-dir <run_dir>]
-       When --run-dir is provided, also validates per-character action coverage
-       by cross-referencing with shot_plan.json visible_characters.
-'''
+"""Validate Phase 6 Composer batches against the Mode C v4 contract."""
 
-import json, sys, re, os
+import json
+import hashlib
+import os
+import re
+import sys
 
-REQUIRED_TITLES = [
-    '人物站位与服装连续',
-    '时长运镜场景目的',
-    '时间分段叙事',
-    '光照方案',
-    '环境音设计',
-    '负面提示词',
-    '自包含验证',
+sys.path.insert(0, os.path.dirname(__file__))
+from modec_v4 import (
+    FORBIDDEN_MODEL_TERMS,
+    LEGACY_LABELS,
+    PROMPT_LABELS,
+    action_budget_issues,
+    attention_handoff_issues,
+    camera_competition_issues,
+    continuity_contract_issues,
+    dialogue_event_issues,
+    fight_continuity_issues,
+    fight_transition_issues,
+    performance_causality_issues,
+    performance_contract_issues,
+    prompt_length_issues,
+    reroll_control_issues,
+    role_partition_issues,
+    split_sections,
+    timeline_issues,
+    visibility_issues,
+)
+from negative_prompts import PLACEHOLDER, is_fight_context
+
+
+FORBIDDEN_ENGINES = ["C4D", "Octane", "Blender", "Redshift", "Arnold", "Unreal Engine"]
+DIRECT_TO_CAMERA_PATTERNS = [
+    r"面向镜头", r"面对镜头", r"朝向镜头", r"正对镜头", r"看向镜头", r"直视镜头", r"盯着镜头",
+]
+DIRECT_TO_CAMERA_AUTH_PATTERNS = [
+    r"原文明确.*(?:面向|面对|看向|直视|正对).*镜头",
+    r"(?:自拍|自拍视频|直播|对观众|对屏幕观众|镜头内设备|面向观众|直视观众)",
 ]
 
-NEG_MIN_KEYWORDS = [
-    '画面崩坏', '面部扭曲', '五官错位', '多余肢体', '手指畸形',
-    '角色换脸', '人物闪烁', '鬼影重叠', '道具漂移', '禁止角色静止站桩',
-]
 
-FORBIDDEN_ENGINES = ['C4D', 'Octane', 'Blender', 'Redshift', 'Arnold', 'Unreal Engine']
-
-ACTION_VERBS = [
-    '走向', '转身', '抬手', '迈步', '注视', '看向', '移动', '微动', '呼吸',
-    '重心', '肩', '头', '手', '脚', '身体', '步伐', '抬头', '低头', '回头',
-    '侧身', '弯腰', '踏步', '往前', '向前', '向后', '向左', '向右', '靠近',
-    '走开', '离开', '抬腿', '站起', '坐下', '后退', '扭头', '回身', '进入',
-    '走出', '挥手', '提起', '放下', '紧握', '摇头', '点头', '抬眸', '抬眉',
-    '微侧', '微偏', '睁眼', '闭眼', '眨眼', '抬起', '下沉', '绷紧', '放松',
-    '收缩', '扩张', '上扬', '下压', '抿紧', '微启', '咬紧', '松开', '鼓胀',
-    '滚动', '眯起', '瞪大', '扫视', '打量', '盯着', '瞥', '瞧着'
-]
-
-CHAR_NAMES = ['沈星洲', '沈星雨', '向云初', '江训', '陆序', '许承']
-
-
-def validate_composer_output(path, run_dir=None):
-    with open(path, 'r', encoding='utf-8-sig') as f:
-        data = json.load(f)
-    shots = data.get('shots', [])
+def validate_composer_output(path, run_dir=None, report_path=None):
+    with open(path, "r", encoding="utf-8-sig") as handle:
+        data = json.load(handle)
     issues = []
+    if set(data.keys()) != {"shots"}:
+        issues.append("batch顶层必须且只能包含shots")
+    shots = data.get("shots", [])
+    if not isinstance(shots, list) or not shots:
+        issues.append("shots必须是非空数组")
 
-    # Load shot_plan for per-character validation if run_dir provided
-    shot_plan = None
-    if run_dir:
-        plan_path = os.path.join(run_dir, '.cache', 'orchestrator', 'shot_plan.json')
-        if os.path.exists(plan_path):
-            with open(plan_path, 'r', encoding='utf-8-sig') as f:
-                shot_plan = json.load(f)
+    plan_map, director_map = _load_context(run_dir)
+    scaffold_map = _load_scaffold_for_batch(path, run_dir)
+    seen = set()
+    fight_records = []
+    for shot in shots if isinstance(shots, list) else []:
+        sid = shot.get("subshot_id", "?")
+        prefix = f"{sid}: "
+        if sid in seen:
+            issues.append(prefix + "subshot_id重复")
+        seen.add(sid)
+        for field in (
+            "shot_id", "subshot_id", "duration", "full_prompt", "negative_prompt",
+            "qa_metadata", "generation_control",
+        ):
+            if field not in shot:
+                issues.append(prefix + f"缺少字段{field}")
 
-    # Build subshot_id -> characters map from shot_plan
-    subshot_chars = {}
-    if shot_plan:
-        for shot in shot_plan.get('shots', []):
-            for ss in shot.get('subshots', []):
-                chars = ss.get('characters', [])
-                if isinstance(chars, str):
-                    chars = [c.strip() for c in chars.split(';')]
-                subshot_chars[ss['subshot_id']] = [c for c in chars if c in CHAR_NAMES]
+        full_prompt = str(shot.get("full_prompt", "") or "")
+        sections = split_sections(full_prompt, PROMPT_LABELS)
+        for label in PROMPT_LABELS:
+            count = len(re.findall(rf"(?:^|\n\n){re.escape(label)}[：:]", full_prompt))
+            if count != 1:
+                issues.append(prefix + f"字段{label}出现{count}次，必须恰好1次")
+            elif not sections.get(label, "").strip():
+                issues.append(prefix + f"字段{label}内容为空")
+        if full_prompt.count("\n\n") != 3:
+            issues.append(prefix + "四个模型段落之间必须各有一个空行")
+        for legacy in LEGACY_LABELS:
+            if re.search(rf"(?:^|\n\n){re.escape(legacy)}[：:]", full_prompt):
+                issues.append(prefix + f"v3字段泄漏：{legacy}")
+        for term in FORBIDDEN_MODEL_TERMS:
+            if term in full_prompt:
+                issues.append(prefix + f"工程/审核文本泄漏：{term}")
+        for engine in FORBIDDEN_ENGINES:
+            if engine in full_prompt:
+                issues.append(prefix + f"禁用渲染引擎名：{engine}")
+        if "负面提示词" in full_prompt or PLACEHOLDER in full_prompt:
+            issues.append(prefix + "负面词必须位于negative_prompt字段，不能进入full_prompt")
+        if shot.get("negative_prompt") != PLACEHOLDER:
+            issues.append(prefix + f"Composer阶段negative_prompt必须精确等于{PLACEHOLDER}")
 
-    for s in shots:
-        sid = s.get('subshot_id', '?')
-        fp = s.get('full_prompt', '')
+        duration = shot.get("duration", 0)
+        for problem in prompt_length_issues(full_prompt, duration):
+            issues.append(prefix + problem)
+        for problem in timeline_issues(full_prompt, duration):
+            issues.append(prefix + problem)
+        for problem in camera_competition_issues(full_prompt):
+            issues.append(prefix + problem)
 
-        # B0: duplicate title check
-        for t in REQUIRED_TITLES:
-            cnt = len(re.findall(rf'\n\n{t}', fp)) + (1 if fp.startswith(t) else 0)
-            if cnt > 1:
-                issues.append(f"{sid}: title '{t}' appears {cnt}x (must be 1)")
+        plan_item = plan_map.get(sid, {})
+        director_item = director_map.get(sid, {})
+        visible = _as_char_list(
+            plan_item.get("visible_characters", plan_item.get("characters", director_item.get("visible_characters", [])))
+        )
+        metadata = shot.get("qa_metadata", {})
+        _validate_scaffold_lock(prefix, shot, scaffold_map.get(sid), issues)
+        for problem in role_partition_issues(metadata, visible):
+            issues.append(prefix + problem)
+        for problem in performance_causality_issues(metadata, visible):
+            issues.append(prefix + problem)
+        for problem in performance_contract_issues(metadata, full_prompt, visible):
+            issues.append(prefix + problem)
+        for problem in continuity_contract_issues(metadata, full_prompt, visible):
+            issues.append(prefix + problem)
+        for problem in reroll_control_issues(metadata, shot.get("generation_control"), visible):
+            issues.append(prefix + problem)
+        fight = is_fight_context(
+            plan_item.get("scene_type", ""), plan_item.get("shot_type", ""), full_prompt
+        )
+        for problem in action_budget_issues(metadata, duration, fight):
+            issues.append(prefix + problem)
+        for problem in attention_handoff_issues(metadata, full_prompt):
+            issues.append(prefix + problem)
+        if fight:
+            for problem in fight_continuity_issues(metadata, duration):
+                issues.append(prefix + problem)
+            fight_records.append((sid, metadata))
+        shot_size = director_item.get("shot_size", plan_item.get("shot_size", ""))
+        for problem in visibility_issues(full_prompt, shot_size):
+            issues.append(prefix + problem)
 
-        # B1: newline count
-        blank = fp.count('\n\n')
-        if blank < 7:
-            issues.append(f'{sid}: only {blank} blank lines (need >=7)')
+        control = shot.get("generation_control")
+        audio_enabled = control.get("audio_enabled") if isinstance(control, dict) else None
+        for problem in dialogue_event_issues(
+            metadata,
+            director_item.get("dialogue_events", []),
+            visible,
+            full_prompt,
+            audio_enabled,
+            duration,
+        ):
+            issues.append(prefix + problem)
+        _validate_metadata(prefix, metadata, director_item, full_prompt, audio_enabled, issues)
+        _validate_generation_control(prefix, control, issues)
 
-        # B2: required titles
-        for t in REQUIRED_TITLES:
-            if t not in fp:
-                issues.append(f"{sid}: missing title '{t}'")
+        if _has_direct_to_camera_text(full_prompt) and not _director_authorizes_direct_to_camera(director_item):
+            issues.append(prefix + "原文未授权角色直视镜头")
 
-        # B3: negative prompt keywords
-        for kw in NEG_MIN_KEYWORDS:
-            if kw not in fp:
-                issues.append(f"{sid}: missing neg keyword '{kw}'")
-                break
+    for (previous_id, previous_metadata), (current_id, current_metadata) in zip(fight_records, fight_records[1:]):
+        for problem in fight_transition_issues(previous_metadata, current_metadata):
+            issues.append(f"{previous_id}→{current_id}: {problem}")
 
-        # B4: forbidden engines
-        for eng in FORBIDDEN_ENGINES:
-            if eng in fp:
-                issues.append(f"{sid}: forbidden engine '{eng}'")
-
-        # B5: word count
-        if len(fp) < 800:
-            issues.append(f'{sid}: only {len(fp)} chars (min 800)')
-        if len(fp) > 1800:
-            issues.append(f'{sid}: {len(fp)} chars (max 1800)')
-
-        # === NEW: Per-character action coverage (only for multi-char shots) ===
-        if subshot_chars and sid in subshot_chars:
-            chars = subshot_chars[sid]
-            if len(chars) >= 2:
-                neg_idx = fp.find('负面提示词')
-                content = fp[:neg_idx] if neg_idx > 0 else fp
-
-                frozen = []
-                for ch in chars:
-                    sentences = re.split(r'[。；\n]', content)
-                    char_sents = [s for s in sentences if ch in s]
-                    has_action = any(
-                        any(verb in s for verb in ACTION_VERBS)
-                        for s in char_sents
-                    )
-                    if not has_action:
-                        frozen.append(ch)
-
-                if frozen and len(chars) >= 2:
-                    issues.append(
-                        f'{sid}: FROZEN CHARS {frozen} — '
-                        f'multi-char shot ({len(chars)} chars) but {frozen} '
-                        f'have zero action verbs in content'
-                    )
+    expected = set(plan_map) if plan_map else set()
+    if expected and seen != expected and len(expected) == len(shots):
+        missing = sorted(expected - seen)
+        extra = sorted(seen - expected)
+        if missing:
+            issues.append("batch缺少subshot：" + "、".join(missing))
+        if extra:
+            issues.append("batch含未派发subshot：" + "、".join(extra))
 
     if issues:
-        frozen_count = sum(1 for i in issues if 'FROZEN' in i)
-        other_count = len(issues) - frozen_count
-        print(f'[VALIDATE] {len(issues)} issue(s) ({frozen_count} frozen-char, {other_count} format):')
-        for i in issues[:30]:
-            print(f'  - {i}')
+        _write_report(report_path, path, issues)
+        print(f"[VALIDATE V4] {len(issues)} issue(s):")
+        for issue in issues[:80]:
+            print("  - " + issue)
         return 1
-
-    print(f'[VALIDATE] PASS - {len(shots)} shots OK')
+    _write_report(report_path, path, [])
+    print(f"[VALIDATE V4] PASS - {len(shots)} shots")
     return 0
 
 
-if __name__ == '__main__':
+def _validate_scaffold_lock(prefix, shot, scaffold, issues):
+    if not scaffold:
+        return
+    for field in ("shot_id", "subshot_id", "duration", "negative_prompt", "generation_control"):
+        if shot.get(field) != scaffold.get(field):
+            issues.append(prefix + f"确定性骨架锁定字段被改写：{field}")
+    metadata = shot.get("qa_metadata", {}) if isinstance(shot.get("qa_metadata"), dict) else {}
+    expected_metadata = scaffold.get("qa_metadata", {})
+    if metadata.get("dialogue_refs") != expected_metadata.get("dialogue_refs"):
+        issues.append(prefix + "确定性骨架锁定字段被改写：qa_metadata.dialogue_refs")
+    locked = lambda events: [
+        tuple(str(event.get(field, "") or "") for field in ("ref", "kind", "speaker", "text"))
+        for event in events if isinstance(event, dict)
+    ]
+    if locked(metadata.get("dialogue_events", [])) != locked(expected_metadata.get("dialogue_events", [])):
+        issues.append(prefix + "确定性骨架锁定字段被改写：qa_metadata.dialogue_events[].ref/kind/speaker/text")
+
+
+def _load_scaffold_for_batch(batch_path, run_dir):
+    if not run_dir:
+        return {}
+    dispatch_dir = os.path.join(run_dir, ".cache", "dispatch")
+    if not os.path.isdir(dispatch_dir):
+        return {}
+    target = os.path.abspath(batch_path)
+    for name in os.listdir(dispatch_dir):
+        if not name.endswith("_packet.json"):
+            continue
+        packet_path = os.path.join(dispatch_dir, name)
+        try:
+            with open(packet_path, "r", encoding="utf-8-sig") as handle:
+                packet = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if os.path.abspath(str(packet.get("_batch_output_path", ""))) != target:
+            continue
+        scaffold_path = packet.get("composer_scaffold_path")
+        if not scaffold_path or not os.path.exists(scaffold_path):
+            return {}
+        with open(scaffold_path, "r", encoding="utf-8-sig") as handle:
+            scaffold = json.load(handle)
+        return {
+            item.get("subshot_id", ""): item
+            for item in scaffold.get("shots", []) if item.get("subshot_id")
+        }
+    return {}
+
+
+def _write_report(report_path, batch_path, issues):
+    if not report_path:
+        return
+    failed = []
+    for issue in issues:
+        prefix = str(issue).split(":", 1)[0]
+        ids = prefix.split("→") if "→" in prefix else [prefix]
+        for subshot_id in ids:
+            if re.match(r"^[A-Za-z0-9_-]+$", subshot_id) and subshot_id not in failed:
+                failed.append(subshot_id)
+    os.makedirs(os.path.dirname(os.path.abspath(report_path)), exist_ok=True)
+    with open(report_path, "w", encoding="utf-8") as handle:
+        json.dump({
+            "contract_version": "modec-v4",
+            "batch_path": os.path.abspath(batch_path),
+            "batch_sha256": _sha256(batch_path),
+            "pass": not issues,
+            "failed_subshot_ids": failed,
+            "issues": issues,
+        }, handle, ensure_ascii=False, indent=2)
+
+
+def _sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _validate_metadata(prefix, metadata, director_item, full_prompt, audio_enabled, issues):
+    if not isinstance(metadata, dict):
+        issues.append(prefix + "qa_metadata必须是对象")
+        return
+    for field in (
+        "dramatic_goal", "performance_priority", "action_budget", "start_state", "end_state",
+        "performance_contract", "continuity_contract", "reroll_control", "dialogue_refs", "dialogue_events",
+    ):
+        if field not in metadata:
+            issues.append(prefix + f"qa_metadata缺少{field}")
+    if len(str(metadata.get("dramatic_goal", "")).strip()) < 6:
+        issues.append(prefix + "dramatic_goal必须是本镜具体目标")
+    if len(str(metadata.get("start_state", "")).strip()) < 4:
+        issues.append(prefix + "start_state过于空泛")
+    if len(str(metadata.get("end_state", "")).strip()) < 4:
+        issues.append(prefix + "end_state过于空泛")
+    refs = metadata.get("dialogue_refs", [])
+    if not isinstance(refs, list):
+        issues.append(prefix + "dialogue_refs必须是数组")
+        refs = []
+    expected_refs = director_item.get("dialogue_refs", [])
+    if isinstance(expected_refs, list) and set(refs) != set(expected_refs):
+        issues.append(prefix + "dialogue_refs与Director不一致")
+    raw = str(director_item.get("dialogue_raw_text", "") or "").strip()
+    if not raw and re.search(r"[“\"]([^”\"]{2,})[”\"]", full_prompt):
+        issues.append(prefix + "无原始台词镜头疑似新增引号台词")
+
+
+def _validate_generation_control(prefix, control, issues):
+    if not isinstance(control, dict):
+        issues.append(prefix + "generation_control必须是对象")
+        return
+    mode = control.get("mode")
+    if mode not in ("t2v", "i2v", "r2v"):
+        issues.append(prefix + "generation_control.mode只允许t2v/i2v/r2v")
+    if not isinstance(control.get("audio_enabled"), bool):
+        issues.append(prefix + "generation_control.audio_enabled必须是布尔值")
+    assets = control.get("reference_assets")
+    if not isinstance(assets, list):
+        issues.append(prefix + "generation_control.reference_assets必须是数组")
+    elif mode in ("i2v", "r2v") and not assets:
+        issues.append(prefix + f"{mode}模式必须提供reference_assets")
+    elif any(not isinstance(asset, dict) or not asset.get("type") or not asset.get("path") for asset in assets):
+        issues.append(prefix + "每个reference_asset必须包含type与path")
+
+
+def _load_context(run_dir):
+    if not run_dir:
+        return {}, {}
+    plan_map = {}
+    director_map = {}
+    plan_path = os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json")
+    if os.path.exists(plan_path):
+        with open(plan_path, "r", encoding="utf-8-sig") as handle:
+            plan = json.load(handle)
+        for shot in plan.get("shots", []):
+            for subshot in shot.get("subshots", []):
+                copied = dict(subshot)
+                copied.setdefault("scene_type", shot.get("scene_type", ""))
+                plan_map[copied.get("subshot_id", "")] = copied
+    director_path = os.path.join(run_dir, ".cache", "director", "director_pass.json")
+    if os.path.exists(director_path):
+        with open(director_path, "r", encoding="utf-8-sig") as handle:
+            director = json.load(handle)
+        director_map = {
+            item.get("subshot_id", ""): item for item in director.get("items", []) if item.get("subshot_id")
+        }
+    return plan_map, director_map
+
+
+def _as_char_list(value):
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        return [part.strip() for part in re.split(r"[;；,，、/]+", value) if part.strip()]
+    return []
+
+
+def _has_direct_to_camera_text(text):
+    return any(re.search(pattern, str(text or "")) for pattern in DIRECT_TO_CAMERA_PATTERNS)
+
+
+def _director_authorizes_direct_to_camera(item):
+    blob = "\n".join(str(item.get(key, "")) for key in (
+        "character_action", "axis_space", "axis_start", "axis_end", "camera_facing_desc",
+        "dialogue_audio", "base_action",
+    ))
+    return any(re.search(pattern, blob) for pattern in DIRECT_TO_CAMERA_AUTH_PATTERNS)
+
+
+if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print('Usage: validate_composer_output.py <composer_output.json> [--run-dir <run_dir>]')
+        print("Usage: validate_composer_output.py <composer_output.json> [--run-dir <run_dir>]")
         sys.exit(2)
     run_dir = None
-    args = [a for a in sys.argv if not a.startswith('--run-dir')]
-    for i, a in enumerate(sys.argv):
-        if a == '--run-dir' and i + 1 < len(sys.argv):
-            run_dir = sys.argv[i + 1]
-    sys.exit(validate_composer_output(args[1], run_dir))
+    report_path = None
+    args = []
+    index = 1
+    while index < len(sys.argv):
+        if sys.argv[index] == "--run-dir" and index + 1 < len(sys.argv):
+            run_dir = sys.argv[index + 1]
+            index += 2
+        elif sys.argv[index] == "--report" and index + 1 < len(sys.argv):
+            report_path = sys.argv[index + 1]
+            index += 2
+        else:
+            args.append(sys.argv[index])
+            index += 1
+    sys.exit(validate_composer_output(args[0], run_dir, report_path))

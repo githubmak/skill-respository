@@ -84,28 +84,16 @@ def validate(run_dir):
                 if "复杂" in intonation or "无特别" in intonation or "带着复杂" in intonation:
                     errors.append("[占位语调] %s: 语调标注含有泛化描述 \"%s...\"" % (ssid, intonation[:30]))
 
-    for i in range(len(ordered) - 1):
-        shot_a, ss_a, id_a = ordered[i]
-        shot_b, ss_b, id_b = ordered[i + 1]
-        if shot_a.get("scene") != shot_b.get("scene"):
-            continue
-        ca = cmap.get(id_a, {})
-        cb = cmap.get(id_b, {})
-        size_a = ca.get("shot_size", "")
-        size_b = cb.get("shot_size", "")
-        if isinstance(size_a, dict):
-            size_a = size_a.get("层级", "")
-        if isinstance(size_b, dict):
-            size_b = size_b.get("层级", "")
-        if size_a and size_b and size_a == size_b:
-            errors.append("[连续重复] %s->%s: 连续两个子镜头景别相同（%s）" % (id_a, id_b, size_a))
+    # Mode C v4 allows adjacent shots to keep the same shot size. Repetition is
+    # only a semantic issue when framing, action, and dramatic function are all
+    # duplicated; that judgment belongs to Editor Pass 2, not a string rule.
 
     return errors
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("用法: python validate_semantic.py <run_dir>")
+        print("用法: python3 validate_semantic.py <run_dir>")
         sys.exit(1)
     errs = validate(sys.argv[1])
     if errs:

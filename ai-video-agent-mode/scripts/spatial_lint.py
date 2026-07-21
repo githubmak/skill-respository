@@ -11,8 +11,8 @@ Four-dimensional check:
 Run after Phase 3 (director_pass assembly). Requires shot_plan.json with spatial_map.
 
 Usage:
-    python spatial_lint.py <run_dir>
-    python spatial_lint.py <run_dir> --mode [full|camera|action|fight]
+    python3 spatial_lint.py <run_dir>
+    python3 spatial_lint.py <run_dir> --mode [full|camera|action|fight]
 
 Output:
     .cache/spatial/report.json with blocking/warning/info issues
@@ -362,7 +362,7 @@ def run(run_dir, mode='full'):
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print('Usage: python spatial_lint.py <run_dir> [--mode full|camera|action|fight]')
+        print('Usage: python3 spatial_lint.py <run_dir> [--mode full|camera|action|fight]')
         sys.exit(2)
 
     run_dir = sys.argv[1]

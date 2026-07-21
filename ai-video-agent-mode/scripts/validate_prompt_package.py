@@ -1,6 +1,9 @@
 """Validate prompt package completeness and consistency."""
 import json, os, re, sys
 
+sys.path.insert(0, os.path.dirname(__file__))
+from modec_v4 import attention_handoff_issues, camera_competition_issues, dialogue_event_issues, performance_causality_issues
+
 
 QUOTE_RE = re.compile(r"[「『“\"]([^」』”\"]{1,120})[」』”\"]")
 LIP_KEYS = ["口型", "嘴型", "唇部", "嘴唇", "唇齿", "张嘴", "开口", "口唇"]
@@ -67,9 +70,12 @@ def validate(pkg_path, shot_plan_path=None):
     dialogue_map = _load_shot_plan_dialogues(shot_plan_path)
     if not dialogue_map:
         dialogue_map = data.get("dialogue_map", {}) or {}
-    items = data.get("items", [])
+    items = data.get("shots", data.get("items", []))
     shot_ids = set()
-    required_prompt_fields = ["full_prompt", "shot_id", "subshot_id", "duration", "duration_sec"]
+    required_prompt_fields = [
+        "full_prompt", "negative_prompt", "qa_metadata", "generation_control",
+        "shot_id", "subshot_id", "duration",
+    ]
 
     for item in items:
         sid = item.get("subshot_id", "?")
@@ -80,14 +86,24 @@ def validate(pkg_path, shot_plan_path=None):
                 issues.append((sid, field, "missing", "required"))
 
         fp = item.get("full_prompt", "")
-        if len(fp) < 500:
-            issues.append((sid, "full_prompt.len", len(fp), ">=500"))
+        if len(fp) < 120 or len(fp) > 1100:
+            issues.append((sid, "full_prompt.len", len(fp), "120-1100"))
+        if "负面提示词" in fp or "自包含验证" in fp:
+            issues.append((sid, "full_prompt.pollution", "v3/negative section", "model-facing v4 only"))
+        for problem in camera_competition_issues(fp):
+            issues.append((sid, "camera.competition", problem, "single executable camera strategy"))
 
         dur = item.get("duration", 0)
         if not isinstance(dur, (int, float)) or dur <= 0:
             issues.append((sid, "duration", dur, ">0"))
 
-        refs = item.get("dialogue_refs", [])
+        metadata = item.get("qa_metadata", {})
+        metadata = metadata if isinstance(metadata, dict) else {}
+        for problem in performance_causality_issues(metadata):
+            issues.append((sid, "performance_causality", problem, "complete causal performance audit"))
+        for problem in attention_handoff_issues(metadata, fp):
+            issues.append((sid, "attention_handoff", problem, "one causal handoff"))
+        refs = metadata.get("dialogue_refs", item.get("dialogue_refs", []))
         if not refs and isinstance(item.get("dialogue_audio"), dict):
             refs = item.get("dialogue_audio", {}).get("dialogue_refs", [])
         refs = refs or []
@@ -98,13 +114,26 @@ def validate(pkg_path, shot_plan_path=None):
                 raw = item.get("dialogue_raw_text", "")
             if raw:
                 expected_lines.append(raw)
-        item_text = "\n".join(str(item.get(k, "")) for k in ["dialogue_audio", "full_prompt"])
+        item_text = str(item.get("full_prompt", "") or "")
+        control = item.get("generation_control", {})
+        control = control if isinstance(control, dict) else {}
+        audio_enabled = control.get("audio_enabled")
+        for problem in dialogue_event_issues(
+            metadata,
+            full_prompt=fp,
+            audio_enabled=audio_enabled,
+            duration=dur,
+        ):
+            issues.append((sid, "dialogue_events", problem, "locked dialogue/OS identity and speaking performance"))
 
         if refs:
             for raw in expected_lines:
                 raw_norm = _normalize_dialogue_text(raw)
-                if raw_norm and raw_norm not in _normalize_dialogue_text(item_text):
+                prompt_norm = _normalize_dialogue_text(item_text)
+                if audio_enabled is True and raw_norm and raw_norm not in prompt_norm:
                     issues.append((sid, "dialogue.missing_or_rewritten", raw, "preserve_original_text"))
+                if audio_enabled is False and raw_norm and raw_norm in prompt_norm:
+                    issues.append((sid, "dialogue.audio_disabled_leak", raw, "keep_in_production_metadata"))
             extras = _extract_extra_quoted_text(item_text, expected_lines)
             for extra in extras[:5]:
                 issues.append((sid, "dialogue.extra_quoted_text", extra, "no_added_dialogue"))

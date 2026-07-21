@@ -1,10 +1,11 @@
 {
   "items": [
     {
+      "id": "S1-01-01",
       "shot_id": "S1-01",
       "subshot_id": "S1-01-01",
       "emotion_type": "淡漠",
-      "expression_level": "zero",
+      "expression_level": "micro",
       "gaze": "forward",
       "micro_expression": "none",
       "body_tension": "relaxed",
@@ -13,30 +14,63 @@
       "action_beat_start": "角色A推门站定玄关",
       "action_beat_transition": "目光平视前方",
       "action_beat_end": "站立不动",
+      "per_char_actions": [
+        {
+          "character": "角色A",
+          "performance_role": "primary",
+          "beat_start": "推门后站定玄关",
+          "beat_transition": "听见室内声响后视线短暂停向客厅",
+          "beat_end": "右手离开门把但身体没有靠近",
+          "micro_expression": "有意不泄露表情",
+          "body_parts_focus": "肩线与右手"
+        }
+      ],
       "emotion_trigger_short": "无外界触动，习惯性淡漠",
       "performance_note": "不反应即为反应"
     },
     {
+      "id": "S1-01-02",
       "shot_id": "S1-01",
       "subshot_id": "S1-01-02",
       "emotion_type": "愤怒",
-      "expression_level": "extreme",
+      "expression_level": "strong",
       "gaze": "at_角色A",
       "micro_expression": "brief_anger_flash",
-      "body_tension": "extreme",
+      "body_tension": "strong",
       "body_parts_focus": "双手握拳砸桌，青筋暴起",
       "voice_tone": "sharp",
       "action_beat_start": "角色B醉眼猩红怒视",
       "action_beat_transition": "从呵斥到砸桌",
       "action_beat_end": "砸桌后喘气",
+      "per_char_actions": [
+        {
+          "character": "角色B",
+          "performance_role": "primary",
+          "beat_start": "角色A无视质问后上身前倾",
+          "beat_transition": "握酒瓶的手砸向桌面",
+          "beat_end": "砸桌后胸口急促起伏",
+          "micro_expression": "眉间与下颌短暂收紧",
+          "body_parts_focus": "上身、握瓶手与呼吸"
+        },
+        {
+          "character": "角色A",
+          "performance_role": "supporting",
+          "beat_start": "脚步刚进入玄关线",
+          "beat_transition": "砸桌声出现时脚步停住",
+          "beat_end": "仍站在玄关线内，没有迎上去",
+          "micro_expression": "眼神不回避",
+          "body_parts_focus": "脚步与重心"
+        }
+      ],
       "emotion_trigger_short": "角色A无视他进门",
       "performance_note": "借砸酒瓶释放积压愤怒"
     },
     {
+      "id": "S2-03-02",
       "shot_id": "S2-03",
       "subshot_id": "S2-03-02",
       "emotion_type": "怯弱",
-      "expression_level": "full",
+      "expression_level": "visible",
       "gaze": "down_bowl",
       "micro_expression": "brief_fear",
       "body_tension": "moderate",
@@ -45,6 +79,26 @@
       "action_beat_start": "角色D端粥站在门外",
       "action_beat_transition": "抬头看角色A，欲言又止",
       "action_beat_end": "低头递粥",
+      "per_char_actions": [
+        {
+          "character": "角色D",
+          "performance_role": "primary",
+          "beat_start": "端粥站在门外",
+          "beat_transition": "担心被拒绝时双手把碗收近胸前",
+          "beat_end": "抬眼后垂下视线，把粥递出",
+          "micro_expression": "眼神短暂抬起后回避",
+          "body_parts_focus": "双手与视线"
+        },
+        {
+          "character": "角色A",
+          "performance_role": "supporting",
+          "beat_start": "站在门内看向来人",
+          "beat_transition": "粥递来时视线移到碗沿",
+          "beat_end": "没有立刻伸手接过",
+          "micro_expression": "视线停顿",
+          "body_parts_focus": "视线与手部静止"
+        }
+      ],
       "emotion_trigger_short": "怕角色A拒绝她的好意",
       "performance_note": "通过规避目光传递怯弱"
     }

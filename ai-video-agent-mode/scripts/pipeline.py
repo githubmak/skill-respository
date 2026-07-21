@@ -1,4 +1,11 @@
-import json, os, re, sys, time, openpyxl
+import sys
+
+if __name__ == "__main__":
+    print("pipeline.py is deprecated for ai-video-agent-mode. Use the Phase 0-10 scripts listed in SKILL.md instead.")
+    print("Recommended path: dispatch_cache.py -> agent batches -> merge_agent_outputs.py -> normalize_prompt_package.py -> check_export.py -> export_with_validation.py")
+    sys.exit(2)
+
+import json, os, re, time, openpyxl
 
 def generate_dispatches(export_root, shot_plan):
     if not shot_plan or "shots" not in shot_plan or not shot_plan["shots"]:
@@ -426,7 +433,10 @@ def export(groups, STYLE, NEG, run_dir, export_dir=None):
 
 # ---- CLI入口 ----
 if __name__ == "__main__":
-    if len(sys.argv) < 2: print("用法: python pipeline.py <run_dir> [--clean|--group|--validate|--export|--all]"); sys.exit(1)
+    print("pipeline.py is deprecated for ai-video-agent-mode. Use the Phase 0-10 scripts listed in SKILL.md instead.")
+    print("Recommended path: dispatch_cache.py -> agent batches -> merge_agent_outputs.py -> normalize_prompt_package.py -> check_export.py -> export_with_validation.py")
+    sys.exit(2)
+    if len(sys.argv) < 2: print("用法: python3 pipeline.py <run_dir> [--clean|--group|--validate|--export|--all]"); sys.exit(1)
     run_dir = sys.argv[1]
     mode = sys.argv[2] if len(sys.argv) > 2 else "--all"
     

@@ -7,21 +7,32 @@
 | 情绪分析 | emotion-analysis | emotion_output.json | 与2b/2c并行 |
 | 场景分析 | frames-analysis | scene_output.json | 与2a/2c并行 |
 | 镜头运镜 | camera-analysis | camera_output.json | 与2a/2b并行 |
-| Prompt Composer | prompt-composer | prompt_package.json | 串行依赖本地整合 |
+| Prompt Composer | prompt-composer | composer_bNN_{dispatch8}.prompt_package.json；主 Agent 合并为 .cache/composer/merged.prompt_package.json | 串行依赖本地整合 |
 | Editor Pass 2 | editor-review | review/llm_gate_result.json | 串行依赖 Editor Pass 1 |
 
 ## 输出字段规范
 
-所有子Agent输出统一使用 `items[]`。每个 item 必须包含 `shot_id` 和 `subshot_id`，主Agent和本地整合只按 `subshot_id` 对齐。
+Phase 2 子 Agent 输出统一使用 `items[]`。Composer batch 输出使用 `shots[]`。每个条目必须包含 `id`（Phase 2）、`shot_id` 和 `subshot_id`，主Agent和本地整合只按 `subshot_id` 对齐。
+
+所有 dispatch packet 必须包含 `"contract_version": "modec-v4"`、唯一 `dispatch_id` 和 `created_at`。缺失这些字段或版本不是 `modec-v4` 时停止处理，由主 Agent 重新运行 `dispatch_cache.py`；不得继续使用旧 packet 或旧 constraints sidecar。
+
+每次 spawn 返回真实 Agent ID 后，主 Agent 必须立即运行 `register_dispatch_agent.py <packet> <agent_id>`；它按 `dispatch_id` 注册独立的 agent_id/spawn_time，支持同一 Phase 多批并行。Agent 完成后运行 `record_batch_provenance.py <packet>`。该脚本交叉检查逐 dispatch 注册、batch mtime、对应 Phase 校验器与 SHA-256，并写入不可混入模型提示词的 provenance sidecar。`merge_agent_outputs.py` 必须使用 `--require-provenance`；hash 变化、缺少 sidecar 或无 Agent 注册信息时禁止生成公共合并文件。
+
+只有一个 batch 且其顶层不是 `items[]/shots[]`（例如 Editor Pass 2 审查 JSON）时，记录 provenance 后使用 `promote_verified_batch.py <packet>` 原子提升到 packet.output_path；禁止手工复制未验证文件。
 
 ### emotion_output.json
-`items[]`: shot_id, subshot_id, emotion_type, expression_level, gaze, micro_expression, body_tension, body_parts_focus, voice_tone, action_beat_start, action_beat_transition, action_beat_end, emotion_trigger_short, performance_note
+`items[]`: id, shot_id, subshot_id, emotion_type, expression_level, gaze, micro_expression, body_tension, body_parts_focus, voice_tone, action_beat_start, action_beat_transition, action_beat_end, per_char_actions, emotion_trigger_short, performance_note
 
 ### scene_output.json
-`items[]`: shot_id, subshot_id, space_type, space_name, char_positions, char_wardrobes, bg_foreground, bg_midground, bg_background, light_type, light_temp, light_direction, light_hardness, mood_atmosphere, audio_* fields
+`items[]`: id, shot_id, subshot_id, space_type, space_name, char_positions, char_wardrobes, bg_foreground, bg_midground, bg_background, light_type, light_temp, light_direction, light_hardness, mood_atmosphere, audio_* fields
 
 ### camera_output.json
-`items[]`: shot_id, subshot_id, shot_size, camera_lens_mm, camera_relative_pos, camera_distance_steps, camera_height_relative, angle_str, camera_facing_desc, movement_type, movement_detail, movement_speed, axis_start, axis_end, char_entry, char_exit, end_state
+`items[]`: id, shot_id, subshot_id, shot_size, camera_lens_mm, camera_relative_pos, camera_distance_steps, camera_height_relative, angle_str, camera_facing_desc, movement_type, movement_detail, movement_speed, axis_start, axis_end, char_entry, char_exit, end_state
+
+### composer_bNN_{dispatch8}.prompt_package.json
+`shots[]`: shot_id, subshot_id, duration, full_prompt, negative_prompt, qa_metadata, generation_control。`full_prompt` 只使用 Mode C v4 四段：画面锁定、镜头设计、表演时间轴、光照与声音。`negative_prompt` 单独写 `{{NEGATIVE_PROMPT_AUTO_INJECT}}`，QA 与多模态控制不得拼入模型提示词。
+
+Composer 必须以 packet 的 `composer_scaffold_path` 为输出骨架，不得改写锁定字段。相同场景只读取一次 `scene_lock_cache_path`；packet.items 已移除重复的旧版 full_prompt、灯光和空间长文本，通过 `scene_lock_ref` 对齐缓存。`source_path` 仅在 compact packet 信息不足时按需读取，禁止默认加载完整 Director 文件。
 
 ### director_pass.json（由本地 qa_integration handler 产出）
 `items[]` 按 subshot_id 合并以上字段，并生成 `merged_full_prompts[]`。
@@ -43,14 +54,18 @@
 2. send_back 只包含仍失败的子镜头
 3. 修正消息只包含本轮仍失败的问题（已修正的不重复发送）
 4. 重试次数用尽后 pipeline blocked，不自动降级
+5. 每次重试重新运行 `dispatch_cache.py`，使用带新 `dispatch_id` 的唯一 packet、constraints sidecar 与 `_batch_output_path`；不得覆盖 baseline batch。合并时同一 `subshot_id` 只由 provenance 通过的最新修复批次替换。
+6. Composer batch 先用 `validate_composer_output.py --report` 生成机器可读失败清单；`prepare_composer_retry.py` 封存失败 batch 的 SHA-256，只把失败 `subshot_id` 写入新 packet，并附 baseline、passed 列表与当前问题。
+7. 混合结果使用逐 subshot provenance：原 batch 中通过镜可继续合并，失败镜只能由唯一 retry packet 的新 batch 替换。封存后修改原 batch 会使其 provenance 失效，禁止原地修复冒充重派。
 
 
 ## 上下文溢出预防
 
 | 策略 | 操作 |
 |------|------|
-| 分批处理 | 按阶段上限拆分为多个 `.cache/dispatch/*_batchNNN_packet.json`，通过 send_input 逐批处理 |
-| 增量追加 | 每批结果追加到同一JSON数组，最后统一写入 |
+| 分批处理 | 按阶段上限拆分为多个 `.cache/dispatch/*_batchNNN_{dispatch8}_packet.json`，通过 send_input 逐批处理 |
+| Composer并行 | 普通镜自适应2–4个 subshot/批，避免4+1尾批；同一主镜、连续互动链或打斗sequence不拆批，有可用槽位时不同批次可并行 |
+| 分批落盘 | 每批只写 packet 的 `_batch_output_path`，最后由主 Agent 统一合并 |
 | 重试刷新 | send_back 发现原 Agent 失活时，重新 spawn_agent 并附带 `.cache/handoff/*_handoff.json` 中的上下文摘要 |
 | 轻量化输入 | 每批只传当前需要处理的 subshot 数据，不重复全量 shot_plan |
 | 文件化记忆 | 每个子Agent输出后必须生成 handoff 摘要，禁止只依赖聊天上下文 |

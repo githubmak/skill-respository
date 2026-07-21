@@ -35,7 +35,7 @@ def quality_check_director(packet_path):
     return issues
 
 
-def quality_check_prompt(path, minc=500):
+def quality_check_prompt(path, minc=120):
     if not os.path.exists(path):
         return [(os.path.basename(path), "FILE", 0, "not_found")]
     try:
@@ -49,4 +49,6 @@ def quality_check_prompt(path, minc=500):
         fp = item.get("full_prompt", "")
         if len(fp) < minc:
             issues.append((ssid, "fp.len", len(fp), ">=%d" % minc))
+        if len(fp) > 1100:
+            issues.append((ssid, "fp.len", len(fp), "<=1100"))
     return issues

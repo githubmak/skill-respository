@@ -1,5 +1,5 @@
-"""Enhanced Excel export with 7 sheets, styling, and proper layout."""
-import json, os, sys
+"""Mode C v4 Excel export with model/negative/QA/control separation."""
+import json, os, re, sys
 if not os.environ.get("PYTHONPYCACHEPREFIX") and not getattr(sys, "pycache_prefix", None):
     sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(__file__))
@@ -56,6 +56,43 @@ def auto_width(ws, max_width=60, min_width=8):
         ws.column_dimensions[get_column_letter(i)].width = min(max(best + 2, min_width), max_width)
 
 
+def _field(item, *keys, default=""):
+    for key in keys:
+        val = item.get(key)
+        if val not in (None, ""):
+            return val
+    return default
+
+
+def _prompt_section(full_prompt, label):
+    if not full_prompt:
+        return ""
+    pattern = rf"{re.escape(label)}[：:](.*?)(?=\n\n\S+?[：:]|$)"
+    m = re.search(pattern, full_prompt, flags=re.S)
+    return m.group(1).strip() if m else ""
+
+
+def _derived_field(item, field_name):
+    fp = str(item.get("full_prompt", ""))
+    if field_name == "shot_size":
+        m = re.search(r"景别[：:]\s*([^。；;\n]+)", fp)
+        return m.group(1).strip() if m else ""
+    if field_name == "camera_position":
+        m = re.search(r"机位[：:]\s*([^。；;\n]+)", fp)
+        return m.group(1).strip() if m else ""
+    if field_name == "camera":
+        m = re.search(r"运镜描述[：:]\s*([^。；;\n]+)", fp)
+        return m.group(1).strip() if m else ""
+    if field_name == "lighting":
+        return _prompt_section(fp, "光照与声音")
+    if field_name == "end_state":
+        metadata = item.get("qa_metadata", {})
+        return metadata.get("end_state", "") if isinstance(metadata, dict) else ""
+    if field_name == "character_action":
+        return _prompt_section(fp, "表演时间轴")
+    return ""
+
+
 def export(pkg_path, plan_path, out):
     """Generate styled 7-sheet Excel workbook."""
     ensure_pycache_prefix_from_path(out)
@@ -86,38 +123,54 @@ def export(pkg_path, plan_path, out):
     ws1.append(headers1)
     for item in items:
         ws1.append([
-            item["shot_id"], item["subshot_id"], item["duration"],
-            item["shot_size"], item["camera_position"], item["camera"],
-            item.get("visible_characters", ""), item["lighting"], item["end_state"]
+            _field(item, "shot_id"), _field(item, "subshot_id"), _field(item, "duration", "duration_sec", default=0),
+            _field(item, "shot_size", default=_derived_field(item, "shot_size")),
+            _field(item, "camera_position", "camera_relative_pos", default=_derived_field(item, "camera_position")),
+            _field(item, "camera", "movement_detail", "movement_description", default=_derived_field(item, "camera")),
+            _field(item, "visible_characters", "characters"),
+            _field(item, "lighting", default=_derived_field(item, "lighting")),
+            _field(item, "end_state", default=_derived_field(item, "end_state")),
         ])
     style_header(ws1); style_body(ws1); auto_width(ws1)
     ws1.freeze_panes = "A2"
 
-    # ===== Sheet 2: 静态分镜提示词 =====
-    ws2 = wb.create_sheet("静态分镜提示词")
-    ws2.append(["镜头编号", "子镜头", "单帧图片提示词（即梦/可灵静态图适用）"])
+    # ===== Sheet 2: 模型提示词 =====
+    ws2 = wb.create_sheet("模型提示词")
+    ws2.append(["镜头编号", "子镜头", "Mode C v4模型提示词"])
     for item in items:
-        ws2.append([item["shot_id"], item["subshot_id"], item["full_prompt"]])
+        ws2.append([_field(item, "shot_id"), _field(item, "subshot_id"), _field(item, "full_prompt")])
     style_header(ws2); style_body(ws2)
     ws2.column_dimensions["C"].width = 100
     ws2.freeze_panes = "A2"
 
-    # ===== Sheet 3: 关键帧提示词 =====
-    ws3 = wb.create_sheet("关键帧提示词")
-    ws3.append(["镜头编号", "子镜头", "关键帧提示词"])
+    # ===== Sheet 3: 生成控制 =====
+    ws3 = wb.create_sheet("生成控制")
+    ws3.append(["镜头编号", "子镜头", "生成模式与参考资产"])
     for item in items:
-        ws3.append([item["shot_id"], item["subshot_id"], item["full_prompt"]])
+        ws3.append([_field(item, "shot_id"), _field(item, "subshot_id"), json.dumps(item.get("generation_control", {}), ensure_ascii=False)])
     style_header(ws3); style_body(ws3)
     ws3.column_dimensions["C"].width = 100
     ws3.freeze_panes = "A2"
 
-    # ===== Sheet 4: 动态视频提示词 =====
-    ws4 = wb.create_sheet("动态视频提示词")
-    ws4.append(["镜头编号", "子镜头", "时长(s)", "动态视频提示词（16:9横屏，含运镜）"])
+    # ===== Sheet 4: QA与动作预算 =====
+    ws4 = wb.create_sheet("QA与动作预算")
+    ws4.append(["镜头编号", "子镜头", "时长(s)", "QA元数据", "表演张力合同", "连续性合同", "抽卡控制"])
     for item in items:
-        ws4.append([item["shot_id"], item["subshot_id"], item["duration"], item["full_prompt"]])
+        metadata = item.get("qa_metadata", {}) if isinstance(item.get("qa_metadata"), dict) else {}
+        ws4.append([
+            _field(item, "shot_id"),
+            _field(item, "subshot_id"),
+            _field(item, "duration", "duration_sec", default=0),
+            json.dumps(metadata, ensure_ascii=False),
+            json.dumps(metadata.get("performance_contract", {}), ensure_ascii=False),
+            json.dumps(metadata.get("continuity_contract", {}), ensure_ascii=False),
+            json.dumps(metadata.get("reroll_control", {}), ensure_ascii=False),
+        ])
     style_header(ws4); style_body(ws4)
     ws4.column_dimensions["D"].width = 100
+    ws4.column_dimensions["E"].width = 80
+    ws4.column_dimensions["F"].width = 80
+    ws4.column_dimensions["G"].width = 80
     ws4.freeze_panes = "A2"
 
     # ===== Sheet 5: 九宫格剧情分镜图 =====
@@ -162,8 +215,10 @@ def export(pkg_path, plan_path, out):
             if i < len(subshots):
                 ss = subshots[i]
                 row_data.append("【%s】%s\n动作：%s\n灯光：%s" % (
-                    ss["subshot_id"], ss["shot_size"],
-                    ss["character_action"][:50], ss["lighting"][:50]))
+                    _field(ss, "subshot_id"),
+                    _field(ss, "shot_size", default=_derived_field(ss, "shot_size")),
+                    _field(ss, "character_action", default=_derived_field(ss, "character_action"))[:50],
+                    _field(ss, "lighting", default=_derived_field(ss, "lighting"))[:50]))
             else:
                 row_data.append("")
         ws6.append(row_data)
@@ -176,15 +231,8 @@ def export(pkg_path, plan_path, out):
     # ===== Sheet 7: 负面提示词 =====
     ws7 = wb.create_sheet("负面提示词")
     ws7.append(["镜头编号", "子镜头", "负面提示词"])
-    # Extract negative prompt from first item's full_prompt
-    negative = ""
-    if items and "负面提示词：" in items[0]["full_prompt"]:
-        fp = items[0]["full_prompt"]
-        idx = fp.rfind("负面提示词：")
-        if idx >= 0:
-            negative = fp[idx + 6:].strip()
     for item in items:
-        ws7.append([item["shot_id"], item["subshot_id"], negative])
+        ws7.append([_field(item, "shot_id"), _field(item, "subshot_id"), _field(item, "negative_prompt")])
     style_header(ws7); style_body(ws7)
     ws7.column_dimensions["C"].width = 80
     ws7.freeze_panes = "A2"

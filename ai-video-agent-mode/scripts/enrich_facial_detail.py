@@ -66,4 +66,4 @@ if __name__ == "__main__":
     if len(sys.argv) >= 2:
         enrich_facial_detail(sys.argv[1])
     else:
-        print("Usage: python enrich_facial_detail.py <run_dir>")
+        print("Usage: python3 enrich_facial_detail.py <run_dir>")

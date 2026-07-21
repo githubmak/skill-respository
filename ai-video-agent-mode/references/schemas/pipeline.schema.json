@@ -85,7 +85,12 @@
     "prompt_package": {
       "type": "object",
       "properties": {
+        "contract_version": {"const": "modec-v4"},
         "items": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/prompt_item"}
+        },
+        "shots": {
           "type": "array",
           "items": {"$ref": "#/definitions/prompt_item"}
         },
@@ -93,7 +98,8 @@
           "type": "array",
           "items": {"$ref": "#/definitions/merged_prompt"}
         }
-      }
+      },
+      "required": ["contract_version", "items", "shots", "merged_full_prompts"]
     },
     "prompt_item": {
       "type": "object",
@@ -108,8 +114,12 @@
         "character_action": {"type": "string"},
         "lighting": {"type": "string"},
         "audio_design": {"type": "string"},
-        "full_prompt": {"type": "string"}
-      }
+        "full_prompt": {"type": "string", "minLength": 120, "maxLength": 1100},
+        "negative_prompt": {"type": "string"},
+        "qa_metadata": {"type": "object"},
+        "generation_control": {"type": "object"}
+      },
+      "required": ["shot_id", "subshot_id", "duration", "full_prompt", "negative_prompt", "qa_metadata", "generation_control"]
     },
     "merged_prompt": {
       "type": "object",
@@ -117,11 +127,13 @@
         "shot_id": {"type": "string"},
         "duration": {"type": "number"},
         "full_prompt": {"type": "string"},
+        "negative_prompt": {"type": "string"},
         "image_prompt": {"type": "string"},
         "video_prompt": {"type": "string"},
         "seedance_prompt": {"type": "string"},
         "full_video_prompt": {"type": "string"}
-      }
+      },
+      "required": ["shot_id", "duration", "full_prompt", "negative_prompt"]
     }
   }
 }

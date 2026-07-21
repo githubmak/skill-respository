@@ -1,75 +1,74 @@
-import json, os, re, sys
+#!/usr/bin/env python3
+"""Ensure the v4 镜头设计 section contains one complete main camera move."""
+
+import json
+import os
+import re
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+from modec_v4 import PROMPT_LABELS, split_sections
+
+
+SHORT_MOVES = "固定|推|拉|摇|移|跟|升|降|俯|仰|环绕|甩|变焦|旋转|手持|穿梭"
+
 
 def enforce_camera_detail(run_dir):
-    """After Phase 6 composer, inject full camera descriptions from director_pass.json
-    into every shot's full_prompt. Returns number of fixes applied."""
-    
-    composer_path = os.path.join(run_dir, ".cache", "composer", "composer_output.json")
+    package_path = _find_prompt_package(run_dir)
     director_path = os.path.join(run_dir, ".cache", "director", "director_pass.json")
-    
-    if not os.path.exists(composer_path) or not os.path.exists(director_path):
-        print("[ENFORCE] Missing input files")
+    if not os.path.exists(package_path) or not os.path.exists(director_path):
+        print("[ENFORCE V4] Missing input files")
         return 0
-    
-    with open(director_path, "r", encoding="utf-8-sig") as f:
-        director = json.load(f)
-    cam_map = {}
-    for item in director.get("items", []):
-        cam_map[item["subshot_id"]] = item.get("camera", "")
-    
-    with open(composer_path, "r", encoding="utf-8") as f:
-        pkg = json.load(f)
-    
-    short_types = ["固定", "推", "拉", "摇", "移", "跟", "升", "降", "俯", "仰", "环绕", "甩", "变焦", "旋转", "手持", "穿梭"]
-    shot_sizes = ["大特写", "特写", "中近景", "近景", "中景", "全景", "大远景", "远景"]
-    
-    total = 0
-    for s in pkg["shots"]:
-        ssid = s["subshot_id"]
-        fp = s["full_prompt"]
-        full_cam = cam_map.get(ssid, "")
-        if not full_cam:
+    with open(director_path, "r", encoding="utf-8-sig") as handle:
+        director = json.load(handle)
+    camera_map = {
+        item.get("subshot_id", ""): item.get("movement_detail", item.get("camera", ""))
+        for item in director.get("items", [])
+    }
+    with open(package_path, "r", encoding="utf-8-sig") as handle:
+        package = json.load(handle)
+    fixed = 0
+    issues = 0
+    for shot in package.get("shots", package.get("items", [])):
+        sections = split_sections(shot.get("full_prompt", ""), PROMPT_LABELS)
+        if list(sections) != PROMPT_LABELS:
+            issues += 1
             continue
-        
-        for ct in short_types:
-            # Pattern: "运镜：X。" -> "运镜：full_cam。"
-            old = "运镜：" + ct + "。"
-            if old in fp:
-                fp = fp.replace(old, "运镜：" + full_cam + "。")
-                total += 1
-            
-            # Pattern: "shot_size。X。" -> "shot_size。full_cam。"
-            for sz in shot_sizes:
-                old2 = sz + "。" + ct + "。"
-                if old2 in fp:
-                    fp = fp.replace(old2, sz + "。" + full_cam + "。")
-                    total += 1
-                    break
-        
-        s["full_prompt"] = fp
-    
-    # Save
-    with open(composer_path, "w", encoding="utf-8") as f:
-        json.dump(pkg, f, ensure_ascii=False, indent=2)
-    
-    # Self-scan
-    remaining = 0
-    for s in pkg["shots"]:
-        fp = s["full_prompt"]
-        for ct in short_types:
-            if ("运镜：" + ct + "。") in fp:
-                remaining += 1
-            for sz in shot_sizes:
-                if (sz + "。" + ct + "。") in fp:
-                    remaining += 1
-    
-    if remaining:
-        print("[ENFORCE] FAIL - %d short cameras still present" % remaining)
+        design = sections["镜头设计"]
+        detail = str(camera_map.get(shot.get("subshot_id", ""), "") or "").strip()
+        if not detail:
+            issues += 1
+            continue
+        short = re.search(rf"主要运镜[：:]\s*({SHORT_MOVES})(?:[。；]|$)", design)
+        if short:
+            design = design[:short.start()] + "主要运镜：" + detail.rstrip("。") + "。" + design[short.end():]
+            sections["镜头设计"] = design.strip()
+            shot["full_prompt"] = "\n\n".join(f"{label}：{sections[label]}" for label in PROMPT_LABELS)
+            fixed += 1
+        elif "主要运镜" not in design:
+            sections["镜头设计"] = design.rstrip("。") + "。主要运镜：" + detail.rstrip("。") + "。"
+            shot["full_prompt"] = "\n\n".join(f"{label}：{sections[label]}" for label in PROMPT_LABELS)
+            fixed += 1
+    with open(package_path, "w", encoding="utf-8") as handle:
+        json.dump(package, handle, ensure_ascii=False, indent=2)
+    if issues:
+        print(f"[ENFORCE V4] {fixed} fixed, {issues} blocking issue(s)")
     else:
-        print("[ENFORCE] PASS - %d fixes, 0 remaining" % total)
-    
-    return total
+        print(f"[ENFORCE V4] PASS - {fixed} fixes")
+    return fixed
+
+
+def _find_prompt_package(run_dir):
+    candidates = [
+        os.path.join(run_dir, ".cache", "composer", "merged.prompt_package.json"),
+        os.path.join(run_dir, ".cache", "composer", "prompt_package.json"),
+        os.path.join(run_dir, ".cache", "prompt_package.json"),
+    ]
+    return next((path for path in candidates if os.path.exists(path)), candidates[0])
+
 
 if __name__ == "__main__":
-    rd = sys.argv[1] if len(sys.argv) > 1 else "."
-    enforce_camera_detail(rd)
+    if len(sys.argv) != 2:
+        print("usage: enforce_camera_detail.py <run_dir>")
+        sys.exit(2)
+    enforce_camera_detail(sys.argv[1])

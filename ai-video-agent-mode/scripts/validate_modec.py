@@ -1,112 +1,186 @@
-import json, os, re
-from collections import Counter
+#!/usr/bin/env python3
+"""Validate a normalized Mode C v4 package in a run directory."""
 
-RD = r'C:' + chr(92) + r'Users' + chr(92) + 'cors' + chr(92) + 'Desktop' + chr(92) + chr(0x9677) + chr(0x843d) + chr(0x79f0) + chr(0x81e3) + chr(92) + chr(0x7b2c) + '4' + chr(0x96c6) + chr(92) + 'output'
+import json
+import os
+import re
+import sys
 
-with open(os.path.join(RD, '.cache', 'composer', 'prompt_package.json'), 'r', encoding='utf-8') as f:
-    pp = json.load(f)
-shots = pp.get('shots', pp.get('items', []))
+sys.path.insert(0, os.path.dirname(__file__))
+from modec_v4 import (
+    FORBIDDEN_MODEL_TERMS,
+    LEGACY_LABELS,
+    PROMPT_LABELS,
+    action_budget_issues,
+    attention_handoff_issues,
+    camera_competition_issues,
+    dialogue_event_issues,
+    fight_continuity_issues,
+    fight_transition_issues,
+    performance_causality_issues,
+    prompt_length_issues,
+    role_partition_issues,
+    split_sections,
+    timeline_issues,
+    visibility_issues,
+)
+from negative_prompts import PLACEHOLDER, is_fight_context
 
-with open(os.path.join(RD, '.cache', 'analysis', 'camera_output.json'), 'r', encoding='utf-8') as f:
-    cam = {i['subshot_id']: i for i in json.load(f).get('items', [])}
-with open(os.path.join(RD, '.cache', 'analysis', 'scene_output.json'), 'r', encoding='utf-8') as f:
-    scn = {i['subshot_id']: i for i in json.load(f).get('items', [])}
-with open(os.path.join(RD, '.cache', 'orchestrator', 'shot_plan.json'), 'r', encoding='utf-8') as f:
-    sp = json.load(f)
 
-results = {'pass': 0, 'fail': 0, 'warn': 0}
+def main(run_dir):
+    package = _load_json(_first_existing(run_dir, [
+        ".cache/composer/merged.prompt_package.json",
+        ".cache/composer/prompt_package.json",
+        ".cache/prompt_package.json",
+    ]))
+    plan = _load_json(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"))
+    director = _load_optional_json(os.path.join(run_dir, ".cache", "director", "director_pass.json"))
+    shots = package.get("shots", [])
+    items = package.get("items", [])
+    expected = {
+        subshot.get("subshot_id", ""): subshot
+        for shot in plan.get("shots", [])
+        for subshot in shot.get("subshots", [])
+    }
+    director_map = {
+        item.get("subshot_id", ""): item for item in director.get("items", []) if item.get("subshot_id")
+    }
+    errors = []
+    warnings = []
+    fight_records = []
 
-def check(name, condition, blocking=True):
-    if condition:
-        results['pass'] += 1
-        print('[OK] ' + name)
-    elif blocking:
-        results['fail'] += 1
-        print('[FAIL] ' + name)
-    else:
-        results['warn'] += 1
-        print('[WARN] ' + name)
+    if package.get("contract_version") != "modec-v4":
+        errors.append("contract_version必须是modec-v4")
+    if not isinstance(shots, list) or not shots:
+        errors.append("shots必须是非空数组")
+    if items != shots:
+        errors.append("items与shots必须内容完全相同")
+    actual_ids = [shot.get("subshot_id", "") for shot in shots]
+    if set(actual_ids) != set(expected) or len(actual_ids) != len(expected):
+        errors.append("subshot覆盖或唯一性不一致")
 
-print('=== MODE C VALIDATION ===')
-print()
+    for shot in shots:
+        sid = shot.get("subshot_id", "?")
+        prefix = sid + ": "
+        full_prompt = str(shot.get("full_prompt", "") or "")
+        sections = split_sections(full_prompt, PROMPT_LABELS)
+        if list(sections) != PROMPT_LABELS:
+            errors.append(prefix + "full_prompt必须按顺序包含v4四段")
+        if full_prompt.count("\n\n") != 3:
+            errors.append(prefix + "四段之间必须恰好三个空行")
+        if any(re.search(rf"(?:^|\n\n){re.escape(label)}[：:]", full_prompt) for label in LEGACY_LABELS):
+            errors.append(prefix + "含v3旧字段")
+        if any(term in full_prompt for term in FORBIDDEN_MODEL_TERMS):
+            errors.append(prefix + "模型提示词混入工程/QA文本")
+        if "负面提示词" in full_prompt or PLACEHOLDER in full_prompt:
+            errors.append(prefix + "负面词混入full_prompt")
+        for issue in prompt_length_issues(full_prompt, shot.get("duration", 0)):
+            errors.append(prefix + issue)
+        for issue in timeline_issues(full_prompt, shot.get("duration", 0)):
+            errors.append(prefix + issue)
+        for issue in camera_competition_issues(full_prompt):
+            errors.append(prefix + issue)
 
-check('01. Shot count = 103', len(shots) == 103)
+        plan_item = expected.get(sid, {})
+        director_item = director_map.get(sid, {})
+        visible = _as_list(plan_item.get("visible_characters", plan_item.get("characters", [])))
+        metadata = shot.get("qa_metadata", {})
+        for issue in role_partition_issues(metadata, visible):
+            errors.append(prefix + issue)
+        for issue in performance_causality_issues(metadata, visible):
+            errors.append(prefix + issue)
+        fight = is_fight_context(
+            plan_item.get("scene_type", ""), plan_item.get("shot_type", ""), full_prompt
+        )
+        for issue in action_budget_issues(metadata, shot.get("duration", 0), fight):
+            errors.append(prefix + issue)
+        for issue in attention_handoff_issues(metadata, full_prompt):
+            errors.append(prefix + issue)
+        if fight:
+            for issue in fight_continuity_issues(metadata, shot.get("duration", 0)):
+                errors.append(prefix + issue)
+            fight_records.append((sid, metadata))
+        shot_size = director_item.get("shot_size", plan_item.get("shot_size", ""))
+        for issue in visibility_issues(full_prompt, shot_size):
+            errors.append(prefix + issue)
 
-under_1200 = sum(1 for s in shots if len(s.get('full_prompt', '')) < 800)
-check('02. Per-shot >= 800 chars', under_1200 == 0)
-if under_1200:
-    print('  (' + str(under_1200) + ' under)')
+        negative = str(shot.get("negative_prompt", "") or "").strip()
+        if not negative or PLACEHOLDER in negative:
+            errors.append(prefix + "negative_prompt尚未注入")
+        if "禁止" in negative or "无需" in negative:
+            errors.append(prefix + "negative_prompt含命令式歧义词")
 
-over_1800 = sum(1 for s in shots if len(s.get('full_prompt', '')) > 1800)
-check('03. Per-shot <= 1800 chars', over_1800 <= 10, blocking=False)
+        control = shot.get("generation_control")
+        if not isinstance(control, dict):
+            errors.append(prefix + "generation_control缺失")
+        else:
+            mode = control.get("mode")
+            assets = control.get("reference_assets")
+            if mode not in ("t2v", "i2v", "r2v"):
+                errors.append(prefix + "generation mode非法")
+            if not isinstance(control.get("audio_enabled"), bool):
+                errors.append(prefix + "audio_enabled必须是布尔值")
+            if not isinstance(assets, list):
+                errors.append(prefix + "reference_assets必须是数组")
+            elif mode in ("i2v", "r2v") and not assets:
+                errors.append(prefix + f"{mode}缺少参考资产")
+            if mode == "t2v" and visible:
+                warnings.append(prefix + "人物镜使用T2V，角色一致性抽卡风险高于I2V/R2V")
+        audio_enabled = control.get("audio_enabled") if isinstance(control, dict) else None
+        for issue in dialogue_event_issues(
+            metadata,
+            director_item.get("dialogue_events", []),
+            visible,
+            full_prompt,
+            audio_enabled,
+            shot.get("duration", 0),
+        ):
+            errors.append(prefix + issue)
 
-NZ = chr(0x8d1f) + chr(0x9762) + chr(0x63d0) + chr(0x793a) + chr(0x8bcd)
-no_neg = sum(1 for s in shots if NZ not in s.get('full_prompt', ''))
-check('04. Negative prompt present', no_neg == 0)
+    for (previous_id, previous_metadata), (current_id, current_metadata) in zip(fight_records, fight_records[1:]):
+        for issue in fight_transition_issues(previous_metadata, current_metadata):
+            errors.append(f"{previous_id}→{current_id}: {issue}")
 
-no_169 = sum(1 for s in shots if '16:9' not in s.get('full_prompt', '')[:100])
-check('05. Self-contained (16:9 header)', no_169 == 0)
+    for warning in warnings[:30]:
+        print("[WARN] " + warning)
+    if errors:
+        print(f"[MODEC V4] FAIL - {len(errors)} error(s), {len(warnings)} warning(s)")
+        for error in errors[:80]:
+            print("  - " + error)
+        return 1
+    print(f"[MODEC V4] PASS - {len(shots)} shots, {len(warnings)} warning(s)")
+    return 0
 
-dup_paras = 0
-for s in shots:
-    fp = s.get('full_prompt', '')
-    paras = [p.strip() for p in fp.split(chr(10)) if len(p.strip()) > 30]
-    if len(paras) != len(set(paras)):
-        dup_paras += 1
-check('06. No duplicate paragraphs', dup_paras == 0)
 
-neg_dup = 0
-for s in shots:
-    fp = s.get('full_prompt', '')
-    ni = fp.rfind(NZ)
-    if ni > 0:
-        kws = fp[ni:].replace(NZ, ' ').split()
-        kws = [kw for kw in kws if len(kw) > 2]
-        dups = {k: v for k, v in Counter(kws).items() if v > 1}
-        if dups:
-            neg_dup += 1
-check('07. No duplicate negative keywords', neg_dup == 0)
+def _first_existing(run_dir, candidates):
+    for relative in candidates:
+        path = os.path.join(run_dir, relative)
+        if os.path.exists(path):
+            return path
+    return os.path.join(run_dir, candidates[0])
 
-sp_goal = sum(1 for s in shots if chr(0x573a) + chr(0x666f) + chr(0x76ee) + chr(0x7684) in s.get('full_prompt', ''))
-check('08. Scene purpose present (' + str(sp_goal) + '/103)', sp_goal >= 100, blocking=False)
 
-audio = sum(1 for s in shots if chr(0x73af) + chr(0x5883) + chr(0x97f3) in s.get('full_prompt', ''))
-check('09. Audio environment (' + str(audio) + '/103)', audio >= 100, blocking=False)
+def _load_json(path):
+    if not os.path.exists(path):
+        raise SystemExit("Missing required file: %s" % path)
+    with open(path, "r", encoding="utf-8-sig") as handle:
+        return json.load(handle)
 
-mouth = sum(1 for s in shots if chr(0x53e3) + chr(0x578b) in s.get('full_prompt', ''))
-check('10. Mouth control (' + str(mouth) + '/103)', mouth >= 90, blocking=False)
 
-fks = [chr(0x773c) + chr(0x7751), chr(0x77b3) + chr(0x5b54), chr(0x5507) + chr(0x7ebf), chr(0x9f3b) + chr(0x7ffc), chr(0x547c) + chr(0x5438), chr(0x7709), chr(0x54ac) + chr(0x808c), chr(0x4e0b) + chr(0x988c), chr(0x5589) + chr(0x7ed3), chr(0x80f8) + chr(0x5ed3), chr(0x7728) + chr(0x773c)]
-facial_ok = sum(1 for s in shots if sum(1 for kw in fks if kw in s.get('full_prompt', '')) >= 3)
-check('11. Facial detail >=3 (' + str(facial_ok) + '/103)', facial_ok >= 72, blocking=False)
+def _load_optional_json(path):
+    return _load_json(path) if os.path.exists(path) else {"items": []}
 
-scn_items = sorted(scn.values(), key=lambda x: x.get('subshot_id', ''))
-light_jumps = 0
-for i in range(len(scn_items) - 1):
-    t1 = scn_items[i].get('light_temp', 5200)
-    t2 = scn_items[i+1].get('light_temp', 5200)
-    if t1 and t2 and abs(t1 - t2) > 2000:
-        light_jumps += 1
-check('12. Lighting continuity (>2000K: ' + str(light_jumps) + ')', light_jumps <= 5)
 
-uw_close = sum(1 for ci in cam.values() if ci.get('camera_lens_mm', 50) <= 28 and ci.get('shot_size', '') in [chr(0x7279) + chr(0x5199), chr(0x5927) + chr(0x7279) + chr(0x5199)])
-check('13. No UW lens on CU (' + str(uw_close) + ')', uw_close == 0)
+def _as_list(value):
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        return [part.strip() for part in re.split(r"[;；,，、/]+", value) if part.strip()]
+    return []
 
-eng_sizes = sum(1 for ci in cam.values() if ci.get('shot_size', '') in ['CU', 'ECU', 'MS', 'FS', 'LS', 'WS', 'ELS'])
-check('14. No English shot sizes (' + str(eng_sizes) + ')', eng_sizes == 0)
 
-boiler = sum(1 for s in shots if chr(0x673a) + chr(0x4f4d) + chr(0x8f6e) + chr(0x6362) in s.get('full_prompt', ''))
-check('15. No boilerplate (' + str(boiler) + ')', boiler == 0)
-
-sp_ids = set()
-for ms in sp.get('shots', []):
-    for sub in ms.get('subshots', []):
-        sp_ids.add(sub.get('subshot_id', ''))
-pp_ids = set(s.get('subshot_id', '') for s in shots)
-check('16. Subshot coverage', pp_ids == sp_ids)
-
-print()
-print('RESULT: ' + str(results['pass']) + ' passed, ' + str(results['fail']) + ' failed, ' + str(results['warn']) + ' warnings')
-score = results['pass'] + results['fail']
-if score > 0:
-    print('SCORE: ' + str(results['pass']) + '/' + str(score) + ' blocking checks passed')
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("usage: validate_modec.py <run_dir>")
+        sys.exit(2)
+    sys.exit(main(sys.argv[1]))

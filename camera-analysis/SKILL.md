@@ -11,6 +11,8 @@ description: >
 
 <!-- PIPELINE_KERNEL:START -->
 > 以下段由 `split-script-to-storyboard` v7 pipeline 在运行时提取并注入融合 agent prompt。
+>
+> **Mode C v4 dispatch exception:** 当输入 packet 含 `contract_version=modec-v4` 时，本 Kernel 内的景别配额、强制机位轮换、相邻镜头必须变化、复合运镜、全片百分比与强制数值化规则全部降级为参考；只执行本文后方“AI Video Agent Mode 输出覆盖规则”。
 
 ## PIPELINE KERNEL: 运镜景别核心规则
 
@@ -52,12 +54,23 @@ description: >
 当由 `ai-video-agent-mode` 作为 Phase 2c 子Agent调用，并收到 dispatch packet 路径时，本技能必须服从调用方 packet，不使用下方独立 Markdown Output Contract。
 
 - 读取 packet JSON。
+- `packet.contract_version` 必须为 `modec-v4`；缺失或版本不符时停止并要求主 Agent 重新派发。
 - 只处理 `packet.items` 列出的子镜头。
-- 输出写入 `packet.output_path`。
+- 输出写入 `packet._batch_output_path`；禁止写公共 `packet.output_path`。
 - 根对象必须为 `{"items": [...]}`。
 - 每个输入 `subshot_id` 必须且只能对应一个输出 item。
 - 每个 item 必须包含 `shot_id` 和 `subshot_id`。
 - 不要在聊天回复中粘贴完整 JSON，只报告写入完成和阻塞问题。
+
+本覆盖规则优先于上方 Pipeline Kernel 和下方全部独立调用规则。Mode C v4 中：
+
+- 每子镜只选一种主要运镜；同方向的轻微收束只算同一运镜的落幅。连续互动的一次因果注意力交接按本节后方例外处理，不算第二种运镜。
+- 相邻镜头允许保持同景别、同机位或固定镜头；只有信息层级、戏剧重音或空间关系变化才调整，不执行景别/角度多样性配额。
+- 焦距、速度、角度和距离只保留 1–2 个决定性锚点；不为凑“量化”堆参数，不使用 XYZ 虚拟坐标。
+- 推镜通常不超过 0.3m/s、拉远通常不超过 0.2m/s；超速必须有剧情动机并拆解可执行落幅。
+- 机位与人物朝向分离；原文未授权时角色不得直视镜头。
+- 打斗/多人镜只围绕一个连续主编舞链或整体戏剧目标设计镜头；同一轨迹内可包含 1–3 个因果相接的接触节拍。连续互动允许一次由台词/动作触发的注意力交接，三选一使用“固定+一次拉焦”“一次单向摇/移重构图”或“演员走位+固定机位”。第二个摄影机方向、第二个独立戏剧焦点、反复抢焦或第二条无关动作链才拆镜。
+- 光位仅继承 Scene Agent 已确认的主光关系，不强制侧后逆光、轮廓光或“万能光位”。
 
 最小输出形态：
 
@@ -74,7 +87,7 @@ description: >
       "camera_height_relative": "齐眼",
       "angle_str": "平视",
       "camera_facing_desc": "朝向主体面部",
-      "movement_type": "fixed",
+      "movement_type": "固定",
       "movement_detail": "固定镜头，保留轻微呼吸感",
       "movement_speed": "无",
       "axis_start": "轴线起点",
@@ -330,7 +343,7 @@ Ladder: `大远景 → 远景 → 全景 → 中景 → 中近景 → 近景 →
 ## Structured JSON Reminder
 
 独立调用时可使用上方 Markdown Output Contract。  
-被 `ai-video-agent-mode` 调用时，必须使用本文开头的 **AI Video Agent Mode 输出覆盖规则**：根对象为 `{"items": [...]}`，每项包含 `shot_id` 和 `subshot_id`，并写入 dispatch packet 的 `output_path`。
+被 `ai-video-agent-mode` 调用时，必须使用本文开头的 **AI Video Agent Mode 输出覆盖规则**：根对象为 `{"items": [...]}`，每项包含 `id`、`shot_id` 和 `subshot_id`，并写入 dispatch packet 的 `_batch_output_path`；禁止写公共 `output_path`。
 
 
 ---

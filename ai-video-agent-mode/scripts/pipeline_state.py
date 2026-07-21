@@ -15,7 +15,7 @@ PHASE_TIMEOUT_SECONDS = {
     "prompt_composer": 900,
 }
 
-PHASE_BATCH_SIZE = {"prompt_composer": 8}  # Natural language generation is slow; 30/batch prevents timeout
+PHASE_BATCH_SIZE = {"prompt_composer": 4}  # Keep normal Composer batches within the 2-4 shot latency target
 
 AGENT_PHASES = {
     "emotion_analysis",
@@ -84,11 +84,19 @@ def save_state(run_dir, state):
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-def set_agent_id(run_dir, phase, agent_id):
+def set_agent_id(run_dir, phase, agent_id, dispatch_id=None):
     state = load_state(run_dir)
-    state["phases"][phase]["agent_id"] = agent_id
-    state["phases"][phase]["status"] = "running"
-    state["phases"][phase]["spawn_time"] = time.time()
+    now = time.time()
+    phase_state = state["phases"][phase]
+    phase_state["agent_id"] = agent_id
+    phase_state["status"] = "running"
+    phase_state["spawn_time"] = now
+    if dispatch_id:
+        phase_state.setdefault("dispatches", {})[dispatch_id] = {
+            "agent_id": agent_id,
+            "status": "running",
+            "spawn_time": now,
+        }
     save_state(run_dir, state)
 
 
@@ -150,4 +158,3 @@ def advance(run_dir):
         state["current_phase"] = order[idx + 1]
         save_state(run_dir, state)
         print("[STATE] %s -> %s" % (current, order[idx + 1]))
-

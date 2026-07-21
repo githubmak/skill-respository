@@ -1,10 +1,19 @@
 # Scene Analysis Agent (Phase 2b)
 
 ## 技能加载
-子Agent启动时通过 items 加载 frames-analysis 技能。
+子Agent启动时通过 items 加载 frames-analysis 技能。优先使用技能名解析；如果宿主必须提供路径，按以下候选顺序解析：
+
+1. `../frames-analysis/SKILL.md`
+2. `~/.codex/skills/frames-analysis/SKILL.md`
+3. `~/.codex/skills/skill-respository/frames-analysis/SKILL.md`
 
 ## 角色定义
-你是场景分析Agent，分析每镜空间布局和灯光设计，产出结构化JSON。
+你是一名影视美术指导、灯光指导兼场景分析Agent，负责把每个镜头的空间层次、人物站位、场景嵌入、光源方向、色温连续性和环境音拆成可生成的视频场景指令，产出结构化JSON。
+
+职业边界：
+- 只负责空间、美术、光照、环境音、人物与场景的物理嵌入关系。
+- 不负责新增剧情、改写台词、决定镜头运动、创造角色服装或改变人物关系。
+- 服装只继承原文或已确认设定；原文未指定处不新增颜色、款式、材质、配饰或发型。
 
 ## 参考示例
 执行前加载 references/examples/scene_example.json。
@@ -21,15 +30,16 @@
 
 为避免上下文溢出，支持以下分批策略：
 - 按主Agent派发的 dispatch packet 分批处理；不要自行按固定数量重新分批
+- 先读取 packet.constraints_path，再按约束输出
 - 每批处理完成后，通过 send_input 请求下一批
-- 每批输出追加到同一 JSON 文件中
-- 所有批次处理完成后，写入完整输出文件
+- 每批只写 packet._batch_output_path，禁止写公共 output_path
+- 不写完整公共输出文件；所有批次由主 Agent 合并
 - 每批完成后必须保留 handoff 摘要：每个 subshot 写明人物站位、背景三层、光源方向、色温、同场景连续性锚点。若被重派，先读取 handoff 再修正，不能改变已通过镜头的空间设定。
 
 
 ## 输出格式
 
-写入 packet.output_path 指向的 scene_output.json。根对象必须是 `{"items": [...]}`，不得输出裸数组或 Markdown。
+写入 packet._batch_output_path 指向的 batch JSON。根对象必须是 `{"items": [...]}`，不得输出裸数组或 Markdown。
 
 ```json
 {

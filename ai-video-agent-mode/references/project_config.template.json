@@ -6,10 +6,20 @@
   "max_shot_duration": 15,
   "output_type": "动态视频",
   "target_platform": "即梦",
+  "_target_platform_desc": "目标平台可为即梦/可灵/Runway/Veo等。平台适配只影响参考资产句法、提示词语序和稳定性控制；不得把平台示例题材或画风写成默认。",
+  "generation_control": {
+    "mode": "t2v",
+    "audio_enabled": true,
+    "supports_negative_prompt": true,
+    "reference_assets": []
+  },
+  "_generation_control_desc": "mode只允许t2v/i2v/r2v。关键人物一致性优先i2v，关键表演或复杂动作有参考视频时优先r2v。reference_assets只填用户本次提供或项目已确认的真实资源，每项格式为{type:path, path:真实路径或资源ID, applies_to:[subshot_id], prompt_handle:可选平台引用标记}；不得伪造路径、平台槽位或引用标记。",
   "export_base": "",
+  "_export_base_desc": "必须由用户在本次运行中明确提供输出文件位置/输出目录后填写；禁止默认当前目录、工作区目录、源文件目录、上次目录或自动生成目录。",
   "run_timestamp": "",
   "character_list": [],
-  "global_negative_prompt": "肢体畸形，面部崩坏，画面闪烁，剧烈抖动，水印文字，模糊虚化，色彩杂乱，人物虚化，帧间跳变，动作卡顿，多指，五官扭曲",
+  "global_negative_prompt": "",
+  "_global_negative_prompt_desc": "Mode C v4默认由negative_prompts.py按镜头上下文生成精简负面词。仅当目标平台有明确专项要求时填写额外词，不写‘禁止……’式正向命令。",
  "costume_map": {},
  "_costume_map_desc": "角色服装表。key为角色名，value为该角色在各场景中的服装描述。Prompt Composer生成提示词时必须从costume_map中匹配角色服装，禁止自行编造。示例：{沈星雨: {校园: 米白色宽松针织开衫内搭浅灰吊带、深蓝高腰阔腿牛仔裤、白色板鞋、马尾黑长直, 教室: 同校园装}}",
 

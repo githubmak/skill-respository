@@ -1,34 +1,46 @@
-# S2-03 High Quality Example
+# S2-03 Mode C v4 Quality Exemplar
 
-## Director 字段填充示例
+Use this exemplar for method only, not for story style. It teaches causality, one attention center, visible performance, continuity, dialogue/lip-sync boundaries, and low-reroll structure; it must not donate its genre, soft lighting, urban/comedy rhythm, clothing, location, character relationship, or specific prop event to another project.
 
-### shot_size
-中景(肩至小腿)→近景(肩至膝极慢推进)
+## Why this example is stable
 
-### camera_position
-角色A右侧后方2m→1.8m极慢推进，35mm→50mm，平视高度1.6m
+- One attention center: 沈星洲停步。
+- One supporting reaction: 陆序回望。
+- One camera motion: rightward lateral follow, then settle; no competing push/zoom/pan.
+- Three continuous beats cover 0.0–5.8 seconds without overlap or gaps.
+- Wide-shot performance uses steps, weight, shoulder direction, mouth state, and spatial pressure; it does not request pupil, eyelid, or lip-line detail.
+- Lighting stays at one motivated 3200K source family; shot size does not change color temperature.
+- Background guests are treated as one low-amplitude layer instead of receiving individual micro-actions.
+- QA purpose, action counts, and performance causality live in `qa_metadata`; negative words live in `negative_prompt`.
 
-### camera.movement
-倒退跟拍角色A走廊前行(0-2s，2m)→极慢推进0.2m(2-5s，0.07m/s)→固定1.8m近景(5-7s)
+## Performance design
 
-### axis_space
-角色A从画面左侧入画，向右侧走廊深处前行(面朝右方)。镜头在角色A右后方2m处倒退跟拍。走廊两侧暗金属墙面每隔1.5m一盏故障灯管，左侧窗外城市霓虹光污染。走廊纵深向右延伸，角色A独自一人。
+Start state: 主角穿过人群，对手仍在社交。
 
-### composition
-三分构图，角色A在画面中央偏右(右2/3)，背景走廊灯柱形成纵向等距线条，左侧窗外紫红/粉紫霓虹光带在地面形成平行彩色条纹。
+Trigger: 主角听见对手方向的交谈。
 
-### character_action
-起幅：从楼梯口拐入走廊，步伐从登阶切换为平地走。推进：右手自然垂于身侧，目光平视前方走廊纵深，匀速前行每步约0.35s。经过第一根灯柱(第2s)面部被冷白光扫亮0.3s后暗下。
+Primary response: 步伐停止，重心收回，肩线和视线定向。
 
-### action_beats
-start: 从楼梯口拐入走廊，右脚迈出第一步
-transition: 沿走廊前行经过第一根灯柱，冷白光扫亮面部后暗下
-contact_or_peak: 旁白念至"世界的异常"处，步伐节奏无任何变化
-end_state: 经过第一根灯柱后进入灯柱间暗区，继续向前
+Supporting response: 对手只转头、闭口、停住交谈，不迎上去。
 
-### emotion
-cause: 旁白OV陈述已知事实，信息量为零
-expression_chain: 全程零表情。面部肌肉无任何牵动
-micro_expression: 无。旁白内容无新信息量
-psychology_flow: 旁白是对观众的信息披露，不是对角色A的信息输入
-performance_anchor: 不反应即为反应——信息落差即冷幽默来源
+Residual end state: 两人隔着人群互相看见，但没有立即靠近，关系压力留在画面中。
+
+Physical logic: 没有接触或外力；停止行进、回望和维持距离都是角色自主反应，提示词不把心理变化伪装成机械制服。
+
+Motion boundary: 主角的行进被结束，但肩线与视线仍可定向；对手只被允许回望，不追加靠近。
+
+Hold strategy: 落幅停顿只保留闭口和相互视线，不用密集微动作填满静止。
+
+Viewer empathy anchor: 观众不是因为提示词写“感染力强”而共情，而是因为看见角色听到关键信息后脚步突然收住、没有靠近、只隔着人群看向对方。这个可见瞬间让观众直接读到“他被这句话刺中，但还在克制”。
+
+Readable image moment: 本镜只保留一个主画面证据——步伐停止后重心收回、肩线定住、视线穿过人群落到对手身上。它同时服务表演、构图和跨镜承接，不额外增加手部、嘴角、泪光等不可见或抢戏细节。
+
+## Low-reroll principle
+
+If a desired performance needs a second emotional turn, another camera direction, or another physical exchange, split it into the next subshot instead of expanding this prompt.
+
+For a 10–15 second continuous dialogue, a single causal attention handoff is not a second dramatic focus. Keep one overall objective and choose only one execution strategy: fixed two-shot plus one rack focus, one unidirectional reframe, or actor blocking with a fixed camera. See `format_example.txt` shot `S3-01-01`. Repeated A→B→A focus changes or physical movement combined with rack focus must be split.
+
+For spoken dialogue, see `S3-01-01`: every event locks the reference, type, speaker, and verbatim text, then binds its time range to a visible facial state, body state, delivery, and lip-sync rule. Each line appears exactly once in the performance timeline and is not repeated in the sound section.
+
+For internal monologue, see `S4-01-01`: the OS owner remains explicit, the visible owner receives facial and body performance during the same time range, and `lip_sync=false` is reflected by a closed mouth. If the owner is offscreen or nonphysical, facial/body fields must state `N/A` with the reason instead of inventing a face.

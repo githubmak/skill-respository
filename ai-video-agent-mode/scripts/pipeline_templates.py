@@ -17,27 +17,27 @@ GATES = {
     },
     "emotion_analysis": {
         "input": [".cache/orchestrator/shot_plan.json"],
-        "output": ["analysis/emotion_output.json"],
-        "validator": None
+        "output": [".cache/analysis/emotion_output.json"],
+        "validator": "emotion_analysis"
     },
     "scene_analysis": {
         "input": [".cache/orchestrator/shot_plan.json"],
-        "output": ["analysis/scene_output.json"],
-        "validator": None
+        "output": [".cache/analysis/scene_output.json"],
+        "validator": "scene_analysis"
     },
     "camera_movement": {
         "input": [".cache/orchestrator/shot_plan.json"],
-        "output": ["analysis/camera_output.json"],
-        "validator": None
+        "output": [".cache/analysis/camera_output.json"],
+        "validator": "camera_movement"
     },
     "qa_integration": {
         "input": [".cache/analysis/emotion_output.json", ".cache/analysis/scene_output.json", ".cache/analysis/camera_output.json"],
-        "output": ["director/director_pass.json"],
+        "output": [".cache/director/director_pass.json"],
         "validator": "director"
     },
     "director": {
         "input": [".cache/director/director_pass.json"],
-        "output": ["director/director_pass.json"],
+        "output": [".cache/director/director_pass.json"],
         "validator": "director"
     },
     "continuity": {
@@ -48,26 +48,26 @@ GATES = {
     },
     "prompt_composer": {
         "input": [".cache/director/director_pass.json"],
-        "output": ["prompt_package.json"],
+        "output": [".cache/composer/merged.prompt_package.json"],
         "validator": "prompt"
     },
     "editor_pass1": {
-        "input": [".cache/prompt_package.json"],
-        "output": ["prompt_package.json"],
+        "input": [".cache/composer/merged.prompt_package.json"],
+        "output": [".cache/composer/merged.prompt_package.json"],
         "validator": None
     },
     "editor_pass2": {
-        "input": [".cache/prompt_package.json"],
+        "input": [".cache/composer/merged.prompt_package.json"],
         "output": ["review/llm_gate_result.json"],
         "validator": None
     },
     "validate": {
-        "input": [".cache/prompt_package.json", "project_config.json"],
+        "input": [".cache/composer/merged.prompt_package.json", "project_config.json"],
         "output": [],
         "validator": None
     },
     "export": {
-        "input": [".cache/prompt_package.json", ".cache/orchestrator/shot_plan.json"],
+        "input": [".cache/composer/merged.prompt_package.json", ".cache/orchestrator/shot_plan.json"],
         "output": [],
         "validator": None
     }
@@ -118,4 +118,3 @@ def get_retry_decision(result, max_retries=None):
     if result["retry_needed"]:
         return "retry"
     return "pass"
-

@@ -14,6 +14,8 @@ description: >
 <!-- PIPELINE_KERNEL:START -->
 > 以下段由 `split-script-to-storyboard` v7 pipeline 在运行时提取并注入融合 agent prompt。
 > 更新情绪表演规则只需修改本文件——管线自动同步，零副本维护。
+>
+> **Mode C v4 dispatch exception:** 当输入 packet 含 `contract_version=modec-v4` 时，本 Kernel 中“每角色三处面部细节、每人独立动作、面部四维全写、固定生理指标密度”等配额全部失效；只执行本文后方“AI Video Agent Mode 输出覆盖规则”。
 
 ## PIPELINE KERNEL: 情绪表演核心规则 (v11.2)
 
@@ -131,12 +133,23 @@ IF genre = action / fantasy / wuxia: Use default templates. Heightened but motiv
 当由 `ai-video-agent-mode` 作为 Phase 2a 子Agent调用，并收到 dispatch packet 路径时，本技能必须服从调用方 packet，不使用下方独立 Markdown Output Contract。
 
 - 读取 packet JSON。
+- `packet.contract_version` 必须为 `modec-v4`；缺失或版本不符时停止并要求主 Agent 重新派发。
 - 只处理 `packet.items` 列出的子镜头。
-- 输出写入 `packet.output_path`。
+- 输出写入 `packet._batch_output_path`；禁止写公共 `packet.output_path`。
 - 根对象必须为 `{"items": [...]}`。
 - 每个输入 `subshot_id` 必须且只能对应一个输出 item。
 - 每个 item 必须包含 `shot_id` 和 `subshot_id`。
 - 不要在聊天回复中粘贴完整 JSON，只报告写入完成和阻塞问题。
+
+本覆盖规则优先于上方 Pipeline Kernel 和下方全部独立调用规则。Mode C v4 中：
+
+- 有人物镜恰好一个 `primary`；3–6 秒最多一个 `supporting` 焦点，其余为 `background` 群体层。
+- 主角获得一条 `起始压住 → 事件触发 → 身体先反应 → 短暂泄露/有意不反应 → 可见终态`；supporting 只做一次因果反应，background 不逐人分配微表情或独立动作。
+- 3–6 秒只设计一个主动作、一个情绪转折、一个对手反应；6–10 秒主动作最多两个，其他上限不变。第二套攻防或第二个表演焦点必须拆镜。
+- 表演细节服从景别可见性：全景写走位/重心/轮廓，中景写肩颈/手/呼吸，中近景才写视线/口型，特写才写眼周/唇线/下颌。
+- 不要求每角色三处或五处面部细节，不要求背景角色独立 beat，不为“人物生动”堆解剖词、氛围句或无因果小动作。
+- 原始台词、OV、OS逐字保留；仅说话角色口型同步，非说话焦点口型闭合，背景统一无同步口型。
+- 打斗镜把同一生成片段视为一个连续主编舞链；可按时长容纳 1–3 个因果相接的接触节拍，但只保留一个主注意力中心。其他战斗者维持空间威胁，只有进入当前接触节拍时才获得短促反应。
 
 最小输出形态：
 

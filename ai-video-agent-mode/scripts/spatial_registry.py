@@ -22,6 +22,41 @@ FACING_PATTERNS = {
     "qian": [r"(?:面向|朝向|看向|面对|对着|面朝)(?:画面)?(?:前|前方|正面|镜头)"],
 }
 
+ACTION_KEYWORDS = [
+    '追逐',
+    '追赶',
+    '狂奔',
+    '奔跑',
+    '疾跑',
+    '飞跑',
+    '冲刺',
+    '掠过',
+    '穿梭',
+    '飞奔',
+    '猛冲',
+    '翻越',
+    '跳跃',
+    '跳下',
+    '翻身',
+    '跃过',
+    '跨过',
+    '跳过',
+    '躲避',
+    '避开',
+    '闪开',
+    '躲避攻击',
+    '急速',
+    '快步',
+    '冲出去',
+    '冲进',
+    '冲入',
+    '箭步',
+    '三步并作两步',
+    '飙车',
+    '追逐战',
+    '追车',
+]
+
 FIGHT_KEYWORDS = [
     '打斗',
     '出手',
@@ -117,6 +152,8 @@ FIGHT_KEYWORDS = [
     '猛扑',
 ]
 
+NEGATED_ACTION_PREFIX = re.compile(r'(?:不曾|不再|不能|不要|不带|不|没|没有|无|未|并非|绝不).{0,4}$')
+
 def _parse_position(text, patterns):
     for label, pats in patterns.items():
         for pat in pats:
@@ -145,11 +182,26 @@ def _parse_character_position(text, char_name):
 
 
 def _detect_scene_type(text):
-    if any(kw in text for kw in FIGHT_KEYWORDS):
+    if _has_scene_keyword(text, FIGHT_KEYWORDS):
         return "fight"
-    if any(kw in text for kw in ACTION_KEYWORDS):
+    if _has_scene_keyword(text, ACTION_KEYWORDS):
         return "action"
     return "dialogue"
+
+
+def _has_scene_keyword(text, keywords):
+    text = str(text or "")
+    for kw in keywords:
+        start = 0
+        while True:
+            idx = text.find(kw, start)
+            if idx < 0:
+                break
+            prefix = text[max(0, idx - 8):idx]
+            if not NEGATED_ACTION_PREFIX.search(prefix):
+                return True
+            start = idx + len(kw)
+    return False
 
 
 def _build_spatial_map(base_action, characters):
@@ -255,42 +307,6 @@ def merge_scene_type(run_dir, agent_scene_types=None):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python spatial_registry.py <run_dir>")
+        print("Usage: python3 spatial_registry.py <run_dir>")
         sys.exit(2)
     sys.exit(run(sys.argv[1]))
-ACTION_KEYWORDS = [
-    '追逐',
-    '追赶',
-    '追',
-    '狂奔',
-    '奔跑',
-    '疾跑',
-    '飞跑',
-    '冲刺',
-    '掠过',
-    '穿梭',
-    '飞奔',
-    '猛冲',
-    '翻越',
-    '跳跃',
-    '跳下',
-    '翻身',
-    '跃过',
-    '跨过',
-    '跳过',
-    '躲避',
-    '避开',
-    '闪开',
-    '躲避攻击',
-    '急速',
-    '快步',
-    '冲出去',
-    '冲进',
-    '冲入',
-    '箭步',
-    '三步并作两步',
-    '飙车',
-    '追逐战',
-    '追车',
-]
-

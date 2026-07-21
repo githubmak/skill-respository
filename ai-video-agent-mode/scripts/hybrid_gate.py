@@ -29,6 +29,8 @@ def run(run_dir, phase=None, require_llm=False):
     }
 
     prompt_path = _find_file(run_dir, [
+        os.path.join(".cache", "composer", "merged.prompt_package.json"),
+        os.path.join(".cache", "composer", "prompt_package.json"),
         "prompt_package.json",
         os.path.join(".cache", "prompt_package.json"),
         os.path.join(".cache", "prompt", "prompt_package.json"),

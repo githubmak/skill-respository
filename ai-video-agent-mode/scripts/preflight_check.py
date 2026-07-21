@@ -31,6 +31,7 @@ def run(run_dir):
 
     seen = set()
     dialogue_map = shot_plan.get("dialogue_map", {}) or {}
+    dialogue_events = shot_plan.get("dialogue_events", {}) or {}
 
     for shot in shot_plan.get("shots", []):
         shot_id = shot.get("shot_id", "")
@@ -59,6 +60,18 @@ def run(run_dir):
             for ref in dialogue_refs:
                 if ref not in dialogue_map:
                     issues.append(_issue(ssid, "DIALOGUE_REF_MISSING", "%s not found in dialogue_map" % ref))
+                    continue
+                event = dialogue_events.get(ref)
+                if not isinstance(event, dict):
+                    issues.append(_issue(ssid, "DIALOGUE_EVENT_MISSING", "%s not found in dialogue_events; regenerate Phase 1" % ref))
+                    continue
+                for field in ("ref", "kind", "speaker", "text"):
+                    if not str(event.get(field, "") or "").strip():
+                        issues.append(_issue(ssid, "DIALOGUE_EVENT_FIELD", "%s.%s is required" % (ref, field)))
+                if event.get("ref") != ref:
+                    issues.append(_issue(ssid, "DIALOGUE_EVENT_REF", "%s ref mismatch" % ref))
+                if event.get("kind") not in ("台词", "OS", "OV"):
+                    issues.append(_issue(ssid, "DIALOGUE_EVENT_KIND", "%s kind must be 台词/OS/OV" % ref))
 
     for dur_issue in validate_durations(shot_plan_path, project_config_path=project_config_path if os.path.exists(project_config_path) else None):
         sid, field, value, expected = dur_issue

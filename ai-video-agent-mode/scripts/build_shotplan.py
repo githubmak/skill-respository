@@ -36,11 +36,16 @@ def normalize(run_dir, draft_path=None):
     plan.setdefault("project_name", cfg.get("project_name", ""))
     plan["canvas"] = cfg.get("canvas", plan.get("canvas", ""))
     plan["visual_style"] = cfg.get("visual_style", plan.get("visual_style", ""))
-    plan["max_shot_duration"] = cfg.get("max_shot_duration", plan.get("max_shot_duration", 15))
+    confirmed_max = cfg.get("max_shot_duration")
+    if not isinstance(confirmed_max, (int, float)) or isinstance(confirmed_max, bool) or confirmed_max < 2.5:
+        raise ValueError("project_config.max_shot_duration must be explicitly user-confirmed")
+    plan["max_shot_duration"] = float(confirmed_max)
     plan.setdefault("dialogue_map", {})
+    plan.setdefault("dialogue_events", {})
     plan.setdefault("shots", [])
 
     _normalize_ids_and_durations(plan)
+    _validate_max_shot_duration(plan)
     _normalize_scene_names(plan)
     _validate_dialogue_refs(plan)
 
@@ -76,6 +81,20 @@ def _normalize_ids_and_durations(plan):
     plan["total_shots"] = len(plan.get("shots", []))
 
 
+def _validate_max_shot_duration(plan):
+    maximum = float(plan.get("max_shot_duration", 0) or 0)
+    over = []
+    for shot in plan.get("shots", []):
+        total = float(shot.get("total_duration", 0) or 0)
+        if total > maximum + 1e-6:
+            over.append("%s=%gs" % (shot.get("shot_id", "?"), total))
+    if over:
+        raise ValueError(
+            "main shot duration exceeds user-confirmed max_shot_duration=%gs: %s"
+            % (maximum, ", ".join(over))
+        )
+
+
 def _normalize_scene_names(plan):
     scene_names = {}
     for shot in plan.get("shots", []):
@@ -92,46 +111,100 @@ def _normalize_scene_names(plan):
 
 def _validate_dialogue_refs(plan):
     dialogue_map = plan.get("dialogue_map", {}) or {}
+    dialogue_events = plan.get("dialogue_events", {}) or {}
     missing = []
+    malformed = []
     for shot in plan.get("shots", []):
         for ss in shot.get("subshots", []):
             for ref in ss.get("dialogue_refs", []) or []:
                 if ref not in dialogue_map:
                     missing.append("%s:%s" % (ss.get("subshot_id", "?"), ref))
+                    continue
+                event = dialogue_events.get(ref)
+                if not isinstance(event, dict):
+                    malformed.append("%s:%s missing dialogue_events record" % (ss.get("subshot_id", "?"), ref))
+                    continue
+                if event.get("ref") != ref:
+                    malformed.append("%s:%s ref mismatch" % (ss.get("subshot_id", "?"), ref))
+                if event.get("kind") not in ("台词", "OS", "OV"):
+                    malformed.append("%s:%s invalid kind" % (ss.get("subshot_id", "?"), ref))
+                if not str(event.get("speaker", "") or "").strip():
+                    malformed.append("%s:%s missing speaker" % (ss.get("subshot_id", "?"), ref))
+                text = str(event.get("text", "") or "")
+                if not text:
+                    malformed.append("%s:%s missing text" % (ss.get("subshot_id", "?"), ref))
+                raw = str(dialogue_map.get(ref, "") or "")
+                if text and raw != text and not raw.endswith("：" + text) and not raw.endswith(":" + text):
+                    malformed.append("%s:%s text differs from dialogue_map" % (ss.get("subshot_id", "?"), ref))
     if missing:
         raise ValueError("dialogue_refs missing from dialogue_map: %s" % ", ".join(missing[:20]))
+    if malformed:
+        raise ValueError("dialogue_events invalid: %s" % ", ".join(malformed[:20]))
 
 
 
 
 
-def split_dialogue(text, max_chars_per_segment=60):
-    """Split dialogue text at sentence boundaries, merging consecutive punctuation.
-    Consecutive "！！" / "？？" / "？！" / "……" are treated as ONE boundary.
-    Returns list of (text_segment, estimated_seconds) tuples.
+def split_dialogue(text, max_chars_per_segment=None, max_seconds=None, reserve_seconds=0.8):
+    """Split dialogue only at semantic sentence boundaries.
+
+    Mode C v4 prefers duration-based packing. ``max_chars_per_segment`` remains
+    available for legacy callers, but the Orchestrator should pass the user's
+    confirmed per-shot duration as ``max_seconds``. Text is never rewritten.
     """
     import re as _re_sd
-    collapsed = _re_sd.sub(r"([！？…])\1+", r"\1", text)
-    segments = _re_sd.split(r"(?<=[。！？…])", collapsed)
-    segments = [s.strip() for s in segments if s.strip()]
+    text = str(text or "")
+    segments = [
+        part.strip()
+        for part in _re_sd.findall(r".+?(?:[。！？]+|…{2,}|—{2,})(?:[”’」』】）\)]*)|.+$", text, flags=_re_sd.S)
+        if part.strip()
+    ]
     result = []
     buf = ""
     for seg in segments:
-        if len(buf + seg) <= max_chars_per_segment:
+        candidate = buf + seg
+        within_chars = max_chars_per_segment is None or len(candidate) <= max_chars_per_segment
+        within_seconds = max_seconds is None or _estimate_dialogue_seconds(candidate) + reserve_seconds <= max_seconds + 1e-6
+        if within_chars and within_seconds:
             buf += seg
         else:
             if buf:
                 result.append(buf)
             buf = seg
+            if max_seconds is not None and _estimate_dialogue_seconds(buf) + reserve_seconds > max_seconds + 1e-6:
+                raise ValueError(
+                    "single dialogue sentence exceeds user-confirmed max_shot_duration and has no safe semantic split: %s"
+                    % buf
+                )
+            if max_chars_per_segment is not None and len(buf) > max_chars_per_segment:
+                # A single semantic sentence is intentionally preserved even
+                # when it exceeds the legacy soft character target.
+                pass
     if buf:
         result.append(buf)
     output = []
     for s in result:
-        chars = len(s)
-        sentences = sum(1 for c in s if c in "。！？…")
-        seconds = max(round(chars / 4.5 + sentences * 0.5, 1), 0.5)
+        seconds = _estimate_dialogue_seconds(s)
         output.append((s, seconds))
     return output
+
+
+def _estimate_dialogue_seconds(text):
+    text = str(text or "")
+    import re as _re_est
+    spoken_chars = len(_re_est.sub(r"[\s，,、；;：:。！？!?…—‘’“”\"'「」『』（）()【】\[\]]", "", text))
+    short_pauses = len(_re_est.findall(r"[，,、]", text))
+    medium_pauses = len(_re_est.findall(r"[；;：:]", text))
+    sentence_ends = len(_re_est.findall(r"[。！？!?]+", text))
+    long_pauses = len(_re_est.findall(r"…{2,}|—{2,}", text))
+    seconds = (
+        spoken_chars / 4.5
+        + short_pauses * 0.25
+        + medium_pauses * 0.35
+        + sentence_ends * 0.5
+        + long_pauses * 0.6
+    )
+    return max(round(seconds, 1), 0.5)
 
 if __name__ == "__main__":
     import sys

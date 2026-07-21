@@ -330,12 +330,18 @@ def _validate_item(item, phase):
     fp = item.get("full_prompt", "")
     dur = item.get("duration", 0)
     if phase == "prompt_composer":
-        return len(fp) >= 500 and isinstance(dur, (int, float)) and dur > 0
+        return (
+            120 <= len(fp) <= 1100
+            and isinstance(dur, (int, float)) and dur > 0
+            and all(label in fp for label in ("画面锁定：", "镜头设计：", "表演时间轴：", "光照与声音："))
+            and isinstance(item.get("qa_metadata"), dict)
+            and isinstance(item.get("generation_control"), dict)
+            and bool(item.get("negative_prompt"))
+        )
     # director level: check key fields have content
     for key in ["shot_size", "camera_position", "character_action", "lighting"]:
         val = item.get(key, "")
         if isinstance(val, str) and len(val) < 5:
             return False
     return True
-
 

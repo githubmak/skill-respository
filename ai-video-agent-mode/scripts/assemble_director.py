@@ -14,9 +14,16 @@ from shot_semantics import is_true_non_action_subshot, render_anchor
 # ====== Shot size normalization: output only Chinese ======
 SHOT_SIZE_TO_CN = {
     "ECU": "大特写", "CU": "特写", "MCU": "中近景", "MS": "中景",
-    "FS": "全", "LS": "全景", "ELS": "大全景",
+    "FS": "全景", "LS": "全景", "ELS": "大远景",
     "大特写": "大特写", "特写": "特写", "中近景": "中近景", "中景": "中景",
-    "全": "全", "全景": "全景", "大全景": "大全景",
+    "全": "全景", "全景": "全景", "大全景": "大远景", "大远景": "大远景",
+}
+
+MOVEMENT_TYPE_TO_CN = {
+    "fixed": "固定", "static": "固定",
+    "push_in": "推", "push in": "推", "dolly in": "推",
+    "pull_out": "拉", "pull out": "拉", "dolly out": "拉",
+    "pan": "摇", "tilt": "俯", "track": "跟", "handheld": "手持",
 }
 
 def _flatten_char_dict(val):
@@ -39,6 +46,17 @@ def _cn_shot_size(raw):
             return SHOT_SIZE_TO_CN[en]
     return raw
 
+
+def _cn_movement_type(raw):
+    if not raw:
+        return "固定"
+    text = str(raw).strip()
+    key = text.lower()
+    if key in MOVEMENT_TYPE_TO_CN:
+        return MOVEMENT_TYPE_TO_CN[key]
+    allowed = {"固定", "推", "拉", "摇", "移", "跟", "升", "降", "俯", "仰", "环绕", "甩", "变焦", "旋转", "手持", "穿梭"}
+    return text if text in allowed else "固定"
+
 def _clean_char_prefix(text):
     """Remove character-name prefix from text fields like "角色A：..."."""
     if not isinstance(text, str):
@@ -57,6 +75,7 @@ def run(emotion_path, scene_path, camera_path, shot_plan_path, output_path,
     camera = _load_json(camera_path) if camera_path and os.path.exists(camera_path) else None
     shot_plan = _load_json(shot_plan_path)
     dialogue_map = shot_plan.get("dialogue_map", {})
+    dialogue_events = shot_plan.get("dialogue_events", {})
 
     emap = _items_by_subshot(emotion, "shots") if emotion else {}
     smap = _items_by_subshot(scene, "analyses") if scene else {}
@@ -71,7 +90,7 @@ def run(emotion_path, scene_path, camera_path, shot_plan_path, output_path,
             ei = emap.get(ssid, {})
             si = smap.get(ssid, {})
             ci = cmap.get(ssid, {})
-            item = _assemble_item(shot_index, ss, ei, si, ci, shot, dialogue_map)
+            item = _assemble_item(shot_index, ss, ei, si, ci, shot, dialogue_map, dialogue_events)
             items.append(item)
 
     _apply_axis_warnings(items)
@@ -97,7 +116,7 @@ def run(emotion_path, scene_path, camera_path, shot_plan_path, output_path,
     return result
 
 
-def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
+def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None, dialogue_events=None):
     """Assemble one subshot into detailed cinematic format using expanded fields."""
     ssid = ss["subshot_id"]
     sid = ss.get("shot_id", ssid.rsplit("-", 1)[0])
@@ -117,7 +136,7 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
     height_rel = ci.get("camera_height_relative", "齐眼")
     angle_str = ci.get("angle_str", "平视")
     facing = ci.get("camera_facing_desc", "")
-    mov_type = ci.get("movement_type", "fixed")
+    mov_type = _cn_movement_type(ci.get("movement_type", "固定"))
     mov_detail = ci.get("movement_detail", "")
     ma_v = ci.get("movement_arc_deg", 0); mov_arc = str(ma_v).replace("°","").strip() if not isinstance(ma_v, (int,float)) else str(ma_v)
     mov_speed = ci.get("movement_speed", "none")
@@ -151,18 +170,18 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
     bg_bg = si.get("bg_background", "")
     _lighting_nested = si.get("lighting", {}) or {}
     if isinstance(_lighting_nested, dict) and _lighting_nested:
-        light_type = _lighting_nested.get("light_type", "暖黄室内顶光")
-        lt_v = _lighting_nested.get("light_temp", 3200); light_temp = str(lt_v).replace("K","").replace(" ","").strip() if not isinstance(lt_v, (int,float)) else lt_v
-        light_dir = _lighting_nested.get("light_direction", "侧前方45度")
+        light_type = _lighting_nested.get("light_type", "场景既定主光")
+        lt_v = _lighting_nested.get("light_temp", ""); light_temp = str(lt_v).replace("K","").replace(" ","").strip() if not isinstance(lt_v, (int,float)) else lt_v
+        light_dir = _lighting_nested.get("light_direction", "按场景既定方向")
         light_hard = _lighting_nested.get("light_hardness", "soft")
         light_effect_primary = si.get("light_effect_primary_char", "")
         light_effect_others = si.get("light_effect_other_chars", "")
         contrast = si.get("color_contrast_desc", "")
         mood = si.get("mood_atmosphere", "") or _lighting_nested.get("light_mood", "")
     else:
-        light_type = si.get("light_type", "自然光")
-        lt_v = si.get("light_temp", 3200); light_temp = str(lt_v).replace("K","").replace(" ","").strip() if not isinstance(lt_v, (int,float)) else lt_v
-        light_dir = si.get("light_direction", "侧前方45度")
+        light_type = si.get("light_type", "场景既定主光")
+        lt_v = si.get("light_temp", ""); light_temp = str(lt_v).replace("K","").replace(" ","").strip() if not isinstance(lt_v, (int,float)) else lt_v
+        light_dir = si.get("light_direction", "按场景既定方向")
         light_hard = si.get("light_hardness", "soft")
         light_effect_primary = si.get("light_effect_primary_char", "")
         light_effect_others = si.get("light_effect_other_chars", "")
@@ -202,7 +221,7 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
         dist_desc = str(dist_steps) if dist_steps else "约1.5m"
     camera_pos_text = "%smm镜头，位于目标%s%s位置，%s，%s，%s。%s" % (
         lens, rel_pos, ("（%s）" % dist_desc) if rel_pos else "",
-        height_rel, angle_str + ("%s°" % (int(mov_arc) if mov_arc else 0) if str(mov_arc).replace(".","").replace("°","").strip("-").isdigit() and mov_type != "fixed" else ""),
+        height_rel, angle_str + ("%s°" % (int(mov_arc) if mov_arc else 0) if str(mov_arc).replace(".","").replace("°","").strip("-").isdigit() and mov_type != "固定" else ""),
         facing, lens_effect)
 
     # 运镜 (expanded)
@@ -230,7 +249,7 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
     "穿梭": "穿梭变焦（dolly zoom/希区柯克变焦），摄影机前进同时变焦后退，制造空间扭曲眩晕效果"
 }
         movement_text = mov_map.get(mov_type, "固定镜头")
-        if mov_arc and mov_type != "fixed":
+        if mov_arc and mov_type != "固定":
             movement_text += "，%s°弧线" % int(mov_arc)
 
     # 轴线与空间 (expanded with bg layers + mood)
@@ -331,9 +350,16 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
     if perf_note:
         action_text += "\n表演注意：" + _clean_char_prefix(perf_note) + "。"
     # 台词与声音
-    has_ov = any(("OV" in r or "OS" in r or r.startswith("D-MAIN-") or r.startswith("D-SYS-")) for r in refs)
+    source_dialogue_events = []
+    for ref in refs:
+        event = (dialogue_events or {}).get(ref)
+        if isinstance(event, dict):
+            source_dialogue_events.append(dict(event))
+    has_ov = any(event.get("kind") in ("OV", "OS") for event in source_dialogue_events)
+    if not source_dialogue_events:
+        has_ov = any(("OV" in r or "OS" in r or r.startswith("D-MAIN-") or r.startswith("D-SYS-")) for r in refs)
     # Fallback: check dialogue content for OS keywords
-    if not has_ov and refs and dialogue_map:
+    if not source_dialogue_events and not has_ov and refs and dialogue_map:
         for r in refs:
             txt = (dialogue_map or {}).get(r, "")
             if not txt:
@@ -342,15 +368,20 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
                 has_ov = True
                 break
     # D-SYS refs are always system/OS narration
-    if not has_ov:
+    if not source_dialogue_events and not has_ov:
         has_ov = any(r.startswith("D-SYS-") for r in refs)
     dialogue_raw_lines = []
     if refs:
         lines = []
         for r in refs:
-            txt = (dialogue_map or {}).get(r, "")
+            event = (dialogue_events or {}).get(r, {})
+            txt = event.get("text", "") if isinstance(event, dict) else ""
+            txt = txt or (dialogue_map or {}).get(r, "")
             if txt:
-                lines.append("[%s] %s" % (r, txt))
+                if isinstance(event, dict) and event:
+                    lines.append("[%s][%s][%s] %s" % (r, event.get("kind", ""), event.get("speaker", ""), txt))
+                else:
+                    lines.append("[%s] %s" % (r, txt))
                 dialogue_raw_lines.append(txt)
             else:
                 lines.append(r)
@@ -364,8 +395,10 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
             dialogue_text += "语气：%s。" % vt
 
     # 光照 (expanded with light effects + contrast + mood)
-    light_hard_text = {"soft": "柔光", "hard": "硬光", "mixed": "软硬混合"}.get(light_hard, "柔光")
-    lt_num = re.sub(r"[^0-9]", "", str(light_temp)) if light_temp else "3200"; lighting_text = "%s（%sK）为主光源，%s，%s。%s" % (light_type, lt_num if lt_num else "3200", tone, light_dir, light_hard_text)
+    light_hard_text = {"soft": "柔光", "hard": "硬光", "mixed": "软硬混合"}.get(light_hard, "按场景既定光质")
+    lt_num = re.sub(r"[^0-9]", "", str(light_temp)) if light_temp else ""
+    temp_text = "（%sK）" % lt_num if lt_num else "（色温按场景设定）"
+    lighting_text = "%s%s为主光源，%s，%s。%s。" % (light_type, temp_text, tone, light_dir, light_hard_text)
     if light_effect_primary:
         lighting_text += "主光效果：%s。" % light_effect_primary
     if light_effect_others:
@@ -400,6 +433,7 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None):
         "character_action": action_text,
         "dialogue_audio": dialogue_text,
         "dialogue_refs": refs,
+        "dialogue_events": source_dialogue_events,
         "dialogue_raw_text": "\n".join(dialogue_raw_lines),
         "lighting": lighting_text,
         "char_entry_exit": entry_text,
@@ -437,8 +471,9 @@ def _build_full_prompts(items, canvas, visual_style, shared_settings, negative):
                     parts.append("%s：%s" % (label, val))
             parts.append("")
 
-        parts.append("负面提示词：%s" % negative)
-        parts.append("")
+        # Director summaries are internal source material for Mode C v4. Keep
+        # negative prompts out so Composer cannot accidentally copy them into
+        # the model-facing full_prompt.
 
         full_text = "\n".join(parts)
         total_dur = sum(it["duration"] for it in subshots)
