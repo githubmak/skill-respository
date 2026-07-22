@@ -16,7 +16,7 @@ Professional boundaries:
 
 - Read the dispatch packet and process only `packet.items`.
 - Require `packet.contract_version` to equal `modec-v4`; otherwise stop and request a fresh dispatch packet.
-- Read `source_path`, `constraints_path`, `project_config_path`, `format_example_path`, and `quality_exemplar_path` from the packet.
+- Read `packet.items`, `composer_scaffold_path`, `scene_lock_cache_path`, `constraints_path`, and confirmed generation control first. `source_path`, `project_config_path`, and full examples are fallback-only: open the smallest needed source section only when the compact packet lacks a concrete fact. The constraints sidecar already carries the transferable exemplar rules.
 - Write only `packet._batch_output_path`; never write `packet.output_path`.
 - Output pure JSON with exactly one top-level key:
 
@@ -61,16 +61,18 @@ An intentional non-reaction may be the primary performance. Describe its visible
 
 ## Step 3 — Set the Action Budget
 
+Copy the Director `editorial_mode`, `camera_beat_map`, and `sequence_context` into QA metadata before writing. They are locked production data, not a fifth model-prompt section. For each motivated beat, place its stated `time_range`, `focus_subject`, `framing`, `axis_relation`, and `transition_type` into the matching timeline progression; do not invent an extra cut or replace the declared carryover.
+
 For 3–6 seconds:
 
 - primary action count ≤1;
 - emotion turn count ≤1;
 - supporting reaction count ≤1;
-- camera move count ≤1.
+- `continuous_take` camera move count ≤1; `motivated_sequence` may use only 1–3 declared performance-motivated responses.
 
-For 6–10 seconds: primary actions ≤2, emotion turn ≤1, supporting reactions ≤2, camera move ≤1.
+For 6–10 seconds: primary actions ≤2, emotion turn ≤1, supporting reactions ≤2; camera responses follow the selected `editorial_mode`.
 
-For 10–15 second continuous interaction, allow one causally triggered attention handoff inside the same dramatic objective. Pick exactly one strategy: fixed two-shot plus one rack focus, one unidirectional pan/slide reframe, or actor blocking with a fixed camera. Record it in `qa_metadata.attention_handoff`; never stack physical movement, zoom, and rack focus.
+For 10–15 second continuous interaction, allow one causally triggered attention handoff inside the same dramatic objective. `continuous_take` picks exactly one strategy: fixed two-shot plus one rack focus, one unidirectional pan/slide reframe, or actor blocking with a fixed camera. `motivated_sequence` uses only its declared performance-linked camera beats. Record an attention handoff in `qa_metadata.attention_handoff` when present; never stack unmotivated physical movement, zoom, and rack focus.
 
 For fights, prefer one uninterrupted generated take rather than one clip per move. Count the whole causally linked choreography as one primary action chain. Use at most 1 contact beat up to 6 seconds, 2 beats for 6–10 seconds, and 3 beats for 10–15 seconds. All beats share one camera trajectory. Causal attention transfer between attacker and defender is allowed; split only for a new axis, independent dramatic/choreography focus, location, unrelated action chain, or duration above 15 seconds.
 
@@ -148,7 +150,11 @@ Use this information order:
 时长：5.0秒。景别：中近景。焦距：50mm。机位：……。轴线：……。主要运镜：固定，落幅时轻微收紧构图……。
 ```
 
-Use one main camera motion and one clear visual focus at any moment. A continuous dialogue chain may hand attention from A to B once, but must state the visible trigger, composition/focus transfer, and final relationship framing. Do not write only “聚焦A/聚焦B”. Keep only 1–2 decisive numbers. `dramatic_goal` stays in QA metadata rather than model prose.
+For `continuous_take`, use one main camera motion. For `motivated_sequence`, use only the 1–3 camera responses declared in `camera_beat_map`. In either mode, keep one clear visual focus at any instant. A continuous dialogue chain may hand attention from A to B once, but must state the visible trigger, composition/focus transfer, and final relationship framing. Do not write only “聚焦A/聚焦B”. Keep only 1–2 decisive numbers. `dramatic_goal` stays in QA metadata rather than model prose.
+
+Read `performance_chain`, `editorial_mode`, and `camera_beat_map` from the Director item before writing. For `continuous_take`, execute one camera trajectory. For `motivated_sequence`, let each stated emotional beat naturally bring a cut to reaction/detail, a reframe, a push-in, or a follow; preserve the handed-over prop, screen direction, lighting, and character state. The model prompt describes the visual transition and its emotional trigger, not a stack of unrelated technical commands.
+
+When `sequence_context.segment_count > 1`, begin from `entry_carryover` rather than a neutral reset, and end on `exit_carryover` for the next segment. Carry posture, prop ownership/contact, voice boundary, and emotional residue forward; only add a new beat when the source action, dialogue, or relationship judgment advances.
 
 ### 表演时间轴
 
@@ -161,6 +167,8 @@ Use 2–3 decimal time ranges that continuously cover the full duration:
 Execute the `performance_contract` chain:
 
 `visible start state → story trigger → primary body response → brief emotional leak → visible end state`.
+
+When the director provides a `performance_chain`, realize it in this order: trigger → facial control → detail/prop leak → shoulder/back, weight, or step follow-through → voice or breath landing → residue. Use only what the current framing can show. A non-speaking character receives only the reaction caused by hearing or seeing the primary event, with a closed mouth.
 
 - Give the primary the complete performance arc.
 - Give the audience one readable empathy anchor: what the character fears, protects, loses, swallows back, or understands in this beat. Convert it into one visible image moment in the timeline; do not write effect claims like "high empathy" or "moving".
@@ -198,7 +206,8 @@ When `audio_enabled=true`, add only the key ambience and 1–2 narrative sound e
     "primary_action_count": 1,
     "emotion_turn_count": 1,
     "supporting_reaction_count": 1,
-    "camera_move_count": 1
+    "physical_camera_move_count": 1,
+    "editorial_response_count": 0
   },
   "start_state": "画面可见起始状态",
   "end_state": "画面可见终态",
@@ -268,7 +277,7 @@ Verify:
 - one primary, non-overlapping role assignments, all visible characters covered;
 - action counts within budget;
 - `performance_contract`, `continuity_contract`, and `reroll_control` present, concrete, and visibly grounded in `full_prompt`;
-- one main camera move, one focal subject at any instant, and at most one documented causal attention handoff;
+- the declared `editorial_mode`: one main camera trajectory for `continuous_take`, or only the declared performance-motivated responses for `motivated_sequence`; one focal subject at any instant, and at most one documented causal attention handoff;
 - no invisible facial details for the shot size;
 - exact dialogue boundary and correct lip-sync ownership;
 - no QA, negative words, template numbering, internal names, or fake references in `full_prompt`;

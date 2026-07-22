@@ -30,6 +30,8 @@ The primary arc should read:
 
 `visible start state → story trigger → body response → brief emotional leak or deliberate hold → visible end state`.
 
+When a Director `performance_chain` exists, review the fuller propagation: `trigger → facial control → detail/prop leak → shoulder/back, weight, or step follow-through → voice/breath landing → residue`. It is not a checklist of body parts: every item must be visible at the chosen framing and caused by the story event.
+
 The supporting focus may react once to the main event. Do not add gestures merely to make a character “alive.” Performance tension should come from delay, restraint, weight, direction, and contrast.
 
 For every visible-character shot, review all three contracts:
@@ -50,7 +52,8 @@ Blocking: a contract is missing, abstract, contradicted by the prompt, or only e
 
 ### 4. Camera competition
 
-- One main movement direction and one clear focus at any instant.
+- `continuous_take`: one main movement direction and one clear focus at any instant.
+- `motivated_sequence`: natural reaction/detail cuts, reframes, and movement changes are valid when `camera_beat_map` ties each one to a declared performance-chain beat. Review the trigger, the new visual priority, and the carried character/prop/axis/light state. Do not treat a motivated cut as a competing physical movement.
 - A single causal attention handoff inside one continuous interaction is valid when it uses exactly one strategy and ends in a readable relationship composition.
 - Pan+tilt, push+orbit, zoom+track, physical movement+rack focus, repeated A→B→A focus changes, or focus changes without a narrative trigger are blocking and must be split.
 - Adjacent shots may keep the same shot size; do not force variety without an information or dramatic reason.
@@ -91,15 +94,15 @@ Negative words, dramatic goals, validation statements, action counts, project fi
 
 ## Repair Routing
 
-- Acting causality/priority → emotion-analysis or Composer.
-- Camera/axis/visibility → camera-analysis.
-- Light/space/wardrobe → scene-analysis.
-- Prompt competition/timeline/field separation → Composer.
+- Acting causality/priority → `emotion_analysis` or `prompt_composer`.
+- Camera/axis/visibility → `camera_movement`.
+- Light/space/wardrobe → `scene_analysis`.
+- Prompt competition/timeline/field separation → `prompt_composer`.
 - Source dialogue mismatch → Director/Composer using the original dialogue map.
 - Mechanical label/JSON/negative injection errors → scripts, not semantic rewriting.
 
 ## Output
 
-Return semantic review JSON with blocking issues, warnings, and `repair_targets[]`. Do not silently rewrite the prompt package unless the dispatch explicitly requests a repaired package path.
+Return semantic review JSON with blocking issues, warnings, and `repair_targets[]`. `send_back_to` must be exactly one of `emotion_analysis | scene_analysis | camera_movement | prompt_composer`; do not return `editor_pass2`, `director`, or human-readable aliases. Do not silently rewrite the prompt package unless the dispatch explicitly requests a repaired package path.
 
 Pass only when there are zero blocking issues. Do not allow numeric tolerances such as “up to five failed shots.”

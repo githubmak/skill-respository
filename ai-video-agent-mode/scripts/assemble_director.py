@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_prefix_from_path
 
 block_source_pycache_until_run_dir()
-from shot_semantics import is_true_non_action_subshot, render_anchor
+from shot_semantics import is_true_non_action_subshot, quality_contract, render_anchor
 
 # ====== Shot size normalization: output only Chinese ======
 SHOT_SIZE_TO_CN = {
@@ -441,6 +441,17 @@ def _assemble_item(idx, ss, ei, si, ci, shot, dialogue_map=None, dialogue_events
         "axis_end": axis_end,
         "movement_type": mov_type,
         "movement_detail": mov_detail,
+        "scene_anchor_usage": ci.get("scene_anchor_usage", {}),
+        "editorial_mode": ci.get("editorial_mode", ss.get("editorial_mode", "continuous_take")),
+        "camera_beat_map": ci.get("camera_beat_map", ss.get("camera_beat_map", [])),
+        "performance_chain": ei.get("performance_chain", ss.get("performance_chain", {})),
+        "sequence_context": ss.get("sequence_context", {}),
+        "quality_contract": ss.get("quality_contract", quality_contract(ss)),
+        "scene_continuity": {
+            "prop_state": si.get("prop_state", ""),
+            "start_carryover": si.get("start_carryover", ""),
+            "end_carryover": si.get("end_carryover", ""),
+        },
         "end_state": end_state,
         "full_prompt": "",
     }

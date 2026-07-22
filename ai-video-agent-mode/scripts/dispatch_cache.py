@@ -15,6 +15,7 @@ if not os.environ.get("PYTHONPYCACHEPREFIX") and not getattr(sys, "pycache_prefi
     sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(__file__))
 from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_prefix
+from shot_semantics import quality_contract, requires_emotion_analysis, workload_units
 
 block_source_pycache_until_run_dir()
 
@@ -51,6 +52,11 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
     data = _load_json(source_path)
     wanted = set(subshot_ids or [])
     items = _extract_items(data, wanted)
+    if phase == "emotion_analysis":
+        items = [item for item in items if requires_emotion_analysis(item)]
+    if phase == "camera_movement":
+        _attach_performance_chains(run_dir, items)
+        _attach_scene_analysis(run_dir, items)
     if not items:
         return []
 
@@ -60,7 +66,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
         chunks = _composer_chunks(items, size, respect_chains=not is_retry)
     elif batch_size is not None:
         size = max(int(batch_size), 1)
-        chunks = [items[i:i + size] for i in range(0, len(items), size)]
+        chunks = _analysis_chunks(items, size, phase)
     else:
         size = max(len(items), 1)
         chunks = [items]
@@ -86,6 +92,12 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
                 run_dir, chunk, out_dir, dispatch_tag, scene_lock_cache_path
             )
             packet_items = [_compact_composer_item(item) for item in chunk]
+        retry_context_path = None
+        retry_mode = None
+        if is_retry:
+            retry_context_path, retry_mode = _write_retry_context(
+                run_dir, phase, packet_items, out_dir, dispatch_tag
+            )
         packet = {
             "contract_version": "modec-v4",
             "dispatch_id": dispatch_id,
@@ -117,10 +129,19 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
                 "Do not paste unchanged source content back into chat."
             ),
         }
+        if retry_context_path:
+            packet["retry_context_path"] = retry_context_path
+            packet["retry_mode"] = retry_mode
+            packet["is_retry"] = True
+            packet["instruction"] += (
+                " This is a targeted retry: read retry_context_path, repair only its failing fields, "
+                "and preserve all locked fields and already-passing content."
+            )
         if scaffold_path:
             packet["composer_scaffold_path"] = scaffold_path
             packet["scene_lock_cache_path"] = scene_lock_cache_path
-            packet["retry_mode"] = is_retry
+        if phase == "editor_pass2":
+            packet["review_packet_path"] = os.path.join(run_dir, ".cache", "review", "llm_gate_review.md")
         suffix = "" if len(chunks) == 1 else "_batch%03d" % idx
         out_path = os.path.join(out_dir, "%s%s_%s_packet.json" % (phase, suffix, dispatch_tag))
         with open(out_path, "w", encoding="utf-8") as f:
@@ -187,6 +208,11 @@ def _extract_items(data, wanted):
                     "dialogue_events": source_events,
                     "dialogue_raw_text": "\n".join(str(event.get("text", "") or "") for event in source_events),
                     "emotion_tone": ss.get("emotion_tone", ""),
+                    "performance_chain": ss.get("performance_chain", {}),
+                    "editorial_mode": ss.get("editorial_mode", "continuous_take"),
+                    "camera_beat_map": ss.get("camera_beat_map", []),
+                    "sequence_context": ss.get("sequence_context", {}),
+                    "quality_contract": quality_contract(ss),
                     "spatial_map": ss.get("spatial_map", {}),
                     "props": ss.get("props", []),
                 })
@@ -201,6 +227,47 @@ def _extract_items(data, wanted):
             copied.setdefault("visible_characters", copied.get("characters", []))
             items.append(copied)
     return items
+
+
+def _attach_performance_chains(run_dir, items):
+    """Give camera direction the completed emotion pass, not just an emotion label."""
+    path = os.path.join(run_dir, ".cache", "analysis", "emotion_output.json")
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, "r", encoding="utf-8-sig") as handle:
+            emotion = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return
+    chains = {
+        str(item.get("subshot_id", "") or ""): item.get("performance_chain", {})
+        for item in emotion.get("items", [])
+        if isinstance(item, dict)
+    }
+    for item in items:
+        chain = chains.get(str(item.get("subshot_id", "") or ""))
+        if isinstance(chain, dict) and chain:
+            item["performance_chain"] = chain
+
+
+def _attach_scene_analysis(run_dir, items):
+    """Camera repairs must use the latest spatial and lighting decisions."""
+    path = os.path.join(run_dir, ".cache", "analysis", "scene_output.json")
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, "r", encoding="utf-8-sig") as handle:
+            scene = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return
+    by_id = {
+        str(item.get("subshot_id", "") or ""): item
+        for item in scene.get("items", []) if isinstance(item, dict)
+    }
+    for item in items:
+        latest = by_id.get(str(item.get("subshot_id", "") or ""))
+        if latest:
+            item["scene_analysis"] = latest
 
 
 def _batch_output_path(public_output, phase, idx, total, dispatch_tag):
@@ -243,7 +310,8 @@ def _write_constraints_sidecar(run_dir, phase, dispatch_dir, dispatch_tag):
             "do not invent plot, rewrite dialogue, design clothing, or rewrite scene art. "
             "Do not confuse camera position with character facing: unless the source explicitly requires direct-to-camera/selfie/viewer address, "
             "characters must keep story-correct eyelines toward opponents, speakers, doorways, props, or spatial focal points, not face the lens for frontal composition. "
-            "A continuous interaction may hand attention from A to B once inside the same dramatic objective; choose only fixed+rack-focus, one unidirectional reframe, or actor blocking with a fixed camera. "
+            "Read performance_chain before choosing the camera. In continuous_take, use one coherent trajectory. In motivated_sequence, map each declared facial, detail/prop, body, or voice beat to a motivated hold, push-in, reframe, reaction cut, detail cut, or follow, preserving axis and carryover state. "
+            "The packet also contains scene_analysis: use its char_positions to establish axis/composition, light_direction/light_temp to preserve source light, prop_state for focus/occlusion, and start_carryover/end_carryover for entry/exit. Return scene_anchor_usage with those four concrete anchors; do not use generic claims. "
             "Use §A, especially A1/A2/A5. Output only {\"items\": [...]} to packet._batch_output_path."
         ),
         "prompt_composer": (
@@ -251,9 +319,10 @@ def _write_constraints_sidecar(run_dir, phase, dispatch_dir, dispatch_tag):
             "Create one low-reroll Mode C v4 shot per subshot with a strict action budget and primary/supporting/background performance priority; "
             "do not invent plot, rewrite dialogue, redesign clothing, add unconfirmed props, or expose engineering fields. "
             "Do not force characters to face the lens: distinguish camera-front position from character-facing direction, and only write direct-to-camera eyeline when explicitly sourced. "
-            "For one causal A-to-B attention handoff, use exactly one strategy and record qa_metadata.attention_handoff; never stack physical movement, zoom, and rack focus. "
+            "Execute the Director's performance_chain before inventing shot language: trigger, facial control, detail/prop leak, body follow-through, voice/breath landing, then residue. In motivated_sequence, natural reaction/detail cuts and reframes are allowed only at those declared beats; preserve identity, prop state, axis, light, and the previous beat's residue. "
             "For every shot with visible physical characters, fill qa_metadata.performance_causality with calibrated tension intent, trigger, ordered response, physical logic, motion boundary, hold strategy, and end residue. "
             "Also fill qa_metadata.performance_contract, qa_metadata.continuity_contract, and qa_metadata.reroll_control before writing full_prompt: performance_contract must bind expression, body action, eyeline, reaction delay, voice/breath control, one viewer empathy anchor, one readable image moment, camera pressure, scene pressure, and end residue into the timeline; continuity_contract must preserve start/end anchors, eyelines, prop state, light, and next carryover; reroll_control must score T2V/I2V/R2V risk, state reference needs, and list concrete mitigation steps. "
+            "Copy the locked quality_contract exactly. Fill qa_metadata.quality_evidence for every required_evidence key as {section, fragment}; section is one of 画面锁定/镜头设计/表演时间轴/光照与声音 and fragment is a 3+ character literal phrase that appears in that section. This applies equally to environment and object inserts. "
             "For every locked dialogue event, preserve ref/kind/speaker/text exactly and fill its time_range, speaker_visibility, facial_state, body_state, delivery, and lip_sync. Dialogue/OS text must never be rewritten. "
             "Use §B-§E in this sidecar, then read packet.format_example_path and packet.quality_exemplar_path exactly once. "
             "Examples are structure-only: absorb causal performance chains, prop-state transfer, timeline continuity, system-text safe zones, dialogue/lip-sync boundaries, end residue, and reroll controls, but never inherit example genre, soft-light rhythm, hotel/urban setting, manhwa style, clothing, character relationships, or specific prop events unless the current source/config provides them. "
@@ -290,14 +359,14 @@ def _select_contract_sections(body, phase):
         "emotion_analysis": ("A", "E"),
         "scene_analysis": ("A", "E"),
         "camera_movement": ("A", "E"),
-        "prompt_composer": ("B", "C", "D", "E"),
-        "editor_pass2": ("B", "C", "D", "E"),
+        "prompt_composer": ("B",),
+        "editor_pass2": ("B", "C"),
     }.get(phase, tuple(sections))
     return "\n\n".join([preamble] + [sections[key] for key in wanted if key in sections]) + "\n"
 
 
 def _composer_chunks(items, max_items, respect_chains=True):
-    """Keep continuity groups intact and avoid one-item tail batches."""
+    """Keep continuity groups intact while shrinking high-context batches."""
     shot_groups = []
     for item in items:
         group_id = _composer_group_id(item) if respect_chains else str(item.get("subshot_id", ""))
@@ -307,14 +376,21 @@ def _composer_chunks(items, max_items, respect_chains=True):
             shot_groups.append([group_id, [item]])
     chunks = []
     current = []
+    current_weight = 0
+    weight_budget = max_items * 3
+    item_cap = max_items * 2
     for _, group in shot_groups:
-        if current and len(current) + len(group) > max_items:
+        group_weight = sum(workload_units(item, "prompt_composer") for item in group)
+        if current and (len(current) + len(group) > item_cap or current_weight + group_weight > weight_budget):
             chunks.append(current)
             current = []
+            current_weight = 0
         current.extend(group)
-        if len(current) >= max_items:
+        current_weight += group_weight
+        if len(current) >= item_cap or current_weight >= weight_budget:
             chunks.append(current)
             current = []
+            current_weight = 0
     if current:
         chunks.append(current)
     if len(chunks) > 1 and len(chunks[-1]) == 1:
@@ -324,6 +400,27 @@ def _composer_chunks(items, max_items, respect_chains=True):
         if len(donor) - len(movable) >= 2 and len(movable) + 1 <= max_items:
             chunks[-2] = donor[:donor_group_start]
             chunks[-1] = movable + chunks[-1]
+    return chunks or [items]
+
+
+def _analysis_chunks(items, max_items, phase):
+    """Bound both item count and complexity so simple inserts batch efficiently."""
+    weight_budget = {
+        "emotion_analysis": max_items * 2,
+        "scene_analysis": max_items * 2,
+        "camera_movement": max_items * 2,
+    }.get(phase, max_items * 2)
+    item_cap = max_items * 2
+    chunks, current, current_weight = [], [], 0
+    for item in items:
+        weight = workload_units(item, phase)
+        if current and (len(current) >= item_cap or current_weight + weight > weight_budget):
+            chunks.append(current)
+            current, current_weight = [], 0
+        current.append(item)
+        current_weight += weight
+    if current:
+        chunks.append(current)
     return chunks or [items]
 
 
@@ -383,8 +480,14 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
                     "primary_action_count": 0,
                     "emotion_turn_count": 0,
                     "supporting_reaction_count": 0,
-                    "camera_move_count": 0,
+                    "physical_camera_move_count": 0,
+                    "editorial_response_count": 0,
                 },
+                "editorial_mode": item.get("editorial_mode", "continuous_take"),
+                "camera_beat_map": list(item.get("camera_beat_map", []) or []),
+                "sequence_context": dict(item.get("sequence_context", {}) or {}),
+                "quality_contract": dict(item.get("quality_contract", {}) or {}),
+                "quality_evidence": {},
                 "start_state": "",
                 "end_state": "",
                 "performance_causality": {
@@ -456,7 +559,10 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
         "contract_version": "modec-v4",
         "locked_fields": [
             "shot_id", "subshot_id", "duration", "negative_prompt",
-            "qa_metadata.dialogue_refs", "qa_metadata.dialogue_events[].ref/kind/speaker/text", "generation_control",
+            "qa_metadata.dialogue_refs", "qa_metadata.dialogue_events[].ref/kind/speaker/text",
+            "qa_metadata.editorial_mode", "qa_metadata.camera_beat_map", "qa_metadata.sequence_context",
+            "qa_metadata.quality_contract",
+            "generation_control",
         ],
         "scene_lock_cache_path": scene_lock_cache_path,
         "shots": shots,
@@ -464,6 +570,34 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
     path = os.path.join(dispatch_dir, "prompt_composer_%s_scaffold.json" % dispatch_tag)
     _write_json(path, payload)
     return path
+
+
+def _write_retry_context(run_dir, phase, items, dispatch_dir, dispatch_tag):
+    """Expose only validator facts for the retry batch, never the full prior output."""
+    sources = _load_optional_json(os.path.join(run_dir, ".cache", "sources.json"))
+    selected = []
+    max_retries = 0
+    for item in items:
+        subshot_id = str(item.get("subshot_id", "") or "")
+        record = sources.get(subshot_id, {}) if isinstance(sources, dict) else {}
+        retries = int(record.get("retries", 0) or 0)
+        max_retries = max(max_retries, retries)
+        selected.append({
+            "subshot_id": subshot_id,
+            "issues": record.get("qa_issues", []),
+            "passed_phases": record.get("passed_phases", []),
+        })
+    mode = "validator_targeted" if max_retries <= 1 else "single_subshot_field_repair"
+    payload = {
+        "contract_version": "modec-v4",
+        "phase": phase,
+        "retry_mode": mode,
+        "repair_scope": "only listed subshots and validator fields",
+        "items": selected,
+    }
+    path = os.path.join(dispatch_dir, "%s_%s_retry.json" % (phase, dispatch_tag))
+    _write_json(path, payload)
+    return path, mode
 
 
 def _write_scene_lock_cache(run_dir, items, dispatch_dir, group_tag):
@@ -475,11 +609,13 @@ def _write_scene_lock_cache(run_dir, items, dispatch_dir, group_tag):
             "scene": scene,
             "canvas": config.get("canvas", ""),
             "visual_style": config.get("visual_style", ""),
+            "performance_direction": config.get("performance_direction", {}),
             "costumes": _scene_costumes(config.get("costume_map", {}), scene),
             "generation_control": config.get("generation_control", {}),
             "shared_light_anchors": [],
             "lighting_by_subshot": {},
             "spatial_by_subshot": {},
+            "continuity_by_subshot": {},
         })
         sid = str(item.get("subshot_id", ""))
         lighting = str(item.get("lighting", "") or "")
@@ -491,6 +627,9 @@ def _write_scene_lock_cache(run_dir, items, dispatch_dir, group_tag):
         spatial = str(item.get("axis_space", item.get("spatial_map", "")) or "")
         if spatial:
             entry["spatial_by_subshot"][sid] = spatial
+        continuity = item.get("scene_continuity", {})
+        if isinstance(continuity, dict) and any(str(value or "").strip() for value in continuity.values()):
+            entry["continuity_by_subshot"][sid] = continuity
     path = os.path.join(dispatch_dir, "prompt_composer_%s_scene_locks.json" % group_tag)
     _write_json(path, {"contract_version": "modec-v4", "scenes": scenes})
     return path

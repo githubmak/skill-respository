@@ -29,6 +29,7 @@ from modec_v4 import (
     visibility_issues,
 )
 from negative_prompts import PLACEHOLDER, is_fight_context
+from shot_semantics import quality_contract as derive_quality_contract
 
 
 FORBIDDEN_ENGINES = ["C4D", "Octane", "Blender", "Redshift", "Arnold", "Unreal Engine"]
@@ -69,6 +70,8 @@ def validate_composer_output(path, run_dir=None, report_path=None):
                 issues.append(prefix + f"缺少字段{field}")
 
         full_prompt = str(shot.get("full_prompt", "") or "")
+        metadata = shot.get("qa_metadata", {})
+        metadata = metadata if isinstance(metadata, dict) else {}
         sections = split_sections(full_prompt, PROMPT_LABELS)
         for label in PROMPT_LABELS:
             count = len(re.findall(rf"(?:^|\n\n){re.escape(label)}[：:]", full_prompt))
@@ -97,7 +100,7 @@ def validate_composer_output(path, run_dir=None, report_path=None):
             issues.append(prefix + problem)
         for problem in timeline_issues(full_prompt, duration):
             issues.append(prefix + problem)
-        for problem in camera_competition_issues(full_prompt):
+        for problem in camera_competition_issues(full_prompt, metadata.get("editorial_mode", shot.get("editorial_mode", "continuous_take"))):
             issues.append(prefix + problem)
 
         plan_item = plan_map.get(sid, {})
@@ -105,8 +108,8 @@ def validate_composer_output(path, run_dir=None, report_path=None):
         visible = _as_char_list(
             plan_item.get("visible_characters", plan_item.get("characters", director_item.get("visible_characters", [])))
         )
-        metadata = shot.get("qa_metadata", {})
         _validate_scaffold_lock(prefix, shot, scaffold_map.get(sid), issues)
+        _validate_quality_contract(prefix, metadata, plan_item, director_item, full_prompt, issues)
         for problem in role_partition_issues(metadata, visible):
             issues.append(prefix + problem)
         for problem in performance_causality_issues(metadata, visible):
@@ -183,6 +186,9 @@ def _validate_scaffold_lock(prefix, shot, scaffold, issues):
     expected_metadata = scaffold.get("qa_metadata", {})
     if metadata.get("dialogue_refs") != expected_metadata.get("dialogue_refs"):
         issues.append(prefix + "确定性骨架锁定字段被改写：qa_metadata.dialogue_refs")
+    for field in ("editorial_mode", "camera_beat_map", "sequence_context", "quality_contract"):
+        if metadata.get(field) != expected_metadata.get(field):
+            issues.append(prefix + f"确定性骨架锁定字段被改写：qa_metadata.{field}")
     locked = lambda events: [
         tuple(str(event.get(field, "") or "") for field in ("ref", "kind", "speaker", "text"))
         for event in events if isinstance(event, dict)
@@ -258,6 +264,7 @@ def _validate_metadata(prefix, metadata, director_item, full_prompt, audio_enabl
     for field in (
         "dramatic_goal", "performance_priority", "action_budget", "start_state", "end_state",
         "performance_contract", "continuity_contract", "reroll_control", "dialogue_refs", "dialogue_events",
+        "editorial_mode", "camera_beat_map", "sequence_context", "quality_contract",
     ):
         if field not in metadata:
             issues.append(prefix + f"qa_metadata缺少{field}")
@@ -267,6 +274,22 @@ def _validate_metadata(prefix, metadata, director_item, full_prompt, audio_enabl
         issues.append(prefix + "start_state过于空泛")
     if len(str(metadata.get("end_state", "")).strip()) < 4:
         issues.append(prefix + "end_state过于空泛")
+    if metadata.get("editorial_mode") not in ("continuous_take", "motivated_sequence"):
+        issues.append(prefix + "editorial_mode只允许continuous_take/motivated_sequence")
+    if not isinstance(metadata.get("camera_beat_map"), list):
+        issues.append(prefix + "camera_beat_map必须是数组")
+    if not isinstance(metadata.get("sequence_context"), dict):
+        issues.append(prefix + "sequence_context必须是对象")
+    contract = metadata.get("quality_contract")
+    if not isinstance(contract, dict):
+        issues.append(prefix + "quality_contract必须是对象")
+    elif contract.get("profile") not in ("environment", "object", "action", "dialogue", "dramatic"):
+        issues.append(prefix + "quality_contract.profile无效")
+    elif not isinstance(contract.get("required_evidence"), list) or not contract.get("required_evidence"):
+        issues.append(prefix + "quality_contract.required_evidence必须是非空数组")
+    evidence = metadata.get("quality_evidence")
+    if not isinstance(evidence, dict):
+        issues.append(prefix + "quality_evidence必须将每项质量证据映射到提示词段落")
     refs = metadata.get("dialogue_refs", [])
     if not isinstance(refs, list):
         issues.append(prefix + "dialogue_refs必须是数组")
@@ -277,6 +300,32 @@ def _validate_metadata(prefix, metadata, director_item, full_prompt, audio_enabl
     raw = str(director_item.get("dialogue_raw_text", "") or "").strip()
     if not raw and re.search(r"[“\"]([^”\"]{2,})[”\"]", full_prompt):
         issues.append(prefix + "无原始台词镜头疑似新增引号台词")
+
+
+def _validate_quality_contract(prefix, metadata, plan_item, director_item, full_prompt, issues):
+    """Reject profile spoofing and require every quality demand to reach a prompt section."""
+    source = plan_item or director_item
+    if not source:
+        return
+    expected = derive_quality_contract(source)
+    actual = metadata.get("quality_contract")
+    if actual != expected:
+        issues.append(prefix + "quality_contract必须由源子镜重新推导，不能伪造或删减")
+        return
+    evidence = metadata.get("quality_evidence")
+    if not isinstance(evidence, dict):
+        return
+    sections = split_sections(full_prompt, PROMPT_LABELS)
+    allowed = set(PROMPT_LABELS)
+    for requirement in expected["required_evidence"]:
+        mapped = evidence.get(requirement)
+        if not isinstance(mapped, dict):
+            issues.append(prefix + "quality_evidence.%s必须提供section和可追溯fragment" % requirement)
+            continue
+        section = mapped.get("section")
+        fragment = str(mapped.get("fragment", "") or "").strip()
+        if section not in allowed or len(fragment) < 3 or fragment not in sections.get(section, ""):
+            issues.append(prefix + "quality_evidence未将%s以真实fragment落实到提示词段落" % requirement)
 
 
 def _validate_generation_control(prefix, control, issues):

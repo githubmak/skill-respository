@@ -3,7 +3,23 @@
   "canvas": "9:16",
   "visual_style": "",
   "genre": "",
+  "performance_direction": {
+    "causal_chain": "情绪由剧情触发、景别可见的表情控制、细部或已确认道具泄露、身体承接、声音或呼吸落点和可见残留组成",
+    "detail_leak_policy": "每个节拍只选择当前景别可见的一条细部或道具泄露路径，不堆叠身体部位",
+    "non_speaking_reaction": "非说话人物只对可感知事件给出一次自然反应，并保持正确口型边界",
+    "editorial_policy": "镜头变化只响应表演重音；连续镜保持一条轨迹，情绪驱动镜头组允许有动机的反打、细节切换、推近、重构图或跟随"
+  },
+  "quality_policy": {
+    "model_agnostic_gates": true,
+    "double_qa": true,
+    "auto_repair": true,
+    "profile_routing": true
+  },
+  "_quality_policy_desc": "所有模型和所有镜头都必须经过同一质量合同、确定性QA、语义QA与最终验证。profile_routing仅跳过无关人物分析，不降低环境、物件或人物镜的质量要求。",
+  "_performance_direction_desc": "用户可按项目改写表演方向卡。它是创作输入而非模型负面词；不得填入示例专属人物、剧情、道具、场景或画风。",
   "max_shot_duration": 15,
+  "max_static_shot_duration": 6,
+  "_max_static_shot_duration_desc": "单一微表情、一次视线变化、静态压场或群体凝视的默认上限。超过该值的 Phase 1 子镜必须填写 duration_rationale（continuous_dialogue/continuous_interaction/continuous_action/sustained_reveal）与有序 dramatic_beats；氛围、余韵、压迫或停顿本身不能作为延长理由。",
   "output_type": "动态视频",
   "target_platform": "即梦",
   "_target_platform_desc": "目标平台可为即梦/可灵/Runway/Veo等。平台适配只影响参考资产句法、提示词语序和稳定性控制；不得把平台示例题材或画风写成默认。",
@@ -14,8 +30,23 @@
     "reference_assets": []
   },
   "_generation_control_desc": "mode只允许t2v/i2v/r2v。关键人物一致性优先i2v，关键表演或复杂动作有参考视频时优先r2v。reference_assets只填用户本次提供或项目已确认的真实资源，每项格式为{type:path, path:真实路径或资源ID, applies_to:[subshot_id], prompt_handle:可选平台引用标记}；不得伪造路径、平台槽位或引用标记。",
+  "storyboard_grid": {
+    "enabled": false,
+    "selection_mode": "auto",
+    "minimum_score": 4,
+    "max_chains_per_scene": 2
+  },
+  "_storyboard_grid_desc": "Phase 0 必须询问是否需要自动九宫格剧情包。用户明确“不需要”时设为false，状态机跳过九宫格判断、缓存和导出，不改变T2V/I2V/R2V主流程。设为true时，仅在editor_pass2后自动从已通过的T2V提示词、表演合同、连续性合同和抽卡风险中挑选关键连续镜头链，导出九宫格总图生图提示词与P01-P09剧情节拍；不得切换生成模式或伪造参考资产。",
   "export_base": "",
-  "_export_base_desc": "必须由用户在本次运行中明确提供输出文件位置/输出目录后填写；禁止默认当前目录、工作区目录、源文件目录、上次目录或自动生成目录。",
+  "_export_base_desc": "必须由用户在本次运行中明确提供输出文件位置/输出目录后填写；禁止默认当前目录、工作区目录、源文件目录、上次目录或自动生成目录。所有 run_dir、.cache、dispatch、review、analysis、composer、director、continuity 中间文件都必须位于 export_base 下。",
+  "confirmation": {
+    "config_version": 2,
+    "confirmed_at": "",
+    "confirmed_fields": [],
+    "confirmed_values": {},
+    "confirmed_values_sha256": ""
+  },
+  "_confirmation_desc": "模板值不等于用户确认。仅在用户明确确认本次基础配置后，写入 confirmed_at，并在 confirmed_fields 中列出 export_base、canvas、visual_style、max_shot_duration、target_platform、generation_control.mode、generation_control.audio_enabled、generation_control.reference_assets、storyboard_grid.enabled；同时写入 confirmed_values 及其哈希。任一确认值变更时必须回到对应逐项确认轮次。没有此记录不得续跑、合成、修复或导出。",
   "run_timestamp": "",
   "character_list": [],
   "global_negative_prompt": "",

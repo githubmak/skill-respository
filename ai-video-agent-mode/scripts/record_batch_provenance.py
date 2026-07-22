@@ -119,10 +119,15 @@ def _mark_dispatch_recorded(run_dir, phase, dispatch_id, validation_mode):
     if isinstance(dispatch, dict):
         dispatch["status"] = "done" if validation_mode == "full" else "partial"
         dispatch["recorded_at"] = time.time()
+        if isinstance(dispatch.get("spawn_time"), (int, float)):
+            dispatch["elapsed_seconds"] = round(max(dispatch["recorded_at"] - dispatch["spawn_time"], 0), 3)
     dispatches = phase_state.get("dispatches", {})
     statuses = [entry.get("status") for entry in dispatches.values() if isinstance(entry, dict)]
     if statuses and all(status == "done" for status in statuses):
         phase_state["status"] = "done"
+        phase_state["completed_at"] = time.time()
+        if isinstance(phase_state.get("spawn_time"), (int, float)):
+            phase_state["elapsed_seconds"] = round(max(phase_state["completed_at"] - phase_state["spawn_time"], 0), 3)
     elif validation_mode == "partial":
         phase_state["status"] = "waiting"
     save_state(run_dir, state)
@@ -170,11 +175,13 @@ def _validate(phase, batch_path, run_dir, validation_report_path=None):
         data = _load(batch_path)
         valid = (
             isinstance(data, dict)
-            and data.get("pass") is True
+            and isinstance(data.get("pass"), bool)
             and isinstance(data.get("blocking"), list)
-            and not data.get("blocking")
             and isinstance(data.get("warnings"), list)
             and isinstance(data.get("repair_targets"), list)
+            and all(isinstance(data.get(field), str) and data.get(field) for field in (
+                "prompt_package_sha256", "director_sha256", "review_packet_sha256"
+            ))
         )
         return "editor_pass2_contract", valid
     return "json_parse", isinstance(_load(batch_path), dict)

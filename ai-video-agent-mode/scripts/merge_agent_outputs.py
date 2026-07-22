@@ -11,7 +11,10 @@ def merge_agent_outputs(output_path, *input_paths, require_provenance=False):
     """Merge multiple agent JSON outputs into one, deduplicating by subshot_id."""
     seen = {}
     all_items = []
-    stats = {'files': 0, 'total_from_files': 0, 'duplicates': 0, 'merged': 0, 'invalid_provenance': 0}
+    stats = {
+        'files': 0, 'total_from_files': 0, 'duplicates': 0, 'merged': 0,
+        'invalid_provenance': 0, 'partial_subshots_excluded': 0,
+    }
     source_manifests = []
 
     for path in input_paths:
@@ -30,6 +33,17 @@ def merge_agent_outputs(output_path, *input_paths, require_provenance=False):
             continue
 
         items = data.get('items', data.get('shots', []))
+        if require_provenance and manifest.get('validation_mode') == 'partial':
+            # A partial batch is evidence only for the records that passed its
+            # validator. Failed records remain in the worker file for audit,
+            # but must wait for their unique retry batch before public merge.
+            allowed_subshots = set(manifest.get('validated_subshot_ids', []))
+            original_count = len(items)
+            items = [
+                item for item in items
+                if not isinstance(item, dict) or item.get('subshot_id') in allowed_subshots
+            ]
+            stats['partial_subshots_excluded'] += original_count - len(items)
         stats['files'] += 1
         stats['total_from_files'] += len(items)
 
@@ -39,9 +53,12 @@ def merge_agent_outputs(output_path, *input_paths, require_provenance=False):
                 all_items.append(item)
                 continue
             if sid in seen:
+                # Retry packets are appended after their original batch.  Keep the
+                # verified replacement, rather than silently restoring stale work.
                 stats['duplicates'] += 1
+                all_items[seen[sid]] = item
                 continue
-            seen[sid] = True
+            seen[sid] = len(all_items)
             all_items.append(item)
 
     stats['merged'] = len(all_items)

@@ -26,7 +26,7 @@ GATES = {
         "validator": "scene_analysis"
     },
     "camera_movement": {
-        "input": [".cache/orchestrator/shot_plan.json"],
+        "input": [".cache/orchestrator/shot_plan.json", ".cache/analysis/emotion_output.json"],
         "output": [".cache/analysis/camera_output.json"],
         "validator": "camera_movement"
     },
@@ -59,6 +59,16 @@ GATES = {
     "editor_pass2": {
         "input": [".cache/composer/merged.prompt_package.json"],
         "output": ["review/llm_gate_result.json"],
+        "validator": None
+    },
+    "grid_storyboard": {
+        "input": [
+            ".cache/composer/merged.prompt_package.json",
+            ".cache/orchestrator/shot_plan.json",
+            ".cache/director/director_pass.json",
+            "project_config.json",
+        ],
+        "output": [".cache/grid_storyboard/packages.json"],
         "validator": None
     },
     "validate": {

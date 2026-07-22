@@ -13,19 +13,13 @@ DIALOGUE_CHARS_PER_SEC = 4.5
 PAUSE_PER_PUNCTUATION = 0.3     # seconds per ,/、/；
 PAUSE_PER_SENTENCE_END = 0.5     # seconds per 。/！/？/……
 ACTION_TIME_BASE = 2.0           # default action time per subshot (seconds)
-
-# Emotion-based speed adjustment (multiplier on base 4.5 chars/sec)
-EMOTION_SPEED = {
-    "激动": 1.2, "兴奋": 1.2, "慌乱": 1.1, "炸裂": 1.2,
-    "崩溃": 1.1, "热情": 1.1, "愉快": 1.1, "急切": 1.2,
-    "催促": 1.2,
-    "迟疑": 0.85, "压抑": 0.85, "阴沉": 0.85, "低落": 0.8,
-    "委屈": 0.85, "嘲讽": 0.8, "威胁": 0.8, "冷淡": 0.85,
-    "忰忐": 0.85, "隐忍": 0.85, "暗沉": 0.85, "失落": 0.85,
-    "无奈": 0.9, "无语": 0.9, "吐槽": 0.95,
+DEFAULT_MAX_STATIC_SECONDS = 6.0
+LONG_DURATION_RATIONALES = {
+    "continuous_dialogue",
+    "continuous_interaction",
+    "continuous_action",
+    "sustained_reveal",
 }
-DEFAULT_SPEED_FACTOR = 1.0
-
 
 # Emotion-based speed adjustment (multiplier on base 4.5 chars/sec)
 EMOTION_SPEED = {
@@ -92,6 +86,48 @@ def _estimate_action_seconds(base_action, subshot=None):
     return min(total, 8.0)
 
 
+def _long_duration_issues(subshot, duration, dialogue_secs, action_secs, max_static_seconds):
+    """Reject long clips whose duration is supported only by atmosphere or a hold.
+
+    A long take remains available, but the Phase 1 plan must state the causal
+    reason and the visible beats that consume its time. This catches the common
+    case where a single glance or a group freeze is stretched to 10-15 seconds.
+    """
+    if duration <= max_static_seconds + 1e-6:
+        return []
+
+    rationale = str(subshot.get("duration_rationale", "") or "").strip()
+    beats = subshot.get("dramatic_beats", [])
+    if rationale not in LONG_DURATION_RATIONALES:
+        return [
+            "duration_overfilled",
+            duration,
+            "<=%.1fs, or duration_rationale in %s with concrete dramatic_beats"
+            % (max_static_seconds, "/".join(sorted(LONG_DURATION_RATIONALES))),
+        ]
+    if not isinstance(beats, list) or len(beats) < 2 or any(not str(beat).strip() for beat in beats):
+        return [
+            "duration_beats_missing",
+            duration,
+            "long shot needs at least 2 ordered dramatic_beats; atmosphere/hold/residue alone is insufficient",
+        ]
+
+    if rationale == "continuous_dialogue" and dialogue_secs < 3.0:
+        return ["duration_rationale_unsupported", rationale, "continuous_dialogue needs >=3.0s spoken content"]
+    if rationale == "continuous_interaction" and (
+        len(subshot.get("dialogue_refs", []) or []) < 2 or dialogue_secs < 3.0
+    ):
+        return ["duration_rationale_unsupported", rationale, "continuous_interaction needs >=2 dialogue turns and >=3.0s spoken content"]
+    if rationale == "continuous_action" and action_secs < 4.0:
+        return ["duration_rationale_unsupported", rationale, "continuous_action needs multiple visible action beats"]
+    if duration > 10.0:
+        if len(beats) < 3:
+            return ["duration_beats_missing", duration, ">10s needs at least 3 ordered dramatic_beats"]
+        if rationale == "sustained_reveal" and action_secs < 4.0:
+            return ["duration_rationale_unsupported", rationale, "sustained_reveal needs an on-screen reveal process, not a static reaction"]
+    return []
+
+
 def validate(sp_path, max_per_shot=15, max_total=600, project_config_path=None):
     """Validate shot durations + dialogue-content timing.
 
@@ -106,6 +142,7 @@ def validate(sp_path, max_per_shot=15, max_total=600, project_config_path=None):
     """
     ensure_pycache_prefix_from_path(sp_path)
 
+    max_static_seconds = DEFAULT_MAX_STATIC_SECONDS
     if project_config_path and os.path.exists(project_config_path):
         try:
             with open(project_config_path, "r", encoding="utf-8-sig") as f:
@@ -116,6 +153,9 @@ def validate(sp_path, max_per_shot=15, max_total=600, project_config_path=None):
             mt = cfg.get("max_total_duration")
             if mt:
                 max_total = int(mt)
+            static_limit = cfg.get("max_static_shot_duration")
+            if isinstance(static_limit, (int, float)) and not isinstance(static_limit, bool) and static_limit >= 2.5:
+                max_static_seconds = float(static_limit)
         except Exception:
             pass
 
@@ -166,6 +206,13 @@ def validate(sp_path, max_per_shot=15, max_total=600, project_config_path=None):
                 issues.append(("%s/%s" % (sid, ssid), "duration_too_short",
                     d, ">=%.1f (dialogue %.1fs + action %.1fs)" % (
                         needed_secs, total_dialogue_secs, action_secs)))
+
+            long_issue = _long_duration_issues(
+                ss, d, total_dialogue_secs, action_secs, max_static_seconds
+            )
+            if long_issue:
+                field, value, expected = long_issue
+                issues.append(("%s/%s" % (sid, ssid), field, value, expected))
 
         if shot_dur > max_per_shot:
             issues.append((sid, "shot_duration", shot_dur, "<=%d" % max_per_shot))

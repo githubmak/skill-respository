@@ -36,6 +36,14 @@ def check(run_dir, phase=None, strict=False):
     
     result = {"pass": True, "bypass_detected": False, "issues": []}
     phase_info = state["phases"].get(phase, {})
+
+    export_base_issue = _export_base_issues(run_dir)
+    if export_base_issue:
+        result["issues"].append({
+            "check": "EXPORT_BASE",
+            "severity": "blocking",
+            "msg": export_base_issue,
+        })
     
     # ==== CHECK 1: Input files exist ====
     for inp in phase_config.get("input", []):
@@ -140,8 +148,8 @@ def check(run_dir, phase=None, strict=False):
                     })
     
     # ==== CHECK 5: Hybrid deterministic + LLM review packet ====
-    if phase in ("qa_integration", "prompt_composer", "editor_pass2", "validate"):
-        require_llm = phase in ("editor_pass2",)
+    if phase in ("editor_pass2", "validate"):
+        require_llm = phase in ("editor_pass2", "validate")
         hg = hybrid_gate(run_dir, phase=phase, require_llm=require_llm)
         for iss in hg.get("issues", []):
             result["issues"].append({
@@ -228,7 +236,7 @@ def _validate_analysis_items(run_dir, phase, output_path):
             })
         seen.add(subshot_id)
 
-    expected = _expected_subshot_ids(run_dir)
+    expected = _expected_subshot_ids(run_dir, phase)
     if expected:
         output_ids = {item.get("subshot_id") for item in items if isinstance(item, dict)}
         missing = sorted(expected - output_ids)
@@ -250,7 +258,7 @@ def _validate_analysis_items(run_dir, phase, output_path):
     return issues
 
 
-def _expected_subshot_ids(run_dir):
+def _expected_subshot_ids(run_dir, phase=None):
     path = os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json")
     if not os.path.exists(path):
         return set()
@@ -259,6 +267,14 @@ def _expected_subshot_ids(run_dir):
             plan = json.load(f)
     except (json.JSONDecodeError, IOError):
         return set()
+    if phase == "emotion_analysis":
+        from shot_semantics import requires_emotion_analysis
+        return {
+            ss.get("subshot_id")
+            for shot in plan.get("shots", [])
+            for ss in shot.get("subshots", [])
+            if ss.get("subshot_id") and requires_emotion_analysis(ss)
+        }
     return {
         ss.get("subshot_id")
         for shot in plan.get("shots", [])
@@ -283,6 +299,29 @@ def _resolve_output_path(run_dir, path):
     if path.startswith(".cache"):
         return os.path.join(run_dir, path)
     return os.path.join(run_dir, ".cache", path)
+
+
+def _export_base_issues(run_dir):
+    cfg_path = os.path.join(run_dir, "project_config.json")
+    if not os.path.exists(cfg_path):
+        return ""
+    try:
+        with open(cfg_path, "r", encoding="utf-8-sig") as handle:
+            cfg = json.load(handle)
+    except (json.JSONDecodeError, IOError):
+        return "project_config.json cannot be parsed"
+    export_base = str(cfg.get("export_base", "") or "").strip()
+    if not export_base:
+        return "project_config.export_base missing"
+    export_base = os.path.abspath(export_base)
+    run_abs = os.path.abspath(run_dir)
+    try:
+        common = os.path.commonpath([run_abs, export_base])
+    except ValueError:
+        return "run_dir and export_base are on different roots"
+    if common != export_base:
+        return "run_dir must be created under export_base"
+    return ""
 
 
 if __name__ == "__main__":
@@ -344,4 +383,3 @@ def _validate_item(item, phase):
         if isinstance(val, str) and len(val) < 5:
             return False
     return True
-

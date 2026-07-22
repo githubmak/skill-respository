@@ -20,7 +20,7 @@
 
 读取 `references/dynamic_performance_reference.md` 的 `0. 使用边界`、`1. 动态选择协议`、`运镜节奏与情绪匹配`、`肢体动作映射`。该文件只作为景别、焦距、运镜、节奏和动作物理约束的参考源，不得照抄模板句。
 
-每个镜头先判断叙事功能，再选择一种主要运镜：情绪推进可用慢推，关系疏离可用后拉，动作展示优先跟拍或中景，悬念揭示可用单向摇移。微表情和口型镜头必须优先保证可见性和稳定焦点，避免剧烈甩镜、广角脸部变形或不必要的环绕。连续互动可在同一戏剧目标内发生一次由台词/动作触发的注意力交接；第二种运动方向、第二个独立戏剧目标或反复抢焦才拆成下一子镜。
+每个镜头先读取 `performance_chain` 和 packet 中的 `scene_analysis`，再选择镜头响应：情绪推进可用慢推，细部/道具泄露可用切细节或移镜，身体承接可用跟随或重构图，语气落点可用反打或特写停留。必须用 Scene 的 `char_positions` 锁轴线与构图，用 `light_direction/light_temp` 保持同源光，用 `prop_state` 控制焦点/遮挡，用 `start_carryover/end_carryover` 锁定起落幅；在输出 `scene_anchor_usage` 中逐项写出实际使用的锚点。微表情和口型镜头必须优先保证可见性和稳定焦点，避免剧烈甩镜、广角脸部变形或不必要的环绕。连续互动可在同一戏剧目标内发生一次由台词/动作触发的注意力交接；第二种运动方向、第二个独立戏剧目标或反复抢焦才拆成下一子镜。
 
 ## 核心原则：叙事驱动运镜
 
@@ -65,7 +65,7 @@
 2. `movement_type` 只允许：固定、推、拉、摇、移、跟、升、降、俯、仰、环绕、甩、变焦、旋转、手持、穿梭
 3. 每镜必须有 movement_detail（即使是固定，也要描述为什么不运镜）
 4. 运镜速度必须标注定性等级；只有速度决定戏剧效果时才增加一个数值锚点
-5. 同一子镜禁止 pan+tilt、推+摇、环绕+变焦等竞争复合运镜；同方向的起动、匀速、减速、停定属于同一运镜
+5. `continuous_take` 禁止 pan+tilt、推+摇、环绕+变焦等竞争复合运镜；同方向的起动、匀速、减速、停定属于同一运镜。`motivated_sequence` 不把反打、切特写或一次移镜视作竞争运镜，但每个变化必须在 `camera_beat_map` 中对应一个表演触发与状态承接
 6. 运动弧线（movement_arc_deg）必须与 movement_detail 一致
 7. 注意力交接只选一种主策略：固定双人构图内一次拉焦、一次单向摇/移重构图、或演员走位改变画面权重且机位固定。禁止推+摇+变焦+拉焦叠加。
 
@@ -200,6 +200,26 @@
       "movement_detail": "从4步处缓慢推至2步，速度0.05m/s，约3秒完成，焦点从环境收窄到面部",
       "movement_arc_deg": 30,
       "movement_speed": "平缓匀速/缓慢/中速/快速",
+      "editorial_mode": "continuous_take/motivated_sequence",
+      "camera_beat_map": [
+        {
+          "trigger": "表演链中的具体重音",
+          "visual_priority": "当前主要人物、道具或关系",
+          "camera_response": "hold/push_in/reframe/cut_reaction/cut_detail/follow",
+          "time_range": "发生本次镜头响应的时间窗",
+          "focus_subject": "承担本节拍的人物、手部或道具",
+          "framing": "该节拍落幅的景别与构图",
+          "axis_relation": "相对既有轴线的同侧/反打关系与左右位置",
+          "transition_type": "hold/motivated_cut/motivated_reframe/continuous_move",
+          "carryover": "切换后必须继承的状态"
+        }
+      ],
+      "scene_anchor_usage": {
+        "position_anchor": "角色A在画面左侧、角色B在右侧，保持既定左右关系",
+        "light_anchor": "沿用左后方3200K暖光，反打不改变主光方向",
+        "prop_anchor": "外套仍在角色A肩上，细节切换不改变归属",
+        "carryover_anchor": "从上一镜双人站位开始，落在角色B右侧不越轴"
+      },
       "axis_start": "角色A面朝左侧餐桌区域",
       "axis_end": "角色A面朝楼梯方向",
       "composition": "三分/中央/对称/引导线",

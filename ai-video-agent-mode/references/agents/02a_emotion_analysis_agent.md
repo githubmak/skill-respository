@@ -79,6 +79,14 @@ items=[
       "action_beat_transition": "目光从左至右缓缓扫过，15字以内",
       "action_beat_end": "转身走向楼梯方向，15字以内",
       "emotion_trigger_short": "看到对方担忧眼神，15字以内",
+      "performance_chain": {
+        "trigger": "剧情触发原因",
+        "facial_control": "当前景别可见的眼神、眉尾、嘴角或呼吸变化",
+        "detail_leak": "指尖、袖口、领口、手机、外套或已确认道具的第一泄露",
+        "body_follow_through": "肩背、重心、步伐或接触关系承接",
+        "voice_delivery": "台词/OS/OV的语气，或无台词时的呼吸落点",
+        "end_residue": "下一节拍可继承的可见状态"
+      },
       "per_char_actions": [
         {
           "character": "角色A",
@@ -99,3 +107,5 @@ items=[
 `items` 数组顺序必须与 dispatch packet 的 `items` 顺序一致；每个输入 `subshot_id` 必须且只能对应一个输出 item。
 
 每个 item 必须同时包含 `id` 与 `subshot_id`，且二者完全相同。多人镜必须写 `per_char_actions[]` 覆盖所有出场角色，每个角色含 `performance_role`；有人物镜头恰好一个 primary，最多一个 supporting，其余 background。
+
+`performance_chain` 是本阶段最优先的交接物。先找剧情触发，再从当前景别可见的脸部控制或细部/道具泄露开始，随后才写肩背、重心、步伐和声音。不能把所有部位逐项堆进一个镜头；选择最能承载情绪的一条身体传播路径。

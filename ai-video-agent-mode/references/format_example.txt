@@ -10,6 +10,9 @@
       "negative_prompt": "{{NEGATIVE_PROMPT_AUTO_INJECT}}",
       "qa_metadata": {
         "dramatic_goal": "以沈星洲停步和陆序回望建立两人认出彼此但尚未开口的关系压力",
+        "editorial_mode": "continuous_take",
+        "camera_beat_map": [],
+        "sequence_context": {},
         "performance_priority": {
           "primary": "沈星洲",
           "supporting": ["陆序"],
@@ -19,7 +22,8 @@
           "primary_action_count": 1,
           "emotion_turn_count": 1,
           "supporting_reaction_count": 1,
-          "camera_move_count": 1
+          "physical_camera_move_count": 1,
+          "editorial_response_count": 0
         },
         "start_state": "沈星洲自左侧行进，陆序保持右侧社交站姿",
         "end_state": "沈星洲左侧停住，陆序右侧闭口回望，中间形成视线通道",
@@ -54,11 +58,15 @@
           "supporting": ["甲"],
           "background": []
         },
+        "editorial_mode": "continuous_take",
+        "camera_beat_map": [],
+        "sequence_context": {},
         "action_budget": {
           "primary_action_count": 2,
           "emotion_turn_count": 1,
           "supporting_reaction_count": 1,
-          "camera_move_count": 0
+          "physical_camera_move_count": 0,
+          "editorial_response_count": 0
         },
         "start_state": "甲画左清晰发问，乙画右压住反应",
         "end_state": "乙画右清晰压住折纸，甲画左保持支持层，两人仍同框",
@@ -127,11 +135,15 @@
           "supporting": [],
           "background": []
         },
+        "editorial_mode": "continuous_take",
+        "camera_beat_map": [],
+        "sequence_context": {},
         "action_budget": {
           "primary_action_count": 1,
           "emotion_turn_count": 1,
           "supporting_reaction_count": 0,
-          "camera_move_count": 0
+          "physical_camera_move_count": 0,
+          "editorial_response_count": 0
         },
         "start_state": "丙原地看向空间出口，双手自然停在身侧",
         "end_state": "丙视线回到空间出口，右手保持收拢，口型闭合",

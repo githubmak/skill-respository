@@ -157,7 +157,7 @@ def timeline_issues(full_prompt, duration, tolerance=0.08):
     return issues
 
 
-def action_budget_limits(duration, is_fight=False):
+def action_budget_limits(duration, is_fight=False, editorial_mode="continuous_take"):
     """Return maximum executable events for one generated clip."""
     try:
         seconds = float(duration or 0)
@@ -169,13 +169,15 @@ def action_budget_limits(duration, is_fight=False):
             "primary_action_count": 1,  # one uninterrupted causal choreography chain
             "emotion_turn_count": 1,
             "supporting_reaction_count": contact_limit,
-            "camera_move_count": 1,
+            "physical_camera_move_count": 1,
+            "editorial_response_count": 0,
         }
     return {
         "primary_action_count": 1 if seconds <= 6 else 2,
         "emotion_turn_count": 1,
         "supporting_reaction_count": 1 if seconds <= 6 else 2,
-        "camera_move_count": 1,
+        "physical_camera_move_count": 1,
+        "editorial_response_count": 0 if editorial_mode == "continuous_take" else (2 if seconds <= 6 else 3),
     }
 
 
@@ -184,7 +186,8 @@ def action_budget_issues(metadata, duration, is_fight=False):
     budget = metadata.get("action_budget", {})
     if not isinstance(budget, dict):
         return ["qa_metadata.action_budget必须是对象"]
-    limits = action_budget_limits(duration, is_fight)
+    editorial_mode = metadata.get("editorial_mode", "continuous_take")
+    limits = action_budget_limits(duration, is_fight, editorial_mode)
     issues = []
     for key, limit in limits.items():
         value = budget.get(key)
@@ -192,6 +195,14 @@ def action_budget_issues(metadata, duration, is_fight=False):
             issues.append(f"action_budget.{key}必须是非负整数")
         elif value > limit:
             issues.append(f"action_budget.{key}={value}超过上限{limit}")
+    beats = metadata.get("camera_beat_map", [])
+    if editorial_mode == "motivated_sequence":
+        if not isinstance(beats, list) or not 1 <= len(beats) <= 3:
+            issues.append("motivated_sequence必须提供1-3项camera_beat_map")
+        elif budget.get("editorial_response_count") != len(beats):
+            issues.append("action_budget.editorial_response_count必须等于camera_beat_map数量")
+    elif isinstance(beats, list) and beats:
+        issues.append("continuous_take不得包含camera_beat_map")
     return issues
 
 
@@ -573,17 +584,17 @@ def attention_handoff_issues(metadata, full_prompt):
     return issues
 
 
-def camera_competition_issues(full_prompt):
-    """Reject competing camera controls while allowing one documented focus transfer."""
+def camera_competition_issues(full_prompt, editorial_mode="continuous_take"):
+    """Reject competing controls in a take, while preserving motivated editorial beats."""
     sections = split_sections(full_prompt, PROMPT_LABELS)
     design = sections.get("镜头设计", "")
     timeline = sections.get("表演时间轴", "")
     issues = []
     moves = camera_move_types(design)
-    if len(moves) > 1:
+    if editorial_mode != "motivated_sequence" and len(moves) > 1:
         issues.append("镜头设计叠加多种主要运镜：" + "/".join(sorted(moves)))
     has_focus_transfer = bool(FOCUS_TRANSFER_RE.search(design))
-    if has_focus_transfer and moves:
+    if editorial_mode != "motivated_sequence" and has_focus_transfer and moves:
         issues.append("物理运镜/变焦与拉焦同时叠加，形成竞争控制")
     if re.search(r"(?:再|再次|重新).{0,12}(?:拉焦|焦点.{0,6}(?:转|移|回))|[^。；]{0,12}→[^。；]{0,12}→", design + timeline):
         issues.append("同一镜头发生反复注意力抢焦")

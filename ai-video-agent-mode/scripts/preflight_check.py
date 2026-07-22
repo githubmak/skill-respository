@@ -10,7 +10,7 @@ from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_pr
 
 block_source_pycache_until_run_dir()
 from validate_durations import validate as validate_durations
-from shot_semantics import requires_base_action, requires_characters
+from shot_semantics import is_declared_non_action, is_implicit_character_action, render_anchor, requires_base_action, requires_characters
 
 
 def run(run_dir):
@@ -53,6 +53,13 @@ def run(run_dir):
             dialogue_refs = ss.get("dialogue_refs", []) or []
             shot_size = ss.get("shot_size", "")
             shot_type = ss.get("shot_type", "") or ss.get("visual_type", "") or ss.get("purpose", "")
+            if is_declared_non_action(ss):
+                if ss.get("non_character_confirmed") is not True:
+                    issues.append(_issue(ssid, "NON_CHARACTER_CONFIRMATION_MISSING", "non-character insert must set non_character_confirmed=true"))
+                if not render_anchor(ss):
+                    issues.append(_issue(ssid, "NON_CHARACTER_RENDER_ANCHOR_MISSING", "non-character insert must provide visual_intent/image_subject/atmosphere"))
+                if dialogue_refs or characters or is_implicit_character_action(base_action):
+                    issues.append(_issue(ssid, "NON_CHARACTER_CONFIRMATION_CONTRADICTION", "non_character_confirmed=true conflicts with dialogue, visible characters, or implicit human action"))
             if not base_action and requires_base_action(ss):
                 issues.append(_issue(ssid, "BASE_ACTION_MISSING", "base_action required for character/action/dialogue shots; use visual_intent/shot_type for true non-action shots"))
             if not characters and requires_characters(base_action, dialogue_refs, shot_size, shot_type):

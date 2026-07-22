@@ -11,6 +11,7 @@
 2. 将每个独立剧情节拍拆分为主镜头（shot），同一节拍内部的景别变化/反应/插入镜头拆为子镜头（subshot）
 3. 每镜分配 shot_id（格式: S{场}-{镜}）和 subshot_id（格式: {shot_id}-{序号}）
 4. 为每镜标注 duration、base_action、characters、dialogue_refs
+5. 对有人物表演的子镜先写 `performance_chain`：触发原因、表情控制、细部/道具泄露、身体承接、语气/呼吸和残留；再据此选择 `editorial_mode`。需要自然反打、切特写或移镜时，使用 `motivated_sequence` 和最多三项 `camera_beat_map`，每项必须说明表演触发与承接状态。
 
 ## 主镜头 / 子镜头边界
 
@@ -20,6 +21,7 @@
 - 不同剧情节拍不得为了凑时长合并；同一剧情节拍不得因为单纯景别变化拆成多个主镜头。
 - 主镜头总时长不得超过 `project_config.max_shot_duration`；超出时只在完整语义边界拆成连续主镜头。
 - 同场景多人互动可在一个连续 subshot 内保留 2–3 个因果节拍、多个短台词轮次和一次由说话/动作触发的注意力交接；只有换轴、第二个独立戏剧目标、反复抢焦、插入特写、第二个独立情绪转折、第二条无关动作链或时长超限才拆分。
+- `motivated_sequence` 不是机械拆分：它允许同一剧情目标随着“眼神停住 → 指尖/道具泄露 → 身体承接 → 语气落点”自然改变景别或视角。若没有这样的可见重音，使用 `continuous_take`，不为制造电影感强行切镜。
 
 ## 时长计算规则
 
@@ -86,9 +88,20 @@
           "base_action": "子镜头动作描述；纯空镜/物件/环境/转场等非动作镜头可为空",
           "shot_type": "performance | empty | object | environment | transition | black | still | insert",
           "visual_intent": "base_action为空时必填：说明画面主体、氛围或转场作用",
+          "non_character_confirmed": false,
           "characters": ["角色A"],
           "dialogue_refs": ["D-01"],
-          "emotion_tone": "紧张"
+          "emotion_tone": "紧张",
+          "performance_chain": {
+            "trigger": "剧情触发",
+            "facial_control": "景别可见的表情变化",
+            "detail_leak": "已确认道具或细部动作",
+            "body_follow_through": "肩背、重心或步伐承接",
+            "voice_delivery": "语气或呼吸落点",
+            "end_residue": "下一节拍承接状态"
+          },
+          "editorial_mode": "continuous_take | motivated_sequence",
+          "camera_beat_map": []
         }
       ]
     }
@@ -100,6 +113,6 @@
 - shot_id 格式: S{场号}-{镜号}（两位段）
 - subshot_id 格式: S{场号}-{镜号}-{子序号}（三段）
 - 每镜 total_duration = sum(subshot.duration)
-- characters 列表包含本镜头所有出现角色；空镜、背景、物件/道具特写、环境转场允许为空，但必须在 `shot_type` / `visual_type` / `purpose` 或 `base_action` 中明确标记为非人物镜头
+- characters 列表包含本镜头所有出现角色。空镜、背景、物件/道具特写、环境转场必须设置 `non_character_confirmed=true`；它表示画面没有可见人物、人物动作或台词。若存在人物名、身体动作、角色背影、台词或OS/OV归属，必须设为 `false` 并填入 `characters`，不能以环境标签规避情绪分析。
 - base_action 对人物/台词/动作镜头必填；纯空镜、黑场、静帧、物件插入等非动作镜头可为空，但必须填写 `shot_type`，并填写 `visual_intent` / `image_subject` / `atmosphere` 之一
 - dialogue_refs 引用源文本中的对话/OS/OV标记

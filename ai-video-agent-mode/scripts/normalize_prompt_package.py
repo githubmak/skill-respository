@@ -95,8 +95,12 @@ def _legacy_qa_metadata(item, original_prompt):
             "primary_action_count": 1 if primary else 0,
             "emotion_turn_count": 1 if primary else 0,
             "supporting_reaction_count": 1 if supporting else 0,
-            "camera_move_count": 1,
+            "physical_camera_move_count": 1,
+            "editorial_response_count": 0,
         },
+        "editorial_mode": "continuous_take",
+        "camera_beat_map": [],
+        "sequence_context": {},
         "start_state": str(item.get("start_state", "") or "旧版迁移待复核"),
         "end_state": str(item.get("end_state", "") or "旧版迁移待复核"),
         "dialogue_refs": item.get("dialogue_refs", []),
@@ -131,4 +135,3 @@ if __name__ == "__main__":
         print("usage: normalize_prompt_package.py <input.prompt_package.json> [output.prompt_package.json]")
         sys.exit(2)
     normalize_package(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)
-

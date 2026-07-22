@@ -3,6 +3,7 @@
 Deterministic scripts catch mechanical violations. The generated LLM review
 packet asks an editor agent to judge semantic continuity and story fit.
 """
+import hashlib
 import json
 import os
 import sys
@@ -14,7 +15,7 @@ from enhance_performance import audit as performance_audit
 from validate_prompt_package import validate as validate_prompt_package
 
 
-LLM_REVIEW_PHASES = {"qa_integration", "prompt_composer", "editor_pass2", "validate"}
+LLM_REVIEW_PHASES = {"editor_pass2", "validate"}
 
 
 def run(run_dir, phase=None, require_llm=False):
@@ -68,23 +69,34 @@ def run(run_dir, phase=None, require_llm=False):
             _add_issue(result, "continuity", str(exc), "warning")
 
     deterministic_blocking = any(i["severity"] == "blocking" for i in result["deterministic_issues"])
-    if phase in LLM_REVIEW_PHASES or prompt_path or director_path:
-        result["llm_review_packet"] = _write_llm_review_packet(
-            run_dir, phase, prompt_path, shot_plan_path, director_path, result["deterministic_issues"], skip_semantic=deterministic_blocking
-        )
+    if phase in LLM_REVIEW_PHASES:
         llm_result_path = os.path.join(run_dir, ".cache", "review", "llm_gate_result.json")
+        packet_path = os.path.join(run_dir, ".cache", "review", "llm_gate_review.md")
+        # Generate exactly once immediately before Editor Pass 2 dispatch. Once
+        # a result exists, that packet is immutable review evidence and is only
+        # hash-checked; rewriting it would invalidate a valid first review.
+        if not os.path.exists(llm_result_path):
+            result["llm_review_packet"] = _write_llm_review_packet(
+                run_dir, phase, prompt_path, shot_plan_path, director_path, result["deterministic_issues"], skip_semantic=deterministic_blocking
+            )
+        elif os.path.exists(packet_path):
+            result["llm_review_packet"] = packet_path
         if deterministic_blocking:
             result["llm_required"] = False
         elif os.path.exists(llm_result_path):
             with open(llm_result_path, "r", encoding="utf-8-sig") as f:
                 llm_result = json.load(f)
-            result["llm_review_result"] = llm_result
-            for item in llm_result.get("blocking", []):
-                _add_issue(result, "llm_review", item, "blocking")
-            for item in llm_result.get("warnings", []):
-                _add_issue(result, "llm_review", item, "warning")
-            if llm_result.get("pass") is False:
-                _add_issue(result, "llm_review", "LLM review marked pass=false", "blocking")
+            expected_hashes = _review_hashes(prompt_path, director_path, packet_path)
+            if not _review_matches(llm_result, expected_hashes):
+                _add_issue(result, "llm_review", "LLM review is missing or stale for the current prompt/director package", "blocking")
+            else:
+                result["llm_review_result"] = llm_result
+                for item in llm_result.get("blocking", []):
+                    _add_issue(result, "llm_review", item, "blocking")
+                for item in llm_result.get("warnings", []):
+                    _add_issue(result, "llm_review", item, "warning")
+                if llm_result.get("pass") is False:
+                    _add_issue(result, "llm_review", "LLM review marked pass=false", "blocking")
         elif require_llm:
             _add_issue(result, "llm_review", "Missing .cache/review/llm_gate_result.json", "blocking")
 
@@ -112,6 +124,7 @@ def _write_llm_review_packet(run_dir, phase, prompt_path, shot_plan_path, direct
     os.makedirs(review_dir, exist_ok=True)
     packet_path = os.path.join(review_dir, "llm_gate_review.md")
     result_path = os.path.join(review_dir, "llm_gate_result.json")
+    hashes = _review_hashes(prompt_path, director_path, packet_path)
     lines = [
         "# LLM Gate Review",
         "",
@@ -122,6 +135,9 @@ def _write_llm_review_packet(run_dir, phase, prompt_path, shot_plan_path, direct
         "- shot_plan: `%s`" % (shot_plan_path or "missing"),
         "- director_pass: `%s`" % (director_path or "missing"),
         "- prompt_package: `%s`" % (prompt_path or "missing"),
+        "- prompt_package_sha256: `%s`" % hashes["prompt_package_sha256"],
+        "- director_sha256: `%s`" % hashes["director_sha256"],
+        "- review_packet_sha256: written after this packet is finalized",
         "",
         "## 已由脚本检查的问题",
     ]
@@ -154,17 +170,63 @@ def _write_llm_review_packet(run_dir, phase, prompt_path, shot_plan_path, direct
             "```json",
             "{",
             "  \"pass\": true,",
+            "  \"prompt_package_sha256\": \"%s\"," % hashes["prompt_package_sha256"],
+            "  \"director_sha256\": \"%s\"," % hashes["director_sha256"],
+            "  \"review_packet_sha256\": \"<copy the packet footer hash>\",",
             "  \"blocking\": [],",
             "  \"warnings\": [],",
             "  \"repair_targets\": [",
-            "    {\"subshot_id\": \"S1-01-01\", \"send_back_to\": \"camera_movement|emotion_analysis|scene_analysis|prompt_composer|editor_pass2\", \"reason\": \"...\"}",
+            "    {\"subshot_id\": \"S1-01-01\", \"send_back_to\": \"camera_movement|emotion_analysis|scene_analysis|prompt_composer\", \"reason\": \"...\"}",
             "  ]",
             "}",
             "```",
         ])
     with open(packet_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
+    # The packet hash is part of the reviewer contract. Re-write the one
+    # placeholder line after the complete packet exists, then recompute it.
+    packet_hash = _review_packet_sha256(packet_path)
+    with open(packet_path, "a", encoding="utf-8") as f:
+        f.write("\n<!-- review_packet_sha256: %s -->\n" % packet_hash)
     return packet_path
+
+
+def _sha256(path):
+    if not path or not os.path.exists(path):
+        return "missing"
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _review_hashes(prompt_path, director_path, packet_path):
+    return {
+        "prompt_package_sha256": _sha256(prompt_path),
+        "director_sha256": _sha256(director_path),
+        "review_packet_sha256": _review_packet_sha256(packet_path),
+    }
+
+
+def _review_matches(review, expected):
+    return isinstance(review, dict) and all(
+        review.get(field) == value
+        for field, value in expected.items()
+    )
+
+
+def _review_packet_sha256(path):
+    """Hash review instructions while excluding their self-referential footer."""
+    if not path or not os.path.exists(path):
+        return "missing"
+    with open(path, "r", encoding="utf-8") as handle:
+        content = handle.read()
+    content = "\n".join(
+        line for line in content.splitlines()
+        if not line.startswith("<!-- review_packet_sha256:")
+    )
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 if __name__ == "__main__":

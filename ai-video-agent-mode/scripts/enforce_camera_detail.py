@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ensure the v4 镜头设计 section contains one complete main camera move."""
+"""Diagnose missing camera design without rewriting authored prompts."""
 
 import json
 import os
@@ -21,13 +21,8 @@ def enforce_camera_detail(run_dir):
         return 0
     with open(director_path, "r", encoding="utf-8-sig") as handle:
         director = json.load(handle)
-    camera_map = {
-        item.get("subshot_id", ""): item.get("movement_detail", item.get("camera", ""))
-        for item in director.get("items", [])
-    }
     with open(package_path, "r", encoding="utf-8-sig") as handle:
         package = json.load(handle)
-    fixed = 0
     issues = 0
     for shot in package.get("shots", package.get("items", [])):
         sections = split_sections(shot.get("full_prompt", ""), PROMPT_LABELS)
@@ -35,27 +30,13 @@ def enforce_camera_detail(run_dir):
             issues += 1
             continue
         design = sections["镜头设计"]
-        detail = str(camera_map.get(shot.get("subshot_id", ""), "") or "").strip()
-        if not detail:
+        if "主要运镜" not in design:
             issues += 1
-            continue
-        short = re.search(rf"主要运镜[：:]\s*({SHORT_MOVES})(?:[。；]|$)", design)
-        if short:
-            design = design[:short.start()] + "主要运镜：" + detail.rstrip("。") + "。" + design[short.end():]
-            sections["镜头设计"] = design.strip()
-            shot["full_prompt"] = "\n\n".join(f"{label}：{sections[label]}" for label in PROMPT_LABELS)
-            fixed += 1
-        elif "主要运镜" not in design:
-            sections["镜头设计"] = design.rstrip("。") + "。主要运镜：" + detail.rstrip("。") + "。"
-            shot["full_prompt"] = "\n\n".join(f"{label}：{sections[label]}" for label in PROMPT_LABELS)
-            fixed += 1
-    with open(package_path, "w", encoding="utf-8") as handle:
-        json.dump(package, handle, ensure_ascii=False, indent=2)
     if issues:
-        print(f"[ENFORCE V4] {fixed} fixed, {issues} blocking issue(s)")
+        print(f"[CAMERA CONTRACT] {issues} shot(s) missing authored camera design; return them to Composer")
     else:
-        print(f"[ENFORCE V4] PASS - {fixed} fixes")
-    return fixed
+        print("[CAMERA CONTRACT] PASS - no prompt was rewritten")
+    return issues
 
 
 def _find_prompt_package(run_dir):

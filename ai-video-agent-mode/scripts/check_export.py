@@ -36,10 +36,13 @@ FORBIDDEN_ENGINES = ["C4D", "Octane", "Blender", "Redshift", "Arnold", "Unreal E
 
 def check_export(md_path, run_dir, quality_mode=False):
     plan = _load(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"))
+    config = _load_optional(os.path.join(run_dir, "project_config.json"))
     package_path = _find_package(run_dir)
     package = _load(package_path) if package_path else {}
     director = _load_optional(os.path.join(run_dir, ".cache", "director", "director_pass.json"))
+    llm_review = _load_optional(os.path.join(run_dir, ".cache", "review", "llm_gate_result.json"))
     scene = _load_optional(os.path.join(run_dir, ".cache", "analysis", "scene_output.json"))
+    grid_packages = _load_optional(os.path.join(run_dir, ".cache", "grid_storyboard", "packages.json"))
     shots = package.get("shots", [])
     items = package.get("items", [])
     plan_map, scene_by_id = _plan_index(plan)
@@ -158,8 +161,9 @@ def check_export(md_path, run_dir, quality_mode=False):
                 fight_continuity_errors += 1
             fight_records.append((sid, metadata))
         budget = metadata.get("action_budget", {}) if isinstance(metadata, dict) else {}
-        camera_errors = camera_competition_issues(full_prompt) + attention_handoff_issues(metadata, full_prompt)
-        if not isinstance(budget, dict) or budget.get("camera_move_count") not in (0, 1) or camera_errors:
+        editorial_mode = metadata.get("editorial_mode", shot.get("editorial_mode", "continuous_take"))
+        camera_errors = camera_competition_issues(full_prompt, editorial_mode) + attention_handoff_issues(metadata, full_prompt)
+        if not isinstance(budget, dict) or budget.get("physical_camera_move_count") not in (0, 1) or camera_errors:
             camera_budget_issues += 1
         shot_size = director_map.get(sid, {}).get("shot_size", plan_item.get("shot_size", ""))
         if visibility_issues(full_prompt, shot_size):
@@ -232,8 +236,11 @@ def check_export(md_path, run_dir, quality_mode=False):
     check(28, "Story-correct eyeline", eyeline_issues == 0, f"{eyeline_issues} unauthorized")
     light_jumps = _light_jumps(plan, scene_by_id, scene_map)
     check(29, "Lighting continuity", light_jumps == 0, f"{light_jumps} unexplained jump(s)")
-    export_ok, export_detail = _export_check(md_path, quality_mode, expected_ids)
-    check(30, "Export separation/readability", export_ok and engine_issues == 0, export_detail + f"; engines={engine_issues}")
+    grid_enabled = _grid_enabled(config)
+    grid_expected = grid_enabled and bool(grid_packages.get("packages"))
+    export_ok, export_detail = _export_check(md_path, quality_mode, expected_ids, grid_enabled, grid_expected)
+    editor_ok, editor_detail = _editor_review_check(llm_review)
+    check(30, "Export separation/readiness", export_ok and engine_issues == 0 and editor_ok, export_detail + f"; engines={engine_issues}; editor={editor_detail}")
 
     total = 30
     passed = total - len(failures)
@@ -282,7 +289,7 @@ def _light_jumps(plan, scene_by_id, scene_map):
     return jumps
 
 
-def _export_check(md_path, quality_mode, expected_ids):
+def _export_check(md_path, quality_mode, expected_ids, grid_enabled=False, grid_expected=False):
     if quality_mode:
         return True, "quality mode"
     if not md_path or not os.path.exists(md_path):
@@ -290,11 +297,13 @@ def _export_check(md_path, quality_mode, expected_ids):
     with open(md_path, "r", encoding="utf-8-sig") as handle:
         text = handle.read()
     ids_ok = all(subshot_id in text for subshot_id in expected_ids)
-    required_sections = ("模型提示词", "负面提示词", "台词/OS/OV表演")
+    required_sections = ("模型提示词", "负面提示词", "下一镜转场提示词", "台词/OS/OV表演")
     forbidden_sections = ("QA元数据", "qa_metadata", "生成控制", "generation_control")
     separated = all(label in text for label in required_sections) and not any(label in text for label in forbidden_sections)
+    has_grid_section = "自动九宫格剧情包" in text
+    grid_ok = has_grid_section == grid_expected if grid_enabled else not has_grid_section
     xlsx_path = os.path.splitext(md_path)[0] + ".xlsx"
-    return ids_ok and separated and os.path.exists(xlsx_path), f"ids={ids_ok}, separated={separated}, xlsx={os.path.exists(xlsx_path)}"
+    return ids_ok and separated and grid_ok and os.path.exists(xlsx_path), f"ids={ids_ok}, separated={separated}, grid={grid_ok}, xlsx={os.path.exists(xlsx_path)}"
 
 
 def _load(path):
@@ -304,6 +313,22 @@ def _load(path):
 
 def _load_optional(path):
     return _load(path) if os.path.exists(path) else {"items": []}
+
+
+def _grid_enabled(config):
+    grid = config.get("storyboard_grid", {}) if isinstance(config, dict) else {}
+    return isinstance(grid, dict) and grid.get("enabled") is True
+
+
+def _editor_review_check(llm_review):
+    if not isinstance(llm_review, dict) or not llm_review or "items" in llm_review:
+        return False, "missing llm review"
+    if llm_review.get("pass") is not True:
+        return False, "pass!=true"
+    blocking = llm_review.get("blocking")
+    if not isinstance(blocking, list) or blocking:
+        return False, "blocking not empty"
+    return True, "ok"
 
 
 def _as_list(value):

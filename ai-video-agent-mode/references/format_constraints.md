@@ -63,7 +63,15 @@
     }
   ],
   "emotion_trigger_short": "",
-  "performance_note": ""
+  "performance_note": "",
+  "performance_chain": {
+    "trigger": "剧情触发原因",
+    "facial_control": "当前景别可见的眼神、眉尾、嘴角或呼吸变化",
+    "detail_leak": "由指尖、袖口、领口、手机、外套或其他已确认道具开始的泄露",
+    "body_follow_through": "肩背、重心、步伐或接触关系如何承接",
+    "voice_delivery": "台词/OS/OV的语气，或无台词时的呼吸落点",
+    "end_residue": "下一节拍仍可见的状态"
+  }
 }
 ```
 
@@ -72,6 +80,7 @@
 - 有人物镜头只能有一个 primary；最多一个 supporting focus，其他角色归 background。
 - background 不强制独立微反应，可使用群体连续状态。
 - “有意不反应”允许，但必须写明触发原因与可见终态。
+- `performance_chain` 是所有后续镜头决策的共同输入。每项只写当前景别可见的一个主证据；道具未由剧本、配置或前镜确认时不得伪造为情绪泄露载体。
 
 ### A4. Scene Item
 
@@ -101,7 +110,10 @@
   "light_effect_primary_char": "",
   "light_effect_other_chars": "",
   "lighting": "",
-  "sfx_timing": ""
+  "sfx_timing": "",
+  "prop_state": "本镜确认的道具归属、接触、遮挡、损伤或未变化状态；无关键道具则明确无",
+  "start_carryover": "从上一镜继承的位置、道具、光线或空间状态；首镜写场景建立状态",
+  "end_carryover": "本镜结束后下一镜必须继承的空间、道具或光线状态"
 }
 ```
 
@@ -109,6 +121,7 @@
 - `light_temp` 是数字 K 值，不带 K 后缀。
 - 同一场景景别变化不改变光源与色温；变化必须由剧情内光源事件解释。
 - 前中背景写可见物，不写工程标签。
+- `prop_state`、`start_carryover`、`end_carryover` 是场景首产物，不得留给 Composer 猜测；它们必须与人物站位和光源一并承接到下一镜。
 
 ### A5. Camera Item
 
@@ -135,17 +148,46 @@
   "composition": "",
   "lens_effect": "",
   "movement_arc_deg": 0,
-  "body_extra": ""
+  "body_extra": "",
+  "editorial_mode": "continuous_take | motivated_sequence",
+  "camera_beat_map": [
+    {
+      "trigger": "表演链中的具体重音",
+      "visual_priority": "当前主要人物/道具/关系",
+      "camera_response": "hold | push_in | reframe | cut_reaction | cut_detail | follow",
+      "time_range": "1.2-2.0秒",
+      "focus_subject": "承担本节拍的人物、手部或道具",
+      "framing": "中近景 | 特写 | 双人中景等落幅景别与构图",
+      "axis_relation": "相对既有轴线的同侧/反打关系与左右位置",
+      "transition_type": "hold | motivated_cut | motivated_reframe | continuous_move",
+      "carryover": "切换后必须保留的人物、道具、轴线或光源状态"
+    }
+  ],
+  "scene_anchor_usage": {
+    "position_anchor": "引用 scene_analysis.char_positions 的具体站位或无人物构图锚点",
+    "light_anchor": "引用 scene_analysis.light_direction/light_temp 的构图或轴线约束",
+    "prop_anchor": "引用 scene_analysis.prop_state 的焦点或遮挡约束",
+    "carryover_anchor": "引用 scene_analysis.start_carryover/end_carryover 的起落幅承接"
+  },
+  "sequence_context": {
+    "sequence_id": "仅连续拆分时填写",
+    "segment_index": 1,
+    "segment_count": 1,
+    "entry_carryover": "本段开头继承的状态",
+    "exit_carryover": "本段结束交给下一段的状态"
+  }
 }
 ```
 
 - `shot_size`：大特写、特写、中近景、中景、全景、大远景。
 - `movement_type`：固定、推、拉、摇、移、跟、升、降、俯、仰、环绕、甩、变焦、旋转、手持、穿梭。
-- 每子镜只能有一个主要 `movement_type`；复合移动必须是同一方向的连续轨迹。连续互动可在该轨迹内发生一次因果注意力交接，但任一时刻只能有一个清晰主体。
+- `continuous_take` 每子镜只能有一个主要 `movement_type`；复合移动必须是同一方向的连续轨迹。`motivated_sequence` 使用 1–3 项 `camera_beat_map`，每项必须由 `performance_chain` 的表情、细部/道具泄露、身体承接或语气落点触发；每项明确发生时间、视觉主体、落幅景别、轴线关系、转场类型与状态承接。可自然反打、切特写或移镜，但不能无动机反复抢焦。
+- 仅当一个连续剧情动作、长台词或连续关系判断必须拆成多个子镜时，填写 `sequence_context`。各段继承上一段的姿态、道具、声音边界和情绪残留；不得每段从中性站姿重新起演。
 - 注意力交接只能选择一种主策略：固定双人构图内一次拉焦、一次单向摇/移重构图、或演员走位改变画面权重而机位固定。物理运镜与拉焦不得叠加成竞争控制。
 - 相邻镜头允许相同景别；不为“景别梯度”强制变化。
 - 焦距是剧情启发式。情绪镜不强制 85mm；镜头必须同时满足空间关系、人物数量和面部可见性。
 - 人物朝向剧情对象。除非原文明确自拍视频、直播、对观众说话或看镜头内设备，不得直视镜头。
+- Camera 必须消费 packet 中的 `scene_analysis`，并在 `scene_anchor_usage` 中写明它如何使用站位、光线、道具与承接。不得用抽象“延续场景”代替可核验锚点。
 
 ## §B — Phase 6 Composer Batch Output
 
@@ -164,6 +206,15 @@ Composer batch 只输出：
       "negative_prompt": "{{NEGATIVE_PROMPT_AUTO_INJECT}}",
       "qa_metadata": {
         "dramatic_goal": "",
+        "editorial_mode": "continuous_take | motivated_sequence",
+        "camera_beat_map": [],
+        "sequence_context": {},
+        "quality_contract": {
+          "profile": "environment | object | action | dialogue | dramatic",
+          "required_analysis": ["scene", "camera"],
+          "required_evidence": ["该类型必须在成片提示词中可见的质量证据"]
+        },
+        "quality_evidence": {"每项required_evidence": {"section": "画面锁定|镜头设计|表演时间轴|光照与声音", "fragment": "该段中逐字存在的可见证据"}},
         "performance_priority": {
           "primary": "角色A",
           "supporting": ["角色B"],
@@ -173,7 +224,8 @@ Composer batch 只输出：
           "primary_action_count": 1,
           "emotion_turn_count": 1,
           "supporting_reaction_count": 1,
-          "camera_move_count": 1
+          "physical_camera_move_count": 1,
+          "editorial_response_count": 0
         },
         "start_state": "",
         "end_state": "",
@@ -283,7 +335,7 @@ Composer batch 只输出：
 时长：5.0秒。景别：中近景。焦距：50mm。机位：……。轴线：……。主要运镜：固定，落幅时轻微收紧构图……。
 ```
 
-- 一种主要运镜、任一时刻一个注意力中心、一个落幅。同一互动链允许一次由台词/动作触发的 `A→B` 注意力交接。
+- `continuous_take` 使用一种主要运镜、任一时刻一个注意力中心、一个落幅。同一互动链允许一次由台词/动作触发的 `A→B` 注意力交接。`motivated_sequence` 可在同一剧情目标内由表演链重音带出自然景别变化、反打或移镜；每个内部节拍仍只有一个主体，并沿用同一人物、道具、轴线与光源状态。
 - 禁止只写“聚焦甲/聚焦乙”；必须写可见构图权重、前后景/焦点落点、摄影机方向与最终双人或关系落幅。
 - 数值只保留 1–2 个决定性锚点；不堆 mm、度、速度和距离。
 - `dramatic_goal` 留在 QA 元数据，不重复写入模型提示词。
@@ -303,7 +355,10 @@ Composer batch 只输出：
 - 长停顿占镜头超过约三分之一或持续超过 1.5 秒时，只保留 1–2 个景别可见的生命迹象，或给出有意静止的剧情理由；不得用密集微动作破坏静止状态。
 - 3–6 秒镜头：主动作≤1、情绪转折≤1、对手反应≤1、主要运镜≤1。
 - 6–10 秒镜头：主动作≤2、情绪转折≤1、对手反应总数≤2、主要运镜≤1。
-- 10–15 秒连续互动：允许 2–3 个因果相接的内部节拍、多个短台词轮次和一次因果注意力交接，但只有一个整体戏剧目标、一条摄影机轨迹和最多一个情绪转折；第二个独立戏剧目标、反复抢焦或无关动作链必须拆镜。
+- 10–15 秒连续互动：允许 2–3 个因果相接的内部节拍、多个短台词轮次和一次因果注意力交接。`continuous_take` 保持一条摄影机轨迹；`motivated_sequence` 可由表演重音带出 1–3 个自然景别/视角变化。两者都只能服务一个整体戏剧目标；第二个独立戏剧目标、无触发的反复抢焦或无关动作链必须拆镜。
+- 时长服务于可见事件，不服务于氛围填充。单一微表情、一次视线变化、静态压场、群体凝视或落幅余韵默认不得超过 `project_config.max_static_shot_duration`（默认 6 秒）。落幅残留是承接下一镜的终态，不是额外延时。
+- Phase 1 中任何超过该上限的子镜必须写入 `duration_rationale`（仅 `continuous_dialogue / continuous_interaction / continuous_action / sustained_reveal`）和按发生顺序排列的 `dramatic_beats[]`。6–10 秒至少 2 个可见因果节拍，10–15 秒至少 3 个；`continuous_dialogue` 需至少 3 秒有效台词，`continuous_interaction` 需至少两轮且合计 3 秒有效台词，`continuous_action`/`sustained_reveal` 必须有持续发生的画面过程。不得以“压迫感、静默、停顿、余韵、保持状态”作为理由。
+- 有意静止仍可用于屏息、庄重或对峙，但必须在短镜内完成；若静止本身构成持续事件，`dramatic_beats[]` 必须写出期间发生的可见信息变化，而非重复“人物保持不动”。
 - 打斗镜优先作为一个不切镜的连续动作链：≤6 秒最多 1 个接触节拍、6–10 秒最多 2 个、10–15 秒最多 3 个；所有节拍必须因果相接并共享同一主要摄影机轨迹。攻防双方之间的因果注意力传递不算独立换焦；换轴、切到独立主编舞链/戏剧焦点、换场景、第二条无关动作链或超过 15 秒才拆片段。
 - 打斗镜按平台稳定性控制速度、幅度、接触节拍和镜头抖动；当动作复杂度超过单条可稳定生成范围时，必须在 `fight_continuity` 中锁定连续片段，或拆成下一生成片段。
 - background 只写群体低幅连续状态，不逐人分配动作。
@@ -334,6 +389,7 @@ Composer batch 只输出：
 - 3–6 秒常规镜头软目标 220–650 字；6–10 秒 350–850 字；复杂动作 450–900 字。
 - 10–15 秒连续互动/动作链软目标 500–1050 字；仍受 1100 字硬上限约束。
 - 不能通过增加背景微动作、光学数字或 QA 文案凑字数。
+- `duration_rationale` 与 `dramatic_beats[]` 只属于 Phase 1 时长门禁和 QA，不得写入 `full_prompt`。它们必须能被 Composer 的时间轴和 Editor 的节奏审查追溯。
 
 ### B5. 景别可见性
 
@@ -353,6 +409,10 @@ Composer batch 只输出：
 
 - 只用于制作和验证，不投喂视频模型。
 - `dramatic_goal` 必须是本镜具体目标。
+- `editorial_mode` 必须从 Director 逐字继承；它决定本镜执行一条连续轨迹，或一组由表演重音触发的镜头响应。
+- `camera_beat_map` 与 `sequence_context` 也必须从 Director 逐字继承。前者不得由 Composer 重新发明；后者要求连续拆分从上一段状态起演而非重置。
+- `motivated_sequence` 的每个镜头节拍都写明 `trigger/time_range/focus_subject/framing/axis_relation/transition_type/carryover`；Composer 将这些信息落到镜头设计与表演时间轴，不增加未声明的切换。
+- `quality_contract` 由子镜类型确定并从 Director 锁定继承。它适用于任何生成模型：环境镜也必须证明叙事功能、视觉锚点、空间光线和转场承接；物件镜证明道具状态与焦点；人物镜证明对应的动作、台词或表演因果。不得因为某项分析被跳过而省略合同要求。
 - `performance_priority` 覆盖全部可见人物且不能重叠。
 - `action_budget` 使用非负整数并满足 B4 上限。
 - `start_state` / `end_state` 写可见状态。

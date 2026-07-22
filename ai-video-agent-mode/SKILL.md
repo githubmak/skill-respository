@@ -1,7 +1,7 @@
 ---
 name: ai-video-agent-mode
 description: >
-  Four-agent pipeline for converting scripts, storyboards, scenes, keyframes, or
+  Contract-driven multi-agent pipeline for converting scripts, storyboards, scenes, keyframes, or
   nine-panel plans into production-ready AI video prompt packages with low reroll
   risk, high-performance tension, action budgets, character priority, multimodal
   T2V/I2V/R2V controls, continuity, semantic review, and validated Markdown/XLSX
@@ -15,21 +15,29 @@ description: >
 
 ## 0. 运行铁律
 
-1. 新项目或重新导出前，询问并等待用户明确给出 `export_base`；禁止默认目录。
-2. Phase 0 同时确认目标平台、是否原生音频、生成模式 `t2v/i2v/r2v` 和可用参考资产。未提供资产时不得伪造路径；关键表演镜有参考资产时优先 I2V/R2V。
-3. 派发子 Agent 前运行 `dispatch_cache.py`。spawn 文本只传 packet、constraints、Composer scaffold、scene-lock cache 路径和简短指令。
-4. 子 Agent 只写 packet 的 `_batch_output_path`；公共文件由主 Agent 合并。每次初派或重派必须使用 `dispatch_cache.py` 新返回的唯一 packet/batch 路径；禁止复用或覆盖已经验证的 batch。
-5. 每次 spawn 返回真实 Agent ID 后，立即运行 `register_dispatch_agent.py <packet> <agent_id>`；Agent 完成后运行 `record_batch_provenance.py <packet>`。只有逐 dispatch 的 agent_id/spawn_time、输出时序、Phase 校验和 SHA-256 全部通过的 batch 才能使用。公共合并必须加 `--require-provenance`。
-6. 目标文件存在且 JSON 可解析才算 Agent 完成；不要关闭 running Agent。
-7. Phase 2、Phase 6、Phase 8 的语义产出必须由 Agent 完成；格式归一化、合并和验证优先使用脚本。
-8. 台词、OV、OS 按 `引用ID—类型—人物—原文` 确定性锁定，逐字逐标点保留；语气、停顿和情绪只写在独立控制字段，不得改写原文。OV/OS 无口型同步；无原文时禁止新增台词、旁白或内心声。
-9. 失败阶段必须修复或重派，不能跳过门禁。
-10. Composer 派发前读取 `references/format_example.txt` 与 `references/quality_exemplar/S2-03_high_quality_example.txt`。
-11. `full_prompt` 只允许模型可执行内容。工程字段、QA 结论、戏剧分析、负面词和迁移说明必须放在独立 JSON 字段。
-12. 恢复旧项目时重新运行 `dispatch_cache.py`；只接受 `contract_version=modec-v4` 的 packet，禁止复用 v4 之前生成的 packet、constraints sidecar 或仍持有旧规则上下文的 Agent。
-13. 人物镜必须先完成三份合同再写提示词：`qa_metadata.performance_contract` 绑定表情、身体动作、视线、反应延迟、观众共情锚点、画面可读瞬间、运镜压力、场景压力和落幅残留；`qa_metadata.continuity_contract` 绑定起止状态、位置、视线、道具、光源和下一镜承接；`qa_metadata.reroll_control` 评估 T2V/I2V/R2V 抽卡风险和参考资产需求。缺任一合同不得进入导出。
-14. 本技能所有本地命令统一使用 `python3`；脚本内部调用其他 Python 脚本时必须使用 `sys.executable`，禁止硬编码 `python`，避免 macOS 环境中先失败再回退。
-15. 示例只提供可迁移的生成方法，不提供默认题材审美。禁止把示例中的现代都市、轻喜剧、柔光、酒店、韩漫、特定服装、特定角色关系或特定道具状态自动带入新项目；画幅、题材、节奏、光线、服装和场景必须来自当前剧本、用户配置、项目 bible 或已确认资产。
+1. 用户再次手动调用本技能时，默认按 `full/new` 处理：创建全新的 `run_dir`，不得清空、覆盖、读取或合并上次运行的缓存；旧运行只保留作审计。只有用户明确说“继续/续跑、审查、导出、单镜修复”时，才允许对应窄路线复用已确认的运行。`full/new` 若指向已有 `project_config.json` 或 `.cache` 的目录必须阻断，要求选择新的 `run_dir`。
+2. Phase 0 必须使用 `scripts/resolve_run_mode.py` 和 `scripts/configuration_wizard.py` 逐轮确认基础配置，绝不一次性列出整张配置问卷：第一轮只问 `export_base`；随后每轮只问 1–2 项，固定顺序为“画幅+视觉风格 → 最大时长+目标平台 → 文本/图片/参考视频生成方式+原生音频 → 参考资产+九宫格开关”。用户答完本轮后才提问下一轮。面向用户只使用中文生成方式，向导再确定性写入内部 `t2v/i2v/r2v`。仅当所有字段、确认时间、确认值快照和快照哈希已写入 `project_config.json.confirmation` 时才可启动拆镜。`run_dir` 必须创建在已确认 `export_base` 下，所有 `.json`、`.cache`、dispatch、review、analysis、director、composer 中间文件都随该新 `run_dir` 落盘。
+3. 用户明确“不需要九宫格”时，`storyboard_grid.enabled=false`，状态机必须跳过九宫格判断、缓存和导出；未提供资产时不得伪造路径，九宫格开关不得改变当前 `t2v/i2v/r2v` 模式。
+4. 派发子 Agent 前运行 `dispatch_cache.py`。spawn 文本只传 packet、constraints、Composer scaffold、scene-lock cache 路径和简短指令。
+5. 子 Agent 只写 packet 的 `_batch_output_path`；公共文件由主 Agent 合并。每次初派或重派必须使用 `dispatch_cache.py` 新返回的唯一 packet/batch 路径；禁止复用或覆盖已经验证的 batch。
+6. 每次 spawn 返回真实 Agent ID 后，立即运行 `register_dispatch_agent.py <packet> <agent_id>`；Agent 完成后运行 `record_batch_provenance.py <packet>`。只有逐 dispatch 的 agent_id/spawn_time、输出时序、Phase 校验和 SHA-256 全部通过的 batch 才能使用。公共合并必须加 `--require-provenance`。
+7. 目标文件存在且 JSON 可解析才算 Agent 完成；不要关闭 running Agent。
+8. Phase 2、Phase 6、Phase 8 的语义产出必须由 Agent 完成；格式归一化、合并和验证优先使用脚本。
+9. 台词、OV、OS 按 `引用ID—类型—人物—原文` 确定性锁定，逐字逐标点保留；语气、停顿和情绪只写在独立控制字段，不得改写原文。OV/OS 无口型同步；无原文时禁止新增台词、旁白或内心声。
+10. 失败阶段必须修复或重派，不能跳过门禁。
+11. Composer dispatch 的 constraints sidecar 必须含可迁移的强示例规则；只有当前 packet 缺少某个必要模式时才按需读取 `references/format_example.txt` 或 `references/quality_exemplar/S2-03_high_quality_example.txt`，禁止每批重复全量加载。
+12. `full_prompt` 只允许模型可执行内容。工程字段、QA 结论、戏剧分析、负面词和迁移说明必须放在独立 JSON 字段。
+13. 恢复旧项目时重新运行 `dispatch_cache.py`；只接受 `contract_version=modec-v4` 的 packet，禁止复用 v4 之前生成的 packet、constraints sidecar 或仍持有旧规则上下文的 Agent。
+14. 人物镜必须先完成三份合同再写提示词：`qa_metadata.performance_contract` 绑定表情、身体动作、视线、反应延迟、观众共情锚点、画面可读瞬间、运镜压力、场景压力和落幅残留；`qa_metadata.continuity_contract` 绑定起止状态、位置、视线、道具、光源和下一镜承接；`qa_metadata.reroll_control` 评估 T2V/I2V/R2V 抽卡风险和参考资产需求。缺任一合同不得进入导出。
+15. 本技能所有本地命令统一优先使用 `python3`；脚本内部调用其他 Python 脚本时必须使用 `sys.executable`，禁止硬编码 `python`，避免 macOS 环境中先失败再回退。Windows 环境如无 `python3`，优先使用 `py -3` 或已知解释器绝对路径，不要依赖 PowerShell 别名猜测。
+16. Composer、Editor Pass 1、Editor Pass 2、Validate 是严格队列中的必经环节；已存在旧输出或缓存不代表可以跳过其中任何一步，缺任一环节或门禁未通过时，禁止直接进入导出。
+17. 示例只提供可迁移的生成方法，不提供默认题材审美。禁止把示例中的现代都市、轻喜剧、柔光、酒店、韩漫、特定服装、特定角色关系或特定道具状态自动带入新项目；画幅、题材、节奏、光线、服装和场景必须来自当前剧本、用户配置、项目 bible 或已确认资产。
+18. Windows / PowerShell 安全：任何多行 JSON、Markdown、packet、constraints、prompt_package、review sidecar 或大段文本都必须先落盘，再通过文件路径传递；禁止把这些内容拼进 `powershell -Command`、`pwsh -Command`、`python -c`、`node -e` 或 here-string。命令行只保留短参数和路径。
+19. 时长由可见剧情节拍决定，不由“氛围、压迫、静默、余韵”填充。单一微表情、一次视线变化、静态压场或群体凝视默认不超过 `max_static_shot_duration`（默认 6 秒）；超时子镜必须在 Phase 1 提供 `duration_rationale` 与有序 `dramatic_beats[]`，并通过 `preflight_check.py`，否则不得派发任何 Agent。
+20. 先运行 `scripts/route_task.py` 选择 `full / audit / export / compose / single-repair`，并显式传入 `--intent new/resume/audit/reexport`。`full/new` 先走逐项配置向导；`export` 仅接受已完成 Editor Pass 2 与 Validate 的运行，且只重新确认本次 Markdown 导出路径；纯审查、导出、单镜修复不得默认重跑全管线。
+21. 先读 `references/ROUTES.md`，再按路由读取指定契约、packet 与函数片段。不得为路径检查、格式校验或字段搬运加载完整 runbook、完整历史或无关 Python 文件。
+22. 表演因果链先于运镜设计。每个人物节拍先确定“触发原因 → 表情控制 → 细部/道具泄露 → 肩背、重心或步伐承接 → 说话语气/呼吸 → 可见残留”；运镜、反打、特写和移镜只能响应这条链中的可见重音，不得先选炫技运镜再反推表演。
+23. Director 必须为每个有表演的子镜选择 `editorial_mode`：`continuous_take` 为一条连续摄影轨迹；`motivated_sequence` 为同一剧情目标内由表演重音触发的自然景别/视角变化。后者可有 1–3 个 `camera_beat_map`，每次变化必须写触发、画面主体、镜头响应和承接状态；它不是禁止切换的单镜，也不是无动机的连续变焦。
 
 ## 1. 单一数据契约
 
@@ -39,7 +47,7 @@ description: >
 | Phase 3 director | `{"items":[...],"merged_full_prompts":[]}` | 确定性合并 |
 | Phase 6 Composer batch | `{"shots":[...]}` | 每子镜一个 v4 shot |
 | Phase 6/7 merged package | `{"contract_version":"modec-v4","items":[...],"shots":[...],"merged_full_prompts":[...]}` | `items` 与 `shots` 内容相同 |
-| Phase 10 export | Markdown + XLSX | Markdown 只导出投喂内容、负面词和台词表演；QA 元数据、生成控制、三份合同保留在 XLSX/缓存 |
+| Phase 10 export | Markdown + XLSX | Markdown 只导出投喂内容、负面词、下一镜转场提示词和台词表演；QA 元数据、生成控制、三份合同保留在 XLSX/缓存 |
 
 Phase 6 每个 shot 必须包含：
 
@@ -61,7 +69,7 @@ Phase 6 每个 shot 必须包含：
 
 | Phase | 名称 | 执行方式 | 门禁 |
 |---|---|---|---|
-| 0 | 用户确认 | 生成 `project_config.json` | 导出位置、画幅、风格、角色、服装、平台、音频、生成模式、参考资产齐全 |
+| 0 | 用户确认 | 逐项生成并确认 `project_config.json` | 每轮仅 1–2 项；确认元数据完整，画幅、风格、最大时长、平台、音频、模式、参考资产、九宫格与导出位置齐全；`run_dir` 已建立且位于 `export_base` 下 |
 | 0.5 | 源规则检测 | `detect_source_rules.py` | 人工核验 scene header 与角色列表 |
 | 1 | Orchestrator 拆镜 | `generate_shotplan.py` + `build_shotplan.py` | `preflight_check.py` 0 issue |
 | 1.5 | 主镜头合并 | 本地脚本 | 备份 `shot_plan.original.json` |
@@ -72,14 +80,19 @@ Phase 6 每个 shot 必须包含：
 | 5 | 连续性检查 | `continuity_check.py` | blocking 为 0 |
 | 6 | Mode C v4 Composer | Agent batch；普通镜自适应2–4个/批，连续链保持同批，可并行 | `validate_composer_output.py` |
 | 6a | 合并 | `merge_agent_outputs.py` | v4 双键 package |
-| 6b | 运镜完整性 | `enforce_camera_detail.py` | 镜头设计含完整运镜 |
+| 6b | 运镜合同诊断 | `enforce_camera_detail.py` | 缺失镜头设计退回 Composer；脚本不改写成品提示词 |
 | 6c | v3→v4/负面词归一化 | `normalize_prompt_package.py` | 负面词独立注入，不改叙事与台词 |
 | 7 | Editor Pass 1 | `merge_prompts.py` | 幂等归并 Composer 批次；主镜头分组完整且无重复 subshot |
 | 8 | Editor Pass 2 | Agent 语义审查 | 只修语义穿帮和执行竞争 |
+| 8.5 | 九宫格剧情包（可选） | 本地派生脚本 | 仅 `storyboard_grid.enabled=true` 时，从已通过 Editor Pass 2 的 T2V提示词、合同和风险数据自动选关键连续镜头链；关闭时状态机标记 skipped，不落盘 |
 | 9 | 最终验证 | `check_export.py` + `validate_modec.py` | v4 检查全部通过 |
 | 10 | 导出 | `export_with_validation.py` | 用户确认路径下 Markdown + XLSX 可打开 |
 
 Composer packet 必须使用脚本生成的 `composer_scaffold_path` 锁定 `shot_id/subshot_id/duration/negative_prompt/dialogue_refs/generation_control`，并先填写三份合同再写四段提示词。相同场景的画幅、风格、服装、光源与空间锚点从 `scene_lock_cache_path` 读取一次。每批完成后立即校验；失败时运行 `prepare_composer_retry.py`，它封存失败 batch 哈希、为通过镜记录 partial provenance，并只为失败 `subshot_id` 生成新 dispatch。失败 batch 禁止原地修复或重新签名。
+
+每个已通过阶段自动写入 `.cache/stage_summary/<phase>.json`，只记录已验证产物的路径、哈希、结构、覆盖数量与少量 ID。恢复任务时先读 `pipeline_state.json`、最近阶段摘要和目标 packet；只有需要修复的字段才回读完整产物。第一次重试只回传失败子镜及 validator 原文；第二次重试强制单子镜批次并只修失败字段。每个 retry packet 都携带 `retry_context_path`，不得重新创作已通过镜头。
+
+九宫格剧情包是 T2V 主流程后的可选派生物，不是 I2V/R2V 分支：它不修改 `full_prompt`、`generation_control`、参考资产或已通过的 Editor 结果。启用时只从最终稳定数据中按连续镜头链评分，优先多人关系、可见情绪递进、动作/空间调度、道具状态转移和高抽卡风险；低风险空镜、单一简单动作和纯信息镜不输出。每个命中链导出一条 3×3 总图生图提示词、独立负面提示词与 P01-P09 剧情节拍。用户可自行使用该包生图，但技能不会等待、接收或依赖后续图片。
 
 三份合同不是导出文案，而是生成前的硬骨架：
 
@@ -110,7 +123,7 @@ Composer packet 必须使用脚本生成的 `composer_scaffold_path` 锁定 `sho
 
 ### 运镜 Agent
 
-- 一个子镜只使用一种主要运镜；同方向的轻微收束可以作为该运镜的落幅，不算第二运镜。
+- `continuous_take` 只使用一种主要运镜；同方向的轻微收束可以作为该运镜的落幅，不算第二运镜。`motivated_sequence` 可按 `camera_beat_map` 自然切换景别、反打、推近、移镜或跟随，但每一次切换都必须由表情泄露、道具动作、身体承接或语气落点触发，并继承同一人物、道具、轴线和光源状态。
 - 连续互动允许一次由剧情触发的注意力交接。它不等于第二个独立戏剧焦点：任一时刻仍只有一个清晰主体，且镜头整体仍服务同一戏剧目标。
 - 注意力交接只选一种主策略：`固定双人构图+一次拉焦`、`一次单向摇/移重构图`、或`演员走位改变画面权重+固定机位`。禁止把推、摇、变焦、拉焦同时叠加。
 - 焦距、固定镜头比例和景别梯度都是剧情启发式，不是全片硬配额。
@@ -125,7 +138,7 @@ Composer packet 必须使用脚本生成的 `composer_scaffold_path` 锁定 `sho
 `full_prompt` 必须且只能包含以下四段，段间一个空行：
 
 1. `画面锁定：` 画幅、风格、可见人物、服装、站位、朝向、场景接触与不变项。
-2. `镜头设计：` 时长、景别、焦距、机位、轴线和唯一主要运镜。
+2. `镜头设计：` 时长、景别、焦距、机位、轴线，以及连续轨迹或由表演重音触发的镜头组。
 3. `表演时间轴：` 2–3 个连续小数秒时间段，写主动作、触发、反应、台词/OS/OV归属、发声时神态/身体/语气、口型和可见终态。
 4. `光照与声音：` 固定光源关系和声音同步；不重复表演时间轴中已经逐字出现的台词/OS/OV原文。
 
@@ -133,9 +146,10 @@ Composer packet 必须使用脚本生成的 `composer_scaffold_path` 锁定 `sho
 
 ### 4.2 动作预算
 
-- 3–6 秒：主动作 ≤1、情绪转折 ≤1、对手反应 ≤1、主要运镜 ≤1。
-- 6–10 秒：主动作 ≤2、情绪转折 ≤1、对手反应总数 ≤2、主要运镜 ≤1。
-- 10–15 秒连续互动：允许 2–3 个因果相接的内部节拍、多个短台词轮次及一次 `A→B` 注意力交接，但仍保持一个整体戏剧目标、一条摄影机轨迹和最多一个情绪转折。注意力交接必须由台词/动作触发并在落幅重新建立关系构图；第二个独立戏剧目标、反复抢焦或无关动作链必须拆镜。
+- 3–6 秒：主动作 ≤1、情绪转折 ≤1、对手反应 ≤1；`continuous_take` 主要运镜 ≤1，`motivated_sequence` 最多 1–3 个由表演重音触发的镜头响应。
+- 6–10 秒：主动作 ≤2、情绪转折 ≤1、对手反应总数 ≤2；镜头响应数量仍服从所选 `editorial_mode`。
+- 10–15 秒连续互动：允许 2–3 个因果相接的内部节拍、多个短台词轮次及一次 `A→B` 注意力交接，但仍保持一个整体戏剧目标和最多一个情绪转折。`continuous_take` 保持一条摄影机轨迹；`motivated_sequence` 只用与内部表演节拍一一对应的自然切换。注意力交接必须由台词/动作触发并在落幅重新建立关系构图；第二个独立戏剧目标、反复抢焦或无关动作链必须拆镜。
+- 6 秒以上不是“质感时长”。只有连续对白、连续互动、连续动作或持续揭示过程才可延长；6–10 秒必须有至少 2 个可见因果节拍，10–15 秒必须有至少 3 个。落幅残留通常只占最后一个短时间窗，不能把同一静止状态重复演满镜头。
 - 打斗优先单镜连续动作链：同一生成片段只计一个主编舞链，可在 2–3 个连续时间段内完成因果相接的攻防；≤6 秒最多 1 个接触节拍、6–10 秒最多 2 个、10–15 秒最多 3 个。攻防双方在同一链内的因果注意力传递不算换焦点；只有换轴、切到独立主编舞链/戏剧焦点、换场景、第二条无关动作链或超过 15 秒才拆成下一生成片段。
 - 背景群体只写低幅连续活动和不抢主动作，不逐人分配微动作。
 - 没有审美最低字数。`full_prompt` 少于 120 字视为信息不足，超过 1100 字必须拆镜；常规 3–6 秒镜头以 220–650 字为软目标。
@@ -160,6 +174,7 @@ Composer packet 必须使用脚本生成的 `composer_scaffold_path` 锁定 `sho
 - 中断动作必须区分“被取消的主运动”和“仍被允许的残余运动”。后段若出现相似方向动作，要写清幅度或身体部位差异，避免刚截停又完整重做。
 - 接触结果必须匹配接触点、支撑关系、受力方向和角色重心。缺少足够杠杆时，只能产生提示、警告或角色自主收住，不能生成不可信的强制位移。
 - 长停顿占镜头超过约三分之一或持续超过 1.5 秒时，只选择 1–2 个景别可见的生命迹象，或明确有意静止的剧情理由；禁止用密集微动作破坏屏息、僵持、庄重或松弛状态。
+- 静止理由只证明表演成立，不证明镜头应该变长。若整个镜头没有新的可见信息、关系变化、动作结果或台词推进，应缩短为 2–6 秒；不可用“压迫感、余韵、静默、保持凝视”延长。
 - 落幅必须保留上一事件造成的可见残留，如姿态、接触、重心、视线、呼吸、道具或空间距离的持续状态，而不是复位成无事发生。
 - 有人物镜头在 `qa_metadata.performance_causality` 中记录张力意图、触发、反应顺序、物理逻辑、运动边界、停顿策略和终态残留；无可见物理角色的环境镜可省略。
 - 有人物镜头还必须在 `performance_contract` 中合并表情、身体动作、视线、反应延迟、观众共情锚点、画面可读瞬间、压制/释放、运镜压力、场景压力和落幅残留；这些内容必须能在 `full_prompt` 对应段落中找到。
@@ -207,8 +222,9 @@ Composer packet 必须使用脚本生成的 `composer_scaffold_path` 锁定 `sho
 - 接触、受力、阻挡与截停是否有可信物理依据；心理性或策略性停止是否被误写为机械制服；
 - 中断动作与后续残余运动是否边界清楚，是否出现“刚被截停又完整重做”的自相矛盾；
 - 长停顿是否只有少量景别可见生命迹象或明确静止理由，落幅是否保留上一事件的可见残留；
+- 时长是否被连续对白/互动/动作/揭示过程消耗；是否把同一凝视、静止压场或群体反应在相邻镜重复演绎。无新增信息的延时必须压缩或删除；
 - 景别是否能看见所写表演；
-- 同一镜是否出现竞争运镜、焦点或动作；
+- `continuous_take` 是否出现竞争运镜、焦点或动作；`motivated_sequence` 的反打、切特写、移镜或跟随是否各自由表情、细部/道具泄露、身体承接或语气落点触发，并在变化后保留人物、道具、轴线和光源承接；
 - 连续互动的注意力交接是否有单一触发、单一策略和明确落幅；只写“聚焦甲/聚焦乙”或同时叠加物理运镜与多次拉焦属于不可执行；
 - 人物站位、视线、服装、道具、光源和终态是否跨镜承接；
 - 台词/OV/OS 是否逐字保留，非说话角色是否错误同步口型；
@@ -225,6 +241,8 @@ Composer packet 必须使用脚本生成的 `composer_scaffold_path` 锁定 `sho
 
 ```bash
 python3 scripts/validate_agent_output.py <analysis_output.json> analysis
+python3 scripts/route_task.py audit --run-dir <run_dir> --intent audit
+python3 scripts/write_stage_summary.py <run_dir> <phase> <output_path>
 python3 scripts/register_dispatch_agent.py <dispatch_packet.json> <agent_id>
 python3 scripts/record_batch_provenance.py <dispatch_packet.json>
 python3 scripts/promote_verified_batch.py <single_batch_dispatch_packet.json>

@@ -112,6 +112,9 @@ def _validate_analysis(path, role):
                     issues.append((sid, "performance_role.primary", roles.count("primary"), "exactly 1"))
                 if roles.count("supporting") > 1:
                     issues.append((sid, "performance_role.supporting", roles.count("supporting"), "<=1"))
+            chain = item.get("performance_chain")
+            if chain is not None and not isinstance(chain, dict):
+                issues.append((sid, "performance_chain", type(chain).__name__, "object"))
         if role in ("analysis", "scene_analysis"):
             hard = item.get("light_hardness")
             if hard is not None and hard not in ("soft", "hard", "mixed"):
@@ -131,6 +134,32 @@ def _validate_analysis(path, role):
             lens = item.get("camera_lens_mm")
             if lens is not None and not isinstance(lens, (int, float)):
                 issues.append((sid, "camera_lens_mm", type(lens).__name__, "number"))
+            editorial_mode = item.get("editorial_mode")
+            if editorial_mode not in ("continuous_take", "motivated_sequence"):
+                issues.append((sid, "editorial_mode", editorial_mode, "continuous_take|motivated_sequence"))
+            beat_map = item.get("camera_beat_map")
+            if not isinstance(beat_map, list):
+                issues.append((sid, "camera_beat_map", type(beat_map).__name__, "list"))
+            elif editorial_mode == "motivated_sequence":
+                if not 1 <= len(beat_map) <= 3:
+                    issues.append((sid, "camera_beat_map.length", len(beat_map), "1-3"))
+                for index, beat in enumerate(beat_map):
+                    if not isinstance(beat, dict):
+                        issues.append((sid, "camera_beat_map[%d]" % index, type(beat).__name__, "object"))
+                        continue
+                    for field in (
+                        "trigger", "visual_priority", "camera_response", "time_range",
+                        "focus_subject", "framing", "axis_relation", "transition_type", "carryover",
+                    ):
+                        if not str(beat.get(field, "") or "").strip():
+                            issues.append((sid, "camera_beat_map[%d].%s" % (index, field), "missing", "required"))
+            usage = item.get("scene_anchor_usage")
+            if not isinstance(usage, dict):
+                issues.append((sid, "scene_anchor_usage", type(usage).__name__, "object"))
+            else:
+                for field in ("position_anchor", "light_anchor", "prop_anchor", "carryover_anchor"):
+                    if not str(usage.get(field, "") or "").strip():
+                        issues.append((sid, "scene_anchor_usage.%s" % field, "missing", "required"))
     return issues
 
 
@@ -160,7 +189,7 @@ def _analysis_required_fields(role):
             "emotion_type", "expression_level", "gaze", "micro_expression",
             "body_tension", "body_parts_focus", "voice_tone",
             "action_beat_start", "action_beat_transition", "action_beat_end",
-            "per_char_actions", "emotion_trigger_short", "performance_note",
+            "per_char_actions", "emotion_trigger_short", "performance_note", "performance_chain",
         ]
     if role == "scene_analysis":
         return common + [
@@ -169,7 +198,8 @@ def _analysis_required_fields(role):
             "light_temp", "light_direction", "light_hardness", "mood_atmosphere",
             "ambient_sound", "audio_background", "audio_foreground", "audio_midground",
             "bgm_style", "color_contrast_desc", "light_effect_primary_char",
-            "light_effect_other_chars", "lighting", "sfx_timing",
+            "light_effect_other_chars", "lighting", "sfx_timing", "prop_state",
+            "start_carryover", "end_carryover",
         ]
     if role == "camera_movement":
         return common + [
@@ -178,7 +208,8 @@ def _analysis_required_fields(role):
             "camera_facing_desc", "movement_type", "movement_detail",
             "movement_speed", "axis_start", "axis_end", "char_entry",
             "char_exit", "end_state", "composition", "lens_effect",
-            "movement_arc_deg", "body_extra",
+            "movement_arc_deg", "body_extra", "editorial_mode", "camera_beat_map",
+            "scene_anchor_usage",
         ]
     return common
 

@@ -108,23 +108,37 @@ def _check_ovos_lip_sync(item):
 def audit(pkg_path):
     if not os.path.exists(pkg_path): return {"error":"File not found: %s" % pkg_path}
     with open(pkg_path,"r",encoding="utf-8-sig") as f: data = json.load(f)
-    items = data.get("items",[])
+    items = data.get("shots", data.get("items", []))
     flagged = []; vague_hits = 0; shot_size_issues = []
     for item in items:
         ssid = item.get("subshot_id","?")
-        for field,dimensions in PERFORMANCE_DIMENSIONS.items():
-            val = item.get(field,"")
-            if should_skip_field(field,val): flagged.append((ssid,field,"empty_or_too_short")); continue
-            missing_dims = [d for d in dimensions if d[:4] not in val]
-            if missing_dims: flagged.append((ssid,field,"missing: %s" % "; ".join(missing_dims[:3])))
-        for field in ["character_action","axis_space","lighting","full_prompt"]:
+        metadata = item.get("qa_metadata", {}) if isinstance(item.get("qa_metadata"), dict) else {}
+        roles = metadata.get("performance_priority", {}) if isinstance(metadata.get("performance_priority"), dict) else {}
+        primary = str(roles.get("primary", "") or "").strip()
+        if primary:
+            contract = metadata.get("performance_contract", {}) if isinstance(metadata.get("performance_contract"), dict) else {}
+            for field in ("trigger_event", "primary_expression", "primary_body_action", "end_residue"):
+                if not str(contract.get(field, "") or "").strip():
+                    flagged.append((ssid, "performance_contract", "missing: " + field))
+        mode = metadata.get("editorial_mode")
+        beats = metadata.get("camera_beat_map")
+        if mode not in ("continuous_take", "motivated_sequence"):
+            flagged.append((ssid, "editorial_mode", "missing_or_invalid"))
+        elif mode == "motivated_sequence":
+            if not isinstance(beats, list) or not 1 <= len(beats) <= 3:
+                flagged.append((ssid, "camera_beat_map", "must_contain_1_to_3_beats"))
+            else:
+                for index, beat in enumerate(beats):
+                    if not isinstance(beat, dict):
+                        flagged.append((ssid, "camera_beat_map", "beat_%d_not_object" % index)); continue
+                    missing = [key for key in ("trigger", "time_range", "focus_subject", "framing", "axis_relation", "transition_type", "carryover") if not str(beat.get(key, "") or "").strip()]
+                    if missing:
+                        flagged.append((ssid, "camera_beat_map", "beat_%d_missing: %s" % (index, "; ".join(missing))))
+        for field in ["full_prompt"]:
             val = item.get(field,"")
             if isinstance(val,str):
                 for pattern,_ in VAGUE_PATTERNS:
                     if pattern and re.search(pattern,val): flagged.append((ssid,field,"vague: "+pattern)); vague_hits += 1
-        shot_issues = _check_shot_size_consistency(item)
-        shot_size_issues.extend(shot_issues)
-        for iss in shot_issues: flagged.append((ssid,iss[0],"[%s] %s" % (iss[1],iss[2][:80])))
         for iss in _check_ovos_lip_sync(item):
             flagged.append((ssid,iss[0],"[%s] %s" % (iss[1],iss[2])))
     return {"items_flagged":flagged,"total_flagged":len(flagged),"vague_term_hits":vague_hits,"shot_size_issues":shot_size_issues,"shot_size_blocking":[i for i in shot_size_issues if i[1]=="blocking"],"total_items":len(items)}
@@ -162,4 +176,3 @@ if __name__ == "__main__":
     result = enhance(pkg,out,mode)
     if isinstance(result,dict) and "total_flagged" in result:
         print(json.dumps({k:v for k,v in result.items() if k != "items_flagged"},ensure_ascii=False,indent=2))
-

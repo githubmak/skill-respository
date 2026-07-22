@@ -35,6 +35,7 @@ def main(run_dir):
     ]))
     plan = _load_json(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"))
     director = _load_optional_json(os.path.join(run_dir, ".cache", "director", "director_pass.json"))
+    llm_review = _load_optional_json(os.path.join(run_dir, ".cache", "review", "llm_gate_result.json"))
     shots = package.get("shots", [])
     items = package.get("items", [])
     expected = {
@@ -51,6 +52,14 @@ def main(run_dir):
 
     if package.get("contract_version") != "modec-v4":
         errors.append("contract_version必须是modec-v4")
+    if not isinstance(llm_review, dict) or not llm_review or "items" in llm_review:
+        errors.append("缺少editor_pass2的llm_gate_result.json")
+    else:
+        if llm_review.get("pass") is not True:
+            errors.append("editor_pass2复审未通过")
+        blocking = llm_review.get("blocking")
+        if not isinstance(blocking, list) or blocking:
+            errors.append("editor_pass2复审存在blocking")
     if not isinstance(shots, list) or not shots:
         errors.append("shots必须是非空数组")
     if items != shots:
@@ -63,6 +72,8 @@ def main(run_dir):
         sid = shot.get("subshot_id", "?")
         prefix = sid + ": "
         full_prompt = str(shot.get("full_prompt", "") or "")
+        metadata = shot.get("qa_metadata", {})
+        metadata = metadata if isinstance(metadata, dict) else {}
         sections = split_sections(full_prompt, PROMPT_LABELS)
         if list(sections) != PROMPT_LABELS:
             errors.append(prefix + "full_prompt必须按顺序包含v4四段")
@@ -78,13 +89,12 @@ def main(run_dir):
             errors.append(prefix + issue)
         for issue in timeline_issues(full_prompt, shot.get("duration", 0)):
             errors.append(prefix + issue)
-        for issue in camera_competition_issues(full_prompt):
+        for issue in camera_competition_issues(full_prompt, metadata.get("editorial_mode", shot.get("editorial_mode", "continuous_take"))):
             errors.append(prefix + issue)
 
         plan_item = expected.get(sid, {})
         director_item = director_map.get(sid, {})
         visible = _as_list(plan_item.get("visible_characters", plan_item.get("characters", [])))
-        metadata = shot.get("qa_metadata", {})
         for issue in role_partition_issues(metadata, visible):
             errors.append(prefix + issue)
         for issue in performance_causality_issues(metadata, visible):

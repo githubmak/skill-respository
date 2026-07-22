@@ -67,10 +67,13 @@
       "sfx_timing": "脚步声每步0.35s/拍桌声+共振余韵0.3s/关门声轻响",
       "audio_foreground": "角色A靴子踩木地板硬底声/碗筷碰撞声/脚步声",
       "audio_midground": "外套布料摩擦沙沙声/桌椅挪动声",
-      "audio_background": "窗外城市低频电气嗡鸣/远处电轨刹车声/室内钟摆滴答"
+      "audio_background": "窗外城市低频电气嗡鸣/远处电轨刹车声/室内钟摆滴答",
+      "prop_state": "黑色外套仍披在角色A肩上，手机留在右手；无其他状态改变",
+      "start_carryover": "承接上一镜角色A站在门内右侧，外套在肩，暖光从左后方",
+      "end_carryover": "角色A仍在门内右侧，外套未移交，左后方暖光和门框遮挡保持"
     }
   ]
 }
 ```
 
-`items` 数组顺序必须与 dispatch packet 的 `items` 顺序一致；每个输入 `subshot_id` 必须且只能对应一个输出 item。
+`items` 数组顺序必须与 dispatch packet 的 `items` 顺序一致；每个输入 `subshot_id` 必须且只能对应一个输出 item。`prop_state`、`start_carryover`、`end_carryover` 为必填：没有关键道具时明确写“无关键道具状态变化”，首镜说明建立状态，后续镜必须承接上一镜的空间/光线/道具落点。
