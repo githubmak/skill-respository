@@ -16,7 +16,7 @@ if not os.environ.get("PYTHONPYCACHEPREFIX") and not getattr(sys, "pycache_prefi
 sys.path.insert(0, os.path.dirname(__file__))
 from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_prefix
 from shot_semantics import dispatch_risk, quality_contract, temporal_transition_candidate, workload_units
-from context_budget import check as check_context_budget
+from context_budget import check as check_context_budget, composer_items_fit, editor_items_fit
 
 block_source_pycache_until_run_dir()
 
@@ -79,6 +79,8 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
         # tasks can reach 8–10 without carrying complex context.
         size = max(int(batch_size or 4), 1)
         chunks = _dynamic_master_chunks(items, force_single=(size == 1))
+    elif phase == "editor_pass2":
+        chunks = _editor_review_chunks(items, batch_size)
     elif batch_size is not None:
         size = max(int(batch_size), 1)
         chunks = _analysis_chunks(items, size, phase)
@@ -294,13 +296,13 @@ def _write_constraints_sidecar(run_dir, phase, dispatch_dir, dispatch_tag):
     out_path = os.path.join(dispatch_dir, "%s_%s_constraints.md" % (phase, dispatch_tag))
     phase_note = {
         "scene_lock": (
-            "Professional role: Scene Lock Agent. Return {\"scenes\":[...]} with one immutable lock per packet item: source/direction/temperature lighting, space anchors, confirmed wardrobe and props, screen positions, audio policy. Never write subshot analysis, camera design, performance, dialogue, or prompts."
+            "Professional role: Scene Lock Agent. Return {\"scenes\":[{\"scene\":\"...\",\"space_anchor\":\"...\",\"screen_positions\":\"...\",\"wardrobe_lock\":\"...\",\"prop_state\":\"...\",\"light_source\":\"...\",\"light_direction\":\"...\",\"light_temperature\":\"...\",\"audio_policy\":\"...\"}]} with one immutable lock per packet item. Every required value is one non-empty flat string: do not nest lighting, wardrobe, props, positions, or audio objects. Never write subshot analysis, camera design, performance, dialogue, or prompts."
         ),
         "master_production": (
             "Professional role: You are a short-drama AI video director and prompt supervisor. "
             "Create one risk-controlled current-contract shot per subshot with a strict action budget and primary/supporting/background performance priority; "
             "do not invent plot, rewrite dialogue, redesign clothing, add unconfirmed props, or expose engineering fields. "
-            "Do not force characters to face the lens: distinguish camera-front position from character-facing direction, and only write direct-to-camera eyeline when explicitly sourced. "
+            "Do not force characters to face the lens: distinguish camera-front position from character-facing direction, and only write direct-to-camera eyeline when explicitly sourced. Read qa_metadata.dramatic_design.coverage_role before choosing framing: only dialogue_performance or reaction may use the low-risk fallback of a medium/medium-close fixed frame. establish_space needs readable space, relationship_blocking needs the relationship geometry, prop_information needs the information-bearing prop or hand detail, movement_transition needs motivated movement coverage, power_reversal needs a motivated reframing or angle response, and environment_bridge needs environmental continuity. This is a narrative reason, not a shot-size quota; do not overwrite the locked coverage_role. "
             "Execute the Director's performance_chain before inventing shot language: trigger, facial control, detail/prop leak, body follow-through, voice/breath landing, then residue. In shot_group, natural reaction/detail cuts and reframes are allowed only at those declared beats; preserve identity, prop state, axis, light, and the previous beat's residue. A single T2V task may hand attention from A to B once, never return B to A; any return cut is a new T2V task joined in post from the declared carryover. When a visible speaker has a supporting listener, fill listener_reaction_plan with one causal, low-amplitude closed-mouth reaction grounded in the timeline; do not freeze the listener or give them a competing action. Fight contexts use fight_continuity instead: both participants must react through the same action→force/judgment→result chain, not listener reactions. "
             "Before writing the performance contract, semantically interpret any packet expectation_anchor instead of relying on its type label: distinguish a literal human/character expectation, figurative personification, need-or-lack, or symbolic association; only literal agents can be staged as intentional performers, and absent satisfaction objects must not be shown as present. Bind only source-supported visible progress, camera decision, return reaction, and unresolved end state. Never cut to a static object merely because a character expects it; a detail cut or reframe needs that declared progress event. "
             "For every shot with visible physical characters, fill qa_metadata.performance_causality with calibrated tension intent, trigger, ordered response, physical logic, motion boundary, hold strategy, and end residue. "
@@ -477,10 +479,19 @@ def _dynamic_master_chunks(items, force_single=False):
         group_risk = _batch_risk(group)
         group_capacity = group_risk["batch_capacity"]
         next_capacity = min(capacity, group_capacity) if current else group_capacity
-        if current and len(current) + len(group) > next_capacity:
+        compact_candidate = [_compact_composer_item(item) for item in current + group]
+        if current and (
+            len(current) + len(group) > next_capacity
+            or not composer_items_fit(compact_candidate)
+        ):
             chunks.append(current)
             current, capacity = [], 10
             next_capacity = group_capacity
+        if not current and not composer_items_fit([_compact_composer_item(item) for item in group]):
+            raise ValueError(
+                "single Master Production task exceeds the packet context budget; "
+                "split that main shot during Phase 1 instead of truncating its source facts"
+            )
         current.extend(group)
         capacity = next_capacity
         if len(current) >= capacity:
@@ -489,6 +500,29 @@ def _dynamic_master_chunks(items, force_single=False):
     if current:
         chunks.append(current)
     return chunks or [items]
+
+
+def _editor_review_chunks(windows, batch_size=None):
+    """Batch complete review capsules without exceeding their context budget."""
+    tiers = {"light": 10, "standard": 6, "high": 4}
+    requested = max(int(batch_size), 1) if batch_size is not None else None
+    chunks, current, capacity = [], [], 10
+    for window in windows:
+        tier = str(window.get("review_tier", "standard"))
+        window_capacity = tiers.get(tier, 6)
+        if requested is not None:
+            window_capacity = min(window_capacity, requested)
+        next_capacity = min(capacity, window_capacity) if current else window_capacity
+        if current and (len(current) >= next_capacity or not editor_items_fit(current + [window])):
+            chunks.append(current)
+            current, capacity, next_capacity = [], 10, window_capacity
+        if not editor_items_fit([window]):
+            raise ValueError("single Editor review capsule exceeds context budget; split the main shot")
+        current.append(window)
+        capacity = next_capacity
+    if current:
+        chunks.append(current)
+    return chunks or [windows]
 
 
 def _batch_risk(items):
@@ -547,7 +581,7 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
             control = project_control if isinstance(project_control, dict) else {}
         control = {
             "mode": "t2v",
-            "audio_enabled": bool(control.get("audio_enabled", False)),
+            "audio_enabled": bool(control.get("audio_enabled", True)),
         }
         duration = item.get("duration", 0)
         shots.append({

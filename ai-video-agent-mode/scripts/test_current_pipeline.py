@@ -2,23 +2,27 @@
 import json
 import os
 import tempfile
+import hashlib
 
-from context_budget import check
+from context_budget import check, editor_items_fit
 from editor_scene_windows import build
-from modec_v4 import dialogue_event_issues, expectation_anchor_issues, jimeng_feed_prompt, listener_reaction_issues, shot_group_handoff_issues, temporal_transition_contract_issues
+from modec_v4 import coverage_role_issues, dialogue_event_issues, expectation_anchor_issues, jimeng_feed_prompt, listener_reaction_issues, shot_group_handoff_issues, state_transition_replay_issues, temporal_transition_contract_issues
 from pipeline_runtime import atomic_json, cache_artifact, record_issues
 from adapt_nine_panel_storyboard import adapt
 from emotion_camera_audit import audit as emotion_camera_audit
 from spatial_storyboard import build_spatial_storyboard_reference
 from validate_scene_locks import validate
 from shot_semantics import dispatch_risk, temporal_transition_candidate
-from dispatch_cache import _dynamic_master_chunks
+from dispatch_cache import _dynamic_master_chunks, _editor_review_chunks
 from dispatch_receipts import heartbeat as receipt_heartbeat, issue as issue_receipt, load_and_verify as verify_dispatch_receipt
-from pipeline_state import record_heartbeat as state_heartbeat, set_agent_id
+from pipeline_state import load_state, record_heartbeat as state_heartbeat, set_agent_id
 from record_batch_provenance import record as record_provenance, verify as verify_provenance
 from merge_agent_outputs import merge_agent_outputs
 from pipeline_templates import GATES
-from pipeline_runner import _materialize
+from pipeline_runner import _local_phase_valid, _materialize
+from check_export import INTERNAL_TITLE_LEAK
+from preflight_check import PLACEHOLDER_CHARACTER_NAMES
+from validate_durations import _estimate_action_seconds
 
 
 def run():
@@ -32,6 +36,11 @@ def run():
         lock_path = os.path.join(run_dir, ".cache", "analysis", "scene_locks.json")
         _write(lock_path, locks)
         assert not validate(lock_path)
+        nested_locks_path = os.path.join(run_dir, ".cache", "analysis", "nested_scene_locks.json")
+        nested_locks = {"scenes": [dict(locks["scenes"][0], light_source={"kind": "顶灯"})]}
+        _write(nested_locks_path, nested_locks)
+        assert any("light_source must be a non-empty flat string" in issue for issue in validate(nested_locks_path))
+        assert _estimate_action_seconds("我看见你了", {"dialogue_refs": ["D1"]}) == 0.0
         plan = {"shots": [{"shot_id": "S1", "scene": "场景A", "subshots": [{"subshot_id": "S1-01"}]},
                           {"shot_id": "S2", "scene": "场景A", "subshots": [{"subshot_id": "S2-01"}]}]}
         package = {"shots": [{"shot_id": "S1", "source_subshot_ids": ["S1-01"], "duration": 4, "full_prompt": "x", "qa_metadata": {}},
@@ -40,7 +49,14 @@ def run():
         _write(os.path.join(run_dir, ".cache", "composer", "merged.prompt_package.json"), package)
         windows = build(run_dir)
         assert len(windows) == 2 and windows[0]["current"]["shot_id"] == "S1" and windows[1]["previous"]["shot_id"] == "S1"
+        assert windows[0]["capsule_version"] == "editor-review-v1"
+        assert "full_prompt" in windows[0]["current"]
+        assert "full_prompt" not in windows[0]["next"]
+        assert editor_items_fit(windows)
         assert check({"items": [{"shot_id": "S1"}]}) > 0
+        assert INTERNAL_TITLE_LEAK.search("S02 | S1-02 | | 11.6s | dialogue | latent")
+        assert not INTERNAL_TITLE_LEAK.search("### S1-02｜11.6秒")
+        assert "主角" in PLACEHOLDER_CHARACTER_NAMES
         atomic_json(os.path.join(run_dir, ".cache", "control.json"), {"ok": True})
         assert _read(os.path.join(run_dir, ".cache", "control.json"))["ok"] is True
         cache_artifact(run_dir, "test", {"value": 1})
@@ -75,6 +91,9 @@ def run():
         receipt_heartbeat(gate_packet_path, gate_packet, "agent-gate-test")
         record_provenance(gate_packet_path)
         assert verify_provenance(batch_path)[0] is True
+        # Batch provenance is not phase completion: the runner must still
+        # materialize every verified batch before it can advance.
+        assert load_state(run_dir)["phases"]["scene_lock"]["status"] == "waiting"
         try:
             merge_agent_outputs(os.path.join(run_dir, "forbidden_merge.json"), batch_path, require_provenance=False)
             raise AssertionError("public merge accepted an unguarded provenance mode")
@@ -82,6 +101,9 @@ def run():
             assert "DISPATCH_GATE" in str(error)
         canonical = "生成规格：规格\n\n主体与空间锁定：空间\n\n主镜头连续规则：规则\n\n子镜头组：【镜头1｜0.0-1.0秒】画面\n\n光照、声音与稳定约束：光声"
         assert "生成规格：" not in jimeng_feed_prompt(canonical)
+        fixed_medium = canonical.replace("规则", "中近景，固定机位")
+        assert coverage_role_issues({"dramatic_design": {"coverage_role": "relationship_blocking"}}, fixed_medium)
+        assert not coverage_role_issues({"dramatic_design": {"coverage_role": "dialogue_performance"}}, fixed_medium)
         figurative_prompt = canonical.replace("画面", "庭前花枝对着空门，风吹花瓣落向门槛；画面保持空门与花枝，空门仍未有人归来")
         figurative_anchor = {"expectation_anchor": {
             "applicable": True, "semantic_mode": "figurative_personification", "anchor_type": "space",
@@ -101,6 +123,10 @@ def run():
         listener_prompt = canonical.replace("画面", "角色B视线停在角色A脸上，拇指在杯沿轻收一次，不起身、不转向抢画面；角色B口型闭合，手仍停在杯沿，视线留在角色A方向")
         listener_metadata = {"performance_priority": {"primary": "角色A", "supporting": ["角色B"], "background": []}, "dialogue_events": [{"kind": "台词", "speaker": "角色A", "speaker_visibility": "visible"}], "listener_reaction_plan": {"speaker": "角色A", "listener": "角色B", "trigger": "角色A说到关键事实", "time_range": "0.2-0.8秒", "visual_evidence": "角色B视线停在角色A脸上，拇指在杯沿轻收一次", "motion_limit": "不起身、不转向抢画面", "lip_sync": False, "end_residue": "角色B口型闭合，手仍停在杯沿，视线留在角色A方向"}}
         assert not listener_reaction_issues(listener_metadata, listener_prompt)
+        phone_previous = {"end_state": "手机持续亮屏显示来电", "continuity_contract": {"next_carryover": "手机亮屏的来电状态"}}
+        phone_replay = "手机屏幕亮起或震动，显示来电界面"
+        assert state_transition_replay_issues(phone_previous, "手机屏幕亮起显示来电", {}, phone_replay)
+        assert not state_transition_replay_issues(phone_previous, "手机屏幕亮起显示来电", {}, "手机已亮屏，沈星雨直接抬手贴耳接听")
         assert shot_group_handoff_issues({"editorial_mode": "shot_group", "camera_beat_map": [{"focus_owner": "角色A"}, {"focus_owner": "角色B"}, {"focus_owner": "角色A"}]})
         risky = {"full_prompt": canonical.replace("空间", "甲画左、乙画右，酒店入口" ).replace("画面", "甲走向乙并递出手机"), "qa_metadata": {"dialogue_events": [{"speaker": "甲"}, {"speaker": "乙"}]}}
         assert build_spatial_storyboard_reference(risky, {"scene": "大堂"}) is not None
@@ -112,6 +138,16 @@ def run():
         _write(os.path.join(run_dir, ".cache", "composer", "prompt_package.json"), {"shots": []})
         audit_result, _audit_path = emotion_camera_audit(run_dir)
         assert isinstance(audit_result.get("pass"), bool) and isinstance(audit_result.get("shots"), list)
+        package_path = os.path.join(run_dir, ".cache", "composer", "merged.prompt_package.json")
+        os.makedirs(os.path.join(run_dir, ".cache", "validate"), exist_ok=True)
+        _write(os.path.join(run_dir, ".cache", "validate", "result.json"), {
+            "pass": True, "package_sha256": "stale",
+        })
+        assert not _local_phase_valid(run_dir, "validate")
+        _write(os.path.join(run_dir, ".cache", "validate", "result.json"), {
+            "pass": True, "package_sha256": _sha256(package_path),
+        })
+        assert _local_phase_valid(run_dir, "validate")
         light_items = [_master_item("E%02d" % index, "环境", non_character=True) for index in range(1, 11)]
         light_risk = dispatch_risk(light_items[0])
         assert light_risk["tier"] == "light" and light_risk["batch_capacity"] == 10
@@ -120,6 +156,14 @@ def run():
         high_risk = dispatch_risk(high_items[0])
         assert high_risk["tier"] == "high" and high_risk["batch_capacity"] == 4
         assert [len(batch) for batch in _dynamic_master_chunks(high_items)] == [4, 1]
+        large_items = [_master_item("L%02d" % index, "动作" + "x" * 5000) for index in range(1, 3)]
+        assert [len(batch) for batch in _dynamic_master_chunks(large_items)] == [1, 1]
+        editor_windows = [dict(windows[0], review_tier="light") for _ in range(10)]
+        light_editor_batches = _editor_review_chunks(editor_windows)
+        assert sum(len(batch) for batch in light_editor_batches) == 10
+        assert all(1 <= len(batch) <= 10 for batch in light_editor_batches)
+        oversized_windows = [dict(windows[0], current=dict(windows[0]["current"], full_prompt="x" * 5000)) for _ in range(3)]
+        assert [len(batch) for batch in _editor_review_chunks(oversized_windows)] == [1, 1, 1]
         event_transition = _master_item("T01", "梦境崩塌后，角色A在现实中苏醒")
         candidate = temporal_transition_candidate(event_transition)
         assert candidate["eligible"] is True and candidate["kind"] == "story_event_transition"
@@ -154,6 +198,14 @@ def _write(path, value):
 def _read(path):
     with open(path, "r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def _sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _panel(index):

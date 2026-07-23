@@ -58,6 +58,34 @@
       },
       "required": ["items"]
     },
+    "scene_lock_package": {
+      "type": "object",
+      "properties": {
+        "scenes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/definitions/scene_lock"}
+        }
+      },
+      "required": ["scenes"],
+      "additionalProperties": false
+    },
+    "scene_lock": {
+      "type": "object",
+      "properties": {
+        "scene": {"type": "string", "minLength": 1},
+        "space_anchor": {"type": "string", "minLength": 1},
+        "screen_positions": {"type": "string", "minLength": 1},
+        "wardrobe_lock": {"type": "string", "minLength": 1},
+        "prop_state": {"type": "string", "minLength": 1},
+        "light_source": {"type": "string", "minLength": 1},
+        "light_direction": {"type": "string", "minLength": 1},
+        "light_temperature": {"type": "string", "minLength": 1},
+        "audio_policy": {"type": "string", "minLength": 1}
+      },
+      "required": ["scene", "space_anchor", "screen_positions", "wardrobe_lock", "prop_state", "light_source", "light_direction", "light_temperature", "audio_policy"],
+      "additionalProperties": false
+    },
     "director_item": {
       "type": "object",
       "properties": {

@@ -37,6 +37,21 @@ DEFAULT_SPEED_FACTOR = 1.0
 PUNCTUATION_CHARS = set(",，、；")
 SENTENCE_ENDS = set("。！？…\u2026")
 
+# Keep this table ordered from the most specific verb phrase to the least
+# specific one.  The planner and validator share this estimator, so a plan is
+# not generated with one duration model and rejected by another.
+ACTION_ESTIMATES = (
+    ("打开", 1.5), ("拿起", 1.0), ("放下", 0.8), ("走向", 1.5),
+    ("走到", 1.5), ("停下", 1.0), ("站起", 1.2), ("坐下", 1.5),
+    ("蹲下", 1.5), ("转身", 1.0), ("抬头", 0.8), ("低头", 0.8),
+    ("递出", 1.2), ("接过", 1.2), ("拨通", 1.2), ("贴向", 1.0),
+    ("拿", 0.8), ("放", 0.8), ("走", 1.5), ("跑", 1.0),
+    ("站", 1.0), ("坐", 1.5), ("蹲", 1.5), ("推", 1.2),
+    ("关", 1.0), ("捡", 1.5), ("翻", 1.5), ("穿", 2.0),
+    ("脱", 1.5), ("擦", 1.5), ("写", 2.0), ("抱", 1.5),
+    ("举", 1.5), ("搬", 2.5), ("抬", 2.0),
+)
+
 
 def _estimate_dialogue_seconds(dialogue_text, emotion_tone=""):
     """Calculate minimum time needed to deliver a line of dialogue naturally.
@@ -65,23 +80,20 @@ def _estimate_action_seconds(base_action, subshot=None):
     """Estimate minimum time for action performance based on keywords."""
     if subshot is not None and is_true_non_action_subshot(subshot):
         return 0.0
+    # Phase 1 stores spoken text in base_action for dialogue shots.  Treating
+    # incidental verbs in a line as an additional physical-action budget was
+    # the source of repeated false duration repairs.
+    if subshot is not None and subshot.get("dialogue_refs"):
+        return 0.0
     if not base_action:
         return ACTION_TIME_BASE
-    # Key action indicators and their estimated times
-    action_estimates = {
-        "打开": 1.5, "开": 1.0, "取": 1.0, "拿": 0.8, "放": 0.8,
-        "叠": 2.0, "折": 1.5, "装": 1.0, "拉": 1.2, "背": 2.0,
-        "走": 1.5, "跑": 1.0, "站": 1.0, "坐": 1.5, "蹲": 1.5,
-        "推": 1.2, "关": 1.0, "捡": 1.5, "翻": 1.5, "系": 2.0,
-        "穿": 2.0, "脱": 1.5, "擦": 1.5, "写": 2.0, "看": 0.8,
-        "抱": 1.5, "举": 1.5, "搬": 2.5, "抬": 2.0,
-    }
     total = ACTION_TIME_BASE
-    action_count = 0
-    for word, secs in action_estimates.items():
-        if word in base_action:
-            total += secs
-            action_count += 1
+    remaining = str(base_action)
+    for phrase, seconds in ACTION_ESTIMATES:
+        if phrase in remaining:
+            total += seconds
+            # Do not count "打开" again as the generic action "开".
+            remaining = remaining.replace(phrase, "", 1)
     # Cap at reasonable max for a single subshot
     return min(total, 8.0)
 

@@ -14,6 +14,7 @@ from modec_v4 import (
     action_budget_issues,
     attention_handoff_issues,
     camera_competition_issues,
+    coverage_role_issues,
     continuity_contract_issues,
     dialogue_event_issues,
     expectation_anchor_issues,
@@ -36,6 +37,11 @@ from negative_prompts import PLACEHOLDER, is_fight_context
 
 
 FORBIDDEN_ENGINES = ["C4D", "Octane", "Blender", "Redshift", "Arnold", "Unreal Engine"]
+INTERNAL_TITLE_LEAK = re.compile(
+    r"(?m)^\s*(?:#+\s*)?[^|\n]+\|\s*S\d+-\d+\s*\|[^\n]*\|\s*"
+    r"(?:dialogue|action|dramatic|environment|object)\s*\|\s*"
+    r"(?:neutral|latent|rising|peak|release)\s*$"
+)
 
 
 def check_export(md_path, run_dir, quality_mode=False):
@@ -51,6 +57,11 @@ def check_export(md_path, run_dir, quality_mode=False):
     director_map = {}
     scene_map = {}
     failures = []
+
+    if not quality_mode:
+        editor_ok, editor_detail = _editor_review_check(llm_review)
+        if not editor_ok:
+            print("[BLOCK] Editor Pass 2 is incomplete: " + editor_detail)
 
     def check(number, label, condition, detail=""):
         print(f"  [{'OK' if condition else '!!'}] {number:02d}. {label}: {detail or ('OK' if condition else 'FAIL')}")
@@ -93,6 +104,7 @@ def check_export(md_path, run_dir, quality_mode=False):
     primary_issues = 0
     budget_issues = 0
     camera_budget_issues = 0
+    coverage_issues = 0
     visible_detail_issues = 0
     dialogue_issues = 0
     mode_issues = 0
@@ -175,6 +187,8 @@ def check_export(md_path, run_dir, quality_mode=False):
         camera_errors = camera_competition_issues(full_prompt, editorial_mode) + attention_handoff_issues(metadata, full_prompt) + shot_group_handoff_issues(metadata)
         if not isinstance(budget, dict) or budget.get("physical_camera_move_count") not in (0, 1) or camera_errors:
             camera_budget_issues += 1
+        if coverage_role_issues(metadata, full_prompt):
+            coverage_issues += 1
         shot_size = director_map.get(sid, {}).get("shot_size", plan_item.get("shot_size", ""))
         if visibility_issues(full_prompt, shot_size):
             visible_detail_issues += 1
@@ -234,7 +248,7 @@ def check_export(md_path, run_dir, quality_mode=False):
     check(19, "Role partition complete", role_issues == 0, f"{role_issues} bad")
     check(20, "Exactly one primary when visible", primary_issues == 0, f"{primary_issues} bad")
     check(21, "Action budget/fight continuity", budget_issues == 0 and fight_continuity_errors == 0, f"budget={budget_issues}, fight={fight_continuity_errors}")
-    check(22, "Single camera move budget", camera_budget_issues == 0, f"{camera_budget_issues} bad")
+    check(22, "Camera budget and coverage role", camera_budget_issues == 0 and coverage_issues == 0, f"budget={camera_budget_issues}, coverage={coverage_issues}")
     check(23, "Shot-size visibility", visible_detail_issues == 0, f"{visible_detail_issues} invisible-detail shot(s)")
     check(24, "Dialogue boundary", dialogue_issues == 0, f"{dialogue_issues} mismatch(es)")
     check(25, "Generation mode", mode_issues == 0, f"{mode_issues} invalid")
@@ -307,10 +321,11 @@ def _export_check(md_path, quality_mode, expected_ids, grid_enabled=False, grid_
     required_sections = ("模型提示词", "负面提示词", "下一镜转场提示词", "台词/OS/OV表演")
     forbidden_sections = ("QA元数据", "qa_metadata", "生成控制", "generation_control")
     separated = all(label in text for label in required_sections) and not any(label in text for label in forbidden_sections)
+    title_ok = not bool(INTERNAL_TITLE_LEAK.search(text))
     has_grid_section = "自动九宫格剧情包" in text
     grid_ok = has_grid_section == grid_expected if grid_enabled else not has_grid_section
     xlsx_path = os.path.splitext(md_path)[0] + ".xlsx"
-    return ids_ok and separated and grid_ok and os.path.exists(xlsx_path), f"ids={ids_ok}, separated={separated}, grid={grid_ok}, xlsx={os.path.exists(xlsx_path)}"
+    return ids_ok and separated and title_ok and grid_ok and os.path.exists(xlsx_path), f"ids={ids_ok}, separated={separated}, title={title_ok}, grid={grid_ok}, xlsx={os.path.exists(xlsx_path)}"
 
 
 def _load(path):

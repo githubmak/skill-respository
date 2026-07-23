@@ -27,7 +27,7 @@ GATES = {
     },
     "editor_pass1": {
         "input": [".cache/composer/merged.prompt_package.json"],
-        "output": [".cache/composer/merged.prompt_package.json"],
+        "output": [".cache/review/pre_editor_gate.json"],
         "validator": None
     },
     "editor_pass2": {
@@ -46,12 +46,12 @@ GATES = {
     },
     "validate": {
         "input": [".cache/composer/merged.prompt_package.json", "project_config.json"],
-        "output": [],
+        "output": [".cache/validate/result.json"],
         "validator": None
     },
     "export": {
         "input": [".cache/composer/merged.prompt_package.json", ".cache/orchestrator/shot_plan.json"],
-        "output": [],
+        "output": [".cache/export/result.json"],
         "validator": None
     }
 }

@@ -141,10 +141,10 @@ def _mark_dispatch_recorded(run_dir, phase, dispatch_id, validation_mode):
     dispatches = phase_state.get("dispatches", {})
     statuses = [entry.get("status") for entry in dispatches.values() if isinstance(entry, dict)]
     if statuses and all(status == "done" for status in statuses):
-        phase_state["status"] = "done"
-        phase_state["completed_at"] = time.time()
-        if isinstance(phase_state.get("spawn_time"), (int, float)):
-            phase_state["elapsed_seconds"] = round(max(phase_state["completed_at"] - phase_state["spawn_time"], 0), 3)
+        # Provenance proves every worker batch, not the phase output. The
+        # runner must still merge/materialize and apply the phase gate before
+        # it alone marks this phase done.
+        phase_state["status"] = "waiting"
     elif validation_mode == "partial":
         phase_state["status"] = "waiting"
     save_state(run_dir, state)

@@ -26,6 +26,7 @@ from spatial_storyboard import build_spatial_storyboard_reference
 from emotion_camera_audit import audit as audit_emotion_camera
 from pipeline_state import AGENT_PHASES, load_state
 from record_batch_provenance import verify as verify_provenance
+from pipeline_runtime import atomic_json
 
 
 CHECK_EXPORT = os.path.join(os.path.dirname(__file__), "check_export.py")
@@ -36,7 +37,9 @@ def export_with_validation(md_path, run_dir):
     if not package_path:
         raise SystemExit("Missing prompt package in run directory")
     _require_agent_dispatch_gates(run_dir, package_path)
+    source_sha256 = _sha256(package_path)
     normalize_package(package_path, package_path)
+    _record_normalization_provenance(package_path, source_sha256)
     master_path, master_package = materialize_master_tasks(run_dir, source_path=package_path)
     master_issues = validate_master_tasks(run_dir)
     if master_issues:
@@ -122,6 +125,25 @@ def _sha256(path):
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _record_normalization_provenance(package_path, source_sha256):
+    """Record the deterministic negative-prompt injection in the merge ledger."""
+    manifest_path = package_path + ".merge_provenance.json"
+    manifest = _load_optional(manifest_path)
+    if not manifest:
+        raise SystemExit("DISPATCH_GATE: normalized package requires merge provenance")
+    if manifest.get("output_sha256") != source_sha256:
+        raise SystemExit("DISPATCH_GATE: package changed before deterministic normalization")
+    current_hash = _sha256(package_path)
+    manifest["output_sha256"] = current_hash
+    manifest["normalization"] = {
+        "name": "normalize_prompt_package",
+        "input_sha256": source_sha256,
+        "output_sha256": current_hash,
+        "recorded_at": time.time(),
+    }
+    atomic_json(manifest_path, manifest)
 
 
 def _write_master_markdown(path, master_package, plan, grid_packages=None):

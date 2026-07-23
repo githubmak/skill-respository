@@ -20,13 +20,13 @@ description: >
 ## 0. 运行铁律
 
 1. 用户再次手动调用本技能时，默认按 `full/new` 处理：创建全新的 `run_dir`，不得清空、覆盖、读取或合并上次运行的缓存；旧运行只保留作审计。只有用户明确说“继续/续跑、审查、导出、单镜修复”时，才允许对应窄路线复用已确认的运行。`full/new` 若指向已有 `project_config.json` 或 `.cache` 的目录必须阻断，要求选择新的 `run_dir`。
-2. Phase 0 必须使用 `scripts/resolve_run_mode.py` 和 `scripts/configuration_wizard.py` 逐轮确认基础配置，绝不一次性列出整张配置问卷：第一轮只问 `export_base`；随后每轮只问 1–2 项，固定顺序为“画幅+视觉风格 → 最大时长+目标平台 → 原生音频+九宫格开关”。用户答完本轮后才提问下一轮。生成方式固定写入 `t2v`，目标平台固定为即梦。若用户或平台适配器明确提供提示词字符硬上限，写入 `prompt_limits.hard_max_chars`；否则保持 `null`，不得猜测。
+2. Phase 0 必须使用 `scripts/resolve_run_mode.py` 和 `scripts/configuration_wizard.py` 逐轮确认基础配置，绝不一次性列出整张配置问卷：第一轮只问 `export_base`；随后每轮只问 1–2 项，固定顺序为“画幅+视觉风格 → 最大时长+目标平台 → 原生音频+九宫格开关 → Markdown 交付路径”。交付路径写入 `delivery.markdown_path`，必须位于 `export_base` 下；通过最终验证后自动导出，绝不重复确认。生成方式固定写入 `t2v`，目标平台固定为即梦。若用户或平台适配器明确提供提示词字符硬上限，写入 `prompt_limits.hard_max_chars`；否则保持 `null`，不得猜测。
 3. 用户明确“不需要九宫格”时，`storyboard_grid.enabled=false`，状态机必须跳过九宫格判断、缓存和导出；九宫格开关不得改变 T2V 主流程。
 4. 派发子 Agent 前运行 `dispatch_cache.py`。spawn 文本只传 packet、constraints、Composer scaffold、scene-lock cache 路径和简短指令。Composer 的 packet item 固定为一个主镜头任务；子镜只作为其中的连续变化量。
 5. 子 Agent 只写 packet 的 `_batch_output_path`；公共文件由主 Agent 合并。每次初派或重派必须使用 `dispatch_cache.py` 新返回的唯一 packet/batch 路径；禁止复用或覆盖已经验证的 batch。
-6. 每次 spawn 返回真实 Agent ID 后，立即运行 `register_dispatch_agent.py <packet> <agent_id>`，它会生成不可替代的本地 dispatch receipt；运行中必须至少一次调用 `record_dispatch_heartbeat.py <packet> <agent_id>`；Agent 完成后运行 `record_batch_provenance.py <packet>`。没有“注册回执 → 至少一次心跳 → 完成回执”的完整链，batch 必被 provenance、合并、promote 与 pipeline runner 阻断。只有逐 dispatch 的 agent_id/spawn_time/receipt/heartbeat、输出时序、Phase 校验和 SHA-256 全部通过的 batch 才能使用。公共合并必须加 `--require-provenance`。
+6. 每次 spawn 返回真实 Agent ID 后，立即运行 `register_dispatch_agent.py <packet> <agent_id>`，它会生成不可替代的本地 dispatch receipt；运行中必须至少一次调用 `record_dispatch_heartbeat.py <packet> <agent_id>`；Agent 完成后运行 `record_batch_provenance.py <packet>`。没有“注册回执 → 至少一次心跳 → 完成回执”的完整链，batch 必被 provenance、合并、promote 与 pipeline runner 阻断。只有逐 dispatch 的 agent_id/spawn_time/receipt/heartbeat、输出时序、Phase 校验和 SHA-256 全部通过的 batch 才能使用。provenance 只验证身份、时序、文件哈希与该阶段结构/语义合同，绝不要求 QA 文本逐字出现在提示词中。公共合并必须加 `--require-provenance`。
 7. 目标文件存在且 JSON 可解析才算 Agent 完成；不要关闭 running Agent。缓存、验证问题和字段补丁统一写入 `.cache/content/`、`.cache/issues.json`，修复只能合并验证失败字段。
-8. 所有可并行 dispatch 由 `dispatch_queue.py` 按 `project_config.execution.worker_slots`（默认 4）持续补位；已运行、已验证或部分验证的 packet 不得重复派发。没有经运行环境验证的额外 slot 时保持 4，不得只改配置宣称提速。
+8. 所有可并行 dispatch 由 `dispatch_queue.py` 按 `project_config.execution.worker_slots`（默认 4）持续补位；已运行、已验证或部分验证的 packet 不得重复派发。宿主返回线程上限时，保留未派 packet，等待已运行任务释放 slot 后再次补位，禁止绕开队列重试 spawn。没有经运行环境验证的额外 slot 时保持 4，不得只改配置宣称提速。
 8. Phase 2、Phase 6、Phase 8 的语义产出必须由 Agent 完成；格式归一化、合并和验证优先使用脚本。
 9. 台词、OV、OS 按 `引用ID—类型—人物—原文` 确定性锁定，逐字逐标点保留；语气、停顿和情绪只写在独立控制字段，不得改写原文。OV/OS 无口型同步；无原文时禁止新增台词、旁白或内心声。
 10. 失败阶段必须修复或重派，不能跳过门禁。
@@ -38,10 +38,11 @@ description: >
 16. Composer、Editor Pass 1、Editor Pass 2、Validate 是严格队列中的必经环节；已存在旧输出或缓存不代表可以跳过其中任何一步，缺任一环节或门禁未通过时，禁止直接进入导出。
 17. 技能目录只允许保存 schema、算法、枚举、验证器和 `角色A/角色B/场景A/关键道具` 等中性占位符。项目名、人物名、题材、服装、灯光、场景细节和资产路径只能存在于本次运行目录的项目文件中，不得写回技能。
 18. Windows / PowerShell 安全：任何多行 JSON、Markdown、packet、constraints、prompt_package、review sidecar 或大段文本都必须先落盘，再通过文件路径传递；禁止把这些内容拼进 `powershell -Command`、`pwsh -Command`、`python -c`、`node -e` 或 here-string。命令行只保留短参数和路径。Windows 手动运行统一使用 `scripts/run_skill_tool.ps1`，它以参数数组调用 Python，不使用 `Invoke-Expression` 或命令字符串拼接；所有含空格路径必须作为一个已引用参数传入。
-19. 把平台最大时长视为单片容量：在同一戏剧目标、因果连续且动作预算允许时，优先把相邻节拍打包到接近上限；随后再用剧情节拍证明实际时长。禁止为了利用率添加氛围、静默、凝视或重复余韵。单一微表情、一次视线变化、静态压场或群体凝视默认不超过 `max_static_shot_duration`（默认 6 秒）；超时子镜必须在唯一 `duration_design` 对象中提供 `duration_strategy=pack_toward_limit`、`justified_content_duration`、`utilization_ratio`、`duration_rationale` 与有序 `dramatic_beats[]`。
-20. 先运行 `scripts/route_task.py` 选择 `full / audit / export / compose / single-repair`，并显式传入 `--intent new/resume/audit/reexport`。`full/new` 先走逐项配置向导；`export` 仅接受已完成 Editor Pass 2 与 Validate 的运行，且只重新确认本次 Markdown 导出路径；纯审查、导出、单镜修复不得默认重跑全管线。
+19. 把平台最大时长视为单片容量：在同一戏剧目标、因果连续且动作预算允许时，优先把相邻节拍打包到接近上限；随后再用剧情节拍证明实际时长。Phase 1 的动作时长必须使用与 `validate_durations.py` 相同的下限估算；对白镜只按已锁定逐字台词与必要反应空白计时，不能把台词中的偶然动词重复算作物理动作。禁止为了利用率添加氛围、静默、凝视或重复余韵。单一微表情、一次视线变化、静态压场或群体凝视默认不超过 `max_static_shot_duration`（默认 6 秒）；超时子镜必须在唯一 `duration_design` 对象中提供 `duration_strategy=pack_toward_limit`、`justified_content_duration`、`utilization_ratio`、`duration_rationale` 与有序 `dramatic_beats[]`。
+20. 先运行 `scripts/route_task.py` 选择 `full / audit / export / compose / single-repair`，并显式传入 `--intent new/resume/audit/reexport`。`full/new` 先走逐项配置向导；`export` 仅接受已完成 Editor Pass 2 与 Validate 的运行，并使用初始确认的 `delivery.markdown_path` 自动导出；纯审查、导出、单镜修复不得默认重跑全管线。
 21. 先读 `references/ROUTES.md`，再按路由读取指定契约、packet 与函数片段。不得为路径检查、格式校验或字段搬运加载完整 runbook、完整历史或无关 Python 文件。
 22. 表演因果链先于运镜设计。每个人物节拍先确定“触发原因 → 表情控制 → 细部/道具泄露 → 肩背、重心或步伐承接 → 说话语气/呼吸 → 可见残留”；运镜、反打、特写和移镜只能响应这条链中的可见重音，不得先选炫技运镜再反推表演。
+22a. Phase 1 必须为每个主镜锁定 `dramatic_design.coverage_role`：`establish_space`、`relationship_blocking`、`dialogue_performance`、`reaction`、`prop_information`、`movement_transition`、`power_reversal` 或 `environment_bridge`。它说明该镜为何需要当前覆盖方式。只有 `dialogue_performance` 与 `reaction` 可默认选择中景/中近景固定机位；其他职责必须从空间、人物关系、道具信息、移动、权力变化或环境承接中选择与源文相符的可见覆盖。不得以固定景别配额替代剧情判断。
 23. Director 必须为每个主镜选择 `editorial_mode`：`continuous_take` 为一条连续摄影轨迹；`shot_group` 为同一即梦生成任务内 1–3 个可见子镜。每个子镜必须写时间窗、主体、景别、屏幕左右、人物朝向、前景肩膀/场景锚点、动作表演和落幅承接；切换只能由表演重音触发。同一 T2V 任务只允许一次单向人物注意力交接（如 A→B）；`A→B→A`、两次人物回切或需要精确剪点的反打，必须拆成下一条 T2V 任务，并以落幅/起幅、声音边界和动作匹配点交给后期。
 24. Phase 1 必须生成 `source_ledger.json` 与 `dramatic_beat_ledger.json`。每个原文事实、动作、台词和 OS/OV 可回溯到源位置；每个戏剧节拍只有一个 `owner_subshot_id`，相邻镜头只能通过 `reserved_by` 预留或通过连续性字段承接，不得重复演绎。
 25. Phase 1 对等待、观察、担心、期待等语句先做语义判别，不能用对象登记表代替理解：判定它是字面主体的可拍行为、借物拟人/环境意象、缺失/需求状态，还是纯修辞。只有它影响本镜焦点、切镜或下一镜连续性，并且有来源支持的可见状态或进展时，才登记 `expectation_anchor` 候选；候选标明语义模式、期待主体、锚点类型、源文位置、可见进展事件和“是否仅在进展时允许切镜”。它是可消费的导演线索，不是每镜必填表格。Director 消费该线索后再选择直观保持构图、细节切镜、主观联想或环境隐喻；无候选、纯修辞或无可见进展不得为了丰富景别新增对象特写，更不得把拟人句错误地演成实体角色的主动等待。
@@ -51,7 +52,7 @@ description: >
 29. Composer 合并后、Editor 前运行 `pre_editor_gate.py`。它按合并包 SHA-256 缓存一次确定性 Composer 校验和一次语义问题清单：确定性失败必须先修复；语义问题交给 Editor 处理。恢复、补位或重派若合并包未变，必须复用该门禁，避免重复读写；导出前仍完整运行最终审查，不得以缓存替代最终验证。
 30. 任一 Agent 阶段仅当本轮所有 dispatch 都通过 provenance 与阶段验证后才允许合并。不得因已有一个已完成 batch、其余 batch 仍在运行或排队而提前 materialize 部分结果。
 31. 剧情驱动的时空/特效转场必须使用 `qa_metadata.temporal_transition_contract`：只有源文明确记忆且存在可拍过去事实，或源文事件本身造成场景、意识、时空或人物状态切换时才可候选。Composer 必须依据当前剧情决定启用一次何种效果，或以源文理由选择正常切换；技能不预设具体事件与效果。合同必须锁定源文触发、效果的源文依据、唯一效果、时间窗、前后状态、声音桥、无口型边界、提示词锚点和降级方案；启用后自动列为高风险，禁止叠加特效、虚构往事或无依据改变人物、服装、时代与场景。
-32. 配置已确认且管线已启动后，`pipeline_runner.py` 返回的 `spawn / wait_for_workers / local_action_required / advance / blocked` 都不是用户确认点：主 Agent 必须自行派发、登记回执、记录心跳、轮询并继续运行，不得询问“是否继续执行”。`wait_for_workers` 明确表示 `requires_user_input=false` 和 `automatic_resume=true`，只能等待 worker 状态变化后再次运行 runner。只有首次 `full/new` 配置、已确认配置被用户实际修改、导出路径尚未由用户确认，或缺少无法从源文/已确认配置推导的必要创作选择时，才允许提问；提问必须说明精确缺口，禁止泛问是否继续。
+32. 配置已确认且管线已启动后，必须以 `scripts/workflow_supervisor.py --run-dir <run_dir> --source <source.txt>` 驱动状态机。它连续执行本地阶段，并在返回 `host_dispatch_required` 时由主 Agent 自行派发、登记回执、记录心跳、轮询并再次调用 supervisor；不得询问“是否继续执行”。`waiting_for_workers` 明确表示不需要用户输入。只有首次 `full/new` 配置、已确认配置被用户实际修改，或缺少无法从源文/已确认配置推导的必要创作选择时，才允许提问；提问必须说明精确缺口，禁止泛问是否继续。
 
 ## 1. 单一数据契约
 
@@ -93,7 +94,7 @@ Phase 6 每个 shot 必须包含：
 | 8 | Editor Pass 2 | `pre_editor_gate.py` 本地门禁 + Agent 语义审查 | 本地门禁合并重复静态检查；Agent 只修语义穿帮和执行竞争 |
 | 8.5 | 九宫格剧情包（可选） | 调用 `nine-panel-video-storyboard` + 适配脚本 | 仅 `storyboard_grid.enabled=true` 时，从已通过 Editor Pass 2 的 T2V提示词、合同和风险数据自动选关键连续镜头链；关闭时状态机标记 skipped，不落盘 |
 | 9 | 最终验证 | `check_export.py` + `validate_modec.py` | 当前契约检查全部通过 |
-| 10 | 导出 | `export_with_validation.py` | 用户确认路径下 Markdown + XLSX 可打开 |
+| 10 | 导出 | Supervisor 调用 `export_with_validation.py` | 初始确认路径下 Markdown + XLSX 可打开 |
 
 Master Production packet 必须使用脚本生成的 `composer_scaffold_path` 锁定 `shot_id/subshot_id/duration/negative_prompt/dialogue_refs/generation_control`，并先填写三份合同再写五段即梦提示词。相同场景的画幅、风格、服装、光源与空间锚点只从 `scene_lock_cache_path` 的 Scene Lock 读取。失败时只重派失败主镜，已通过镜不得重写。
 
@@ -322,7 +323,7 @@ python3 scripts/prepare_master_retry.py <run_dir> <editor_review.json>
 python3 scripts/normalize_prompt_package.py <input.prompt_package.json> <output.prompt_package.json>
 python3 scripts/validate_modec.py <run_dir>
 python3 scripts/check_export.py --quality <run_dir>
-python3 scripts/export_with_validation.py <user_confirmed_export_md> <run_dir>
+python3 scripts/workflow_supervisor.py --run-dir <run_dir> --source <source.txt>
 python3 scripts/benchmark_core_pipeline.py <completed_50_shot_run_dir> [...]
 python3 scripts/materialize_master_tasks.py <run_dir>
 python3 scripts/validate_master_tasks.py <run_dir>

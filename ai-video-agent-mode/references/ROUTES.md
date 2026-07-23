@@ -13,9 +13,9 @@ Read this file first. Select one explicit route, then read only the linked contr
 ## Initialization
 
 - 用户手动再次调用时默认选择 `full --intent new`，且必须指向新的空 `run_dir`。不要删除或读取旧缓存；新运行从 Phase 0 重新建立全部质量合同。
-- `full/new` 先运行 `resolve_run_mode.py`，只询问返回的 `next_fields`（首轮 1 项、后续每轮最多 2 项）。使用 `configuration_wizard.py start/answer/status` 记录每轮答案；完成确认前不得派发 Agent。
-- 仅用户明确要求“继续/续跑”时使用 `full --intent resume`；`audit`、`compose`、`single-repair` 复用已确认配置而不重复提问。`export --intent reexport` 复用配置但必须确认本次 Markdown 输出路径。
-- 一旦配置确认并进入 pipeline，`pipeline_runner.py` 的 `spawn`、`wait_for_workers`、`local_action_required`、`advance` 与可自动修复的 `blocked` 都由主 Agent 自动处理。尤其 `wait_for_workers` 只表示等待已派发 worker 的回执、心跳或验证结果：轮询/继续运行 runner，绝不把它翻译成“是否继续执行”。只有路由结果明确 `needs_user_confirm=true`，或缺少无法从已有事实推导的用户选择时，才向用户提问。
+- `full/new` 先运行 `resolve_run_mode.py`，只询问返回的 `next_fields`（首轮 1 项、后续每轮最多 2 项）。使用 `configuration_wizard.py start/answer/status` 记录每轮答案，其中 `delivery.markdown_path` 是最后一次配置项；完成确认前不得派发 Agent。
+- 仅用户明确要求“继续/续跑”时使用 `full --intent resume`；`audit`、`compose`、`single-repair` 复用已确认配置而不重复提问。`export --intent reexport` 复用配置并使用锁定的 `delivery.markdown_path`，不得推导或询问新路径。
+- 一旦配置确认并进入 pipeline，以 `workflow_supervisor.py` 循环驱动。它自动处理本地阶段，并把 Agent 工作返回为 `host_dispatch_required` 的 packet 列表；主 Agent 完成 provenance 链后立刻再次调用 supervisor。尤其 `waiting_for_workers` 只表示等待已派发 worker 的回执、心跳或验证结果，绝不把它翻译成“是否继续执行”。只有路由结果明确 `needs_user_confirm=true`，或缺少无法从已有事实推导的用户选择时，才向用户提问。
 
 ## Reading Rules
 

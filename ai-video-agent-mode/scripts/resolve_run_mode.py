@@ -12,7 +12,7 @@ import os
 import sys
 
 
-CONFIG_VERSION = 2
+CONFIG_VERSION = 3
 BASE_FIELDS = (
     "export_base",
     "canvas",
@@ -22,6 +22,7 @@ BASE_FIELDS = (
     "generation_control.mode",
     "generation_control.audio_enabled",
     "storyboard_grid.enabled",
+    "delivery.markdown_path",
 )
 
 # Keep user interaction light while preserving a deterministic order.  The
@@ -32,6 +33,7 @@ CONFIG_GROUPS = (
     ("canvas", "visual_style"),
     ("max_shot_duration", "target_platform"),
     ("generation_control.audio_enabled", "storyboard_grid.enabled"),
+    ("delivery.markdown_path",),
 )
 
 DEFAULT_INTENTS = {
@@ -48,8 +50,9 @@ FIELD_PROMPTS = {
     "visual_style": "请输入本项目的视觉风格描述。",
     "max_shot_duration": "请输入单条生成片段的最大时长（秒，不能超过平台能力）。",
     "target_platform": "请输入目标生成平台，例如 即梦、可灵、Runway 或 Veo。",
-    "generation_control.audio_enabled": "请输入是否启用原生音频：true 或 false。",
+    "generation_control.audio_enabled": "是否启用原生音频？默认 true；请输入 true 或 false。",
     "storyboard_grid.enabled": "请输入是否生成自动九宫格剧情包：true 或 false。",
+    "delivery.markdown_path": "请输入本次交付 Markdown 的绝对路径；后续将自动导出到此位置。",
 }
 
 
@@ -81,6 +84,8 @@ def _value_is_present(field, value):
         return isinstance(value, bool)
     if field == "max_shot_duration":
         return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+    if field == "delivery.markdown_path":
+        return isinstance(value, str) and bool(value.strip()) and os.path.isabs(value)
     return isinstance(value, str) and bool(value.strip())
 
 
@@ -130,6 +135,16 @@ def config_issues(config, run_dir=None, require_confirmation=True):
             inside_base = False
         if not inside_base:
             issues.append("export_base must contain run_dir")
+        delivery_path = _get(config, "delivery.markdown_path")
+        if _value_is_present("delivery.markdown_path", delivery_path):
+            try:
+                delivery_inside_base = os.path.commonpath([
+                    os.path.abspath(delivery_path), export_base
+                ]) == export_base
+            except ValueError:
+                delivery_inside_base = False
+            if not delivery_inside_base:
+                issues.append("delivery.markdown_path must be under export_base")
     if not require_confirmation:
         return issues
 
@@ -274,11 +289,7 @@ def resolve(route, run_dir, intent=None):
     result["pass"] = True
     result["reuse_policy"] = "confirmed_configuration_reuse"
     if route == "export" or intent == "reexport":
-        result["export_destination_confirmation_required"] = True
-        result["export_confirmation_message"] = (
-            "Confirm the Markdown delivery path for this export. Reuse the confirmed "
-            "project configuration, but do not infer a new delivery filename."
-        )
+        result["export_destination"] = _get(config, "delivery.markdown_path")
     return result
 
 

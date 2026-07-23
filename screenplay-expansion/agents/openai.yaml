@@ -1,0 +1,8 @@
+interface:
+  display_name: "剧情剧本扩写师"
+  short_description: "在不改台词、人物和走向的前提下丰富完整剧本"
+  brand_color: "#7C3AED"
+  default_prompt: "使用 $screenplay-expansion 将这份简单剧本扩写为完整可拍摄剧本，严格保留台词、人物和剧情走向。"
+
+policy:
+  allow_implicit_invocation: true

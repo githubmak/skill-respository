@@ -9,6 +9,7 @@ import json, os, re, sys
 def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
     sys.path.insert(0, os.path.dirname(__file__))
     from build_shotplan import split_dialogue
+    from validate_durations import _estimate_action_seconds
 
     # Load config if provided, else use defaults
     if config_path and os.path.exists(config_path):
@@ -195,14 +196,17 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
                 group_name = _group_character_name(characters_list)
                 if group_name and group_name not in beat_chars:
                     beat_chars.append(group_name)
-            if not beat_chars:
-                beat_chars = [characters_list[0]] if characters_list else ["\u4e3b\u89d2"]
+            if not beat_chars and characters_list:
+                beat_chars = [characters_list[0]]
 
         shot_num = len(shots) + 1
         refs = beat.get("refs", [])
 
         if beat["type"] in ("action", "action_group"):
-            dur = max(2.0, min(max_shot_duration, len(full_text) / 5))
+            # Use the same lower-bound model as preflight.  The former
+            # character-count heuristic made Phase 1 knowingly under-budget
+            # compound actions, then required repeated repair cycles.
+            dur = max(2.0, min(max_shot_duration, _estimate_action_seconds(full_text) + 0.5))
             subshot_id = f"S1-{shot_num:02d}-01"
             visible_beats = [
                 {"text": action.get("text", ""), "source_ids": action.get("source_ids", [])}
@@ -385,14 +389,44 @@ def _dramatic_design(beat, text, characters, beat_ids):
         if not visual_punctuation:
             visual_punctuation.append("camera_follow")
     reaction_owner = characters[1] if len(characters) > 1 else ""
+    coverage_role = _coverage_role(function, content, characters, weight)
     return {
         "shot_function": function,
+        "coverage_role": coverage_role,
         "narrative_weight": weight,
         "information_gain": content[:120],
         "reaction_ownership": reaction_owner,
         "dramatic_beat_ids": beat_ids,
         "visual_punctuation": visual_punctuation,
     }
+
+
+def _coverage_role(function, content, characters, weight):
+    """Choose the visual job before any camera language is generated.
+
+    This is intentionally a source-led classification, not a quota.  It gives
+    Composer a concrete reason to vary coverage when the story needs space,
+    blocking, movement or an information reveal, while leaving close stable
+    coverage available for actual dialogue and low-amplitude reactions.
+    """
+    if function == "dialogue":
+        # A multi-speaker exchange carries relationship geometry, listening
+        # and attention transfer.  Treating it as a single-person dialogue
+        # close-up was the primary source of repetitive fixed medium shots.
+        return "relationship_blocking" if len(characters) >= 2 else "dialogue_performance"
+    if function == "reaction":
+        return "reaction"
+    if function == "entrance":
+        return "establish_space" if weight in ("high", "critical") else "movement_transition"
+    if function == "reveal":
+        if any(token in content for token in ("手机", "屏幕", "来电", "短信", "信", "文件", "照片", "钥匙", "证据", "礼物")):
+            return "prop_information"
+        return "power_reversal"
+    if any(token in content for token in ("环境", "街景", "天空", "门外", "走廊", "空镜", "建筑", "人群")):
+        return "environment_bridge"
+    if len(characters) >= 2 and any(token in content for token in ("递", "接", "拦", "靠近", "对峙", "拉住", "推开", "并排", "相对")):
+        return "relationship_blocking"
+    return "movement_transition"
 
 
 def _duration_design(duration, capacity, beat_ids, rationale):
@@ -476,7 +510,8 @@ def _pack_action_beats(beats, max_shot_duration, characters):
 
     def action_duration(action_group):
         text = "；".join(item.get("text", "") for item in action_group)
-        return max(2.0, min(float(max_shot_duration), len(text) / 5))
+        from validate_durations import _estimate_action_seconds
+        return max(2.0, min(float(max_shot_duration), _estimate_action_seconds(text) + 0.5))
 
     def compatible(previous, current):
         if previous.get("scene", "") != current.get("scene", ""):

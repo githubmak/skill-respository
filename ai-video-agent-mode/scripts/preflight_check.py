@@ -17,6 +17,7 @@ ALLOWED_VISUAL_PUNCTUATION = {
     "occlusion_reveal", "low_angle_scale", "foreground_reaction",
     "camera_follow", "light_reveal", "stop_mark", "rack_focus",
 }
+PLACEHOLDER_CHARACTER_NAMES = {"主角", "角色A", "角色B", "角色甲", "角色乙"}
 
 
 def run(run_dir):
@@ -79,6 +80,9 @@ def run(run_dir):
                     declared_beats[beat_id] = ssid
             base_action = ss.get("base_action", "")
             characters = ss.get("characters", []) or []
+            for character in characters:
+                if str(character).strip() in PLACEHOLDER_CHARACTER_NAMES:
+                    issues.append(_issue(ssid, "PLACEHOLDER_CHARACTER", "replace placeholder character name with a source-confirmed name"))
             dialogue_refs = ss.get("dialogue_refs", []) or []
             shot_size = ss.get("shot_size", "")
             shot_type = ss.get("shot_type", "") or ss.get("visual_type", "") or ss.get("purpose", "")

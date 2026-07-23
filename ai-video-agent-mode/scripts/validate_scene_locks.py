@@ -25,6 +25,8 @@ def validate(path):
             value = item.get(field)
             if value is None or value == "" or value == [] or value == {}:
                 issues.append(prefix + " missing " + field)
+            elif not isinstance(value, str):
+                issues.append(prefix + " " + field + " must be a non-empty flat string")
     return issues
 
 

@@ -8,8 +8,10 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from modec_v4 import (
     attention_handoff_issues, camera_competition_issues, continuity_contract_issues,
+    coverage_role_issues,
     expectation_anchor_issues, jimeng_shot_group_issues, performance_causality_issues,
     listener_reaction_issues, performance_contract_issues, shot_group_handoff_issues,
+    state_transition_replay_issues,
 )
 
 
@@ -18,6 +20,7 @@ def audit(run_dir, output_path=None):
     package = _load(package_path) if package_path else {}
     output_path = output_path or os.path.join(run_dir, ".cache", "review", "emotion_camera_audit.json")
     results = []
+    previous_metadata, previous_prompt = {}, ""
     for shot in package.get("shots", []) if isinstance(package.get("shots"), list) else []:
         metadata = shot.get("qa_metadata", {}) if isinstance(shot.get("qa_metadata"), dict) else {}
         roles = metadata.get("performance_priority", {}) if isinstance(metadata.get("performance_priority"), dict) else {}
@@ -32,10 +35,13 @@ def audit(run_dir, output_path=None):
         issues.extend(expectation_anchor_issues(metadata, prompt))
         issues.extend(continuity_contract_issues(metadata, prompt, visible))
         issues.extend(camera_competition_issues(prompt, mode))
+        issues.extend(coverage_role_issues(metadata, prompt))
         issues.extend(attention_handoff_issues(metadata, prompt))
         issues.extend(shot_group_handoff_issues(metadata))
         issues.extend(jimeng_shot_group_issues(prompt, mode))
+        issues.extend(state_transition_replay_issues(previous_metadata, previous_prompt, metadata, prompt))
         results.append({"shot_id": shot.get("shot_id", ""), "subshot_id": shot.get("subshot_id", ""), "pass": not issues, "issues": issues})
+        previous_metadata, previous_prompt = metadata, prompt
     result = {"contract_version": "jimeng-t2v-v1", "pass": bool(results) and all(item["pass"] for item in results), "shots": results}
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as handle:

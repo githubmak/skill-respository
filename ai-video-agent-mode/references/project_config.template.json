@@ -25,7 +25,7 @@
   "_target_platform_desc": "当前契约仅支持即梦。提示词使用即梦可执行的可见构图、时间窗和稳定性控制；不得把示例题材或画风写成默认。",
   "generation_control": {
     "mode": "t2v",
-    "audio_enabled": false,
+    "audio_enabled": true,
     "supports_negative_prompt": true
   },
   "_generation_control_desc": "固定为即梦 T2V；不接受外部素材路径、首尾帧或动作素材。人物连续性由固定身份锚点、服装、屏幕左右、场景锚点和上镜终态继承控制。",
@@ -47,14 +47,18 @@
   "_storyboard_grid_desc": "Phase 0 必须询问是否需要自动九宫格剧情包。用户明确“不需要”时设为false，状态机跳过九宫格判断、缓存和导出。设为true时，仅在 editor_pass2 后从已通过的 T2V 主镜头挑选关键连续链，导出九宫格提示词与 P01-P09 剧情节拍；不改变 T2V 主流程。",
   "export_base": "",
   "_export_base_desc": "必须由用户在本次运行中明确提供输出文件位置/输出目录后填写；禁止默认当前目录、工作区目录、源文件目录、上次目录或自动生成目录。所有 run_dir、.cache、dispatch、review、analysis、composer、director、continuity 中间文件都必须位于 export_base 下。",
+  "delivery": {
+    "markdown_path": ""
+  },
+  "_delivery_desc": "本次运行开始时由用户一次确认的最终 Markdown 交付绝对路径。路径必须位于 export_base 内；通过全部验证后，自动同时写出同名 XLSX，不再在导出阶段重复询问。",
   "confirmation": {
-    "config_version": 2,
+    "config_version": 3,
     "confirmed_at": "",
     "confirmed_fields": [],
     "confirmed_values": {},
     "confirmed_values_sha256": ""
   },
-  "_confirmation_desc": "模板值不等于用户确认。仅在用户明确确认本次基础配置后，写入 confirmed_at，并在 confirmed_fields 中列出 export_base、canvas、visual_style、max_shot_duration、target_platform、generation_control.mode、generation_control.audio_enabled、storyboard_grid.enabled；同时写入 confirmed_values 及其哈希。任一确认值变更时必须回到对应逐项确认轮次。没有此记录不得续跑、合成、修复或导出。",
+  "_confirmation_desc": "模板值不等于用户确认。仅在用户明确确认本次基础配置后，写入 confirmed_at，并在 confirmed_fields 中列出 export_base、canvas、visual_style、max_shot_duration、target_platform、generation_control.mode、generation_control.audio_enabled、storyboard_grid.enabled、delivery.markdown_path；同时写入 confirmed_values 及其哈希。任一确认值变更时必须回到对应逐项确认轮次。没有此记录不得续跑、合成、修复或导出。",
   "run_timestamp": "",
   "character_list": [],
   "global_negative_prompt": "",

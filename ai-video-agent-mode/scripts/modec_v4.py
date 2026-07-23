@@ -451,6 +451,35 @@ def expectation_anchor_issues(metadata, full_prompt=""):
     return issues
 
 
+def state_transition_replay_issues(previous_metadata, previous_prompt, metadata, full_prompt):
+    """Reject an adjacent shot that restages an already-carried state change.
+
+    These checks intentionally target source-visible state transitions rather
+    than ordinary repeated objects. A phone may remain visible across shots;
+    a phone screen may not *become lit* twice without an intervening reset.
+    """
+    previous_metadata = previous_metadata if isinstance(previous_metadata, dict) else {}
+    metadata = metadata if isinstance(metadata, dict) else {}
+    previous_continuity = previous_metadata.get("continuity_contract", {})
+    current_continuity = metadata.get("continuity_contract", {})
+    previous_continuity = previous_continuity if isinstance(previous_continuity, dict) else {}
+    current_continuity = current_continuity if isinstance(current_continuity, dict) else {}
+    previous = " ".join(str(value or "") for value in (
+        previous_prompt, previous_metadata.get("end_state", ""),
+        previous_continuity.get("end_anchor", ""), previous_continuity.get("next_carryover", ""),
+    ))
+    current = " ".join(str(value or "") for value in (
+        full_prompt, metadata.get("start_state", ""), current_continuity.get("start_anchor", ""),
+    ))
+    phone_carried = "手机" in previous and any(token in previous for token in ("亮屏", "屏幕亮", "来电", "来电界面"))
+    phone_replayed = "手机" in current and any(token in current for token in (
+        "突然亮起", "屏幕亮起", "亮起或震动", "来电界面出现", "显示来电界面",
+    ))
+    if phone_carried and phone_replayed:
+        return ["上一镜已完成手机亮屏/来电状态，本镜必须继承该状态后继续动作，不能再次演绎亮屏或来电出现"]
+    return []
+
+
 def continuity_contract_issues(metadata, full_prompt="", visible_characters=None):
     """Validate cross-shot continuity anchors for positions, eyelines, props, and light."""
     metadata = metadata if isinstance(metadata, dict) else {}
@@ -811,6 +840,29 @@ def camera_competition_issues(full_prompt, editorial_mode="continuous_take"):
     ):
         issues.append("只写聚焦主体但缺少可执行构图、焦点、走位或落幅")
     return issues
+
+
+COVERAGE_ROLES = {
+    "establish_space", "relationship_blocking", "dialogue_performance",
+    "reaction", "prop_information", "movement_transition", "power_reversal",
+    "environment_bridge",
+}
+
+
+def coverage_role_issues(metadata, full_prompt):
+    """Keep the stability fallback from replacing a shot's narrative job."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    design = metadata.get("dramatic_design", {})
+    design = design if isinstance(design, dict) else {}
+    role = str(design.get("coverage_role", "") or "").strip()
+    if role not in COVERAGE_ROLES:
+        return ["dramatic_design.coverage_role缺失或无效"]
+    text = str(full_prompt or "")
+    mid_or_medium = "中近景" in text or "中景" in text
+    fixed = any(token in text for token in ("固定机位", "机位固定", "固定镜头", "运镜固定"))
+    if mid_or_medium and fixed and role not in {"dialogue_performance", "reaction"}:
+        return ["coverage_role=%s不能默认使用中景/中近景固定机位" % role]
+    return []
 
 
 def camera_move_types(design):

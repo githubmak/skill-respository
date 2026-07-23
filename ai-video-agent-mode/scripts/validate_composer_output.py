@@ -15,6 +15,7 @@ from modec_v4 import (
     action_budget_issues,
     attention_handoff_issues,
     camera_competition_issues,
+    coverage_role_issues,
     continuity_contract_issues,
     dialogue_event_issues,
     expectation_anchor_issues,
@@ -123,6 +124,8 @@ def validate_composer_output(path, run_dir=None, report_path=None):
         for problem in jimeng_shot_group_issues(full_prompt, metadata.get("editorial_mode", "continuous_take")):
             issues.append(prefix + problem)
         for problem in camera_competition_issues(full_prompt, metadata.get("editorial_mode", shot.get("editorial_mode", "continuous_take"))):
+            issues.append(prefix + problem)
+        for problem in coverage_role_issues(metadata, full_prompt):
             issues.append(prefix + problem)
 
         source_ids = shot.get("source_subshot_ids", [])

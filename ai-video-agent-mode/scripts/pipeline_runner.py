@@ -6,6 +6,7 @@ Camera, Director or Composer stages.  New runs can only enter this pipeline.
 import json
 import os
 import sys
+import hashlib
 
 sys.path.insert(0, os.path.dirname(__file__))
 from pipeline_state import AGENT_PHASES, LOCAL_PHASES, PHASE_BATCH_SIZE, PHASE_TIMEOUT_SECONDS, advance, load_state, save_state, mark_done, mark_waiting
@@ -23,6 +24,10 @@ def run(run_dir):
     if not gate:
         return {"action": "completed", "requires_user_input": False}
     if state["phases"][phase].get("status") == "done":
+        if not _completed_phase_valid(run_dir, phase, gate):
+            return {"action": "blocked", "phase": phase,
+                    "reason": "completed phase is missing a current verified artifact",
+                    "requires_user_input": False}
         advance(run_dir)
         return {"action": "advance", "from": phase, "next": load_state(run_dir)["current_phase"],
                 "requires_user_input": False}
@@ -34,7 +39,7 @@ def run(run_dir):
         # Local phases are deterministic gates whose output is produced by the
         # caller's dedicated scripts.  Do not silently revive old handlers.
         absent = [path for path in gate.get("output", []) if not os.path.exists(os.path.join(run_dir, path))]
-        if absent:
+        if absent or not _local_phase_valid(run_dir, phase):
             return {"action": "local_action_required", "phase": phase, "expected_outputs": absent,
                     "requires_user_input": False}
         mark_done(run_dir, phase)
@@ -156,3 +161,42 @@ def _load(path):
             return json.load(handle)
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def _completed_phase_valid(run_dir, phase, gate):
+    if not all(os.path.isfile(os.path.join(run_dir, path)) for path in gate.get("output", [])):
+        return False
+    if phase in LOCAL_PHASES:
+        return _local_phase_valid(run_dir, phase)
+    return True
+
+
+def _local_phase_valid(run_dir, phase):
+    if phase in ("user_confirm", "orchestrator", "grid_storyboard"):
+        return True
+    package_path = os.path.join(run_dir, ".cache", "composer", "merged.prompt_package.json")
+    package_sha256 = _sha256(package_path) if os.path.isfile(package_path) else ""
+    if phase == "editor_pass1":
+        result = _load(os.path.join(run_dir, ".cache", "review", "pre_editor_gate.json"))
+        return result.get("pass") is True and result.get("package_sha256") == package_sha256
+    if phase == "validate":
+        result = _load(os.path.join(run_dir, ".cache", "validate", "result.json"))
+        return result.get("pass") is True and result.get("package_sha256") == package_sha256
+    if phase == "export":
+        result = _load(os.path.join(run_dir, ".cache", "export", "result.json"))
+        destination = result.get("markdown_path", "")
+        return (
+            result.get("pass") is True
+            and result.get("package_sha256") == package_sha256
+            and destination and os.path.isfile(destination)
+            and result.get("markdown_sha256") == _sha256(destination)
+        )
+    return False
+
+
+def _sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
