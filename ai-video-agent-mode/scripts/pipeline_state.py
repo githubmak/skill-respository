@@ -119,7 +119,9 @@ def record_heartbeat(run_dir, phase, agent_id=None, dispatch_id=None):
     state = load_state(run_dir)
     now = time.time()
     entry = state["phases"][phase]
-    if agent_id and entry.get("agent_id") and entry.get("agent_id") != agent_id:
+    # A phase can own several concurrent dispatches.  The phase-level id is
+    # only a legacy summary; dispatch ownership is the authoritative check.
+    if not dispatch_id and agent_id and entry.get("agent_id") and entry.get("agent_id") != agent_id:
         raise ValueError("agent_id does not own phase")
     entry["heartbeat_at"] = now
     if dispatch_id:

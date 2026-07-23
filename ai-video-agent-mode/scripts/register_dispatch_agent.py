@@ -6,7 +6,8 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from pipeline_state import set_agent_id, record_heartbeat
+from pipeline_state import set_agent_id
+from dispatch_receipts import issue
 
 
 def register(packet_path, agent_id):
@@ -19,9 +20,11 @@ def register(packet_path, agent_id):
     dispatch_id = str(packet.get("dispatch_id", "") or "")
     if not run_dir or not phase or not dispatch_id or not str(agent_id).strip():
         raise SystemExit("packet run_dir/phase/dispatch_id and agent_id are required")
-    set_agent_id(run_dir, phase, str(agent_id).strip(), dispatch_id=dispatch_id)
-    record_heartbeat(run_dir, phase, str(agent_id).strip(), dispatch_id)
-    print("[DISPATCH AGENT] %s %s %s" % (phase, dispatch_id, agent_id))
+    normalized_agent_id = str(agent_id).strip()
+    receipt, receipt_path = issue(packet_path, packet, normalized_agent_id)
+    set_agent_id(run_dir, phase, normalized_agent_id, dispatch_id=dispatch_id)
+    print("[DISPATCH AGENT] %s %s %s" % (phase, dispatch_id, normalized_agent_id))
+    print("[DISPATCH RECEIPT] %s" % receipt_path)
 
 
 if __name__ == "__main__":

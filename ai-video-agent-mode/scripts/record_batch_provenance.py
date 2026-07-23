@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from pipeline_state import load_state, save_state
 from validate_composer_output import validate_composer_output
 from pipeline_runtime import cache_artifact, record_issues
+from dispatch_receipts import complete as complete_receipt, load_and_verify as verify_receipt, sha256_file as receipt_sha256
 
 
 def record(packet_path, allow_partial=False):
@@ -37,6 +38,13 @@ def record(packet_path, allow_partial=False):
     output_mtime = os.path.getmtime(batch_path)
     if output_mtime <= spawn_time:
         raise SystemExit("OUTPUT_BYPASS: batch output predates Agent spawn")
+    heartbeat_at = provenance_state.get("heartbeat_at")
+    if not isinstance(heartbeat_at, (int, float)) or heartbeat_at <= spawn_time:
+        raise SystemExit("DISPATCH_GATE: worker heartbeat after registration is required before accepting output")
+    try:
+        receipt, receipt_path = verify_receipt(packet_path, packet, agent_id, require_heartbeat=True)
+    except ValueError as error:
+        raise SystemExit("DISPATCH_GATE: %s" % error)
 
     provenance_dir = os.path.join(run_dir, ".cache", "provenance")
     os.makedirs(provenance_dir, exist_ok=True)
@@ -78,6 +86,8 @@ def record(packet_path, allow_partial=False):
     elif not validation_pass:
         raise SystemExit("Batch validation failed; provenance not recorded")
 
+    batch_sha256 = _sha256(batch_path)
+    receipt, receipt_path = complete_receipt(packet_path, packet, agent_id, batch_sha256)
     manifest = {
         "contract_version": "jimeng-t2v-v1",
         "dispatch_id": packet["dispatch_id"],
@@ -89,7 +99,7 @@ def record(packet_path, allow_partial=False):
         "packet_path": os.path.abspath(packet_path),
         "batch_path": os.path.abspath(batch_path),
         "batch_mtime": output_mtime,
-        "sha256": _sha256(batch_path),
+        "sha256": batch_sha256,
         "validator": validator_name,
         "validated": True,
         "validation_mode": validation_mode,
@@ -97,6 +107,10 @@ def record(packet_path, allow_partial=False):
         "failed_subshot_ids": failed_subshot_ids,
         "validation_report_path": validation_report_path if os.path.exists(validation_report_path) else None,
         "rejection_seal_path": rejection_path if rejection else None,
+        "dispatch_receipt_path": receipt_path,
+        "dispatch_receipt_sha256": receipt_sha256(receipt_path),
+        "dispatch_receipt_nonce": receipt.get("nonce"),
+        "dispatch_heartbeat_count": receipt.get("heartbeat_count"),
         "recorded_at": time.time(),
     }
     sidecar = batch_path + ".provenance.json"
@@ -151,18 +165,39 @@ def verify(batch_path):
     if not manifest.get("agent_id") or not manifest.get("dispatch_id"):
         return False, "agent_id or dispatch_id missing", manifest
     packet_path = manifest.get("packet_path")
-    if packet_path and os.path.exists(packet_path):
-        packet = _load(packet_path)
-        run_dir = packet.get("run_dir", "")
-        rejection_path = os.path.join(
-            run_dir, ".cache", "provenance", manifest.get("dispatch_id", "") + ".rejected.json"
-        )
-        if os.path.exists(rejection_path):
-            rejection = _load(rejection_path)
-            if manifest.get("validation_mode") != "partial":
-                return False, "rejected dispatch was repaired in place instead of uniquely redispatched", manifest
-            if rejection.get("rejected_sha256") != current_hash:
-                return False, "rejected batch changed after validation", manifest
+    if not packet_path or not os.path.exists(packet_path):
+        return False, "dispatch packet required for provenance verification is missing", manifest
+    packet = _load(packet_path)
+    try:
+        receipt, receipt_path = verify_receipt(packet_path, packet, manifest.get("agent_id"), require_heartbeat=True)
+    except ValueError as error:
+        return False, "dispatch gate verification failed: %s" % error, manifest
+    if manifest.get("dispatch_receipt_path") != receipt_path:
+        return False, "dispatch receipt path does not match manifest", manifest
+    if manifest.get("dispatch_receipt_sha256") != receipt_sha256(receipt_path):
+        return False, "dispatch receipt changed after provenance record", manifest
+    if receipt.get("nonce") != manifest.get("dispatch_receipt_nonce"):
+        return False, "dispatch receipt nonce does not match manifest", manifest
+    if receipt.get("completed_batch_sha256") != current_hash:
+        return False, "dispatch receipt completion does not match batch hash", manifest
+    run_dir = packet.get("run_dir", "")
+    state = load_state(run_dir)
+    dispatch = state.get("phases", {}).get(packet.get("phase"), {}).get("dispatches", {}).get(packet.get("dispatch_id"), {})
+    if not isinstance(dispatch, dict) or dispatch.get("agent_id") != manifest.get("agent_id"):
+        return False, "pipeline state lacks the registered worker identity", manifest
+    if dispatch.get("status") not in ("done", "partial"):
+        return False, "pipeline state does not mark worker provenance as recorded", manifest
+    if not isinstance(dispatch.get("heartbeat_at"), (int, float)) or dispatch.get("heartbeat_at") <= dispatch.get("spawn_time", float("inf")):
+        return False, "pipeline state lacks a post-registration worker heartbeat", manifest
+    rejection_path = os.path.join(
+        run_dir, ".cache", "provenance", manifest.get("dispatch_id", "") + ".rejected.json"
+    )
+    if os.path.exists(rejection_path):
+        rejection = _load(rejection_path)
+        if manifest.get("validation_mode") != "partial":
+            return False, "rejected dispatch was repaired in place instead of uniquely redispatched", manifest
+        if rejection.get("rejected_sha256") != current_hash:
+            return False, "rejected batch changed after validation", manifest
     return True, "verified", manifest
 
 

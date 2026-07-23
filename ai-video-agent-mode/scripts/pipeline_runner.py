@@ -21,38 +21,54 @@ def run(run_dir):
     phase = state["current_phase"]
     gate = GATES.get(phase)
     if not gate:
-        return {"action": "completed"}
+        return {"action": "completed", "requires_user_input": False}
     if state["phases"][phase].get("status") == "done":
         advance(run_dir)
-        return {"action": "advance", "from": phase, "next": load_state(run_dir)["current_phase"]}
+        return {"action": "advance", "from": phase, "next": load_state(run_dir)["current_phase"],
+                "requires_user_input": False}
     missing = [path for path in gate.get("input", []) if not os.path.exists(os.path.join(run_dir, path))]
     if missing:
-        return {"action": "blocked", "phase": phase, "reason": "missing: " + ", ".join(missing)}
+        return {"action": "blocked", "phase": phase, "reason": "missing: " + ", ".join(missing),
+                "requires_user_input": False}
     if phase in LOCAL_PHASES:
         # Local phases are deterministic gates whose output is produced by the
         # caller's dedicated scripts.  Do not silently revive old handlers.
         absent = [path for path in gate.get("output", []) if not os.path.exists(os.path.join(run_dir, path))]
         if absent:
-            return {"action": "local_action_required", "phase": phase, "expected_outputs": absent}
+            return {"action": "local_action_required", "phase": phase, "expected_outputs": absent,
+                    "requires_user_input": False}
         mark_done(run_dir, phase)
         advance(run_dir)
-        return {"action": "advance", "from": phase, "next": load_state(run_dir)["current_phase"]}
+        return {"action": "advance", "from": phase, "next": load_state(run_dir)["current_phase"],
+                "requires_user_input": False}
     if phase not in AGENT_PHASES:
-        return {"action": "blocked", "phase": phase, "reason": "unknown current-contract phase"}
+        return {"action": "blocked", "phase": phase, "reason": "unknown current-contract phase",
+                "requires_user_input": False}
     packets = pending_packet_paths(run_dir, phase)
     if not packets:
         packets = prepare_dispatch_packets(run_dir, phase, PHASE_BATCH_SIZE.get(phase))
     ready = fill_slots(run_dir, phase, packets)
     if ready:
         return {"action": "spawn", "phase": phase, "dispatch_packets": ready,
-                "dispatch_packet": ready[0], "timeout": PHASE_TIMEOUT_SECONDS.get(phase)}
+                "dispatch_packet": ready[0], "timeout": PHASE_TIMEOUT_SECONDS.get(phase),
+                "requires_user_input": False,
+                "after_spawn": "register_dispatch_agent_then_record_heartbeat_then_record_batch_provenance"}
     verified = _verified_packets(run_dir, phase)
     # A phase may only be materialized once *every* packet has provenance and
     # validation.  Previously, one completed batch plus a full worker pool
     # could be merged while sibling packets were still running.
     if len(verified) != len(packets):
         mark_waiting(run_dir, phase)
-        return {"action": "waiting", "phase": phase, "verified_batches": len(verified), "total_batches": len(packets)}
+        return {
+            "action": "wait_for_workers",
+            "phase": phase,
+            "verified_batches": len(verified),
+            "total_batches": len(packets),
+            "worker_status": _worker_status(run_dir, phase, packets),
+            "requires_user_input": False,
+            "automatic_resume": True,
+            "next_action": "poll_pipeline_runner_after_worker_state_changes",
+        }
     output = os.path.join(run_dir, gate["output"][0])
     _materialize(phase, output, verified)
     if phase == "editor_pass2":
@@ -66,10 +82,13 @@ def run(run_dir):
             state["current_phase"] = "master_production"
             save_state(run_dir, state)
             return {"action": "field_patch_retry", "phase": "editor_pass2", "next": "master_production",
-                    "dispatch_packets": packets, "reason": "scene_window_blocking"}
+                    "dispatch_packets": packets, "reason": "scene_window_blocking",
+                    "requires_user_input": False,
+                    "automatic_resume": True}
     mark_done(run_dir, phase)
     advance(run_dir)
-    return {"action": "advance", "from": phase, "next": load_state(run_dir)["current_phase"]}
+    return {"action": "advance", "from": phase, "next": load_state(run_dir)["current_phase"],
+            "requires_user_input": False}
 
 
 def _verified_packets(run_dir, phase):
@@ -81,6 +100,23 @@ def _verified_packets(run_dir, phase):
         if valid:
             paths.append(output)
     return paths
+
+
+def _worker_status(run_dir, phase, packet_paths):
+    """Expose why a worker wait is automatic rather than a user decision."""
+    state = load_state(run_dir)
+    dispatches = state.get("phases", {}).get(phase, {}).get("dispatches", {})
+    result = []
+    for packet_path in packet_paths:
+        packet = _load(packet_path)
+        dispatch_id = packet.get("dispatch_id", "")
+        entry = dispatches.get(dispatch_id, {}) if isinstance(dispatches, dict) else {}
+        result.append({
+            "dispatch_id": dispatch_id,
+            "status": entry.get("status", "awaiting_registration") if isinstance(entry, dict) else "awaiting_registration",
+            "agent_id": entry.get("agent_id") if isinstance(entry, dict) else None,
+        })
+    return result
 
 
 def _materialize(phase, output, batches):

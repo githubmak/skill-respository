@@ -15,7 +15,7 @@ if not os.environ.get("PYTHONPYCACHEPREFIX") and not getattr(sys, "pycache_prefi
     sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(__file__))
 from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_prefix
-from shot_semantics import dispatch_risk, quality_contract, workload_units
+from shot_semantics import dispatch_risk, quality_contract, temporal_transition_candidate, workload_units
 from context_budget import check as check_context_budget
 
 block_source_pycache_until_run_dir()
@@ -305,6 +305,7 @@ def _write_constraints_sidecar(run_dir, phase, dispatch_dir, dispatch_tag):
             "Before writing the performance contract, semantically interpret any packet expectation_anchor instead of relying on its type label: distinguish a literal human/character expectation, figurative personification, need-or-lack, or symbolic association; only literal agents can be staged as intentional performers, and absent satisfaction objects must not be shown as present. Bind only source-supported visible progress, camera decision, return reaction, and unresolved end state. Never cut to a static object merely because a character expects it; a detail cut or reframe needs that declared progress event. "
             "For every shot with visible physical characters, fill qa_metadata.performance_causality with calibrated tension intent, trigger, ordered response, physical logic, motion boundary, hold strategy, and end residue. "
             "Also fill qa_metadata.performance_contract, qa_metadata.continuity_contract, and qa_metadata.reroll_control before writing full_prompt: performance_contract must bind expression, body action, eyeline, reaction delay, voice/breath control, one viewer empathy anchor, one readable image moment, a visible start-to-end progression (or justified intentional hold with 1-2 life signs), camera pressure, scene pressure, and end residue into the subshot group; stable framing never authorizes a frozen performer. Each dialogue/OS/OV event also needs a literal breath_pause_plan with timed pre-utterance breath and end release; add a timed mid-line pause only at an actual clause, thought, or emotional turn, never mechanically at every punctuation mark. continuity_contract must preserve start/end anchors, eyelines, prop state, light, and next carryover. Any position, eyeline or movable-prop change must set state_change=true and record subject/from_state/to_state/cause/time_range; cause must be a visible action or explicit transition. reroll_control must score T2V identity, costume, screen-side, action, camera, and lip-sync risk, list concrete mitigation steps, and set manual_first_pass_check for rising/peak character shots. "
+            "If qa_metadata.temporal_transition_contract.kind is not none, obey its source trigger exactly. It is a candidate, not an instruction to decorate: either write one bounded in-model transition whose single effect is derived from this scene's actual event, or record a source-faithful reason to use a normal cut. An enabled transition needs a bounded time range, one effect and its source basis, explicit before/after states, one literal prompt anchor, audio bridge, closed-mouth/OS-OV boundary, and a fallback. Never stack effects, fabricate a past event, or change face, costume, scene, or period without the declared transition state. Treat every enabled temporal transition as high reroll risk with manual first-pass review. "
             "Copy the locked quality_contract exactly. Fill qa_metadata.quality_evidence for every required_evidence key as {section, fragment}; section is one of 主体与空间锁定/主镜头连续规则/子镜头组/光照、声音与稳定约束 and fragment is a 3+ character literal phrase that appears in that section. This applies equally to environment and object inserts. "
             "For every locked dialogue event, preserve ref/kind/speaker/text exactly and fill its time_range, speaker_visibility, facial_state, body_state, delivery, and lip_sync. Dialogue/OS text must never be rewritten. "
             "Use §B-§E in this sidecar, then read packet.format_example_path and packet.quality_exemplar_path exactly once. "
@@ -429,6 +430,7 @@ def _to_master_tasks(items):
         first["editorial_mode"] = "shot_group" if len(children) > 1 else children[0].get("editorial_mode", "continuous_take")
         first["dialogue_refs"] = [ref for child in children for ref in child.get("dialogue_refs", [])]
         first["dialogue_events"] = [event for child in children for event in child.get("dialogue_events", [])]
+        first["temporal_transition_candidate"] = temporal_transition_candidate(first)
         first["master_task"] = True
         masters.append(first)
     return masters
@@ -574,6 +576,7 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
                 "entry_strategy": item.get("entry_strategy", "none"),
                 "reveal_strategy": item.get("reveal_strategy", "direct"),
                 "focus_strategy": item.get("focus_strategy", "single_plane"),
+                "temporal_transition_contract": _transition_contract_scaffold(item),
                 "quality_contract": dict(item.get("quality_contract", {}) or {}),
                 "quality_evidence": {},
                 "start_state": "",
@@ -686,6 +689,25 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
     path = os.path.join(dispatch_dir, "master_production_%s_scaffold.json" % dispatch_tag)
     _write_json(path, payload)
     return path
+
+
+def _transition_contract_scaffold(item):
+    candidate = temporal_transition_candidate(item)
+    return {
+        "enabled": False,
+        "kind": candidate.get("kind", "none"),
+        "source_trigger": candidate.get("source_trigger", ""),
+        "decision_reason": "",
+        "time_range": "",
+        "effect": "",
+        "effect_source_basis": "",
+        "from_state": "",
+        "to_state": "",
+        "audio_bridge": "",
+        "lip_sync": False,
+        "prompt_anchor": "",
+        "fallback": "split_with_matched_cut",
+    }
 
 
 def _write_retry_context(run_dir, phase, items, dispatch_dir, dispatch_tag):

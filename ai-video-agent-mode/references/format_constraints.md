@@ -281,6 +281,21 @@ Composer batch 只输出：
         "entry_strategy": "none",
         "reveal_strategy": "direct",
         "focus_strategy": "single_plane",
+        "temporal_transition_contract": {
+          "enabled": false,
+          "kind": "none | memory_flashback | story_event_transition",
+          "source_trigger": "源文逐字触发依据；none时为空",
+          "decision_reason": "候选未启用时的源文依据；启用时的选择依据",
+          "time_range": "0.0-0.0秒；启用时必须为有效窗口",
+          "effect": "启用时根据当前事件配置的唯一视觉效果",
+          "effect_source_basis": "该效果如何来自当前源文事件",
+          "from_state": "转场前锁定的时空/人物状态",
+          "to_state": "转场后锁定的时空/人物状态",
+          "audio_bridge": "与提示词逐字一致的声音桥",
+          "lip_sync": false,
+          "prompt_anchor": "与提示词逐字一致的单一视觉效果锚点",
+          "fallback": "split_with_matched_cut"
+        },
         "quality_contract": {
           "profile": "environment | object | action | dialogue | dramatic",
           "required_analysis": ["scene", "camera"],
@@ -389,6 +404,7 @@ Composer batch 只输出：
 - 输出必须以 dispatch 的 `composer_scaffold_path` 为骨架；`shot_id/subshot_id/duration/negative_prompt/qa_metadata.dialogue_refs/qa_metadata.dialogue_events[].ref|kind|speaker|text/generation_control` 是确定性锁定字段，Agent 不得改写。
 - 相同场景的画幅、风格、服装、共享光源与空间锚点只从 `scene_lock_cache_path` 读取一次；各镜通过 `scene_lock_ref` 引用，不重复推导场景不变项。
 - `mode` 必须固定为 `t2v`，且 `generation_control` 不得出现素材、路径或引用字段。
+- `temporal_transition_contract` 是每镜必填合同。它只能消费派发骨架中的源文候选：没有候选时 `kind=none` 且不得启用；`memory_flashback` 只适用于明确回忆且存在可拍过去事实；`story_event_transition` 只适用于源文事件确实造成场景、意识、时空或人物状态切换。候选并不强制特效，Composer 可以在 `decision_reason` 说明为何正常切换更忠实。启用时必须先写 `effect_source_basis`，再根据当前事件配置一个且仅一个效果；它不得来自固定白名单、通用模板或无关风格。合同还必须有不超时的时间窗、前后状态、声音桥、`lip_sync=false`、逐字出现在 `full_prompt` 的 `prompt_anchor` 与降级方案；不得叠加效果、虚构回忆事实。所有已启用的合同一律 `high` 抽卡风险且 `manual_first_pass_check=true`。
 
 ### B2. full_prompt 五段
 

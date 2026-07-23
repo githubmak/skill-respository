@@ -24,6 +24,8 @@ from validate_master_tasks import validate as validate_master_tasks
 from modec_v4 import jimeng_feed_prompt
 from spatial_storyboard import build_spatial_storyboard_reference
 from emotion_camera_audit import audit as audit_emotion_camera
+from pipeline_state import AGENT_PHASES, load_state
+from record_batch_provenance import verify as verify_provenance
 
 
 CHECK_EXPORT = os.path.join(os.path.dirname(__file__), "check_export.py")
@@ -33,6 +35,7 @@ def export_with_validation(md_path, run_dir):
     package_path = _find_package(run_dir)
     if not package_path:
         raise SystemExit("Missing prompt package in run directory")
+    _require_agent_dispatch_gates(run_dir, package_path)
     normalize_package(package_path, package_path)
     master_path, master_package = materialize_master_tasks(run_dir, source_path=package_path)
     master_issues = validate_master_tasks(run_dir)
@@ -85,6 +88,40 @@ def export_with_validation(md_path, run_dir):
     else:
         print("[EXPORT V4] XLSX skipped: openpyxl is unavailable; Markdown delivery is complete")
     return 0
+
+
+def _require_agent_dispatch_gates(run_dir, package_path):
+    """Refuse delivery unless the current package descends from verified workers."""
+    state = load_state(run_dir)
+    incomplete = [
+        phase for phase in AGENT_PHASES
+        if state.get("phases", {}).get(phase, {}).get("status") != "done"
+    ]
+    if incomplete:
+        raise SystemExit("DISPATCH_GATE: Agent phases are incomplete: " + ", ".join(sorted(incomplete)))
+    manifest_path = package_path + ".merge_provenance.json"
+    manifest = _load_optional(manifest_path)
+    if not manifest or manifest.get("output_path") != os.path.abspath(package_path):
+        raise SystemExit("DISPATCH_GATE: verified merge provenance is required before export")
+    if manifest.get("output_sha256") != _sha256(package_path):
+        raise SystemExit("DISPATCH_GATE: prompt package changed after verified merge")
+    sources = manifest.get("source_batches")
+    if not isinstance(sources, list) or not sources:
+        raise SystemExit("DISPATCH_GATE: merge provenance has no verified worker batches")
+    for source in sources:
+        batch_path = source.get("batch_path") if isinstance(source, dict) else ""
+        valid, reason, _record = verify_provenance(batch_path) if batch_path and os.path.exists(batch_path) else (False, "batch missing", None)
+        if not valid:
+            raise SystemExit("DISPATCH_GATE: source worker batch is invalid: " + reason)
+
+
+def _sha256(path):
+    import hashlib
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _write_master_markdown(path, master_package, plan, grid_packages=None):

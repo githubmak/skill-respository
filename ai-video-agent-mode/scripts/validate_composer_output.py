@@ -32,6 +32,7 @@ from modec_v4 import (
     jimeng_shot_group_issues,
     split_sections,
     timeline_issues,
+    temporal_transition_contract_issues,
     visibility_issues,
 )
 from negative_prompts import PLACEHOLDER, is_fight_context
@@ -138,6 +139,9 @@ def validate_composer_output(path, run_dir=None, report_path=None):
             plan_item.get("visible_characters", plan_item.get("characters", director_item.get("visible_characters", [])))
         )
         _validate_scaffold_lock(prefix, shot, scaffold_map.get(sid), issues)
+        expected_transition = ((scaffold_map.get(sid) or {}).get("qa_metadata", {}) or {}).get("temporal_transition_contract", {})
+        for problem in temporal_transition_contract_issues(metadata, full_prompt, duration, expected_transition):
+            issues.append(prefix + problem)
         _validate_quality_contract(prefix, metadata, plan_item, director_item, full_prompt, issues)
         _validate_scene_light_authority(prefix, director_item, full_prompt, issues)
         for problem in role_partition_issues(metadata, visible):
@@ -339,6 +343,7 @@ def _validate_metadata(prefix, metadata, director_item, full_prompt, audio_enabl
         "editorial_mode", "camera_beat_map", "sequence_context", "quality_contract",
         "dramatic_design", "duration_design", "viewpoint", "visual_hierarchy",
         "entry_strategy", "reveal_strategy", "focus_strategy",
+        "temporal_transition_contract",
     ):
         if field not in metadata:
             issues.append(prefix + f"qa_metadata缺少{field}")

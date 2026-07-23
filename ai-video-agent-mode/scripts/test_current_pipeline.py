@@ -5,14 +5,18 @@ import tempfile
 
 from context_budget import check
 from editor_scene_windows import build
-from modec_v4 import dialogue_event_issues, expectation_anchor_issues, jimeng_feed_prompt, listener_reaction_issues, shot_group_handoff_issues
+from modec_v4 import dialogue_event_issues, expectation_anchor_issues, jimeng_feed_prompt, listener_reaction_issues, shot_group_handoff_issues, temporal_transition_contract_issues
 from pipeline_runtime import atomic_json, cache_artifact, record_issues
 from adapt_nine_panel_storyboard import adapt
 from emotion_camera_audit import audit as emotion_camera_audit
 from spatial_storyboard import build_spatial_storyboard_reference
 from validate_scene_locks import validate
-from shot_semantics import dispatch_risk
+from shot_semantics import dispatch_risk, temporal_transition_candidate
 from dispatch_cache import _dynamic_master_chunks
+from dispatch_receipts import heartbeat as receipt_heartbeat, issue as issue_receipt, load_and_verify as verify_dispatch_receipt
+from pipeline_state import record_heartbeat as state_heartbeat, set_agent_id
+from record_batch_provenance import record as record_provenance, verify as verify_provenance
+from merge_agent_outputs import merge_agent_outputs
 from pipeline_templates import GATES
 from pipeline_runner import _materialize
 
@@ -43,6 +47,39 @@ def run():
         record_issues(run_dir, "first", ["a"])
         record_issues(run_dir, "second", ["b"])
         assert set(_read(os.path.join(run_dir, ".cache", "issues.json"))) == {"first", "second"}
+        receipt_packet = {
+            "contract_version": "jimeng-t2v-v1", "run_dir": run_dir, "phase": "master_production",
+            "dispatch_id": "receipt-test", "_batch_output_path": os.path.join(run_dir, "worker.json"),
+        }
+        receipt_packet_path = os.path.join(run_dir, "receipt_packet.json")
+        _write(receipt_packet_path, receipt_packet)
+        issue_receipt(receipt_packet_path, receipt_packet, "agent-receipt-test")
+        try:
+            verify_dispatch_receipt(receipt_packet_path, receipt_packet, "agent-receipt-test")
+            raise AssertionError("dispatch receipt gate accepted a worker without a heartbeat")
+        except ValueError as error:
+            assert "heartbeat" in str(error)
+        receipt_heartbeat(receipt_packet_path, receipt_packet, "agent-receipt-test")
+        assert verify_dispatch_receipt(receipt_packet_path, receipt_packet, "agent-receipt-test")[0]["heartbeat_count"] == 1
+        batch_path = os.path.join(run_dir, "scene_worker.json")
+        gate_packet = {
+            "contract_version": "jimeng-t2v-v1", "run_dir": run_dir, "phase": "scene_lock",
+            "dispatch_id": "gate-test", "created_at": 1, "_batch_output_path": batch_path,
+        }
+        gate_packet_path = os.path.join(run_dir, "gate_packet.json")
+        _write(gate_packet_path, gate_packet)
+        issue_receipt(gate_packet_path, gate_packet, "agent-gate-test")
+        set_agent_id(run_dir, "scene_lock", "agent-gate-test", dispatch_id="gate-test")
+        _write(batch_path, locks)
+        state_heartbeat(run_dir, "scene_lock", "agent-gate-test", "gate-test")
+        receipt_heartbeat(gate_packet_path, gate_packet, "agent-gate-test")
+        record_provenance(gate_packet_path)
+        assert verify_provenance(batch_path)[0] is True
+        try:
+            merge_agent_outputs(os.path.join(run_dir, "forbidden_merge.json"), batch_path, require_provenance=False)
+            raise AssertionError("public merge accepted an unguarded provenance mode")
+        except ValueError as error:
+            assert "DISPATCH_GATE" in str(error)
         canonical = "生成规格：规格\n\n主体与空间锁定：空间\n\n主镜头连续规则：规则\n\n子镜头组：【镜头1｜0.0-1.0秒】画面\n\n光照、声音与稳定约束：光声"
         assert "生成规格：" not in jimeng_feed_prompt(canonical)
         figurative_prompt = canonical.replace("画面", "庭前花枝对着空门，风吹花瓣落向门槛；画面保持空门与花枝，空门仍未有人归来")
@@ -83,6 +120,21 @@ def run():
         high_risk = dispatch_risk(high_items[0])
         assert high_risk["tier"] == "high" and high_risk["batch_capacity"] == 4
         assert [len(batch) for batch in _dynamic_master_chunks(high_items)] == [4, 1]
+        event_transition = _master_item("T01", "梦境崩塌后，角色A在现实中苏醒")
+        candidate = temporal_transition_candidate(event_transition)
+        assert candidate["eligible"] is True and candidate["kind"] == "story_event_transition"
+        assert dispatch_risk(event_transition)["tier"] == "high"
+        memory = _master_item("T02", "他想起当年二人在雨中告白")
+        memory_candidate = temporal_transition_candidate(memory)
+        assert memory_candidate["eligible"] is True and memory_candidate["kind"] == "memory_flashback"
+        transition_prompt = canonical.replace("画面", "梦境画面的裂纹收束成一次暗切，钟声尾音作为声音桥接，角色A闭口在现实中睁眼")
+        transition_metadata = {"reroll_control": {"risk_level": "high", "manual_first_pass_check": True}, "temporal_transition_contract": {
+            "enabled": True, "kind": "story_event_transition", "source_trigger": candidate["source_trigger"],
+            "decision_reason": "梦境崩塌需要体现意识回归", "time_range": "0.8-1.6秒", "effect": "裂纹收束暗切", "effect_source_basis": "源文的梦境崩塌", "from_state": "梦境中的角色A", "to_state": "现实中苏醒的角色A", "audio_bridge": "钟声尾音作为声音桥接", "lip_sync": False, "prompt_anchor": "梦境画面的裂纹收束成一次暗切", "fallback": "split_with_matched_cut",
+        }}
+        assert not temporal_transition_contract_issues(transition_metadata, transition_prompt, 4, {"kind": candidate["kind"], "source_trigger": candidate["source_trigger"]})
+        transition_metadata["temporal_transition_contract"]["effect"] = "裂纹收束暗切+烟雾"
+        assert any("唯一视觉效果" in issue for issue in temporal_transition_contract_issues(transition_metadata, transition_prompt, 4, {"kind": candidate["kind"], "source_trigger": candidate["source_trigger"]}))
         assert GATES["editor_pass2"]["output"] == [".cache/review/llm_gate_result.json"]
         editor_batch = os.path.join(run_dir, "editor_batch.json")
         _write(editor_batch, {"windows": [{"window_id": "W001", "pass": False,

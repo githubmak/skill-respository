@@ -70,6 +70,7 @@ TENSION_INTENTS = {"neutral", "latent", "rising", "peak", "release"}
 SPEECH_KINDS = {"台词", "OS", "OV"}
 SPEAKER_VISIBILITIES = {"visible", "offscreen", "nonphysical"}
 REROLL_RISK_LEVELS = {"low", "medium", "high"}
+TEMPORAL_TRANSITION_KINDS = {"none", "memory_flashback", "story_event_transition"}
 GENERIC_PERFORMANCE_TERMS = {
     "紧张", "震惊", "愤怒", "悲伤", "害怕", "自然", "自然反应", "有张力",
     "情绪复杂", "表情细腻", "保持状态", "微微变化", "很强烈",
@@ -532,6 +533,68 @@ def reroll_control_issues(metadata, generation_control=None, visible_characters=
     if visible and tension in ("rising", "peak") and reroll.get("manual_first_pass_check") is not True:
         issues.append("T2V rising/peak人物镜必须标记manual_first_pass_check=true")
     return issues
+
+
+def temporal_transition_contract_issues(metadata, full_prompt="", duration=None, expected_contract=None):
+    """Validate the source-grounded, single-effect in-model transition contract."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    expected = expected_contract if isinstance(expected_contract, dict) else {}
+    contract = metadata.get("temporal_transition_contract")
+    candidate_kind = expected.get("kind", "none")
+    candidate_trigger = str(expected.get("source_trigger", "") or "").strip()
+    if not isinstance(contract, dict):
+        return ["qa_metadata.temporal_transition_contract必须是对象"]
+    issues = []
+    enabled = contract.get("enabled")
+    if not isinstance(enabled, bool):
+        return ["temporal_transition_contract.enabled必须是布尔值"]
+    if contract.get("kind") not in TEMPORAL_TRANSITION_KINDS:
+        issues.append("temporal_transition_contract.kind无效")
+        return issues
+    if contract.get("kind") != candidate_kind:
+        issues.append("temporal_transition_contract.kind必须继承源文候选类型")
+    if candidate_trigger and str(contract.get("source_trigger", "") or "").strip() != candidate_trigger:
+        issues.append("temporal_transition_contract.source_trigger必须逐字继承源文候选")
+    if not enabled:
+        if candidate_kind != "none" and len(str(contract.get("decision_reason", "") or "").strip()) < 6:
+            issues.append("未启用的时空转场候选必须记录不转场的源文依据")
+        return issues
+    if candidate_kind == "none":
+        issues.append("无源文时空触发时不得启用特效转场")
+        return issues
+    effect = contract.get("effect")
+    if not isinstance(effect, str) or len(effect.strip()) < 3 or any(mark in effect for mark in ("、", ",", "+", "/")):
+        issues.append("temporal_transition_contract.effect必须是唯一视觉效果")
+    for field in ("time_range", "effect_source_basis", "from_state", "to_state", "audio_bridge", "prompt_anchor", "fallback"):
+        if len(str(contract.get(field, "") or "").strip()) < 3:
+            issues.append(f"temporal_transition_contract.{field}启用时不能为空")
+    if contract.get("lip_sync") is not False:
+        issues.append("时空/特效转场必须明确lip_sync=false")
+    prompt_anchor = str(contract.get("prompt_anchor", "") or "").strip()
+    if prompt_anchor and not _fragment_grounded(prompt_anchor, full_prompt):
+        issues.append("temporal_transition_contract.prompt_anchor必须逐字出现在模型提示词")
+    audio_bridge = str(contract.get("audio_bridge", "") or "").strip()
+    if audio_bridge and not _fragment_grounded(audio_bridge, full_prompt):
+        issues.append("temporal_transition_contract.audio_bridge必须逐字出现在模型提示词")
+    parsed = _parse_second_range(contract.get("time_range"))
+    if parsed is None:
+        issues.append("temporal_transition_contract.time_range必须为0.0-1.0秒格式")
+    elif duration is not None and parsed[1] > float(duration) + 1e-6:
+        issues.append("temporal_transition_contract.time_range不得超出主镜时长")
+    reroll = metadata.get("reroll_control", {})
+    if not isinstance(reroll, dict) or reroll.get("risk_level") != "high":
+        issues.append("启用时空/特效转场必须标为high reroll risk")
+    elif reroll.get("manual_first_pass_check") is not True:
+        issues.append("启用时空/特效转场必须manual_first_pass_check=true")
+    return issues
+
+
+def _parse_second_range(value):
+    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*秒\s*", str(value or ""))
+    if not match:
+        return None
+    start, end = float(match.group(1)), float(match.group(2))
+    return (start, end) if start < end else None
 
 
 def dialogue_event_issues(

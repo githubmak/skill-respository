@@ -37,6 +37,10 @@ FIGHT_OR_FORCE_WORDS = [
 ]
 PROP_TRANSFER_WORDS = ["递给", "交给", "传给", "塞给", "接过", "交接", "移交", "抢走", "夺过"]
 MULTI_PERSON_MOTION_WORDS = ["走向", "靠近", "后退", "错身", "围住", "围堵", "跟随", "追", "拉", "推"]
+MEMORY_MARKERS = ["当年", "曾经", "回忆", "想起", "往昔", "旧日", "那年", "记得"]
+WEDDING_MEMORY_MARKERS = ["大婚", "成婚", "婚仪", "赐婚", "迎亲"]
+MEMORY_EVENT_MARKERS = WEDDING_MEMORY_MARKERS + ["相遇", "告白", "争吵", "离开", "去世", "死去", "救下", "受伤", "事故", "火灾", "背叛", "毕业", "出生"]
+EVENT_TRANSITION_MARKERS = ["穿越", "时空", "异世", "另一个时代", "来到过去", "来到未来", "梦醒", "幻觉消退", "传送", "瞬移", "重生", "变身", "变形", "苏醒"]
 
 
 def shot_type_text(subshot):
@@ -220,6 +224,9 @@ def dispatch_risk(item):
         reasons.append("long_dialogue")
     if reroll.get("risk_level") == "high":
         reasons.append("high_reroll_risk")
+    transition = temporal_transition_candidate(item)
+    if transition.get("eligible"):
+        reasons.append("temporal_transition")
     if reasons:
         return {"tier": "high", "reasons": reasons, "batch_capacity": 4, "review_scope": "full_scene_window"}
     is_non_character = bool(sources) and all(is_true_non_action_subshot(source) for source in sources if isinstance(source, dict))
@@ -231,3 +238,63 @@ def dispatch_risk(item):
     if single_stable and (not has_dialogue or duration <= 6):
         return {"tier": "light", "reasons": ["single_stable" if not has_dialogue else "simple_dialogue"], "batch_capacity": 10, "review_scope": "current_with_carryover"}
     return {"tier": "standard", "reasons": ["normal_contract"], "batch_capacity": 6, "review_scope": "bounded_scene_window"}
+
+
+def temporal_transition_candidate(item):
+    """Return a source-grounded candidate for an in-model temporal transition.
+
+    A memory reference or explicit event-driven state shift is eligible, never
+    automatic: the Composer must either supply a bounded contract whose effect
+    is derived from the source event or record why a normal cut is more truthful.
+    """
+    item = item if isinstance(item, dict) else {}
+    explicit = item.get("temporal_transition_candidate")
+    if isinstance(explicit, dict) and explicit.get("eligible"):
+        return dict(explicit)
+    texts = _transition_source_texts(item)
+    text = "\n".join(texts)
+    if any(marker in text for marker in EVENT_TRANSITION_MARKERS):
+        return {
+            "eligible": True, "kind": "story_event_transition",
+            "source_trigger": _matching_source_texts(texts, EVENT_TRANSITION_MARKERS),
+        }
+    if any(marker in text for marker in MEMORY_MARKERS) and (
+        any(marker in text for marker in MEMORY_EVENT_MARKERS) or "过去" in text or "从前" in text
+    ):
+        return {
+            "eligible": True, "kind": "memory_flashback",
+            "source_trigger": _first_matching_text(texts, MEMORY_MARKERS),
+        }
+    return {"eligible": False, "kind": "none", "source_trigger": ""}
+
+
+def _transition_source_texts(item):
+    texts = []
+    sources = item.get("source_subshots")
+    sources = sources if isinstance(sources, list) and sources else [item]
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        for key in ("base_action", "source_text", "source_line", "source_summary", "core_action", "visual_intent"):
+            value = str(source.get(key, "") or "").strip()
+            if value:
+                texts.append(value)
+        for event in source.get("dialogue_events", []) or []:
+            if isinstance(event, dict):
+                value = str(event.get("text", "") or "").strip()
+                if value:
+                    texts.append(value)
+    for event in item.get("dialogue_events", []) or []:
+        if isinstance(event, dict):
+            value = str(event.get("text", "") or "").strip()
+            if value:
+                texts.append(value)
+    return texts
+
+
+def _first_matching_text(texts, markers):
+    return next((text for text in texts if any(marker in text for marker in markers)), "")
+
+
+def _matching_source_texts(texts, markers):
+    return "；".join(dict.fromkeys(text for text in texts if any(marker in text for marker in markers)))

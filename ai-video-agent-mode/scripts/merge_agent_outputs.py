@@ -8,8 +8,10 @@ sys.path.insert(0, os.path.dirname(__file__))
 from record_batch_provenance import verify as verify_provenance
 from pipeline_runtime import patch_only
 
-def merge_agent_outputs(output_path, *input_paths, require_provenance=False):
-    """Merge multiple agent JSON outputs into one, deduplicating by subshot_id."""
+def merge_agent_outputs(output_path, *input_paths, require_provenance=True):
+    """Merge only receipt-verified worker outputs into one public artifact."""
+    if require_provenance is not True:
+        raise ValueError("DISPATCH_GATE: public Agent outputs always require provenance")
     seen = {}
     all_items = []
     stats = {
@@ -138,11 +140,10 @@ def _build_prompt_package(items):
 
 if __name__ == '__main__':
     args = sys.argv[1:]
-    require_provenance = '--require-provenance' in args
     args = [arg for arg in args if arg != '--require-provenance']
     if len(args) < 2:
         print('Usage: python3 merge_agent_outputs.py [--require-provenance] <output.json> <input1.json> [input2.json ...]')
         sys.exit(1)
-    stats = merge_agent_outputs(args[0], *args[1:], require_provenance=require_provenance)
-    if require_provenance and stats.get('invalid_provenance'):
+    stats = merge_agent_outputs(args[0], *args[1:], require_provenance=True)
+    if stats.get('invalid_provenance'):
         sys.exit(2)
