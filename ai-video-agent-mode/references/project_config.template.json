@@ -1,6 +1,6 @@
 {
   "project_name": "",
-  "canvas": "9:16",
+  "canvas": "",
   "visual_style": "",
   "genre": "",
   "performance_direction": {
@@ -17,26 +17,34 @@
   },
   "_quality_policy_desc": "所有模型和所有镜头都必须经过同一质量合同、确定性QA、语义QA与最终验证。profile_routing仅跳过无关人物分析，不降低环境、物件或人物镜的质量要求。",
   "_performance_direction_desc": "用户可按项目改写表演方向卡。它是创作输入而非模型负面词；不得填入示例专属人物、剧情、道具、场景或画风。",
-  "max_shot_duration": 15,
+  "max_shot_duration": null,
   "max_static_shot_duration": 6,
   "_max_static_shot_duration_desc": "单一微表情、一次视线变化、静态压场或群体凝视的默认上限。超过该值的 Phase 1 子镜必须填写 duration_rationale（continuous_dialogue/continuous_interaction/continuous_action/sustained_reveal）与有序 dramatic_beats；氛围、余韵、压迫或停顿本身不能作为延长理由。",
   "output_type": "动态视频",
-  "target_platform": "即梦",
-  "_target_platform_desc": "目标平台可为即梦/可灵/Runway/Veo等。平台适配只影响参考资产句法、提示词语序和稳定性控制；不得把平台示例题材或画风写成默认。",
+  "target_platform": "",
+  "_target_platform_desc": "当前契约仅支持即梦。提示词使用即梦可执行的可见构图、时间窗和稳定性控制；不得把示例题材或画风写成默认。",
   "generation_control": {
     "mode": "t2v",
-    "audio_enabled": true,
-    "supports_negative_prompt": true,
-    "reference_assets": []
+    "audio_enabled": false,
+    "supports_negative_prompt": true
   },
-  "_generation_control_desc": "mode只允许t2v/i2v/r2v。关键人物一致性优先i2v，关键表演或复杂动作有参考视频时优先r2v。reference_assets只填用户本次提供或项目已确认的真实资源，每项格式为{type:path, path:真实路径或资源ID, applies_to:[subshot_id], prompt_handle:可选平台引用标记}；不得伪造路径、平台槽位或引用标记。",
+  "_generation_control_desc": "固定为即梦 T2V；不接受外部素材路径、首尾帧或动作素材。人物连续性由固定身份锚点、服装、屏幕左右、场景锚点和上镜终态继承控制。",
+  "prompt_limits": {
+    "hard_max_chars": null
+  },
+  "benchmark": {
+    "scenario": "",
+    "injected_failure_rate": 0
+  },
+  "_benchmark_desc": "仅用于性能回归：scenario 只允许 dialogue/action/mixed；injected_failure_rate 只允许 0 或 0.10。真实 50 主镜运行由 benchmark_core_pipeline.py 汇总，禁止伪造耗时。",
+  "_prompt_limits_desc": "只有用户或目标平台明确提供提示词硬上限时填写正整数。动态长度范围是软指导，不写入此字段，也不因软范围溢出拆镜。",
   "storyboard_grid": {
     "enabled": false,
     "selection_mode": "auto",
     "minimum_score": 4,
     "max_chains_per_scene": 2
   },
-  "_storyboard_grid_desc": "Phase 0 必须询问是否需要自动九宫格剧情包。用户明确“不需要”时设为false，状态机跳过九宫格判断、缓存和导出，不改变T2V/I2V/R2V主流程。设为true时，仅在editor_pass2后自动从已通过的T2V提示词、表演合同、连续性合同和抽卡风险中挑选关键连续镜头链，导出九宫格总图生图提示词与P01-P09剧情节拍；不得切换生成模式或伪造参考资产。",
+  "_storyboard_grid_desc": "Phase 0 必须询问是否需要自动九宫格剧情包。用户明确“不需要”时设为false，状态机跳过九宫格判断、缓存和导出。设为true时，仅在 editor_pass2 后从已通过的 T2V 主镜头挑选关键连续链，导出九宫格提示词与 P01-P09 剧情节拍；不改变 T2V 主流程。",
   "export_base": "",
   "_export_base_desc": "必须由用户在本次运行中明确提供输出文件位置/输出目录后填写；禁止默认当前目录、工作区目录、源文件目录、上次目录或自动生成目录。所有 run_dir、.cache、dispatch、review、analysis、composer、director、continuity 中间文件都必须位于 export_base 下。",
   "confirmation": {
@@ -46,13 +54,13 @@
     "confirmed_values": {},
     "confirmed_values_sha256": ""
   },
-  "_confirmation_desc": "模板值不等于用户确认。仅在用户明确确认本次基础配置后，写入 confirmed_at，并在 confirmed_fields 中列出 export_base、canvas、visual_style、max_shot_duration、target_platform、generation_control.mode、generation_control.audio_enabled、generation_control.reference_assets、storyboard_grid.enabled；同时写入 confirmed_values 及其哈希。任一确认值变更时必须回到对应逐项确认轮次。没有此记录不得续跑、合成、修复或导出。",
+  "_confirmation_desc": "模板值不等于用户确认。仅在用户明确确认本次基础配置后，写入 confirmed_at，并在 confirmed_fields 中列出 export_base、canvas、visual_style、max_shot_duration、target_platform、generation_control.mode、generation_control.audio_enabled、storyboard_grid.enabled；同时写入 confirmed_values 及其哈希。任一确认值变更时必须回到对应逐项确认轮次。没有此记录不得续跑、合成、修复或导出。",
   "run_timestamp": "",
   "character_list": [],
   "global_negative_prompt": "",
-  "_global_negative_prompt_desc": "Mode C v4默认由negative_prompts.py按镜头上下文生成精简负面词。仅当目标平台有明确专项要求时填写额外词，不写‘禁止……’式正向命令。",
+  "_global_negative_prompt_desc": "默认由negative_prompts.py按镜头上下文生成精简负面词。仅当目标平台有明确专项要求时填写额外词，不写‘禁止……’式正向命令。",
  "costume_map": {},
- "_costume_map_desc": "角色服装表。key为角色名，value为该角色在各场景中的服装描述。Prompt Composer生成提示词时必须从costume_map中匹配角色服装，禁止自行编造。示例：{沈星雨: {校园: 米白色宽松针织开衫内搭浅灰吊带、深蓝高腰阔腿牛仔裤、白色板鞋、马尾黑长直, 教室: 同校园装}}",
+ "_costume_map_desc": "角色服装表。key为运行时角色名，value为该角色在运行时场景中的已确认服装描述。Prompt Composer只能从costume_map匹配，不得自行编造。结构示例：{角色A: {场景A: 已确认服装描述, 场景B: 继承场景A服装}}。",
 
   "source_rules": {
     "characters": [],

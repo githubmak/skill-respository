@@ -26,7 +26,7 @@ def promote(packet_path):
     shutil.copyfile(batch_path, temporary)
     os.replace(temporary, output_path)
     promotion = {
-        "contract_version": "modec-v4",
+        "contract_version": "jimeng-t2v-v1",
         "packet_path": os.path.abspath(packet_path),
         "source_batch": os.path.abspath(batch_path),
         "source_provenance": manifest,

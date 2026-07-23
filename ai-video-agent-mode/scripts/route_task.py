@@ -25,8 +25,8 @@ ROUTES = {
         "required_done_phases": ["editor_pass2", "validate"],
     },
     "compose": {
-        "description": "Generate Composer packets from an approved Director result.",
-        "requires": ["project_config.json", ".cache/director/director_pass.json"],
+        "description": "Generate Master Production packets from approved scene locks and shot plan.",
+        "requires": ["project_config.json", ".cache/orchestrator/shot_plan.json", ".cache/analysis/scene_locks.json"],
         "agents": True,
     },
     "single-repair": {

@@ -35,19 +35,31 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
 
     with open(source_path, "r", encoding="utf-8") as f:
         text = f.read()
-    lines = text.strip().split("\n")
+    lines = text.splitlines()
 
     scenes, current_scene = [], None
     scene_char_map = {}  # scene_name -> [chars]
     dialogue_counter, dialogue_map, dialogue_event_map, dialogue_duration_map, beats = 1, {}, {}, {}, []
+    source_units = []
 
-    for line in lines:
-        line = line.strip()
+    for line_number, raw_line in enumerate(lines, 1):
+        line = raw_line.strip()
         if not line: continue
+        source_id = "SRC%04d" % (len(source_units) + 1)
+        source_unit = {
+            "source_id": source_id,
+            "source_path": os.path.abspath(source_path),
+            "line": line_number,
+            "type": "unclassified",
+            "scene": current_scene["name"] if current_scene else "",
+            "text": line,
+        }
+        source_units.append(source_unit)
 
         # Scene header detection using config pattern
         m = re.match(scene_pattern, line)
         if m:
+            source_unit["type"] = "scene_header"
             if current_scene:
                 scenes.append(current_scene)
             # Extract scene name (rest of line after pattern match)
@@ -56,33 +68,40 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
             # Build scene char map: extract chars separated by multiple spaces
             scene_chars_list = [c.strip() for c in __import__("re").split(r'\s{2,}', name) if c.strip()]
             current_scene = {"id": scene_id, "name": name if name else scene_id}
+            source_unit["scene"] = current_scene["name"]
             if scene_chars_list:
                 scene_char_map[name] = scene_chars_list
             continue
 
         # Skip character list lines
         if re.match(r"^人物[\uff1a:]", line):
+            source_unit["type"] = "character_list"
             continue
 
         # Action lines (△ prefix or 动作：prefix)
         if line.startswith("\u25b3"):
+            source_unit["type"] = "action"
             beats.append({
                 "type": "action",
                 "text": re.sub(r"^\u25b3[\uff1a:]?\s*", "", line),
-                "scene": current_scene["name"] if current_scene else ""
+                "scene": current_scene["name"] if current_scene else "",
+                "source_ids": [source_id],
             })
             continue
         if line.startswith("\u52a8\u4f5c\uff1a"):
+            source_unit["type"] = "action"
             beats.append({
                 "type": "action",
                 "text": line[3:].strip(),
-                "scene": current_scene["name"] if current_scene else ""
+                "scene": current_scene["name"] if current_scene else "",
+                "source_ids": [source_id],
             })
             continue
 
         # Dialogue detection
         dm = re.match(r"^([^\uff1a:]+?)(\uff08([^\uff09]*)\uff09)?[\uff1a:](.+)", line)
         if dm:
+            source_unit["type"] = "dialogue"
             speaker = dm.group(1).strip()
             tone = dm.group(3) or ""
             content = dm.group(4).strip()
@@ -91,10 +110,12 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
             is_action = bool(action_kw) and any(kw in line for kw in action_kw)
             oral = ["我", "你", "啦", "啊", "吗", "吧", "!", "?", "~"]
             if is_action and not any(kw in content for kw in oral):
+                source_unit["type"] = "action"
                 beats.append({
                     "type": "action",
                     "text": line,
-                    "scene": current_scene["name"] if current_scene else ""
+                    "scene": current_scene["name"] if current_scene else "",
+                    "source_ids": [source_id],
                 })
                 continue
 
@@ -129,10 +150,12 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
                     "tone": tone,
                     "refs": [ref],
                     "speech_duration": dialogue_duration_map[ref],
-                    "scene": current_scene["name"] if current_scene else ""
+                    "scene": current_scene["name"] if current_scene else "",
+                    "source_ids": [source_id],
                 })
             dialogue_counter += len(entries)
             continue
+        source_unit["type"] = "source_fact"
 
     if current_scene:
         scenes.append(current_scene)
@@ -142,9 +165,11 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
     # Narration/OV/OS remains separate because it has a different lip-sync
     # boundary. Actions remain explicit Orchestrator beats.
     merged = _pack_interaction_beats(beats, max_shot_duration)
+    merged = _pack_action_beats(merged, max_shot_duration, characters_list)
 
     # Generate shots with character detection
     shots = []
+    dramatic_beat_records = []
     for beat in merged:
         beat_chars = []
         full_text = beat.get("text", "")
@@ -176,18 +201,34 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
         shot_num = len(shots) + 1
         refs = beat.get("refs", [])
 
-        if beat["type"] == "action":
+        if beat["type"] in ("action", "action_group"):
             dur = max(2.0, min(max_shot_duration, len(full_text) / 5))
+            subshot_id = f"S1-{shot_num:02d}-01"
+            visible_beats = [
+                {"text": action.get("text", ""), "source_ids": action.get("source_ids", [])}
+                for action in beat.get("actions", [])
+            ] if beat.get("actions") else _visible_beat_texts(full_text)
+            beat_ids = _register_dramatic_beats(
+                dramatic_beat_records, beat, subshot_id, visible_beats
+            )
+            dramatic_design = _dramatic_design(beat, full_text, beat_chars, beat_ids)
+            duration_design = _duration_design(
+                dur, max_shot_duration, beat_ids,
+                "continuous_action" if len(beat_ids) > 1 else "simple_action",
+            )
             shots.append({
                 "shot_id": f"S1-{shot_num:02d}",
                 "scene": scene_name,
                 "core_action": full_text,
                 "subshots": [{
-                    "subshot_id": f"S1-{shot_num:02d}-01",
+                    "subshot_id": subshot_id,
                     "duration": round(dur, 1),
                     "characters": beat_chars,
                     "dialogue_refs": [],
-                    "base_action": full_text
+                    "base_action": full_text,
+                    "source_ids": list(beat.get("source_ids", [])),
+                    "dramatic_design": dramatic_design,
+                    "duration_design": duration_design,
                 }]
             })
             continue
@@ -202,12 +243,29 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
             "%s%s" % ((turn.get("speaker", "") + "：") if turn.get("speaker") else "", turn.get("text", ""))
             for turn in beat.get("turns", [beat])
         ]
+        subshot_id = f"S1-{shot_num:02d}-01"
+        beat_texts = []
+        for turn in beat.get("turns", [beat]):
+            speaker_prefix = (turn.get("speaker", "") + "：") if turn.get("speaker") else ""
+            beat_texts.extend({
+                "text": speaker_prefix + part,
+                "source_ids": turn.get("source_ids", []),
+            } for part in _visible_beat_texts(turn.get("text", "")))
+        beat_ids = _register_dramatic_beats(
+            dramatic_beat_records, beat, subshot_id, beat_texts
+        )
+        rationale = "continuous_interaction" if len(beat.get("turns", [beat])) > 1 else "continuous_dialogue"
+        dramatic_design = _dramatic_design(beat, "；".join(turn_summaries), beat_chars, beat_ids)
+        duration_design = _duration_design(seg_dur, max_shot_duration, beat_ids, rationale)
         subshots = [{
-            "subshot_id": f"S1-{shot_num:02d}-01",
+            "subshot_id": subshot_id,
             "duration": round(seg_dur, 1),
             "characters": beat_chars,
             "dialogue_refs": refs,
-            "base_action": "；".join(turn_summaries)[:160]
+            "base_action": "；".join(turn_summaries)[:160],
+            "source_ids": list(beat.get("source_ids", [])),
+            "dramatic_design": dramatic_design,
+            "duration_design": duration_design,
         }]
         shots.append({
             "shot_id": f"S1-{shot_num:02d}",
@@ -243,7 +301,110 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
     os.makedirs(os.path.dirname(draft_path), exist_ok=True)
     with open(draft_path, "w", encoding="utf-8") as f:
         json.dump(draft, f, ensure_ascii=False, indent=2)
+    with open(os.path.join(output_dir, "source_ledger.json"), "w", encoding="utf-8") as f:
+        json.dump({"source_path": os.path.abspath(source_path), "units": source_units}, f, ensure_ascii=False, indent=2)
+    with open(os.path.join(output_dir, "dramatic_beat_ledger.json"), "w", encoding="utf-8") as f:
+        json.dump({"beats": dramatic_beat_records}, f, ensure_ascii=False, indent=2)
     return draft_path, len(shots), sum(len(s["subshots"]) for s in shots)
+
+
+def _visible_beat_texts(text):
+    parts = [part.strip() for part in re.split(r"[。！？；;]+", str(text or "")) if part.strip()]
+    return parts[:3] or [str(text or "").strip()]
+
+
+def _register_dramatic_beats(records, beat, owner_subshot_id, texts):
+    beat_ids = []
+    source_ids = list(dict.fromkeys(beat.get("source_ids", []) or []))
+    for value in texts:
+        text = value.get("text", "") if isinstance(value, dict) else value
+        record_source_ids = (
+            list(dict.fromkeys(value.get("source_ids", []) or []))
+            if isinstance(value, dict) else source_ids
+        )
+        if not str(text or "").strip():
+            continue
+        beat_id = "B%04d" % (len(records) + 1)
+        records.append({
+            "beat_id": beat_id,
+            "source_ids": record_source_ids,
+            "type": beat.get("type", "action"),
+            "text": str(text).strip(),
+            "owner_subshot_id": owner_subshot_id,
+            "reserved_by": [],
+        })
+        beat_ids.append(beat_id)
+    return beat_ids
+
+
+def _dramatic_design(beat, text, characters, beat_ids):
+    content = str(text or "")
+    if any(token in content for token in ("进入", "走入", "出场", "现身")):
+        function = "entrance"
+    elif any(token in content for token in ("揭开", "显露", "发现", "看清")):
+        function = "reveal"
+    elif beat.get("type") in ("dialogue", "dialogue_group", "narration"):
+        function = "dialogue"
+    elif any(token in content for token in ("反应", "回望", "转头")):
+        function = "reaction"
+    else:
+        function = "action"
+    explicit_weight = str(beat.get("narrative_weight", "") or "").strip().lower()
+    if explicit_weight in ("low", "medium", "high", "critical"):
+        weight = explicit_weight
+    else:
+        critical_markers = (
+            "权力关系逆转", "改写权力关系", "身份反转", "真相揭晓", "局势彻底改变",
+        )
+        high_markers = (
+            "首次出场", "第一次出现", "关键人物", "核心人物", "重要人物",
+            "身份揭示", "信息反转", "压住全场", "局势改变",
+        )
+        if any(marker in content for marker in critical_markers):
+            weight = "critical"
+        elif any(marker in content for marker in high_markers):
+            weight = "high"
+        else:
+            weight = "medium"
+    visual_punctuation = []
+    if function == "entrance" and weight in ("high", "critical"):
+        candidates = (
+            ("occlusion_reveal", ("遮挡", "门后", "阴影中")),
+            ("low_angle_scale", ("低机位", "仰视", "仰拍")),
+            ("foreground_reaction", ("前景反应", "众人反应", "众人转头")),
+            ("light_reveal", ("轮廓光", "转面光", "光线揭示")),
+            ("rack_focus", ("拉焦", "焦点转移")),
+            ("camera_follow", ("进入", "走入", "现身", "跟随")),
+            ("stop_mark", ("停", "站定", "顿住")),
+        )
+        for device, markers in candidates:
+            if any(marker in content for marker in markers):
+                visual_punctuation.append(device)
+            if len(visual_punctuation) == 2:
+                break
+        if not visual_punctuation:
+            visual_punctuation.append("camera_follow")
+    reaction_owner = characters[1] if len(characters) > 1 else ""
+    return {
+        "shot_function": function,
+        "narrative_weight": weight,
+        "information_gain": content[:120],
+        "reaction_ownership": reaction_owner,
+        "dramatic_beat_ids": beat_ids,
+        "visual_punctuation": visual_punctuation,
+    }
+
+
+def _duration_design(duration, capacity, beat_ids, rationale):
+    duration = round(float(duration), 1)
+    capacity = float(capacity)
+    return {
+        "duration_strategy": "pack_toward_limit",
+        "justified_content_duration": duration,
+        "utilization_ratio": round(duration / capacity, 3) if capacity > 0 else 0,
+        "duration_rationale": rationale,
+        "dramatic_beats": beat_ids,
+    }
 
 
 def _has_group_reaction(text):
@@ -281,6 +442,9 @@ def _pack_interaction_beats(beats, max_shot_duration):
             "text": "".join(turn.get("text", "") for turn in group),
             "refs": refs,
             "turns": list(group),
+            "source_ids": list(dict.fromkeys(
+                source_id for turn in group for source_id in turn.get("source_ids", [])
+            )),
         })
         group = []
 
@@ -300,6 +464,64 @@ def _pack_interaction_beats(beats, max_shot_duration):
                 "single dialogue semantic unit exceeds user-confirmed max_shot_duration: %s"
                 % beat.get("text", "")
             )
+        group = candidate
+    flush()
+    return packed
+
+
+def _pack_action_beats(beats, max_shot_duration, characters):
+    """Pack only demonstrably causal adjacent actions toward clip capacity."""
+    packed = []
+    group = []
+
+    def action_duration(action_group):
+        text = "；".join(item.get("text", "") for item in action_group)
+        return max(2.0, min(float(max_shot_duration), len(text) / 5))
+
+    def compatible(previous, current):
+        if previous.get("scene", "") != current.get("scene", ""):
+            return False
+        previous_text = str(previous.get("text", "") or "")
+        current_text = str(current.get("text", "") or "")
+        shared_character = any(
+            character and character in previous_text and character in current_text
+            for character in characters or []
+        )
+        causal_start = current_text.startswith((
+            "随后", "接着", "同时", "这时", "于是", "继而", "转而",
+            "停下", "继续", "紧接着", "下一刻",
+        ))
+        return shared_character or causal_start
+
+    def flush():
+        nonlocal group
+        if not group:
+            return
+        if len(group) == 1:
+            packed.append(group[0])
+        else:
+            packed.append({
+                "type": "action_group",
+                "scene": group[0].get("scene", ""),
+                "text": "；".join(item.get("text", "") for item in group),
+                "source_ids": list(dict.fromkeys(
+                    source_id for item in group for source_id in item.get("source_ids", [])
+                )),
+                "actions": list(group),
+            })
+        group = []
+
+    for beat in beats:
+        if beat.get("type") != "action":
+            flush()
+            packed.append(beat)
+            continue
+        if group and not compatible(group[-1], beat):
+            flush()
+        candidate = group + [beat]
+        if group and action_duration(candidate) > max_shot_duration + 1e-6:
+            flush()
+            candidate = [beat]
         group = candidate
     flush()
     return packed

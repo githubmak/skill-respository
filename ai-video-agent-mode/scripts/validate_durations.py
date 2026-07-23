@@ -96,8 +96,10 @@ def _long_duration_issues(subshot, duration, dialogue_secs, action_secs, max_sta
     if duration <= max_static_seconds + 1e-6:
         return []
 
-    rationale = str(subshot.get("duration_rationale", "") or "").strip()
-    beats = subshot.get("dramatic_beats", [])
+    design = subshot.get("duration_design", {})
+    design = design if isinstance(design, dict) else {}
+    rationale = str(design.get("duration_rationale", "") or "").strip()
+    beats = design.get("dramatic_beats", [])
     if rationale not in LONG_DURATION_RATIONALES:
         return [
             "duration_overfilled",
@@ -118,7 +120,7 @@ def _long_duration_issues(subshot, duration, dialogue_secs, action_secs, max_sta
         len(subshot.get("dialogue_refs", []) or []) < 2 or dialogue_secs < 3.0
     ):
         return ["duration_rationale_unsupported", rationale, "continuous_interaction needs >=2 dialogue turns and >=3.0s spoken content"]
-    if rationale == "continuous_action" and action_secs < 4.0:
+    if rationale == "continuous_action" and len(beats) < 2:
         return ["duration_rationale_unsupported", rationale, "continuous_action needs multiple visible action beats"]
     if duration > 10.0:
         if len(beats) < 3:
@@ -126,6 +128,30 @@ def _long_duration_issues(subshot, duration, dialogue_secs, action_secs, max_sta
         if rationale == "sustained_reveal" and action_secs < 4.0:
             return ["duration_rationale_unsupported", rationale, "sustained_reveal needs an on-screen reveal process, not a static reaction"]
     return []
+
+
+def _duration_design_issues(subshot, duration, max_per_shot):
+    design = subshot.get("duration_design")
+    if not isinstance(design, dict):
+        return [("duration_design", "missing", "required object")]
+    issues = []
+    if design.get("duration_strategy") != "pack_toward_limit":
+        issues.append(("duration_strategy", design.get("duration_strategy"), "pack_toward_limit"))
+    justified = design.get("justified_content_duration")
+    if not isinstance(justified, (int, float)) or isinstance(justified, bool) or justified <= 0:
+        issues.append(("justified_content_duration", justified, ">0"))
+    elif abs(float(justified) - float(duration)) > 0.5:
+        issues.append(("duration_padding", duration - float(justified), "<=0.5s unsubstantiated time"))
+    utilization = design.get("utilization_ratio")
+    expected_ratio = float(duration) / float(max_per_shot) if max_per_shot else 0
+    if not isinstance(utilization, (int, float)) or isinstance(utilization, bool):
+        issues.append(("utilization_ratio", utilization, "numeric duration/max_shot_duration"))
+    elif abs(float(utilization) - expected_ratio) > 0.02:
+        issues.append(("utilization_ratio", utilization, "%.3f" % expected_ratio))
+    beats = design.get("dramatic_beats")
+    if not isinstance(beats, list) or not beats or any(not str(beat).strip() for beat in beats):
+        issues.append(("dramatic_beats", beats, "non-empty ordered beat IDs"))
+    return issues
 
 
 def validate(sp_path, max_per_shot=15, max_total=600, project_config_path=None):
@@ -149,10 +175,10 @@ def validate(sp_path, max_per_shot=15, max_total=600, project_config_path=None):
                 cfg = json.load(f)
             m = cfg.get("max_shot_duration")
             if m:
-                max_per_shot = int(m)
+                max_per_shot = float(m)
             mt = cfg.get("max_total_duration")
             if mt:
-                max_total = int(mt)
+                max_total = float(mt)
             static_limit = cfg.get("max_static_shot_duration")
             if isinstance(static_limit, (int, float)) and not isinstance(static_limit, bool) and static_limit >= 2.5:
                 max_static_seconds = float(static_limit)
@@ -190,6 +216,9 @@ def validate(sp_path, max_per_shot=15, max_total=600, project_config_path=None):
 
             shot_dur += d
 
+            for field, value, expected_value in _duration_design_issues(ss, d, max_per_shot):
+                issues.append(("%s/%s" % (sid, ssid), field, value, expected_value))
+
             # === Dialogue-content timing check ===
             dialogue_refs = ss.get("dialogue_refs", [])
             total_dialogue_secs = 0.0
@@ -215,11 +244,11 @@ def validate(sp_path, max_per_shot=15, max_total=600, project_config_path=None):
                 issues.append(("%s/%s" % (sid, ssid), field, value, expected))
 
         if shot_dur > max_per_shot:
-            issues.append((sid, "shot_duration", shot_dur, "<=%d" % max_per_shot))
+            issues.append((sid, "shot_duration", shot_dur, "<=%g" % max_per_shot))
         total_dur += shot_dur
 
     if total_dur > max_total:
-        issues.append(("TOTAL", "total_duration", total_dur, "<=%d" % max_total))
+        issues.append(("TOTAL", "total_duration", total_dur, "<=%g" % max_total))
 
     if issues:
         print("[DURATION] %d issue(s)" % len(issues))

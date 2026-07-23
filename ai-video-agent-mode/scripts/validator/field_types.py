@@ -35,7 +35,7 @@ def validate_field_types(packet_path):
     except Exception:
         return [(os.path.basename(packet_path), "JSON", "", "parse_error")]
 
-    items = data.get("items", [])
+    items = data.get("shots") if "shots" in data else data.get("items", [])
     issues = []
     if not isinstance(items, list):
         return [(os.path.basename(packet_path), "items", type(items).__name__, "list")]

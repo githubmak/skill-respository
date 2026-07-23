@@ -6,6 +6,7 @@ import hashlib, json, os, sys, time
 
 sys.path.insert(0, os.path.dirname(__file__))
 from record_batch_provenance import verify as verify_provenance
+from pipeline_runtime import patch_only
 
 def merge_agent_outputs(output_path, *input_paths, require_provenance=False):
     """Merge multiple agent JSON outputs into one, deduplicating by subshot_id."""
@@ -47,6 +48,7 @@ def merge_agent_outputs(output_path, *input_paths, require_provenance=False):
         stats['files'] += 1
         stats['total_from_files'] += len(items)
 
+        fields_by_main_shot = _patch_fields_for_batch(path, source_manifests[-1] if source_manifests else None)
         for item in items:
             sid = item.get('subshot_id', '')
             if not sid:
@@ -56,7 +58,8 @@ def merge_agent_outputs(output_path, *input_paths, require_provenance=False):
                 # Retry packets are appended after their original batch.  Keep the
                 # verified replacement, rather than silently restoring stale work.
                 stats['duplicates'] += 1
-                all_items[seen[sid]] = item
+                fields = fields_by_main_shot.get(str(item.get('shot_id') or sid))
+                all_items[seen[sid]] = patch_only(all_items[seen[sid]], item, fields) if fields else item
                 continue
             seen[sid] = len(all_items)
             all_items.append(item)
@@ -81,7 +84,7 @@ def merge_agent_outputs(output_path, *input_paths, require_provenance=False):
 
     if require_provenance:
         merge_manifest = {
-            'contract_version': 'modec-v4',
+            'contract_version': 'jimeng-t2v-v1',
             'output_path': os.path.abspath(output_path),
             'output_sha256': _sha256(output_path),
             'source_batches': source_manifests,
@@ -95,6 +98,24 @@ def merge_agent_outputs(output_path, *input_paths, require_provenance=False):
     return stats
 
 
+def _patch_fields_for_batch(batch_path, manifest):
+    """Read the immutable retry context associated with this verified batch."""
+    packet_path = (manifest or {}).get('packet_path')
+    if not packet_path or not os.path.exists(packet_path):
+        return {}
+    try:
+        with open(packet_path, encoding='utf-8-sig') as handle:
+            packet = json.load(handle)
+        context_path = packet.get('retry_context_path')
+        if not context_path or not os.path.exists(context_path):
+            return {}
+        with open(context_path, encoding='utf-8-sig') as handle:
+            context = json.load(handle)
+        return context.get('fields_by_main_shot', {}) if context.get('mode') == 'field_patch' else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
 def _sha256(path):
     digest = hashlib.sha256()
     with open(path, 'rb') as handle:
@@ -104,38 +125,15 @@ def _sha256(path):
 
 
 def _build_prompt_package(items):
-    """Build the merged Phase 6/7 package with canonical double keys."""
+    """Build the merged Phase 6/7 package with one canonical shots array."""
     normalized = []
     for item in items:
         copied = dict(item)
-        copied.setdefault('duration', copied.get('duration_sec', 0))
         normalized.append(copied)
 
-    shot_map = {}
-    for item in normalized:
-        sid = item.get('shot_id', '')
-        shot_map.setdefault(sid, []).append(item)
-
-    merged_full_prompts = []
-    for sid in sorted(shot_map):
-        subshots = sorted(shot_map[sid], key=lambda x: x.get('subshot_id', ''))
-        total_dur = sum(float(ss.get('duration', 0) or 0) for ss in subshots)
-        combined = '\n\n---\n\n'.join(ss.get('full_prompt', '') for ss in subshots)
-        merged_full_prompts.append({
-            'shot_id': sid,
-            'duration': total_dur,
-            'duration_sec': total_dur,
-            'full_prompt': combined,
-            'negative_prompt': ' | '.join(dict.fromkeys(
-                ss.get('negative_prompt', '') for ss in subshots if ss.get('negative_prompt', '')
-            )),
-        })
-
     return {
-        'contract_version': 'modec-v4',
-        'items': normalized,
+        'contract_version': 'jimeng-t2v-v1',
         'shots': normalized,
-        'merged_full_prompts': merged_full_prompts,
     }
 
 if __name__ == '__main__':

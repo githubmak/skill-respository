@@ -9,7 +9,7 @@ import time
 def write_summary(run_dir, phase, output_paths):
     artifacts = [_artifact(path) for path in output_paths if os.path.exists(path)]
     summary = {
-        "contract_version": "modec-v4",
+        "contract_version": "jimeng-t2v-v1",
         "phase": phase,
         "written_at": time.time(),
         "artifacts": artifacts,
@@ -17,12 +17,16 @@ def write_summary(run_dir, phase, output_paths):
     state_path = os.path.join(run_dir, ".cache", "pipeline_state.json")
     try:
         with open(state_path, "r", encoding="utf-8-sig") as handle:
-            phase_state = json.load(handle).get("phases", {}).get(phase, {})
+            state = json.load(handle)
+        phase_state = state.get("phases", {}).get(phase, {})
         summary["timing"] = {
             key: phase_state.get(key)
             for key in ("started_at", "spawn_time", "completed_at", "elapsed_seconds", "retries", "timeout_count")
             if phase_state.get(key) is not None
         }
+        pipeline_started_at = state.get("pipeline_started_at")
+        if isinstance(pipeline_started_at, (int, float)):
+            summary["core_elapsed_seconds"] = round(max(time.time() - pipeline_started_at, 0), 3)
     except (OSError, json.JSONDecodeError):
         pass
     summary_dir = os.path.join(run_dir, ".cache", "stage_summary")

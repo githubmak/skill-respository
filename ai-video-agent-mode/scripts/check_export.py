@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Thirty-point Mode C v4 package/export quality gate."""
+"""Thirty-point current-contract package/export quality gate."""
 
 import json
 import os
@@ -16,13 +16,17 @@ from modec_v4 import (
     camera_competition_issues,
     continuity_contract_issues,
     dialogue_event_issues,
+    expectation_anchor_issues,
     fight_continuity_issues,
     fight_transition_issues,
+    listener_reaction_issues,
     performance_causality_issues,
     performance_contract_issues,
     prompt_length_issues,
     reroll_control_issues,
     role_partition_issues,
+    shot_group_handoff_issues,
+    jimeng_shot_group_issues,
     split_sections,
     timeline_issues,
     timeline_ranges,
@@ -39,15 +43,13 @@ def check_export(md_path, run_dir, quality_mode=False):
     config = _load_optional(os.path.join(run_dir, "project_config.json"))
     package_path = _find_package(run_dir)
     package = _load(package_path) if package_path else {}
-    director = _load_optional(os.path.join(run_dir, ".cache", "director", "director_pass.json"))
     llm_review = _load_optional(os.path.join(run_dir, ".cache", "review", "llm_gate_result.json"))
-    scene = _load_optional(os.path.join(run_dir, ".cache", "analysis", "scene_output.json"))
     grid_packages = _load_optional(os.path.join(run_dir, ".cache", "grid_storyboard", "packages.json"))
     shots = package.get("shots", [])
-    items = package.get("items", [])
+    hard_max_chars = (config.get("prompt_limits", {}) or {}).get("hard_max_chars")
     plan_map, scene_by_id = _plan_index(plan)
-    director_map = {item.get("subshot_id", ""): item for item in director.get("items", [])}
-    scene_map = {item.get("subshot_id", ""): item for item in scene.get("items", [])}
+    director_map = {}
+    scene_map = {}
     failures = []
 
     def check(number, label, condition, detail=""):
@@ -63,8 +65,8 @@ def check_export(md_path, run_dir, quality_mode=False):
     expected_ids = set(plan_map)
 
     check(1, "Package exists", bool(package_path), package_path or "missing")
-    check(2, "Mode C v4 contract", package.get("contract_version") == "modec-v4", str(package.get("contract_version")))
-    check(3, "Items/shots identical", items == shots and isinstance(shots, list), f"{len(items)}/{len(shots)}")
+    check(2, "Current contract", package.get("contract_version") == "jimeng-t2v-v1", str(package.get("contract_version")))
+    check(3, "Single shots authority", set(package) == {"contract_version", "shots"} and isinstance(shots, list), str(sorted(package)))
     check(4, "Subshot coverage", set(ids) == expected_ids, f"{len(set(ids))}/{len(expected_ids)}")
     check(5, "Unique subshots", len(ids) == len(set(ids)), f"{len(ids) - len(set(ids))} duplicate(s)")
     missing_fields = sum(1 for shot in shots if not required.issubset(shot))
@@ -107,13 +109,13 @@ def check_export(md_path, run_dir, quality_mode=False):
         sections = split_sections(full_prompt, PROMPT_LABELS)
         if list(sections) != PROMPT_LABELS or any(not sections.get(label) for label in PROMPT_LABELS):
             bad_sections += 1
-        if full_prompt.count("\n\n") != 3:
+        if full_prompt.count("\n\n") != 4:
             bad_spacing += 1
         if any(re.search(rf"(?:^|\n\n){re.escape(label)}[：:]", full_prompt) for label in LEGACY_LABELS):
             legacy_hits += 1
         if any(term in full_prompt for term in FORBIDDEN_MODEL_TERMS) or "负面提示词" in full_prompt or PLACEHOLDER in full_prompt:
             pollution += 1
-        if prompt_length_issues(full_prompt, shot.get("duration", 0)):
+        if prompt_length_issues(full_prompt, shot.get("duration", 0), hard_max_chars):
             length_issues += 1
         t_issues = timeline_issues(full_prompt, shot.get("duration", 0))
         if any("缺少" in issue for issue in t_issues):
@@ -122,6 +124,8 @@ def check_export(md_path, run_dir, quality_mode=False):
             timeline_coverage += 1
         if len(timeline_ranges(full_prompt)) > 3:
             timeline_overload += 1
+        if jimeng_shot_group_issues(full_prompt, (shot.get("qa_metadata", {}) or {}).get("editorial_mode", "continuous_take")):
+            camera_budget_issues += 1
 
         negative = str(shot.get("negative_prompt", "") or "").strip()
         if not negative or PLACEHOLDER in negative:
@@ -132,7 +136,9 @@ def check_export(md_path, run_dir, quality_mode=False):
         metadata = shot.get("qa_metadata")
         if not isinstance(metadata, dict) or any(key not in metadata for key in (
             "dramatic_goal", "performance_priority", "action_budget", "start_state", "end_state",
-            "performance_contract", "continuity_contract", "reroll_control", "dialogue_refs", "dialogue_events"
+            "performance_contract", "continuity_contract", "reroll_control", "dialogue_refs", "dialogue_events",
+            "dramatic_design", "duration_design", "viewpoint", "visual_hierarchy",
+            "entry_strategy", "reveal_strategy", "focus_strategy",
         )):
             metadata_missing += 1
             metadata = metadata if isinstance(metadata, dict) else {}
@@ -144,6 +150,10 @@ def check_export(md_path, run_dir, quality_mode=False):
         if performance_causality_issues(metadata, visible):
             performance_causality_errors += 1
         if performance_contract_issues(metadata, full_prompt, visible):
+            performance_contract_errors += 1
+        if listener_reaction_issues(metadata, full_prompt):
+            performance_contract_errors += 1
+        if expectation_anchor_issues(metadata, full_prompt):
             performance_contract_errors += 1
         if continuity_contract_issues(metadata, full_prompt, visible):
             continuity_contract_errors += 1
@@ -162,7 +172,7 @@ def check_export(md_path, run_dir, quality_mode=False):
             fight_records.append((sid, metadata))
         budget = metadata.get("action_budget", {}) if isinstance(metadata, dict) else {}
         editorial_mode = metadata.get("editorial_mode", shot.get("editorial_mode", "continuous_take"))
-        camera_errors = camera_competition_issues(full_prompt, editorial_mode) + attention_handoff_issues(metadata, full_prompt)
+        camera_errors = camera_competition_issues(full_prompt, editorial_mode) + attention_handoff_issues(metadata, full_prompt) + shot_group_handoff_issues(metadata)
         if not isinstance(budget, dict) or budget.get("physical_camera_move_count") not in (0, 1) or camera_errors:
             camera_budget_issues += 1
         shot_size = director_map.get(sid, {}).get("shot_size", plan_item.get("shot_size", ""))
@@ -182,13 +192,10 @@ def check_export(md_path, run_dir, quality_mode=False):
                 dialogue_issues += 1
 
         control = shot.get("generation_control")
-        if not isinstance(control, dict) or control.get("mode") not in ("t2v", "i2v", "r2v"):
+        if not isinstance(control, dict) or control.get("mode") != "t2v":
             mode_issues += 1
             control = control if isinstance(control, dict) else {}
-        assets = control.get("reference_assets")
-        if not isinstance(assets, list) or (control.get("mode") in ("i2v", "r2v") and not assets):
-            asset_issues += 1
-        elif isinstance(assets, list) and any(not isinstance(asset, dict) or not asset.get("type") or not asset.get("path") for asset in assets):
+        if "reference_assets" in control:
             asset_issues += 1
         if not isinstance(control.get("audio_enabled"), bool):
             audio_issues += 1
@@ -210,9 +217,9 @@ def check_export(md_path, run_dir, quality_mode=False):
 
     check(8, "Four executable sections", bad_sections == 0, f"{bad_sections} bad")
     check(9, "Exact paragraph spacing", bad_spacing == 0, f"{bad_spacing} bad")
-    check(10, "No v3 fields", legacy_hits == 0, f"{legacy_hits} leak(s)")
+    check(10, "No obsolete prompt sections", legacy_hits == 0, f"{legacy_hits} leak(s)")
     check(11, "No model-prompt pollution", pollution == 0, f"{pollution} polluted")
-    check(12, "Prompt length 120-1100", length_issues == 0, f"{length_issues} outside")
+    check(12, "Runtime prompt hard limit", length_issues == 0, f"{length_issues} outside")
     check(13, "Timeline present", timeline_missing == 0, f"{timeline_missing} missing")
     check(14, "Timeline exact coverage", timeline_coverage == 0, f"{timeline_coverage} bad")
     check(15, "Timeline <=3 segments", timeline_overload == 0, f"{timeline_overload} overloaded")

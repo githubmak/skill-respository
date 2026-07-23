@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate a normalized Mode C v4 package in a run directory."""
+"""Validate a normalized current-contract package in a run directory."""
 
 import json
 import os
@@ -17,9 +17,12 @@ from modec_v4 import (
     dialogue_event_issues,
     fight_continuity_issues,
     fight_transition_issues,
+    listener_reaction_issues,
     performance_causality_issues,
     prompt_length_issues,
     role_partition_issues,
+    shot_group_handoff_issues,
+    jimeng_shot_group_issues,
     split_sections,
     timeline_issues,
     visibility_issues,
@@ -34,10 +37,11 @@ def main(run_dir):
         ".cache/prompt_package.json",
     ]))
     plan = _load_json(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"))
-    director = _load_optional_json(os.path.join(run_dir, ".cache", "director", "director_pass.json"))
+    director = {}
     llm_review = _load_optional_json(os.path.join(run_dir, ".cache", "review", "llm_gate_result.json"))
     shots = package.get("shots", [])
-    items = package.get("items", [])
+    config = _load_optional_json(os.path.join(run_dir, "project_config.json"))
+    hard_max_chars = (config.get("prompt_limits", {}) or {}).get("hard_max_chars")
     expected = {
         subshot.get("subshot_id", ""): subshot
         for shot in plan.get("shots", [])
@@ -50,8 +54,8 @@ def main(run_dir):
     warnings = []
     fight_records = []
 
-    if package.get("contract_version") != "modec-v4":
-        errors.append("contract_version必须是modec-v4")
+    if package.get("contract_version") != "jimeng-t2v-v1":
+        errors.append("contract_version必须是jimeng-t2v-v1")
     if not isinstance(llm_review, dict) or not llm_review or "items" in llm_review:
         errors.append("缺少editor_pass2的llm_gate_result.json")
     else:
@@ -62,8 +66,8 @@ def main(run_dir):
             errors.append("editor_pass2复审存在blocking")
     if not isinstance(shots, list) or not shots:
         errors.append("shots必须是非空数组")
-    if items != shots:
-        errors.append("items与shots必须内容完全相同")
+    if set(package) != {"contract_version", "shots"}:
+        errors.append("提示词包顶层只能包含contract_version与shots")
     actual_ids = [shot.get("subshot_id", "") for shot in shots]
     if set(actual_ids) != set(expected) or len(actual_ids) != len(expected):
         errors.append("subshot覆盖或唯一性不一致")
@@ -74,20 +78,29 @@ def main(run_dir):
         full_prompt = str(shot.get("full_prompt", "") or "")
         metadata = shot.get("qa_metadata", {})
         metadata = metadata if isinstance(metadata, dict) else {}
+        required_metadata = (
+            "dramatic_design", "duration_design", "viewpoint", "visual_hierarchy",
+            "entry_strategy", "reveal_strategy", "focus_strategy",
+        )
+        for field in required_metadata:
+            if field not in metadata:
+                errors.append(prefix + "qa_metadata缺少" + field)
         sections = split_sections(full_prompt, PROMPT_LABELS)
         if list(sections) != PROMPT_LABELS:
-            errors.append(prefix + "full_prompt必须按顺序包含v4四段")
-        if full_prompt.count("\n\n") != 3:
-            errors.append(prefix + "四段之间必须恰好三个空行")
+            errors.append(prefix + "full_prompt必须按顺序包含即梦主镜头五段")
+        if full_prompt.count("\n\n") != 4:
+            errors.append(prefix + "五段之间必须恰好四个空行")
         if any(re.search(rf"(?:^|\n\n){re.escape(label)}[：:]", full_prompt) for label in LEGACY_LABELS):
             errors.append(prefix + "含v3旧字段")
         if any(term in full_prompt for term in FORBIDDEN_MODEL_TERMS):
             errors.append(prefix + "模型提示词混入工程/QA文本")
         if "负面提示词" in full_prompt or PLACEHOLDER in full_prompt:
             errors.append(prefix + "负面词混入full_prompt")
-        for issue in prompt_length_issues(full_prompt, shot.get("duration", 0)):
+        for issue in prompt_length_issues(full_prompt, shot.get("duration", 0), hard_max_chars):
             errors.append(prefix + issue)
         for issue in timeline_issues(full_prompt, shot.get("duration", 0)):
+            errors.append(prefix + issue)
+        for issue in jimeng_shot_group_issues(full_prompt, metadata.get("editorial_mode", "continuous_take")):
             errors.append(prefix + issue)
         for issue in camera_competition_issues(full_prompt, metadata.get("editorial_mode", shot.get("editorial_mode", "continuous_take"))):
             errors.append(prefix + issue)
@@ -99,12 +112,16 @@ def main(run_dir):
             errors.append(prefix + issue)
         for issue in performance_causality_issues(metadata, visible):
             errors.append(prefix + issue)
+        for issue in listener_reaction_issues(metadata, full_prompt):
+            errors.append(prefix + issue)
         fight = is_fight_context(
             plan_item.get("scene_type", ""), plan_item.get("shot_type", ""), full_prompt
         )
         for issue in action_budget_issues(metadata, shot.get("duration", 0), fight):
             errors.append(prefix + issue)
         for issue in attention_handoff_issues(metadata, full_prompt):
+            errors.append(prefix + issue)
+        for issue in shot_group_handoff_issues(metadata):
             errors.append(prefix + issue)
         if fight:
             for issue in fight_continuity_issues(metadata, shot.get("duration", 0)):
@@ -125,17 +142,14 @@ def main(run_dir):
             errors.append(prefix + "generation_control缺失")
         else:
             mode = control.get("mode")
-            assets = control.get("reference_assets")
-            if mode not in ("t2v", "i2v", "r2v"):
-                errors.append(prefix + "generation mode非法")
+            if mode != "t2v":
+                errors.append(prefix + "generation_control.mode必须固定为t2v")
             if not isinstance(control.get("audio_enabled"), bool):
                 errors.append(prefix + "audio_enabled必须是布尔值")
-            if not isinstance(assets, list):
-                errors.append(prefix + "reference_assets必须是数组")
-            elif mode in ("i2v", "r2v") and not assets:
-                errors.append(prefix + f"{mode}缺少参考资产")
-            if mode == "t2v" and visible:
-                warnings.append(prefix + "人物镜使用T2V，角色一致性抽卡风险高于I2V/R2V")
+            if "reference_assets" in control:
+                errors.append(prefix + "T2V-only契约禁止reference_assets")
+            if visible:
+                warnings.append(prefix + "人物镜为T2V：须以身份、服装、左右站位和场景锚点控制抽卡风险")
         audio_enabled = control.get("audio_enabled") if isinstance(control, dict) else None
         for issue in dialogue_event_issues(
             metadata,
@@ -154,11 +168,11 @@ def main(run_dir):
     for warning in warnings[:30]:
         print("[WARN] " + warning)
     if errors:
-        print(f"[MODEC V4] FAIL - {len(errors)} error(s), {len(warnings)} warning(s)")
+        print(f"[JIMENG T2V V1] FAIL - {len(errors)} error(s), {len(warnings)} warning(s)")
         for error in errors[:80]:
             print("  - " + error)
         return 1
-    print(f"[MODEC V4] PASS - {len(shots)} shots, {len(warnings)} warning(s)")
+    print(f"[JIMENG T2V V1] PASS - {len(shots)} shots, {len(warnings)} warning(s)")
     return 0
 
 

@@ -6,13 +6,13 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from pipeline_state import set_agent_id
+from pipeline_state import set_agent_id, record_heartbeat
 
 
 def register(packet_path, agent_id):
     with open(packet_path, "r", encoding="utf-8-sig") as handle:
         packet = json.load(handle)
-    if packet.get("contract_version") != "modec-v4":
+    if packet.get("contract_version") != "jimeng-t2v-v1":
         raise SystemExit("Invalid or pre-v4 dispatch packet")
     run_dir = str(packet.get("run_dir", "") or "")
     phase = str(packet.get("phase", "") or "")
@@ -20,6 +20,7 @@ def register(packet_path, agent_id):
     if not run_dir or not phase or not dispatch_id or not str(agent_id).strip():
         raise SystemExit("packet run_dir/phase/dispatch_id and agent_id are required")
     set_agent_id(run_dir, phase, str(agent_id).strip(), dispatch_id=dispatch_id)
+    record_heartbeat(run_dir, phase, str(agent_id).strip(), dispatch_id)
     print("[DISPATCH AGENT] %s %s %s" % (phase, dispatch_id, agent_id))
 
 

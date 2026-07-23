@@ -9,13 +9,13 @@ import time
 
 sys.path.insert(0, os.path.dirname(__file__))
 from pipeline_state import load_state, save_state
-from validate_agent_output import validate as validate_agent_output
 from validate_composer_output import validate_composer_output
+from pipeline_runtime import cache_artifact, record_issues
 
 
 def record(packet_path, allow_partial=False):
     packet = _load(packet_path)
-    if packet.get("contract_version") != "modec-v4" or not packet.get("dispatch_id"):
+    if packet.get("contract_version") != "jimeng-t2v-v1" or not packet.get("dispatch_id"):
         raise SystemExit("Invalid or pre-v4 dispatch packet")
     run_dir = packet.get("run_dir", "")
     phase = packet.get("phase", "")
@@ -57,7 +57,7 @@ def record(packet_path, allow_partial=False):
     validated_subshot_ids = []
     failed_subshot_ids = []
     validation_mode = "full"
-    if phase == "prompt_composer":
+    if phase == "master_production":
         batch_data = _load(batch_path)
         all_subshot_ids = [
             item.get("subshot_id") for item in batch_data.get("shots", [])
@@ -79,7 +79,7 @@ def record(packet_path, allow_partial=False):
         raise SystemExit("Batch validation failed; provenance not recorded")
 
     manifest = {
-        "contract_version": "modec-v4",
+        "contract_version": "jimeng-t2v-v1",
         "dispatch_id": packet["dispatch_id"],
         "phase": phase,
         "agent_id": agent_id,
@@ -106,6 +106,9 @@ def record(packet_path, allow_partial=False):
     with open(index_path, "w", encoding="utf-8") as handle:
         json.dump(manifest, handle, ensure_ascii=False, indent=2)
     _mark_dispatch_recorded(run_dir, phase, packet["dispatch_id"], validation_mode)
+    cache_artifact(run_dir, phase, manifest, {"packet": packet.get("dispatch_id")})
+    if failed_subshot_ids:
+        record_issues(run_dir, phase, [{"subshot_id": sid, "message": "composer validation failed"} for sid in failed_subshot_ids], manifest["sha256"])
     label = "PARTIAL" if validation_mode == "partial" else "PASS"
     print("[PROVENANCE] %s %s %s %s" % (label, phase, agent_id, manifest["sha256"]))
     print(sidecar)
@@ -138,7 +141,7 @@ def verify(batch_path):
     if not os.path.exists(sidecar):
         return False, "provenance sidecar missing", None
     manifest = _load(sidecar)
-    if manifest.get("contract_version") != "modec-v4" or not manifest.get("validated"):
+    if manifest.get("contract_version") != "jimeng-t2v-v1" or not manifest.get("validated"):
         return False, "invalid provenance contract or validation state", manifest
     if os.path.abspath(batch_path) != manifest.get("batch_path"):
         return False, "batch path does not match provenance", manifest
@@ -164,10 +167,10 @@ def verify(batch_path):
 
 
 def _validate(phase, batch_path, run_dir, validation_report_path=None):
-    if phase in ("emotion_analysis", "scene_analysis", "camera_movement"):
-        result = validate_agent_output(batch_path, phase)
-        return "validate_agent_output:%s" % phase, bool(result.get("valid"))
-    if phase == "prompt_composer":
+    if phase == "scene_lock":
+        from validate_scene_locks import validate as validate_scene_locks
+        return "validate_scene_locks", not validate_scene_locks(batch_path)
+    if phase == "master_production":
         return "validate_composer_output", validate_composer_output(
             batch_path, run_dir, validation_report_path
         ) == 0
@@ -175,15 +178,13 @@ def _validate(phase, batch_path, run_dir, validation_report_path=None):
         data = _load(batch_path)
         valid = (
             isinstance(data, dict)
-            and isinstance(data.get("pass"), bool)
-            and isinstance(data.get("blocking"), list)
-            and isinstance(data.get("warnings"), list)
-            and isinstance(data.get("repair_targets"), list)
-            and all(isinstance(data.get(field), str) and data.get(field) for field in (
-                "prompt_package_sha256", "director_sha256", "review_packet_sha256"
-            ))
+            and isinstance(data.get("windows"), list)
+            and bool(data["windows"])
+            and all(isinstance(item, dict) and item.get("window_id") and isinstance(item.get("pass"), bool)
+                    and isinstance(item.get("blocking", []), list) and isinstance(item.get("repair_targets", []), list)
+                    for item in data["windows"])
         )
-        return "editor_pass2_contract", valid
+        return "editor_scene_window_contract", valid
     return "json_parse", isinstance(_load(batch_path), dict)
 
 

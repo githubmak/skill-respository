@@ -23,8 +23,6 @@ ROOT = os.path.dirname(os.path.dirname(__file__))
 TEMPLATE_PATH = os.path.join(ROOT, "references", "project_config.template.json")
 MODE_ALIASES = {
     "文本": "t2v", "文本生成视频": "t2v", "文生视频": "t2v", "t2v": "t2v",
-    "图片": "i2v", "图片生成视频": "i2v", "图生视频": "i2v", "i2v": "i2v",
-    "参考视频": "r2v", "参考视频生成视频": "r2v", "视频生成视频": "r2v", "r2v": "r2v",
 }
 
 

@@ -1,43 +1,48 @@
 {
   "items": [
     {
-      "id": "S1-01-01",
       "shot_id": "S1-01",
       "subshot_id": "S1-01-01",
-      "duration": 2.5,
-      "shot_size": "全景",
-      "camera_position": "场景正面4.0m，24mm，平视高度1.6m",
-      "camera": "固定镜头",
-      "axis_space": "角色A推门踏进玄关，灯光昏暗，背景传来吼声。角色A在画面中央，背景为秦家住宅·餐厅。",
-      "character_action": "角色A推门踏进玄关，灯光昏暗，背景传来吼声。动作全程自然流畅，步伐均匀每步约0.35s。",
-      "lighting": "混合光—玄关冷清+餐厅暖黄为主光源，色温4000K，暖主光从侧前方从餐厅透出照射。光比约3:1，柔和过渡无硬阴影。",
-      "full_prompt": "【S1-01-01】\n景别:全景\n动作:角色A推门踏进玄关，灯光昏暗，背景传来吼声。动作全程自然流畅，步伐均匀每步约0.35s。\n"
-    },
-    {
-      "id": "S1-01-02",
-      "shot_id": "S1-01",
-      "subshot_id": "S1-01-02",
-      "duration": 3.5,
-      "shot_size": "全景",
-      "camera_position": "场景正面5.0m，24mm，微俯高度2.0m",
-      "camera": "固定镜头",
-      "axis_space": "客厅餐桌三人入画，角色B酒瓶砸桌，醉眼猩红。角色B在画面正面，背景为秦家住宅·餐厅。",
-      "character_action": "客厅餐桌三人入画，角色B酒瓶砸桌，醉眼猩红。动作全程自然流畅，身体紧绷，手臂砸桌动作幅度大。",
-      "lighting": "暖黄吊灯顶光为主光源，色温3200K，暖主光从正顶光向下照射。光比约3:1，柔和过渡无硬阴影。",
-      "full_prompt": "【S1-01-02】\n景别:全景\n动作:客厅餐桌三人入画，角色B酒瓶砸桌，醉眼猩红。动作全程自然流畅，身体绷紧，手臂砸桌动作幅度大。\n"
-    },
-    {
-      "id": "S2-01-01",
-      "shot_id": "S2-01",
-      "subshot_id": "S2-01-01",
+      "scene": "场景A",
       "duration": 5.0,
       "shot_size": "中景",
-      "camera_position": "目标人物前方2.5m，35mm，平视高度1.6m",
-      "camera": "固定镜头",
-      "axis_space": "角色A回房间，将衣物日用品收拾进背包。角色A在画面中央偏右，背景为角色A卧室。",
-      "character_action": "角色A回房间，将衣物日用品收拾进背包。动作全程自然流畅，收拾动作利落，指尖精准。",
-      "lighting": "柔和床头台灯为主光源，色温2700K，暖主光从侧后方暖光照射。光比约3:1，柔和过渡无硬阴影。",
-      "full_prompt": "【S2-01-01】\n景别:中景\n动作:角色A回房间，将衣物日用品收拾进背包。动作全程自然流畅，收拾动作利落，指尖精准。\n"
+      "camera_position": "35mm镜头，位于人物行动轴同侧，齐胸高度",
+      "camera": "摄影机同向跟随角色A，落幅停在双人关系构图",
+      "axis_space": "角色A画左、角色B画右，不越轴",
+      "visible_characters": "角色A；角色B",
+      "character_action": "角色A感知触发后停步，角色B延迟半拍回应",
+      "dialogue_audio": "无新增台词，口型保持剧情要求",
+      "dialogue_refs": [],
+      "dialogue_events": [],
+      "dialogue_raw_text": "",
+      "lighting": "逐字继承Scene的主光类型、方向、色温和软硬",
+      "char_entry_exit": "角色A从画左进入，落幅不出画",
+      "axis_start": "摄影机位于行动轴同侧",
+      "axis_end": "摄影机保持同侧",
+      "movement_type": "跟",
+      "movement_detail": "跟随角色A同向移动，起幅为入口关系，落幅为双人构图",
+      "viewpoint": "authority",
+      "visual_hierarchy": "角色A主要层，角色B支持层，场景A背景层",
+      "entry_strategy": "camera_follow",
+      "reveal_strategy": "progressive",
+      "focus_strategy": "single_reframe",
+      "dramatic_design": {
+        "shot_function": "entrance",
+        "narrative_weight": "high",
+        "information_gain": "角色A进入并改变关系权重",
+        "reaction_ownership": "角色B",
+        "dramatic_beat_ids": ["B0001"],
+        "visual_punctuation": ["camera_follow"]
+      },
+      "duration_design": {
+        "duration_strategy": "pack_toward_limit",
+        "justified_content_duration": 5.0,
+        "utilization_ratio": 0.333,
+        "duration_rationale": "simple_action",
+        "dramatic_beats": ["B0001"]
+      },
+      "end_state": "角色A落在主要三分位，角色B保留支持层权重",
+      "full_prompt": ""
     }
   ]
 }

@@ -1,4 +1,4 @@
-"""Compact, context-aware negative prompts for Mode C v4.
+"""Compact, context-aware negative prompts for the current contract.
 
 Only undesirable visual/audio concepts belong here. Positive imperatives such as
 ``禁止角色静止`` are deliberately excluded because they compete with restrained
@@ -24,7 +24,7 @@ DIALOGUE_NEGATIVE = (
 )
 
 REFERENCE_NEGATIVE = (
-    "参考主体偏移 参考人物换脸 服装漂移 发型漂移 首尾帧身份突变"
+    "主体身份漂移 人物换脸 服装漂移 发型漂移 帧间身份突变"
 )
 
 FIGHT_NEGATIVE = (
@@ -69,10 +69,7 @@ def build_negative_prompt_for_item(item):
         value = roles.get(key, [])
         if isinstance(value, list):
             people.extend(value)
-    refs = item.get("generation_control", {})
-    refs = refs if isinstance(refs, dict) else {}
-    assets = refs.get("reference_assets", [])
-    has_reference = bool(assets) or refs.get("mode") in ("i2v", "r2v")
+    has_reference = False
     dialogue_refs = metadata.get("dialogue_refs", [])
     return build_negative_prompt(
         is_fight=is_fight_context(

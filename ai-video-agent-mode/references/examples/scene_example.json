@@ -1,66 +1,34 @@
 {
   "items": [
     {
+      "id": "S1-01-01",
       "shot_id": "S1-01",
       "subshot_id": "S1-01-01",
-      "space_type": "indoor_hallway",
-      "space_name": "玄关",
-      "char_positions": [
-        "角色A-画面中央推门入画"
-      ],
-      "char_wardrobes": [
-        "角色A-深色机能风外套，短发挺拔"
-      ],
-      "bg_foreground": "门槛、拖鞋架",
-      "bg_midground": "玄关廊灯昏黄",
-      "bg_background": "餐厅暖光从门缝透出",
-      "light_type": "混合光玄关冷清顶灯+餐厅暖黄透出",
-      "light_temp": 4000,
-      "light_direction": "侧前方从餐厅透出",
-      "light_hardness": "soft",
-      "light_effect_primary_char": "冷清顶灯从上方照亮角色A肩线",
-      "light_effect_other_chars": "无",
-      "color_contrast_desc": "冷清玄关 vs 暖黄餐厅",
-      "mood_atmosphere": "冷清疏离",
-      "bgm_style": "极简电子pad长音",
-      "ambient_sound": "低频嗡鸣+远处汽笛",
-      "sfx_timing": "推门声+脚步0.35s/步",
-      "audio_foreground": "角色A靴子踩木地板-15dB",
-      "audio_midground": "外套布料轻微摩擦",
-      "audio_background": "窗外城市低频嗡鸣持续"
-    },
-    {
-      "shot_id": "S1-01",
-      "subshot_id": "S1-01-02",
-      "space_type": "indoor_dining",
-      "space_name": "餐厅",
-      "char_positions": [
-        "角色B-右侧餐桌近端",
-        "角色C-左侧餐桌近端",
-        "角色D-远侧餐桌"
-      ],
-      "char_wardrobes": [
-        "角色B-破旧衬衫",
-        "角色C-深色家居服",
-        "角色D-素色便服"
-      ],
-      "bg_foreground": "餐桌居中，酒瓶散落，筷子搁碗沿",
-      "bg_midground": "墙面挂钟，家庭照片框",
-      "bg_background": "半掩窗帘，窗外城市夜景",
-      "light_type": "暖黄吊灯顶光",
-      "light_temp": 3200,
-      "light_direction": "正顶光向下",
-      "light_hardness": "soft",
-      "light_effect_primary_char": "顶光从上方照亮角色B头顶和桌面",
-      "light_effect_other_chars": "角色C和角色D面部在顶光下形成半明半暗",
-      "color_contrast_desc": "暖黄顶光聚焦餐桌，四周昏暗",
-      "mood_atmosphere": "压抑紧张",
-      "bgm_style": "极简电子pad长音",
-      "ambient_sound": "低频嗡鸣+远处汽笛",
-      "sfx_timing": "推门声+脚步0.35s/步",
-      "audio_foreground": "角色A靴子踩木地板-15dB",
-      "audio_midground": "外套布料轻微摩擦",
-      "audio_background": "窗外城市低频嗡鸣持续"
+      "space_type": "运行时场景类型",
+      "space_name": "场景A",
+      "char_positions": ["角色A-画面左侧", "角色B-画面右侧"],
+      "char_wardrobes": ["角色A-继承项目服装表", "角色B-继承项目服装表"],
+      "bg_foreground": "项目已确认前景锚点",
+      "bg_midground": "角色A与角色B的关系空间",
+      "bg_background": "项目已确认背景锚点",
+      "light_type": "项目已确认主光类型",
+      "light_temp": 5200,
+      "light_direction": "项目已确认主光方向",
+      "light_hardness": "mixed",
+      "mood_atmosphere": "服从当前剧情节拍",
+      "ambient_sound": "项目已确认环境底噪",
+      "audio_background": "远层环境声",
+      "audio_foreground": "关键动作同步声",
+      "audio_midground": "人物活动声",
+      "bgm_style": "无或项目已确认音乐方向",
+      "color_contrast_desc": "项目已确认主体与环境色彩关系",
+      "light_effect_primary_char": "共享主光落在角色A的可见效果",
+      "light_effect_other_chars": "同源光落在角色B的可见效果",
+      "lighting": "主光事实由本Scene条目唯一确定",
+      "sfx_timing": "关键动作发生时同步一次",
+      "prop_state": "关键道具归属角色A，状态不变",
+      "start_carryover": "继承上一镜人物位置、道具与共享光源",
+      "end_carryover": "角色A与角色B维持落幅位置，道具与光源交给下一镜"
     }
   ]
 }

@@ -3,38 +3,34 @@ import json, os, time
 
 # ========== Constants ==========
 MAX_RETRIES = 3          # Block when failure count reaches 3: initial attempt + 2 retries
-TIMEOUT_SECONDS = 600    # Default sub-agent timeout
-AGENT_STALE_SECONDS = 600  # 10min: agent considered stale, force re-spawn
-BATCH_SIZE = 60          # Max subshots per sub-agent spawn (balanced quality/efficiency)
+TIMEOUT_SECONDS = 900    # Default sub-agent timeout
+# A worker must never be declared stale before its phase can time out.  The
+# former 600s global threshold caused duplicate dispatches for 900s phases.
+AGENT_STALE_GRACE_SECONDS = 300
+BATCH_SIZE = 12          # Safe default; phase-specific sizes are below.
+CORE_PIPELINE_TARGET_SECONDS = 55 * 60  # 50 main shots, excludes optional grid
 
 PHASE_TIMEOUT_SECONDS = {
-    "emotion_analysis": 900,  # kept high for quality
-    "scene_analysis": 900,
-    "camera_movement": 900,
-    "prompt_composer": 900,
+    "scene_lock": 480,
+    "master_production": 720,
+    "editor_pass2": 480,
 }
 
 PHASE_BATCH_SIZE = {
-    "emotion_analysis": 20,
-    "scene_analysis": 24,
-    "camera_movement": 24,
-    "prompt_composer": 6,
+    "scene_lock": 1,
+    "master_production": 6,
+    "editor_pass2": 10,
 }  # Preserve continuity groups; reduce oversized analysis tasks and Composer setup overhead.
 
 AGENT_PHASES = {
-    "emotion_analysis",
-    "scene_analysis",
-    "camera_movement",
-    "prompt_composer",
+    "scene_lock",
+    "master_production",
     "editor_pass2",
 }
 
 LOCAL_PHASES = {
     "user_confirm",
     "orchestrator",
-    "qa_integration",
-    "director",
-    "continuity",
     "editor_pass1",
     "grid_storyboard",
     "validate",
@@ -43,17 +39,12 @@ LOCAL_PHASES = {
 
 PHASE_ORDER = [
     "user_confirm", "orchestrator",
-    "emotion_analysis", "scene_analysis", "camera_movement",
-    "qa_integration",
-    "director",
-    "continuity", "prompt_composer",
+    "scene_lock", "master_production",
     "editor_pass1", "editor_pass2", "grid_storyboard", "validate", "export"
 ]
 
 # Phases that can be spawned in parallel (group name -> member phases)
-PARALLEL_GROUPS = {
-    "performance_scene_group": ["emotion_analysis", "scene_analysis"],
-}
+PARALLEL_GROUPS = {}
 
 
 def get_state_path(run_dir):
@@ -65,6 +56,8 @@ def init_state(run_dir):
     if os.path.exists(path):
         return
     state = {
+        "pipeline_started_at": time.time(),
+        "core_pipeline_target_seconds": CORE_PIPELINE_TARGET_SECONDS,
         "current_phase": PHASE_ORDER[0],
         "phase_order": PHASE_ORDER,
         "phases": {p: {"status": "pending", "agent_id": None, "retries": 0, "spawn_time": None, "timeout_count": 0} for p in PHASE_ORDER}
@@ -110,13 +103,34 @@ def set_agent_id(run_dir, phase, agent_id, dispatch_id=None):
     phase_state["agent_id"] = agent_id
     phase_state["status"] = "running"
     phase_state["spawn_time"] = now
+    phase_state["heartbeat_at"] = now
     if dispatch_id:
         phase_state.setdefault("dispatches", {})[dispatch_id] = {
             "agent_id": agent_id,
             "status": "running",
             "spawn_time": now,
+            "heartbeat_at": now,
         }
     save_state(run_dir, state)
+
+
+def record_heartbeat(run_dir, phase, agent_id=None, dispatch_id=None):
+    """Record a real worker liveness signal without changing phase outcome."""
+    state = load_state(run_dir)
+    now = time.time()
+    entry = state["phases"][phase]
+    if agent_id and entry.get("agent_id") and entry.get("agent_id") != agent_id:
+        raise ValueError("agent_id does not own phase")
+    entry["heartbeat_at"] = now
+    if dispatch_id:
+        dispatch = entry.get("dispatches", {}).get(dispatch_id)
+        if not isinstance(dispatch, dict):
+            raise ValueError("unknown dispatch_id")
+        if agent_id and dispatch.get("agent_id") != agent_id:
+            raise ValueError("agent_id does not own dispatch")
+        dispatch["heartbeat_at"] = now
+    save_state(run_dir, state)
+    return now
 
 
 def mark_started(run_dir, phase):
@@ -173,14 +187,20 @@ def is_timed_out(run_dir, phase):
 
 
 def is_agent_stale(run_dir, phase):
-    """Check if a spawned agent has gone stale (no update for too long)."""
+    """Check only after the phase timeout plus a recovery grace period.
+
+    The state format has no heartbeat timestamp yet, so using ``spawn_time``
+    before the phase timeout would create a duplicate worker.  A genuine stale
+    recovery is therefore deliberately later than normal timeout handling.
+    """
     state = load_state(run_dir)
     info = state["phases"].get(phase, {})
-    spawn_time = info.get("spawn_time")
-    if not spawn_time:
+    heartbeat = info.get("heartbeat_at", info.get("spawn_time"))
+    if not heartbeat:
         return False
-    elapsed = time.time() - spawn_time
-    return elapsed > AGENT_STALE_SECONDS
+    elapsed = time.time() - heartbeat
+    threshold = AGENT_STALE_GRACE_SECONDS
+    return elapsed > threshold
 
 
 def advance(run_dir):

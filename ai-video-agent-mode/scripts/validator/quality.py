@@ -35,7 +35,7 @@ def quality_check_director(packet_path):
     return issues
 
 
-def quality_check_prompt(path, minc=120):
+def quality_check_prompt(path, minc=None, hard_max_chars=None):
     if not os.path.exists(path):
         return [(os.path.basename(path), "FILE", 0, "not_found")]
     try:
@@ -44,11 +44,11 @@ def quality_check_prompt(path, minc=120):
     except Exception:
         return [(os.path.basename(path), "JSON", 0, "valid_json")]
     issues = []
-    for item in data.get("items", []):
+    for item in data.get("shots", []):
         ssid = item.get("subshot_id", "?")
         fp = item.get("full_prompt", "")
-        if len(fp) < minc:
+        if isinstance(minc, int) and minc > 0 and len(fp) < minc:
             issues.append((ssid, "fp.len", len(fp), ">=%d" % minc))
-        if len(fp) > 1100:
-            issues.append((ssid, "fp.len", len(fp), "<=1100"))
+        if isinstance(hard_max_chars, int) and hard_max_chars > 0 and len(fp) > hard_max_chars:
+            issues.append((ssid, "fp.len", len(fp), "<=%d" % hard_max_chars))
     return issues

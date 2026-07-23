@@ -1,4 +1,4 @@
 interface:
-  display_name: "AI Video Agent Mode v4"
-  short_description: "低抽卡、强表演、可验证的多Agent专业AI视频分镜提示词管线"
-  default_prompt: "Use $ai-video-agent-mode to turn my script into a low-reroll, high-performance Mode C v4 AI video prompt package."
+  display_name: "AI Video Agent Mode"
+  short_description: "只输出提示词与制作元数据的专业AI视频分镜管线"
+  default_prompt: "Use $ai-video-agent-mode to turn my script into a prompt-only, continuity-controlled AI video production package with explicit dramatic beats and generation-risk controls."

@@ -15,10 +15,10 @@ block_source_pycache_until_run_dir()
 MOJIBAKE_PATTERNS = ["�", "Ã", "Â", "å", "è", "é", "ç", "æ", "ï¼", "ã€"]
 ENGINEERING_TERMS = [
     "JSON", "json", "schema", "field", "字段", "dB", "Hz", "fps", "XYZ",
-    "coordinate", "prompt_package", "director_pass", "axis_start", "axis_end",
+    "coordinate", "prompt_package", "axis_start", "axis_end",
 ]
 REQUIRED_LABELS = [
-    "景别", "机位", "运镜", "轴线与空间", "可见人物", "动作过程", "台词与声音", "灯光", "落幅", "完整提示词", "负面提示词",
+    "即梦操作卡", "生成规格", "主体与空间锁定", "主镜头连续规则", "子镜头组", "光照、声音与稳定约束", "负面提示词",
 ]
 CHINESE_RE = re.compile(r"[\u4e00-\u9fff]")
 LATIN_RE = re.compile(r"[A-Za-z]")
@@ -95,12 +95,12 @@ def _validate_pkg(pkg_path):
             data = json.load(f)
     except Exception as exc:
         return [_issue("PKG_JSON_PARSE_FAILED", str(exc), "valid json")]
-    if not isinstance(data.get("items"), list):
-        issues.append(_issue("PKG_ITEMS_INVALID", type(data.get("items")).__name__, "list"))
-    if not isinstance(data.get("merged_full_prompts"), list):
-        issues.append(_issue("PKG_MERGED_INVALID", type(data.get("merged_full_prompts")).__name__, "list"))
-    for item in data.get("items", []):
-        for key in ["shot_id", "subshot_id", "duration", "shot_size", "camera_position", "camera", "axis_space", "character_action", "lighting", "full_prompt"]:
+    if set(data) != {"contract_version", "shots"}:
+        issues.append(_issue("PKG_TOP_LEVEL_INVALID", sorted(data), ["contract_version", "shots"]))
+    if not isinstance(data.get("shots"), list):
+        issues.append(_issue("PKG_SHOTS_INVALID", type(data.get("shots")).__name__, "list"))
+    for item in data.get("shots", []):
+        for key in ["shot_id", "subshot_id", "duration", "full_prompt", "negative_prompt", "qa_metadata", "generation_control"]:
             if item.get(key) in (None, ""):
                 issues.append(_issue("PKG_FIELD_EMPTY", "%s.%s" % (item.get("subshot_id", "?"), key), "non-empty"))
     return issues
@@ -120,7 +120,7 @@ def _cross_check_ids(text, pkg_path, plan_path):
             ssid = ss.get("subshot_id", "")
             if ssid and ssid not in text:
                 issues.append(_issue("SUBSHOT_ID_MISSING_IN_MD", ssid, "present"))
-    pkg_ids = {item.get("subshot_id", "") for item in pkg.get("items", [])}
+    pkg_ids = {item.get("subshot_id", "") for item in pkg.get("shots", [])}
     plan_ids = {ss.get("subshot_id", "") for shot in plan.get("shots", []) for ss in shot.get("subshots", [])}
     for ssid in sorted(plan_ids - pkg_ids):
         issues.append(_issue("SUBSHOT_ID_MISSING_IN_PKG", ssid, "present"))

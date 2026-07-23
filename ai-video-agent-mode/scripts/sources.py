@@ -1,7 +1,6 @@
 """Shot-level traceability - per-subshot pass/fail tracking for incremental retry."""
 import json, os
 
-from agent_handoff import read_handoff
 
 def get_sources_path(run_dir):
     return os.path.join(run_dir, ".cache", "sources.json")

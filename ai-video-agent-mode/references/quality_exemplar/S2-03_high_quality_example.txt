@@ -1,46 +1,9 @@
-# S2-03 Mode C v4 Quality Exemplar
+# 中性质量示例：一次关系压力转移
 
-Use this exemplar for method only, not for story style. It teaches causality, one attention center, visible performance, continuity, dialogue/lip-sync boundaries, and low-reroll structure; it must not donate its genre, soft lighting, urban/comedy rhythm, clothing, location, character relationship, or specific prop event to another project.
-
-## Why this example is stable
-
-- One attention center: 沈星洲停步。
-- One supporting reaction: 陆序回望。
-- One camera motion: rightward lateral follow, then settle; no competing push/zoom/pan.
-- Three continuous beats cover 0.0–5.8 seconds without overlap or gaps.
-- Wide-shot performance uses steps, weight, shoulder direction, mouth state, and spatial pressure; it does not request pupil, eyelid, or lip-line detail.
-- Lighting stays at one motivated 3200K source family; shot size does not change color temperature.
-- Background guests are treated as one low-amplitude layer instead of receiving individual micro-actions.
-- QA purpose, action counts, and performance causality live in `qa_metadata`; negative words live in `negative_prompt`.
-
-## Performance design
-
-Start state: 主角穿过人群，对手仍在社交。
-
-Trigger: 主角听见对手方向的交谈。
-
-Primary response: 步伐停止，重心收回，肩线和视线定向。
-
-Supporting response: 对手只转头、闭口、停住交谈，不迎上去。
-
-Residual end state: 两人隔着人群互相看见，但没有立即靠近，关系压力留在画面中。
-
-Physical logic: 没有接触或外力；停止行进、回望和维持距离都是角色自主反应，提示词不把心理变化伪装成机械制服。
-
-Motion boundary: 主角的行进被结束，但肩线与视线仍可定向；对手只被允许回望，不追加靠近。
-
-Hold strategy: 落幅停顿只保留闭口和相互视线，不用密集微动作填满静止。
-
-Viewer empathy anchor: 观众不是因为提示词写“感染力强”而共情，而是因为看见角色听到关键信息后脚步突然收住、没有靠近、只隔着人群看向对方。这个可见瞬间让观众直接读到“他被这句话刺中，但还在克制”。
-
-Readable image moment: 本镜只保留一个主画面证据——步伐停止后重心收回、肩线定住、视线穿过人群落到对手身上。它同时服务表演、构图和跨镜承接，不额外增加手部、嘴角、泪光等不可见或抢戏细节。
-
-## Low-reroll principle
-
-If a desired performance needs a second emotional turn, another camera direction, or another physical exchange, split it into the next subshot instead of expanding this prompt.
-
-For a 10–15 second continuous dialogue, a single causal attention handoff is not a second dramatic focus. Keep one overall objective and choose only one execution strategy: fixed two-shot plus one rack focus, one unidirectional reframe, or actor blocking with a fixed camera. See `format_example.txt` shot `S3-01-01`. Repeated A→B→A focus changes or physical movement combined with rack focus must be split.
-
-For spoken dialogue, see `S3-01-01`: every event locks the reference, type, speaker, and verbatim text, then binds its time range to a visible facial state, body state, delivery, and lip-sync rule. Each line appears exactly once in the performance timeline and is not repeated in the sound section.
-
-For internal monologue, see `S4-01-01`: the OS owner remains explicit, the visible owner receives facial and body performance during the same time range, and `lip_sync=false` is reflected by a closed mouth. If the owner is offscreen or nonphysical, facial/body fields must state `N/A` with the reason instead of inventing a face.
+- 一个视觉主体：角色A先承受触发。
+- 一个支持反应：角色B观察后延迟半拍回应。
+- 一个主动作：角色B通过一步前移改变画面权重。
+- 一个可读瞬间：角色A的肩背收紧或手部停住。
+- 一个落幅残留：角色B进入主要层，角色A保留被压住的姿态。
+- 光源、服装、场景和道具全部引用当前运行目录，不从示例推导。
+- 如果有台词，逐字保留；OS/OV不驱动口型。

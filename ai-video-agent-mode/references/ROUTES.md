@@ -18,13 +18,13 @@ Read this file first. Select one explicit route, then read only the linked contr
 
 ## Reading Rules
 
-- Run `python3 scripts/route_task.py <route> --run-dir <run_dir> --intent <new|resume|audit|reexport>` before loading a route.
+- Run `python3 scripts/route_task.py <route> --run-dir <run_dir> --intent <new|resume|audit|reexport>` before loading a route. In Windows PowerShell, use `& .\scripts\run_skill_tool.ps1 .\scripts\route_task.py <route> --run-dir "C:\path\to\run" --intent <intent>`; pass only quoted paths and short arguments, never inline JSON, Markdown, prompts, or here-strings.
 - Use `rg -n` to find a script entry point or function, then read only the relevant region.
-- Treat packet `items`, scaffold, scene locks, handoff, and retry context as authoritative. `source_path` is fallback context, not default reading.
+- Treat packet `items`, `source_ledger.json`, `dramatic_beat_ledger.json`, scaffold, scene locks, handoff, and retry context as authoritative. `source_path` is fallback context, not default reading.
 - Read a stage summary from `.cache/stage_summary/<phase>.json` before an older full artifact when resuming. Reopen the full artifact only for the named subshot or field.
 
 ## Hot Paths
 
 - Must read before dispatch: `dispatch_cache.py` entry/packet fields, the selected phase constraints, `agent_protocol.md` provenance sequence.
-- Must run, not reread: `validate_agent_output.py`, `validate_composer_output.py`, `record_batch_provenance.py`, `merge_agent_outputs.py`, `check_export.py`.
-- Read only when debugging: `pipeline_runner.py`, `pipeline_state.py`, `sources.py`, `gate_check.py`.
+- Must run, not reread: `validate_scene_locks.py`, `validate_composer_output.py`, `pre_editor_gate.py`, `record_batch_provenance.py`, `merge_agent_outputs.py`, `check_export.py`.
+- Read only when debugging: `pipeline_runner.py`, `pipeline_state.py`, `pipeline_runtime.py`, `sources.py`.

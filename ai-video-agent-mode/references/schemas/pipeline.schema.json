@@ -42,7 +42,9 @@
         "atmosphere": {"type": "string"},
         "characters": {"type": "array", "items": {"type": "string"}},
         "dialogue_refs": {"type": "array", "items": {"type": "string"}},
-        "emotion_tone": {"type": "string"}
+        "emotion_tone": {"type": "string"},
+        "dramatic_design": {"type": "object"},
+        "duration_design": {"type": "object"}
       },
       "required": ["subshot_id", "duration"]
     },
@@ -85,21 +87,14 @@
     "prompt_package": {
       "type": "object",
       "properties": {
-        "contract_version": {"const": "modec-v4"},
-        "items": {
-          "type": "array",
-          "items": {"$ref": "#/definitions/prompt_item"}
-        },
+        "contract_version": {"const": "jimeng-t2v-v1"},
         "shots": {
           "type": "array",
           "items": {"$ref": "#/definitions/prompt_item"}
-        },
-        "merged_full_prompts": {
-          "type": "array",
-          "items": {"$ref": "#/definitions/merged_prompt"}
         }
       },
-      "required": ["contract_version", "items", "shots", "merged_full_prompts"]
+      "required": ["contract_version", "shots"],
+      "additionalProperties": false
     },
     "prompt_item": {
       "type": "object",
@@ -114,26 +109,12 @@
         "character_action": {"type": "string"},
         "lighting": {"type": "string"},
         "audio_design": {"type": "string"},
-        "full_prompt": {"type": "string", "minLength": 120, "maxLength": 1100},
+        "full_prompt": {"type": "string"},
         "negative_prompt": {"type": "string"},
         "qa_metadata": {"type": "object"},
         "generation_control": {"type": "object"}
       },
       "required": ["shot_id", "subshot_id", "duration", "full_prompt", "negative_prompt", "qa_metadata", "generation_control"]
-    },
-    "merged_prompt": {
-      "type": "object",
-      "properties": {
-        "shot_id": {"type": "string"},
-        "duration": {"type": "number"},
-        "full_prompt": {"type": "string"},
-        "negative_prompt": {"type": "string"},
-        "image_prompt": {"type": "string"},
-        "video_prompt": {"type": "string"},
-        "seedance_prompt": {"type": "string"},
-        "full_video_prompt": {"type": "string"}
-      },
-      "required": ["shot_id", "duration", "full_prompt", "negative_prompt"]
     }
   }
 }

@@ -1,4 +1,4 @@
-"""Shared Mode C v4 prompt contract helpers.
+"""Shared current prompt-contract helpers.
 
 The model-facing prompt is intentionally small. Production metadata, negative
 prompts, and validation traces live in sibling JSON fields and are never mixed
@@ -10,7 +10,9 @@ from __future__ import annotations
 import re
 
 
-PROMPT_LABELS = ["画面锁定", "镜头设计", "表演时间轴", "光照与声音"]
+# 即梦正文只使用可见、可执行的描述。子镜头置于同一个生成任务内，
+# 用明确的时间窗、左右关系和前景肩膀描述正反打，绝不泄漏内部轴线术语。
+PROMPT_LABELS = ["生成规格", "主体与空间锁定", "主镜头连续规则", "子镜头组", "光照、声音与稳定约束"]
 LEGACY_LABELS = [
     "全局声明",
     "人物站位与服装连续",
@@ -26,7 +28,6 @@ FORBIDDEN_MODEL_TERMS = [
     "project_config",
     "costume_map",
     "dialogue_map",
-    "director_pass",
     "dispatch packet",
     "packet",
     "source_path",
@@ -40,9 +41,17 @@ FORBIDDEN_MODEL_TERMS = [
     "管线级",
     "QA通过",
     "校验通过",
+    "180度轴线",
+    "越轴",
+    "正轴机位",
+    "OTS",
+    "反打",
 ]
 
 TIME_RANGE_RE = re.compile(r"(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)秒")
+JIMENG_CHILD_SHOT_RE = re.compile(
+    r"【镜头\d+｜(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)秒(?:｜[^】]+)?】([^【]+)"
+)
 
 WIDE_INVISIBLE_CUES = [
     "瞳孔", "虹膜", "眼睑", "鼻翼", "唇线", "眼神光", "眼轮匝肌", "咬肌",
@@ -60,7 +69,7 @@ ATTENTION_HANDOFF_STRATEGIES = {"rack_focus", "single_reframe", "actor_blocking"
 TENSION_INTENTS = {"neutral", "latent", "rising", "peak", "release"}
 SPEECH_KINDS = {"台词", "OS", "OV"}
 SPEAKER_VISIBILITIES = {"visible", "offscreen", "nonphysical"}
-REROLL_RISK_LEVELS = {"low", "medium", "high", "reference_required"}
+REROLL_RISK_LEVELS = {"low", "medium", "high"}
 GENERIC_PERFORMANCE_TERMS = {
     "紧张", "震惊", "愤怒", "悲伤", "害怕", "自然", "自然反应", "有张力",
     "情绪复杂", "表情细腻", "保持状态", "微微变化", "很强烈",
@@ -97,43 +106,30 @@ def split_sections(text, labels=None):
     return sections
 
 
-def normalize_v4_prompt(text):
-    """Normalize paragraph spacing or upgrade a legacy Mode C v3 prompt."""
-    text = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
-    current = split_sections(text, PROMPT_LABELS)
-    if all(label in current for label in PROMPT_LABELS):
-        return "\n\n".join(f"{label}：{current[label]}" for label in PROMPT_LABELS)
+def jimeng_feed_prompt(full_prompt):
+    """Return the lean, copy-ready view of a canonical five-section prompt.
 
-    legacy = split_sections(text, LEGACY_LABELS)
-    if not legacy:
-        return text
-
-    locked_parts = [legacy.get("全局声明", ""), legacy.get("人物站位与服装连续", "")]
-    light_parts = [legacy.get("光照方案", ""), legacy.get("环境音设计", "")]
-    upgraded = {
-        "画面锁定": " ".join(part for part in locked_parts if part).strip(),
-        "镜头设计": legacy.get("时长运镜场景目的", "").strip(),
-        "表演时间轴": legacy.get("时间分段叙事", "").strip(),
-        "光照与声音": " ".join(part for part in light_parts if part).strip(),
-    }
-    return "\n\n".join(f"{label}：{upgraded[label]}" for label in PROMPT_LABELS)
-
-
-def legacy_negative_prompt(text):
-    legacy = split_sections(text, LEGACY_LABELS)
-    return legacy.get("负面提示词", "").strip()
+    The canonical prompt keeps labels so validators can point to evidence.  The
+    platform-facing view removes that editorial scaffolding while preserving the
+    execution order, time windows, and every model-facing instruction.
+    """
+    sections = split_sections(full_prompt, PROMPT_LABELS)
+    if list(sections) != PROMPT_LABELS:
+        return str(full_prompt or "").strip()
+    ordered = [sections[label].strip() for label in PROMPT_LABELS]
+    return "\n\n".join(part for part in ordered if part)
 
 
 def timeline_ranges(full_prompt):
     sections = split_sections(full_prompt, PROMPT_LABELS)
-    return [(float(a), float(b)) for a, b in TIME_RANGE_RE.findall(sections.get("表演时间轴", ""))]
+    return [(float(a), float(b)) for a, b in TIME_RANGE_RE.findall(sections.get("子镜头组", ""))]
 
 
 def timeline_issues(full_prompt, duration, tolerance=0.08):
     ranges = timeline_ranges(full_prompt)
     issues = []
     if not ranges:
-        return ["表演时间轴缺少小数秒时间段"]
+        return ["子镜头组缺少小数秒时间段"]
     if abs(ranges[0][0]) > tolerance:
         issues.append("时间轴必须从0.0秒开始")
     for idx, (start, end) in enumerate(ranges):
@@ -153,7 +149,38 @@ def timeline_issues(full_prompt, duration, tolerance=0.08):
     elif abs(ranges[-1][1] - target) > tolerance:
         issues.append(f"时间轴终点{ranges[-1][1]:g}秒与镜头时长{target:g}秒不一致")
     if len(ranges) > 3:
-        issues.append("时间段超过3段；应拆分子镜头")
+        issues.append("主镜头内子镜头超过3个；应拆成新的主镜头")
+    return issues
+
+
+def jimeng_shot_group_issues(full_prompt, editorial_mode="continuous_take"):
+    """Enforce visible, platform-readable child-shot anchors.
+
+    Internal camera/axis data may exist in metadata, but Jimeng sees only
+    screen-side, body-facing, foreground/scene anchors, and carryover.
+    """
+    sections = split_sections(full_prompt, PROMPT_LABELS)
+    group = sections.get("子镜头组", "")
+    children = list(JIMENG_CHILD_SHOT_RE.finditer(group))
+    issues = []
+    if editorial_mode == "shot_group":
+        if not 2 <= len(children) <= 3:
+            issues.append("shot_group必须包含2-3个【镜头N｜起止秒】子镜")
+    elif len(children) > 1:
+        issues.append("continuous_take不得包含多个子镜头")
+    for index, child in enumerate(children, 1):
+        body = child.group(3)
+        missing = []
+        if not re.search(r"画面(?:左|右|中)", body):
+            missing.append("屏幕左右")
+        if not re.search(r"(?:面向|看向|朝向)", body):
+            missing.append("人物朝向")
+        if not re.search(r"(?:前景.{0,10}肩|肩.{0,10}前景|场景(?:锚点|内)|背景)", body):
+            missing.append("前景肩膀或场景锚点")
+        if not re.search(r"(?:落幅|保留|继承|停在)", body):
+            missing.append("落幅承接")
+        if missing:
+            issues.append("子镜%d缺少%s" % (index, "、".join(missing)))
     return issues
 
 
@@ -196,9 +223,9 @@ def action_budget_issues(metadata, duration, is_fight=False):
         elif value > limit:
             issues.append(f"action_budget.{key}={value}超过上限{limit}")
     beats = metadata.get("camera_beat_map", [])
-    if editorial_mode == "motivated_sequence":
+    if editorial_mode == "shot_group":
         if not isinstance(beats, list) or not 1 <= len(beats) <= 3:
-            issues.append("motivated_sequence必须提供1-3项camera_beat_map")
+            issues.append("shot_group必须提供1-3项camera_beat_map")
         elif budget.get("editorial_response_count") != len(beats):
             issues.append("action_budget.editorial_response_count必须等于camera_beat_map数量")
     elif isinstance(beats, list) and beats:
@@ -275,6 +302,7 @@ def performance_contract_issues(metadata, full_prompt="", visible_characters=Non
         "voice_or_breath_control",
         "viewer_empathy_anchor",
         "readable_image_moment",
+        "visual_progression",
         "suppression_or_release",
         "camera_pressure",
         "scene_pressure",
@@ -296,6 +324,7 @@ def performance_contract_issues(metadata, full_prompt="", visible_characters=Non
         "voice_or_breath_control",
         "viewer_empathy_anchor",
         "readable_image_moment",
+        "visual_progression",
         "suppression_or_release",
         "camera_pressure",
         "scene_pressure",
@@ -306,9 +335,9 @@ def performance_contract_issues(metadata, full_prompt="", visible_characters=Non
             issues.append(f"performance_contract.{field}过于抽象，必须写景别可见的具体控制")
 
     sections = split_sections(full_prompt, PROMPT_LABELS)
-    timeline = sections.get("表演时间轴", "")
-    camera_text = sections.get("镜头设计", "") + "\n" + timeline
-    scene_text = sections.get("画面锁定", "") + "\n" + sections.get("光照与声音", "")
+    timeline = sections.get("子镜头组", "")
+    camera_text = sections.get("主镜头连续规则", "") + "\n" + timeline
+    scene_text = sections.get("主体与空间锁定", "") + "\n" + sections.get("光照、声音与稳定约束", "")
     for field in (
         "primary_expression",
         "primary_body_action",
@@ -316,15 +345,108 @@ def performance_contract_issues(metadata, full_prompt="", visible_characters=Non
         "voice_or_breath_control",
         "viewer_empathy_anchor",
         "readable_image_moment",
+        "visual_progression",
         "suppression_or_release",
         "end_residue",
     ):
         if not _fragment_grounded(contract.get(field, ""), timeline):
-            issues.append(f"performance_contract.{field}未落实到表演时间轴")
+            issues.append(f"performance_contract.{field}未落实到子镜头组")
     if not _fragment_grounded(contract.get("camera_pressure", ""), camera_text):
-        issues.append("performance_contract.camera_pressure未落实到镜头设计或表演时间轴")
+        issues.append("performance_contract.camera_pressure未落实到主镜头连续规则或子镜头组")
     if not _fragment_grounded(contract.get("scene_pressure", ""), scene_text):
-        issues.append("performance_contract.scene_pressure未落实到画面锁定或光照与声音")
+        issues.append("performance_contract.scene_pressure未落实到主体与空间锁定或光照、声音与稳定约束")
+    return issues
+
+
+def listener_reaction_issues(metadata, full_prompt=""):
+    """Require one restrained, visible listener response when a speaker has a supporting listener."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    if isinstance(metadata.get("fight_continuity"), dict):
+        return []
+    roles = metadata.get("performance_priority", {}) if isinstance(metadata.get("performance_priority"), dict) else {}
+    supporting = _string_list(roles.get("supporting", []))
+    events = metadata.get("dialogue_events", []) if isinstance(metadata.get("dialogue_events"), list) else []
+    speakers = {
+        str(event.get("speaker", "") or "").strip()
+        for event in events if isinstance(event, dict)
+        and event.get("kind") == "台词" and event.get("speaker_visibility") == "visible"
+    }
+    listeners = [name for name in supporting if name and name not in speakers]
+    if not speakers or not listeners:
+        return []
+    plan = metadata.get("listener_reaction_plan")
+    if not isinstance(plan, dict):
+        return ["可见说话者与supporting听者同镜必须提供qa_metadata.listener_reaction_plan"]
+    issues = []
+    for field in ("speaker", "listener", "trigger", "time_range", "visual_evidence", "motion_limit", "end_residue"):
+        if len(str(plan.get(field, "") or "").strip()) < 2:
+            issues.append(f"listener_reaction_plan.{field}不能为空")
+    if str(plan.get("speaker", "") or "").strip() not in speakers:
+        issues.append("listener_reaction_plan.speaker必须是可见台词说话者")
+    if str(plan.get("listener", "") or "").strip() not in listeners:
+        issues.append("listener_reaction_plan.listener必须是非说话supporting人物")
+    if plan.get("lip_sync") is not False:
+        issues.append("listener_reaction_plan.lip_sync必须为false")
+    if not re.fullmatch(r"\d+(?:\.\d+)?-\d+(?:\.\d+)?秒", str(plan.get("time_range", "") or "").strip()):
+        issues.append("listener_reaction_plan.time_range必须是连续小数秒范围")
+    timeline = split_sections(full_prompt, PROMPT_LABELS).get("子镜头组", "")
+    for field in ("visual_evidence", "motion_limit", "end_residue"):
+        if str(plan.get(field, "") or "").strip() and not _fragment_grounded(plan.get(field, ""), timeline):
+            issues.append(f"listener_reaction_plan.{field}未落实到子镜头组")
+    listener = str(plan.get("listener", "") or "").strip()
+    if listener and not re.search(re.escape(listener) + r".{0,24}(?:口型闭合|不动口|无同步口型)", timeline):
+        issues.append("listener_reaction_plan倾听者必须在子镜头组明确口型闭合")
+    return issues
+
+
+def shot_group_handoff_issues(metadata):
+    """Reject A→B→A or any second person-to-person handoff inside one T2V task."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    if metadata.get("editorial_mode", "continuous_take") != "shot_group":
+        return []
+    beats = metadata.get("camera_beat_map", [])
+    if not isinstance(beats, list):
+        return []
+    owners = []
+    for index, beat in enumerate(beats):
+        if not isinstance(beat, dict):
+            continue
+        owner = str(beat.get("focus_owner", "") or "").strip()
+        if not owner:
+            return [f"camera_beat_map[{index}].focus_owner不能为空"]
+        if owner != "object" and (not owners or owners[-1] != owner):
+            owners.append(owner)
+    if len(owners) > 2:
+        return ["同一即梦shot_group出现第二次人物注意力交接（如A→B→A），必须拆为下一条T2V任务"]
+    return []
+
+
+def expectation_anchor_issues(metadata, full_prompt=""):
+    """Validate visible anticipation anchors without forcing object close-ups."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    item = metadata.get("expectation_anchor")
+    if item is None:
+        return []
+    if not isinstance(item, dict):
+        return ["qa_metadata.expectation_anchor必须是对象"]
+    if not isinstance(item.get("applicable"), bool):
+        return ["expectation_anchor.applicable必须是布尔值"]
+    fields = ("semantic_mode", "anchor", "expecting_subject", "source_interpretation", "start_state", "progress_event", "detail_cut_rule", "return_reaction", "end_state")
+    if not item.get("applicable"):
+        return []
+    if item.get("anchor_type") not in ("object", "person_action", "event", "space", "custom_visible"):
+        return ["expectation_anchor.anchor_type只允许object/person_action/event/space/custom_visible"]
+    if item.get("semantic_mode") not in ("literal_agent", "figurative_personification", "need_or_lack", "symbolic_association"):
+        return ["expectation_anchor.semantic_mode只允许literal_agent/figurative_personification/need_or_lack/symbolic_association"]
+    issues = ["expectation_anchor.%s适用时不能为空" % field for field in fields if len(str(item.get(field, "") or "").strip()) < 2]
+    timeline = split_sections(full_prompt, PROMPT_LABELS).get("子镜头组", "")
+    for field in ("anchor", "progress_event", "return_reaction", "end_state"):
+        if field not in issues and not _fragment_grounded(item.get(field, ""), timeline):
+            issues.append("expectation_anchor.%s未落实到子镜头组" % field)
+    if item.get("applicable") and "特写" in str(item.get("detail_cut_rule", "")) and not re.search(r"硬切|切到|切回|特写", timeline):
+        issues.append("expectation_anchor.detail_cut_rule要求特写但时间轴没有锚点切镜")
+    if item.get("semantic_mode") in ("figurative_personification", "symbolic_association") and re.search(r"(?:花|风|月亮|灯光).{0,8}(?:抬头|等待|回头|伸手|说话)", timeline):
+        issues.append("expectation_anchor拟人/象征模式不得把环境意象误写为实体角色行动")
     return issues
 
 
@@ -350,6 +472,20 @@ def continuity_contract_issues(metadata, full_prompt="", visible_characters=None
     for field in required:
         if len(str(contract.get(field, "") or "").strip()) < 3:
             issues.append(f"continuity_contract.{field}不能为空")
+    if not isinstance(contract.get("state_change", False), bool):
+        issues.append("continuity_contract.state_change必须是布尔值")
+    transitions = contract.get("state_transitions", [])
+    if not isinstance(transitions, list):
+        issues.append("continuity_contract.state_transitions必须是数组")
+    if contract.get("state_change") and not transitions:
+        issues.append("人物位置、视线或可移动道具变化时必须提供state_transitions")
+    for index, transition in enumerate(transitions if isinstance(transitions, list) else []):
+        if not isinstance(transition, dict):
+            issues.append(f"state_transitions[{index}]必须是对象")
+            continue
+        for field in ("subject", "from_state", "to_state", "cause", "time_range"):
+            if not str(transition.get(field, "") or "").strip():
+                issues.append(f"state_transitions[{index}].{field}不能为空")
     if not _fragment_grounded(contract.get("end_anchor", ""), full_prompt):
         issues.append("continuity_contract.end_anchor必须能在模型提示词中找到可见落幅")
     if not _fragment_grounded(contract.get("next_carryover", ""), full_prompt):
@@ -371,18 +507,17 @@ def reroll_control_issues(metadata, generation_control=None, visible_characters=
     issues = []
     risk = reroll.get("risk_level")
     if risk not in REROLL_RISK_LEVELS:
-        issues.append("reroll_control.risk_level只允许low/medium/high/reference_required")
+        issues.append("reroll_control.risk_level只允许low/medium/high")
     for field in ("identity_anchor", "motion_anchor", "scene_anchor", "camera_anchor", "risk_reason"):
         if len(str(reroll.get(field, "") or "").strip()) < 4:
             issues.append(f"reroll_control.{field}不能为空或过于空泛")
     mitigation = reroll.get("mitigation_steps")
     if not isinstance(mitigation, list) or len([step for step in mitigation if str(step).strip()]) < 2:
         issues.append("reroll_control.mitigation_steps至少需要两条具体降抽卡策略")
-    if not isinstance(reroll.get("needs_reference"), bool):
-        issues.append("reroll_control.needs_reference必须是布尔值")
+    if not isinstance(reroll.get("manual_first_pass_check"), bool):
+        issues.append("reroll_control.manual_first_pass_check必须是布尔值")
 
     mode = control.get("mode")
-    assets = control.get("reference_assets") if isinstance(control.get("reference_assets"), list) else []
     tension = (
         metadata.get("performance_contract", {}).get("tension_intent")
         if isinstance(metadata.get("performance_contract"), dict)
@@ -392,12 +527,10 @@ def reroll_control_issues(metadata, generation_control=None, visible_characters=
     )
     if visible and mode == "t2v" and risk == "low":
         issues.append("T2V人物镜不得把reroll_control.risk_level标为low")
-    if risk == "reference_required" and reroll.get("needs_reference") is not True:
-        issues.append("reference_required风险必须标记needs_reference=true")
-    if mode in ("i2v", "r2v") and not assets:
-        issues.append(f"{mode}模式缺少reference_assets，无法兑现降抽卡控制")
-    if mode == "t2v" and tension in ("rising", "peak") and reroll.get("needs_reference") is not True:
-        issues.append("T2V rising/peak人物镜必须标记needs_reference=true，提示需要参考图/动作参考降低抽卡")
+    if mode != "t2v":
+        issues.append("reroll_control只支持T2V generation_control")
+    if visible and tension in ("rising", "peak") and reroll.get("manual_first_pass_check") is not True:
+        issues.append("T2V rising/peak人物镜必须标记manual_first_pass_check=true")
     return issues
 
 
@@ -451,7 +584,7 @@ def dialogue_event_issues(
         issues.append("dialogue_events的ref/kind/speaker/text与Director原文不一致")
 
     sections = split_sections(full_prompt, PROMPT_LABELS)
-    timeline = sections.get("表演时间轴", "")
+    timeline = sections.get("子镜头组", "")
     visible = set(_string_list(visible_characters or [])) if visible_characters is not None else set()
     try:
         total_duration = float(duration or 0)
@@ -470,6 +603,7 @@ def dialogue_event_issues(
         facial = str(event.get("facial_state", "") or "").strip()
         body = str(event.get("body_state", "") or "").strip()
         delivery = str(event.get("delivery", "") or "").strip()
+        breath_pause_plan = str(event.get("breath_pause_plan", "") or "").strip()
         lip_sync = event.get("lip_sync")
 
         if not ref:
@@ -488,6 +622,14 @@ def dialogue_event_issues(
             issues.append(f"{prefix}.body_state不能为空")
         if len(delivery) < 2:
             issues.append(f"{prefix}.delivery不能为空")
+        if len(breath_pause_plan) < 6:
+            issues.append(f"{prefix}.breath_pause_plan不能为空")
+        elif not re.search(r"(?:句前|开口前|起句).{0,12}\d+(?:\.\d+)?秒", breath_pause_plan):
+            issues.append(f"{prefix}.breath_pause_plan缺少带秒数的起句气口")
+        elif not re.search(r"(?:句末|尾音|收气|落点).{0,12}\d+(?:\.\d+)?秒", breath_pause_plan):
+            issues.append(f"{prefix}.breath_pause_plan缺少带秒数的句末收气")
+        elif len(re.findall(r"[，、；：！？…]", line)) >= 2 and not re.search(r"(?:中段|分句|转折|[，、；：！？…]后).{0,18}\d+(?:\.\d+)?秒|无中段气口", breath_pause_plan):
+            issues.append(f"{prefix}.breath_pause_plan缺少分句/转折气口，或未明确无中段气口")
 
         match = re.fullmatch(r"(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)秒", str(event.get("time_range", "") or "").strip())
         if not match:
@@ -501,9 +643,9 @@ def dialogue_event_issues(
             if visible and speaker not in visible:
                 issues.append(f"{prefix}.speaker标为visible但不在可见人物中")
             if facial and facial not in timeline:
-                issues.append(f"{prefix}.facial_state未落实到表演时间轴")
+                issues.append(f"{prefix}.facial_state未落实到子镜头组")
             if body and body not in timeline:
-                issues.append(f"{prefix}.body_state未落实到表演时间轴")
+                issues.append(f"{prefix}.body_state未落实到子镜头组")
         elif visibility in ("offscreen", "nonphysical"):
             if not facial.startswith("N/A") or not body.startswith("N/A"):
                 issues.append(f"{prefix}不可见说话者的facial_state/body_state必须明确写N/A及原因")
@@ -517,9 +659,11 @@ def dialogue_event_issues(
                 issues.append(f"{prefix}.text必须逐字且只出现一次")
             label = f"{speaker}（{kind}）"
             if label not in timeline:
-                issues.append(f"{prefix}必须在表演时间轴明确人物与台词/OS类型")
+                issues.append(f"{prefix}必须在子镜头组明确人物与台词/OS类型")
             if delivery and delivery not in timeline:
-                issues.append(f"{prefix}.delivery未落实到表演时间轴")
+                issues.append(f"{prefix}.delivery未落实到子镜头组")
+            if breath_pause_plan and breath_pause_plan not in timeline:
+                issues.append(f"{prefix}.breath_pause_plan未落实到子镜头组")
             if expected_lip_sync and "口型" not in timeline:
                 issues.append(f"{prefix}可见对白缺少口型同步说明")
             if kind in ("OS", "OV") and not any(token in timeline for token in ("口型闭合", "无口型同步", "不驱动口型")):
@@ -564,17 +708,17 @@ def attention_handoff_issues(metadata, full_prompt):
             if value and value not in assigned:
                 issues.append(f"attention_handoff.{field}不在表演优先级角色中")
 
-    design = split_sections(full_prompt, PROMPT_LABELS).get("镜头设计", "")
+    design = split_sections(full_prompt, PROMPT_LABELS).get("主镜头连续规则", "")
     moves = camera_move_types(design)
     has_focus_transfer = bool(FOCUS_TRANSFER_RE.search(design))
     if strategy == "rack_focus":
         if moves:
             issues.append("rack_focus策略要求摄影机固定，不能叠加物理运镜或变焦")
         if not has_focus_transfer:
-            issues.append("rack_focus策略必须在镜头设计中写一次可执行拉焦")
+            issues.append("rack_focus策略必须在主镜头连续规则中写一次可执行拉焦")
     elif strategy == "single_reframe":
-        if len(moves) != 1 or not (moves & {"pan", "slide", "orbit"}):
-            issues.append("single_reframe策略必须且只能使用一次摇/移/弧移重构图")
+        if len(moves) != 1 or not (moves & {"pan", "slide", "track", "orbit"}):
+            issues.append("single_reframe策略必须且只能使用一次摇/移/跟随/弧移重构图")
         if has_focus_transfer or "zoom" in moves:
             issues.append("single_reframe策略不能叠加拉焦或变焦")
     elif strategy == "actor_blocking":
@@ -587,14 +731,14 @@ def attention_handoff_issues(metadata, full_prompt):
 def camera_competition_issues(full_prompt, editorial_mode="continuous_take"):
     """Reject competing controls in a take, while preserving motivated editorial beats."""
     sections = split_sections(full_prompt, PROMPT_LABELS)
-    design = sections.get("镜头设计", "")
-    timeline = sections.get("表演时间轴", "")
+    design = sections.get("主镜头连续规则", "")
+    timeline = sections.get("子镜头组", "")
     issues = []
     moves = camera_move_types(design)
-    if editorial_mode != "motivated_sequence" and len(moves) > 1:
-        issues.append("镜头设计叠加多种主要运镜：" + "/".join(sorted(moves)))
+    if editorial_mode != "shot_group" and len(moves) > 1:
+        issues.append("主镜头连续规则叠加多种主要运镜：" + "/".join(sorted(moves)))
     has_focus_transfer = bool(FOCUS_TRANSFER_RE.search(design))
-    if editorial_mode != "motivated_sequence" and has_focus_transfer and moves:
+    if editorial_mode != "shot_group" and has_focus_transfer and moves:
         issues.append("物理运镜/变焦与拉焦同时叠加，形成竞争控制")
     if re.search(r"(?:再|再次|重新).{0,12}(?:拉焦|焦点.{0,6}(?:转|移|回))|[^。；]{0,12}→[^。；]{0,12}→", design + timeline):
         issues.append("同一镜头发生反复注意力抢焦")
@@ -709,7 +853,7 @@ def role_partition_issues(metadata, visible_characters):
 
 def visibility_issues(full_prompt, shot_size):
     sections = split_sections(full_prompt, PROMPT_LABELS)
-    performance = sections.get("表演时间轴", "")
+    performance = sections.get("子镜头组", "")
     if shot_size in ("全景", "大远景", "远景"):
         cues = WIDE_INVISIBLE_CUES
     elif shot_size == "中景":
@@ -720,14 +864,79 @@ def visibility_issues(full_prompt, shot_size):
     return (["景别不可见细节：" + "、".join(hits)] if hits else [])
 
 
-def prompt_length_issues(full_prompt, duration):
+PROMPT_SOFT_RANGES = {
+    "environment": (200, 700),
+    "object": (200, 700),
+    "simple_action": (300, 900),
+    "dialogue_emotion": (400, 1100),
+    "performance": (500, 1400),
+    "important_entrance": (600, 1600),
+    "relationship": (600, 1600),
+    "interaction": (800, 2000),
+    "complex_action": (900, 2200),
+}
+
+
+def prompt_soft_range(duration, profile=""):
+    """Return non-blocking prompt-length guidance for one shot."""
+    profile = str(profile or "").strip()
+    if profile in PROMPT_SOFT_RANGES:
+        return PROMPT_SOFT_RANGES[profile]
+    try:
+        seconds = float(duration or 0)
+    except (TypeError, ValueError):
+        seconds = 0
+    if seconds > 10:
+        return PROMPT_SOFT_RANGES["interaction"]
+    if seconds > 6:
+        return PROMPT_SOFT_RANGES["performance"]
+    return PROMPT_SOFT_RANGES["simple_action"]
+
+
+def prompt_length_profile(metadata, duration):
+    """Derive the soft-range profile from narrative function and duration."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    dramatic = metadata.get("dramatic_design", {})
+    dramatic = dramatic if isinstance(dramatic, dict) else {}
+    function = str(dramatic.get("shot_function", "") or "")
+    weight = str(dramatic.get("narrative_weight", "") or "")
+    duration_design = metadata.get("duration_design", {})
+    duration_design = duration_design if isinstance(duration_design, dict) else {}
+    rationale = str(duration_design.get("duration_rationale", "") or "")
+    try:
+        seconds = float(duration or 0)
+    except (TypeError, ValueError):
+        seconds = 0
+    if function == "entrance" and weight in ("high", "critical"):
+        return "important_entrance"
+    if function in ("confrontation", "reaction", "reveal") and weight in ("high", "critical"):
+        return "relationship"
+    if rationale == "continuous_action":
+        return "complex_action"
+    if seconds > 10:
+        return "interaction"
+    if seconds > 6:
+        return "performance"
+    if function in ("dialogue", "reaction", "confrontation"):
+        return "dialogue_emotion"
+    if function in ("environment", "establish"):
+        return "environment"
+    if function == "object":
+        return "object"
+    return "simple_action"
+
+
+def prompt_length_issues(full_prompt, duration, hard_max_chars=None):
+    """Return only runtime hard-limit violations.
+
+    Soft ranges are guidance, never a reason to pad or split a shot. The caller
+    must pass a user/platform-confirmed hard cap when one exists.
+    """
     length = len(str(full_prompt or ""))
-    issues = []
-    if length < 120:
-        issues.append(f"模型提示词仅{length}字，缺少可执行信息")
-    if length > 1100:
-        issues.append(f"模型提示词{length}字，超过v4硬上限1100字；应拆镜")
-    return issues
+    if isinstance(hard_max_chars, (int, float)) and not isinstance(hard_max_chars, bool):
+        if hard_max_chars > 0 and length > int(hard_max_chars):
+            return [f"模型提示词{length}字，超过运行时平台硬上限{int(hard_max_chars)}字"]
+    return []
 
 
 def _string_list(value):

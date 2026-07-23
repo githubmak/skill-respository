@@ -21,7 +21,6 @@ BASE_FIELDS = (
     "target_platform",
     "generation_control.mode",
     "generation_control.audio_enabled",
-    "generation_control.reference_assets",
     "storyboard_grid.enabled",
 )
 
@@ -32,8 +31,7 @@ CONFIG_GROUPS = (
     ("export_base",),
     ("canvas", "visual_style"),
     ("max_shot_duration", "target_platform"),
-    ("generation_control.mode", "generation_control.audio_enabled"),
-    ("generation_control.reference_assets", "storyboard_grid.enabled"),
+    ("generation_control.audio_enabled", "storyboard_grid.enabled"),
 )
 
 DEFAULT_INTENTS = {
@@ -50,9 +48,7 @@ FIELD_PROMPTS = {
     "visual_style": "请输入本项目的视觉风格描述。",
     "max_shot_duration": "请输入单条生成片段的最大时长（秒，不能超过平台能力）。",
     "target_platform": "请输入目标生成平台，例如 即梦、可灵、Runway 或 Veo。",
-    "generation_control.mode": "请选择生成素材方式：文本生成视频、图片生成视频，或参考视频生成视频。",
     "generation_control.audio_enabled": "请输入是否启用原生音频：true 或 false。",
-    "generation_control.reference_assets": "请输入已确认参考资产的 JSON 数组；没有则输入 []。",
     "storyboard_grid.enabled": "请输入是否生成自动九宫格剧情包：true 或 false。",
 }
 
@@ -83,8 +79,6 @@ def _get(config, dotted):
 def _value_is_present(field, value):
     if field in ("generation_control.audio_enabled", "storyboard_grid.enabled"):
         return isinstance(value, bool)
-    if field == "generation_control.reference_assets":
-        return isinstance(value, list)
     if field == "max_shot_duration":
         return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
     return isinstance(value, str) and bool(value.strip())
@@ -116,6 +110,17 @@ def config_issues(config, run_dir=None, require_confirmation=True):
     for field in BASE_FIELDS:
         if not _value_is_present(field, _get(config, field)):
             issues.append(field)
+    prompt_limits = config.get("prompt_limits", {})
+    if not isinstance(prompt_limits, dict):
+        issues.append("prompt_limits")
+    else:
+        hard_max_chars = prompt_limits.get("hard_max_chars")
+        if hard_max_chars is not None and (
+            not isinstance(hard_max_chars, int)
+            or isinstance(hard_max_chars, bool)
+            or hard_max_chars <= 0
+        ):
+            issues.append("prompt_limits.hard_max_chars")
     if run_dir and _value_is_present("export_base", config.get("export_base")):
         export_base = os.path.abspath(str(config["export_base"]).strip())
         run_abs = os.path.abspath(run_dir)

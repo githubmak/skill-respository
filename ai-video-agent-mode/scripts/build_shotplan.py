@@ -72,8 +72,9 @@ def _normalize_ids_and_durations(plan):
             seen_subshots.add(ssid)
             ss["subshot_id"] = ssid
             ss.setdefault("shot_id", shot_id)
+            if "duration_sec" in ss:
+                raise ValueError("duration_sec is obsolete; use duration")
             ss.setdefault("duration", 0)
-            ss.setdefault("duration_sec", ss.get("duration", 0))
             ss.setdefault("characters", [])
             ss.setdefault("dialogue_refs", [])
             ss.setdefault("base_action", "")
@@ -148,8 +149,8 @@ def _validate_dialogue_refs(plan):
 def split_dialogue(text, max_chars_per_segment=None, max_seconds=None, reserve_seconds=0.8):
     """Split dialogue only at semantic sentence boundaries.
 
-    Mode C v4 prefers duration-based packing. ``max_chars_per_segment`` remains
-    available for legacy callers, but the Orchestrator should pass the user's
+    The current contract prefers duration-based packing. ``max_chars_per_segment`` remains
+    available to the helper, but the Orchestrator should pass the user's
     confirmed per-shot duration as ``max_seconds``. Text is never rewritten.
     """
     import re as _re_sd
@@ -177,8 +178,7 @@ def split_dialogue(text, max_chars_per_segment=None, max_seconds=None, reserve_s
                     % buf
                 )
             if max_chars_per_segment is not None and len(buf) > max_chars_per_segment:
-                # A single semantic sentence is intentionally preserved even
-                # when it exceeds the legacy soft character target.
+                # A single semantic sentence is intentionally preserved.
                 pass
     if buf:
         result.append(buf)
@@ -213,12 +213,3 @@ if __name__ == "__main__":
         sys.exit(1)
     run_dir = sys.argv[1]
     normalize(run_dir, sys.argv[2] if len(sys.argv) > 2 else None)
-    # Phase 1.5: Inject spatial coordinates (铁律 #44)
-    try:
-        from spatial_registry import run as spatial_registry_run
-        spatial_registry_run(run_dir)
-    except ImportError:
-        print("[build_shotplan] spatial_registry.py not found — skipping spatial injection.")
-        print("[build_shotplan] Run spatial_registry.py manually after Phase 1.")
-    except Exception as e:
-        print(f"[build_shotplan] spatial_registry failed: {e} — continuing without spatial data.")

@@ -1,182 +1,47 @@
-注意：本文件只示范 Mode C v4 的结构、字段密度、时间连续、动作预算、口型边界和跨镜一致性。不得把示例中的现代都市、轻喜剧、柔光、宴会厅、古风/写实/韩漫审美、人物衣着、人物关系或具体道具事件带入其他项目；新项目必须使用当前剧本、用户配置、scene lock cache 或已确认资产中的题材、光线、服装和场景。
+注意：本文件只示范字段顺序、因果表演链、连续时间段、动作预算、口型边界、跨镜状态和节拍归属。不得把任何题材、人物、服装、灯光、场景或道具事实带入当前项目。
 
+JSON结构示例：
 {
   "shots": [
     {
-      "shot_id": "S2-03",
-      "subshot_id": "S2-03-01",
-      "duration": 5.8,
-      "full_prompt": "画面锁定：16:9横屏画幅，现代都市轻喜剧写实CG。沈星洲穿深藏青西装，从画面左侧宴会人群间隙进入，身体朝向右前方的陆序；陆序穿炭灰西装，站在画面右侧社交圈外沿。两人鞋底贴住抛光地面并留下暖金接触阴影，前景服务生托盘短暂遮过沈星洲肩线，角色身份、服装和左右关系全程不变。\n\n镜头设计：时长：5.8秒。景别：全景。焦距：35mm。机位：宴会厅人群腰部高度，位于两人连线同一侧。轴线：沿沈星洲至陆序方向建立，不越轴。主要运镜：镜头与沈星洲同速向右横移跟拍，落幅时停止横移，让两人形成左近右远的对角构图。\n\n表演时间轴：0.0-2.2秒，沈星洲从左侧穿过人群，步幅均匀，西装下摆在每次落脚后延迟半拍回落；陆序仍与身边人保持原有站姿，不抢主动作，背景宾客维持低幅交谈且无同步口型。2.2-4.2秒，沈星洲听见陆序方向的交谈后停步，这是本镜唯一主动作；他的重心由前脚收回，两肩朝陆序方向定住，视线越过人群落到陆序身上。4.2-5.8秒，陆序因脚步停下而转头，这是唯一对手反应；他看见沈星洲的西装后停住原本的交谈，嘴部闭合，身体没有迎上去。落幅保持沈星洲左侧定住、陆序右侧回望，两人之间的人群自然让出一条窄视线通道。\n\n光照与声音：宴会厅水晶吊灯和壁灯形成稳定3200K暖色柔光，顶侧光同时落在人物肩线、地面反射和背景宾客上，人物不出现独立棚拍感。环境基底为低声交谈和远处酒杯轻碰；沈星洲停步时脚步声消失，给陆序转头留出短暂声音空隙。",
+      "shot_id": "S1-01",
+      "subshot_id": "S1-01-01",
+      "duration": 5.0,
+      "full_prompt": "生成规格：即梦 T2V，{canvas}画幅，5.0秒，{visual_style}。\n\n主体与空间锁定：角色A始终在画面左侧看向右侧，角色B始终在画面右侧看向左侧；双方脚底接触场景A地面，{costume_anchor}连续。\n\n主镜头连续规则：同一场景、同源光线与双人关系；人物位置、服装、视线和空间距离在子镜之间继承。\n\n子镜头组：【镜头1｜0.0-2.5秒】中景，角色A在画面左侧；左前景保留角色B模糊右肩，角色A面向右侧的角色B，肩背先收紧后停住手部动作，落幅保留短促呼吸。【镜头2｜2.5-5.0秒】双人中景，角色A仍在左、角色B仍在右；角色B从右侧向左看向角色A，半步前移形成主要层，双方视线与距离保留到落幅。\n\n光照、声音与稳定约束：{light_type}从{light_direction}以{light_temp}K照明，{light_hardness}，人物与环境同源；{ambient_sound}连续，非说话人物口型闭合。",
       "negative_prompt": "{{NEGATIVE_PROMPT_AUTO_INJECT}}",
       "qa_metadata": {
-        "dramatic_goal": "以沈星洲停步和陆序回望建立两人认出彼此但尚未开口的关系压力",
-        "editorial_mode": "continuous_take",
-        "camera_beat_map": [],
-        "sequence_context": {},
-        "performance_priority": {
-          "primary": "沈星洲",
-          "supporting": ["陆序"],
-          "background": []
+        "dramatic_goal": "角色A的反应改变角色B的判断，建立一次关系压力转移",
+        "dramatic_design": {
+          "shot_function": "confrontation",
+          "narrative_weight": "high",
+          "information_gain": "角色B从支持层进入主要层",
+          "reaction_ownership": "角色A",
+          "dramatic_beat_ids": ["B0001"],
+          "visual_punctuation": []
         },
-        "action_budget": {
-          "primary_action_count": 1,
-          "emotion_turn_count": 1,
-          "supporting_reaction_count": 1,
-          "physical_camera_move_count": 1,
-          "editorial_response_count": 0
+        "duration_design": {
+          "duration_strategy": "pack_toward_limit",
+          "justified_content_duration": 5.0,
+          "utilization_ratio": 0.333,
+          "duration_rationale": "continuous_interaction",
+          "dramatic_beats": ["B0001"]
         },
-        "start_state": "沈星洲自左侧行进，陆序保持右侧社交站姿",
-        "end_state": "沈星洲左侧停住，陆序右侧闭口回望，中间形成视线通道",
-        "performance_causality": {
-          "tension_intent": "rising",
-          "trigger": "沈星洲在行进中听见陆序方向的交谈，陆序随后感知脚步停止",
-          "response_order": ["沈星洲听见交谈", "沈星洲停步并收回重心", "陆序因脚步停止而回望", "两人隔着人群定住"],
-          "physical_logic": "无接触和外力；停步、收回重心与回望均为角色自主反应",
-          "motion_boundary": "沈星洲的行进结束，只保留肩线和视线定向；陆序仅转头，不迎上前",
-          "hold_strategy": "最后定住只保留闭合口型与相互视线，不增加连续微动作",
-          "end_residue": "停步、回望和人群间视线通道持续到落幅"
-        },
-        "dialogue_events": [],
-        "dialogue_refs": []
-      },
-      "generation_control": {
-        "mode": "t2v",
-        "audio_enabled": true,
-        "reference_assets": []
-      }
-    },
-    {
-      "shot_id": "S3-01",
-      "subshot_id": "S3-01-01",
-      "duration": 12.0,
-      "full_prompt": "画面锁定：16:9横屏画幅，写实电影级3DCG。甲位于画面左侧前景三分位，身体朝向画面右侧的乙；乙位于画面右侧中景三分位，双手压住桌上的纸张并看向甲。两人同处桌边，脚底与椅脚接触阴影、桌面反光和左右关系全程不变。\n\n镜头设计：时长：12.0秒。景别：双人中景。焦距：50mm。机位：位于两人对话轴线同侧的平视双人机位。轴线：甲画左、乙画右，不越轴。主要运镜：摄影机固定；起始焦点落在前景甲，乙保持可辨轮廓，乙开始回答时只做一次焦点从甲转到乙，落幅保持双人同框且乙获得主要视觉权重。\n\n表演时间轴：0.0-3.0秒，甲（台词）以低声、语速稍慢、问句尾音轻微上扬说：“你已经决定了吗？”；说话时视线固定在乙脸上，眉间轻收，上身轻微前倾，双手仍离开纸张，口型逐字同步；乙压住即时反应，双手仍停在纸张上，口型闭合。3.0-8.0秒，乙开口触发唯一一次焦点交接，乙（台词）以音量压低、语速平稳、尾字收住说：“我没有别的选择。”；说话时视线先落向纸张再回到甲，嘴角保持收紧，双手沿原折痕折起纸张，肩背随后定住，口型逐字同步；甲退为可辨支持层，不追加竞争动作。8.0-12.0秒，乙说完后双手压住折好的纸张，甲与乙保持看向对方；焦点稳定留在乙，落幅保留乙掌握回应后的关系状态。\n\n光照与声音：窗侧稳定5200K柔光同时落在两人面部、桌面与纸张上，背景同源漫反射不变；两句对白分别与对应人物口型同步，环境底噪保持稳定，不重复台词原文。",
-      "negative_prompt": "{{NEGATIVE_PROMPT_AUTO_INJECT}}",
-      "qa_metadata": {
-        "dramatic_goal": "在不切镜的问答中把关系主导权从发问者交到回答者",
-        "performance_priority": {
-          "primary": "乙",
-          "supporting": ["甲"],
-          "background": []
-        },
-        "editorial_mode": "continuous_take",
-        "camera_beat_map": [],
-        "sequence_context": {},
-        "action_budget": {
-          "primary_action_count": 2,
-          "emotion_turn_count": 1,
-          "supporting_reaction_count": 1,
-          "physical_camera_move_count": 0,
-          "editorial_response_count": 0
-        },
-        "start_state": "甲画左清晰发问，乙画右压住反应",
-        "end_state": "乙画右清晰压住折纸，甲画左保持支持层，两人仍同框",
-        "performance_causality": {
-          "tension_intent": "rising",
-          "trigger": "甲提出问题，乙开始回答并接过关系主导权",
-          "response_order": ["甲发问并轻微前倾", "乙压住即时反应后开口", "乙折起纸张完成回答", "甲停止追加动作并退为支持层"],
-          "physical_logic": "无强制位移；纸张沿原折痕受双手控制，人物关系变化由回答与动作完成共同建立",
-          "motion_boundary": "甲的前倾止于发问，乙只完成一次折纸；回答结束后双方不再发起新动作",
-          "hold_strategy": "末段长停顿只保留乙双手压纸和双方对视，作为有意维持的关系状态",
-          "end_residue": "乙压住折纸并保持主要视觉权重，甲维持支持层直至落幅"
-        },
-        "dialogue_events": [
-          {
-            "ref": "D1",
-            "kind": "台词",
-            "speaker": "甲",
-            "text": "你已经决定了吗？",
-            "time_range": "0.4-2.5秒",
-            "speaker_visibility": "visible",
-            "facial_state": "视线固定在乙脸上，眉间轻收",
-            "body_state": "上身轻微前倾，双手仍离开纸张",
-            "delivery": "低声、语速稍慢、问句尾音轻微上扬",
-            "lip_sync": true
-          },
-          {
-            "ref": "D2",
-            "kind": "台词",
-            "speaker": "乙",
-            "text": "我没有别的选择。",
-            "time_range": "3.4-7.2秒",
-            "speaker_visibility": "visible",
-            "facial_state": "视线先落向纸张再回到甲，嘴角保持收紧",
-            "body_state": "双手沿原折痕折起纸张，肩背随后定住",
-            "delivery": "音量压低、语速平稳、尾字收住",
-            "lip_sync": true
-          }
-        ],
-        "dialogue_refs": ["D1", "D2"],
         "attention_handoff": {
           "mode": "causal_handoff",
           "count": 1,
-          "strategy": "rack_focus",
-          "from": "甲",
-          "to": "乙",
-          "trigger": "乙开始回答",
-          "end_composition": "双人关系构图，乙保持主要视觉权重"
+          "strategy": "actor_blocking",
+          "from": "角色A",
+          "to": "角色B",
+          "trigger": "角色B观察到角色A的肩背收紧",
+          "end_composition": "角色B进入主要层，角色A保留支持层权重"
         }
       },
       "generation_control": {
         "mode": "t2v",
-        "audio_enabled": true,
-        "reference_assets": []
-      }
-    },
-    {
-      "shot_id": "S4-01",
-      "subshot_id": "S4-01-01",
-      "duration": 5.0,
-      "full_prompt": "画面锁定：16:9横屏画幅，写实电影级3DCG。丙独自站在画面中央偏左，身体朝向画面右侧的空间出口，双脚贴地，服装、外形和周围空间关系全程不变。\n\n镜头设计：时长：5.0秒。景别：中近景。焦距：50mm。机位：丙侧前方齐胸平视机位。轴线：保持丙朝向空间出口的行动轴同侧。主要运镜：摄影机固定，统一景深保持到落幅。\n\n表演时间轴：0.0-1.2秒，丙维持原地静止，视线停在空间出口，口型闭合。1.2-3.8秒，丙（OS）以气声偏低、语速缓慢、句前停半拍呈现内心声：“不能让他们发现。”；内心声期间视线从空间出口短暂落低，眉心轻微收紧，右手手指在身侧缓慢收拢，肩线保持不动，口型闭合且不驱动嘴唇。3.8-5.0秒，内心声结束，丙重新把视线抬回空间出口，右手保持收拢后的状态，原地不动。\n\n光照与声音：固定中性柔光保持方向、色温与人物明暗关系不变；OS作为内心声与画面表演同步，人物全程无口型同步，不重复OS原文。",
-      "negative_prompt": "{{NEGATIVE_PROMPT_AUTO_INJECT}}",
-      "qa_metadata": {
-        "dramatic_goal": "通过可见克制反应和内心声建立角色隐藏信息的压力",
-        "performance_priority": {
-          "primary": "丙",
-          "supporting": [],
-          "background": []
-        },
-        "editorial_mode": "continuous_take",
-        "camera_beat_map": [],
-        "sequence_context": {},
-        "action_budget": {
-          "primary_action_count": 1,
-          "emotion_turn_count": 1,
-          "supporting_reaction_count": 0,
-          "physical_camera_move_count": 0,
-          "editorial_response_count": 0
-        },
-        "start_state": "丙原地看向空间出口，双手自然停在身侧",
-        "end_state": "丙视线回到空间出口，右手保持收拢，口型闭合",
-        "performance_causality": {
-          "tension_intent": "rising",
-          "trigger": "丙产生不能暴露信息的明确内心判断",
-          "response_order": ["视线短暂落低", "眉心收紧", "右手缓慢收拢", "视线回到空间出口"],
-          "physical_logic": "无外力与接触，全部变化来自角色自主压住反应",
-          "motion_boundary": "只允许视线和右手低幅变化，不发起位移",
-          "hold_strategy": "肩线和双脚保持稳定，只保留视线与手指两个可见变化",
-          "end_residue": "右手收拢和重新锁定出口的视线持续到落幅"
-        },
-        "dialogue_events": [
-          {
-            "ref": "OS1",
-            "kind": "OS",
-            "speaker": "丙",
-            "text": "不能让他们发现。",
-            "time_range": "1.2-3.8秒",
-            "speaker_visibility": "visible",
-            "facial_state": "视线从空间出口短暂落低，眉心轻微收紧",
-            "body_state": "右手手指在身侧缓慢收拢，肩线保持不动",
-            "delivery": "气声偏低、语速缓慢、句前停半拍",
-            "lip_sync": false
-          }
-        ],
-        "dialogue_refs": ["OS1"]
-      },
-      "generation_control": {
-        "mode": "t2v",
-        "audio_enabled": true,
-        "reference_assets": []
+        "audio_enabled": false
       }
     }
   ]
 }
+
+可迁移的只有结构规则：触发→表情/身体→声音或呼吸→落幅残留；一次注意力交接只能有一种主策略；台词、OS、OV的原文和口型边界必须锁定；节拍必须在戏剧节拍台账中唯一归属。

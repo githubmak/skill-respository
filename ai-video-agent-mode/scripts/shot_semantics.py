@@ -28,6 +28,16 @@ CHARACTER_STATE_ACTION_WORDS = [
 
 RENDER_ANCHOR_FIELDS = ["visual_intent", "image_subject", "atmosphere"]
 
+# Dispatch risk is deliberately derived only from already-approved shot facts.
+# It chooses context and batch capacity; it never relaxes the quality contract
+# or allows an Agent/validator stage to be skipped.
+FIGHT_OR_FORCE_WORDS = [
+    "打斗", "搏斗", "互殴", "攻击", "格挡", "闪避", "追逐", "推搡", "拉扯",
+    "扭打", "受力", "制服", "抢夺", "救援", "fight", "combat",
+]
+PROP_TRANSFER_WORDS = ["递给", "交给", "传给", "塞给", "接过", "交接", "移交", "抢走", "夺过"]
+MULTI_PERSON_MOTION_WORDS = ["走向", "靠近", "后退", "错身", "围住", "围堵", "跟随", "追", "拉", "推"]
+
 
 def shot_type_text(subshot):
     return str(
@@ -107,11 +117,6 @@ def analysis_profile(subshot):
     return "action"
 
 
-def requires_emotion_analysis(subshot):
-    """Skip only true environment/object inserts; all character or dialogue work remains performance-led."""
-    return analysis_profile(subshot) not in ("environment", "object")
-
-
 def quality_contract(subshot):
     """Return model-agnostic quality requirements for every subshot class."""
     profile = analysis_profile(subshot)
@@ -125,7 +130,7 @@ def quality_contract(subshot):
     }[profile]
     return {
         "profile": profile,
-        "required_analysis": ["scene", "camera"] + (["emotion"] if requires_emotion_analysis(subshot) else []),
+        "required_analysis": ["scene_lock", "master_production"],
         "required_evidence": common + requirements,
     }
 
@@ -149,8 +154,80 @@ def workload_units(subshot, phase):
     if isinstance(characters, str):
         characters = [characters] if characters.strip() else []
     units += max(len(characters) - 1, 0)
-    if subshot.get("editorial_mode") == "motivated_sequence":
+    if subshot.get("editorial_mode") == "shot_group":
         units += 1
-    if phase == "prompt_composer" and subshot.get("dialogue_refs"):
+    if phase == "master_production" and subshot.get("dialogue_refs"):
         units += 1
     return units
+
+
+def dispatch_risk(item):
+    """Classify review depth and batch capacity from source-supported facts.
+
+    ``light`` still receives the Master Production and Editor Pass 2 Agent
+    stages.  It merely carries a narrower review window because it has no
+    high-risk spatial, contact, dialogue, or handoff dependency.
+    """
+    item = item if isinstance(item, dict) else {}
+    sources = item.get("source_subshots")
+    sources = sources if isinstance(sources, list) and sources else [item]
+    text_parts = []
+    characters = []
+    dialogue_text_length = 0
+    has_dialogue = False
+    has_shot_group = False
+    duration = 0.0
+    metadata = item.get("qa_metadata", {}) if isinstance(item.get("qa_metadata"), dict) else {}
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        text_parts.extend(str(source.get(key, "") or "") for key in (
+            "base_action", "scene_type", "shot_type", "visual_type", "purpose", "axis_space",
+        ))
+        people = source.get("visible_characters", source.get("characters", [])) or []
+        if isinstance(people, str):
+            people = [people] if people.strip() else []
+        characters.extend(str(person).strip() for person in people if str(person).strip())
+        events = source.get("dialogue_events", []) or []
+        refs = source.get("dialogue_refs", []) or []
+        has_dialogue = has_dialogue or bool(events or refs)
+        dialogue_text_length += sum(len(str(event.get("text", "") or "")) for event in events if isinstance(event, dict))
+        has_shot_group = has_shot_group or source.get("editorial_mode") == "shot_group"
+        try:
+            duration += float(source.get("duration", 0) or 0)
+        except (TypeError, ValueError):
+            pass
+    if not characters:
+        roles = metadata.get("performance_priority", {}) if isinstance(metadata.get("performance_priority"), dict) else {}
+        characters = [roles.get("primary", "")] + list(roles.get("supporting", []) or []) + list(roles.get("background", []) or [])
+        characters = [str(person).strip() for person in characters if str(person).strip()]
+    if not has_dialogue:
+        has_dialogue = bool(metadata.get("dialogue_refs") or metadata.get("dialogue_events"))
+    has_shot_group = has_shot_group or metadata.get("editorial_mode") == "shot_group"
+    reroll = metadata.get("reroll_control", {}) if isinstance(metadata.get("reroll_control"), dict) else {}
+    text = " ".join(text_parts + [str(metadata.get("continuity_contract", "") or "")])
+    unique_characters = list(dict.fromkeys(characters))
+    reasons = []
+    if any(token in text for token in FIGHT_OR_FORCE_WORDS):
+        reasons.append("fight_or_force")
+    if any(token in text for token in PROP_TRANSFER_WORDS):
+        reasons.append("prop_transfer")
+    if has_shot_group:
+        reasons.append("shot_group")
+    if len(unique_characters) > 1 and any(token in text for token in MULTI_PERSON_MOTION_WORDS):
+        reasons.append("multi_person_motion")
+    if has_dialogue and (duration >= 8 or dialogue_text_length >= 32):
+        reasons.append("long_dialogue")
+    if reroll.get("risk_level") == "high":
+        reasons.append("high_reroll_risk")
+    if reasons:
+        return {"tier": "high", "reasons": reasons, "batch_capacity": 4, "review_scope": "full_scene_window"}
+    is_non_character = bool(sources) and all(is_true_non_action_subshot(source) for source in sources if isinstance(source, dict))
+    single_stable = len(unique_characters) <= 1 and not has_shot_group and not any(
+        token in text for token in FIGHT_OR_FORCE_WORDS + PROP_TRANSFER_WORDS
+    )
+    if is_non_character:
+        return {"tier": "light", "reasons": ["non_character_insert"], "batch_capacity": 10, "review_scope": "current_with_carryover"}
+    if single_stable and (not has_dialogue or duration <= 6):
+        return {"tier": "light", "reasons": ["single_stable" if not has_dialogue else "simple_dialogue"], "batch_capacity": 10, "review_scope": "current_with_carryover"}
+    return {"tier": "standard", "reasons": ["normal_contract"], "batch_capacity": 6, "review_scope": "bounded_scene_window"}
