@@ -259,11 +259,14 @@ def _validate_scaffold_lock(prefix, shot, scaffold, issues):
     expected_metadata = scaffold.get("qa_metadata", {})
     if metadata.get("dialogue_refs") != expected_metadata.get("dialogue_refs"):
         issues.append(prefix + "确定性骨架锁定字段被改写：qa_metadata.dialogue_refs")
-    for field in (
-        "editorial_mode", "camera_beat_map", "sequence_context", "quality_contract",
-        "dramatic_design", "duration_design", "viewpoint", "visual_hierarchy",
-        "entry_strategy", "reveal_strategy", "focus_strategy",
-    ):
+    for field in scaffold.get("_locked_metadata_fields", ()):
+        field = str(field).removeprefix("qa_metadata.")
+        if field not in {
+            "editorial_mode", "camera_beat_map", "sequence_context", "quality_contract",
+            "dramatic_design", "duration_design", "viewpoint", "visual_hierarchy",
+            "entry_strategy", "reveal_strategy", "focus_strategy",
+        }:
+            continue
         if metadata.get(field) != expected_metadata.get(field):
             issues.append(prefix + f"确定性骨架锁定字段被改写：qa_metadata.{field}")
     locked = lambda events: [
@@ -297,8 +300,12 @@ def _load_scaffold_for_batch(batch_path, run_dir):
             return {}
         with open(scaffold_path, "r", encoding="utf-8-sig") as handle:
             scaffold = json.load(handle)
+        locked_metadata = [
+            value for value in scaffold.get("locked_fields", [])
+            if str(value).startswith("qa_metadata.")
+        ]
         return {
-            item.get("subshot_id", ""): item
+            item.get("subshot_id", ""): dict(item, _locked_metadata_fields=locked_metadata)
             for item in scaffold.get("shots", []) if item.get("subshot_id")
         }
     return {}
@@ -509,10 +516,17 @@ def _load_context(run_dir):
     if os.path.exists(plan_path):
         with open(plan_path, "r", encoding="utf-8-sig") as handle:
             plan = json.load(handle)
+        dialogue_events = plan.get("dialogue_events", {}) if isinstance(plan.get("dialogue_events"), dict) else {}
         for shot in plan.get("shots", []):
             for subshot in shot.get("subshots", []):
                 copied = dict(subshot)
                 copied.setdefault("scene_type", shot.get("scene_type", ""))
+                events = [
+                    dict(dialogue_events[ref]) for ref in copied.get("dialogue_refs", [])
+                    if isinstance(dialogue_events.get(ref), dict)
+                ]
+                copied["dialogue_events"] = events
+                copied["dialogue_raw_text"] = "\n".join(str(event.get("text", "") or "") for event in events)
                 plan_map[copied.get("subshot_id", "")] = copied
     return plan_map, director_map
 
