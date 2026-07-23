@@ -15,8 +15,11 @@ if not os.environ.get("PYTHONPYCACHEPREFIX") and not getattr(sys, "pycache_prefi
     sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(__file__))
 from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_prefix
-from shot_semantics import dispatch_risk, quality_contract, temporal_transition_candidate, workload_units
-from context_budget import check as check_context_budget, composer_items_fit, editor_items_fit
+from shot_semantics import quality_contract, temporal_transition_candidate
+from context_budget import check as check_context_budget
+from batch_planner import analysis_chunks as _analysis_chunks, batch_risk as _batch_risk
+from batch_planner import dynamic_master_chunks as _plan_dynamic_master_chunks
+from batch_planner import editor_review_chunks as _editor_review_chunks
 
 block_source_pycache_until_run_dir()
 
@@ -80,6 +83,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
         size = max(int(batch_size or 4), 1)
         chunks = _dynamic_master_chunks(items, force_single=(size == 1))
     elif phase == "editor_pass2":
+        size = max(int(batch_size or 10), 1)
         chunks = _editor_review_chunks(items, batch_size)
     elif batch_size is not None:
         size = max(int(batch_size), 1)
@@ -125,8 +129,6 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             "run_dir": run_dir,
             "source_path": source_path,
             "project_config_path": os.path.join(run_dir, "project_config.json"),
-            "format_example_path": os.path.join(os.path.dirname(os.path.dirname(__file__)), "references", "format_example.txt"),
-            "quality_exemplar_path": os.path.join(os.path.dirname(os.path.dirname(__file__)), "references", "quality_exemplar", "S2-03_high_quality_example.txt"),
             "constraints_path": constraints_path,
             "output_path": public_output,
             "_batch_output_path": batch_output,
@@ -160,6 +162,10 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
                 " This is a targeted retry: read retry_context_path, repair only its failing fields, "
                 "and preserve all locked fields and already-passing content."
             )
+            example_paths = _retry_examples(retry_context_path)
+            if example_paths:
+                packet["example_paths"] = example_paths
+                packet["instruction"] += " Read only the listed example_paths; they are structural repair references, never creative templates."
         if scaffold_path:
             packet["composer_scaffold_path"] = scaffold_path
             packet["scene_lock_cache_path"] = scene_lock_cache_path
@@ -310,7 +316,7 @@ def _write_constraints_sidecar(run_dir, phase, dispatch_dir, dispatch_tag):
             "If qa_metadata.temporal_transition_contract.kind is not none, obey its source trigger exactly. It is a candidate, not an instruction to decorate: either write one bounded in-model transition whose single effect is derived from this scene's actual event, or record a source-faithful reason to use a normal cut. An enabled transition needs a bounded time range, one effect and its source basis, explicit before/after states, one literal prompt anchor, audio bridge, closed-mouth/OS-OV boundary, and a fallback. Never stack effects, fabricate a past event, or change face, costume, scene, or period without the declared transition state. Treat every enabled temporal transition as high reroll risk with manual first-pass review. "
             "Copy the locked quality_contract exactly. Fill qa_metadata.quality_evidence for every required_evidence key as {section, fragment}; section is one of 主体与空间锁定/主镜头连续规则/子镜头组/光照、声音与稳定约束 and fragment is a 3+ character literal phrase that appears in that section. This applies equally to environment and object inserts. "
             "For every locked dialogue event, preserve ref/kind/speaker/text exactly and fill its time_range, speaker_visibility, facial_state, body_state, delivery, and lip_sync. Dialogue/OS text must never be rewritten. "
-            "Use §B-§E in this sidecar, then read packet.format_example_path and packet.quality_exemplar_path exactly once. "
+            "Use the selected contract sections in this sidecar. Do not read examples on a first pass. A retry may include packet.example_paths; read only those files and only for the named failed fields. "
             "Examples are structure-only: absorb causal performance chains, prop-state transfer, timeline continuity, system-text safe zones, dialogue/lip-sync boundaries, end residue, and reroll controls, but never inherit example genre, soft-light rhythm, hotel/urban setting, manhwa style, clothing, character relationships, or specific prop events unless the current source/config provides them. "
             "This is Jimeng T2V-only: never include I2V/R2V, reference assets, image handles, or fabricated locks. Preserve identity through concise recurring identity anchors, costume, screen-left/right placement, facing direction, scene anchor, and previous end state. For fight shots, reduce reroll risk by limiting speed, amplitude, contact beats, and camera shake, then split overly complex choreography into locked consecutive clips. "
             "Start from packet.composer_scaffold_path and preserve all locked fields. Read packet.scene_lock_cache_path once per scene instead of rediscovering shared light, space, costume, canvas, style, or generation settings. "
@@ -369,44 +375,6 @@ def _select_b_subsections(section, wanted):
     return "\n\n".join([preamble] + parts)
 
 
-def _composer_chunks(items, max_items, respect_chains=True):
-    """Keep continuity groups intact while shrinking high-context batches."""
-    shot_groups = []
-    for item in items:
-        group_id = _composer_group_id(item) if respect_chains else str(item.get("subshot_id", ""))
-        if shot_groups and shot_groups[-1][0] == group_id:
-            shot_groups[-1][1].append(item)
-        else:
-            shot_groups.append([group_id, [item]])
-    chunks = []
-    current = []
-    current_weight = 0
-    weight_budget = max_items * 3
-    item_cap = max_items * 2
-    for _, group in shot_groups:
-        group_weight = sum(workload_units(item, "master_production") for item in group)
-        if current and (len(current) + len(group) > item_cap or current_weight + group_weight > weight_budget):
-            chunks.append(current)
-            current = []
-            current_weight = 0
-        current.extend(group)
-        current_weight += group_weight
-        if len(current) >= item_cap or current_weight >= weight_budget:
-            chunks.append(current)
-            current = []
-            current_weight = 0
-    if current:
-        chunks.append(current)
-    if len(chunks) > 1 and len(chunks[-1]) == 1:
-        donor = chunks[-2]
-        donor_group_start = _last_group_start(donor, respect_chains)
-        movable = donor[donor_group_start:]
-        if len(donor) - len(movable) >= 2 and len(movable) + 1 <= max_items:
-            chunks[-2] = donor[:donor_group_start]
-            chunks[-1] = movable + chunks[-1]
-    return chunks or [items]
-
-
 def _to_master_tasks(items):
     """Fold Director subshots into the one generation task users submit.
 
@@ -438,137 +406,8 @@ def _to_master_tasks(items):
     return masters
 
 
-def _analysis_chunks(items, max_items, phase):
-    """Bound both item count and complexity so simple inserts batch efficiently."""
-    weight_budget = {
-        "scene_lock": max_items * 2,
-        "master_production": max_items * 2,
-    }.get(phase, max_items * 2)
-    item_cap = max_items * 2
-    chunks, current, current_weight = [], [], 0
-    for item in items:
-        weight = workload_units(item, phase)
-        if current and (len(current) >= item_cap or current_weight + weight > weight_budget):
-            chunks.append(current)
-            current, current_weight = [], 0
-        current.append(item)
-        current_weight += weight
-    if current:
-        chunks.append(current)
-    return chunks or [items]
-
-
 def _dynamic_master_chunks(items, force_single=False):
-    """Batch consecutive main tasks by their strictest risk capacity.
-
-    Never split a declared continuity chain merely to fill a larger low-risk
-    batch.  Such an oversized chain is intentionally retained as one batch and
-    marked high risk, preserving its shared context.
-    """
-    if force_single:
-        return [[item] for item in items]
-    groups = []
-    for item in items:
-        group_id = _composer_group_id(item)
-        if groups and groups[-1][0] == group_id:
-            groups[-1][1].append(item)
-        else:
-            groups.append([group_id, [item]])
-    chunks, current, capacity = [], [], 10
-    for _group_id, group in groups:
-        group_risk = _batch_risk(group)
-        group_capacity = group_risk["batch_capacity"]
-        next_capacity = min(capacity, group_capacity) if current else group_capacity
-        compact_candidate = [_compact_composer_item(item) for item in current + group]
-        if current and (
-            len(current) + len(group) > next_capacity
-            or not composer_items_fit(compact_candidate)
-        ):
-            chunks.append(current)
-            current, capacity = [], 10
-            next_capacity = group_capacity
-        if not current and not composer_items_fit([_compact_composer_item(item) for item in group]):
-            raise ValueError(
-                "single Master Production task exceeds the packet context budget; "
-                "split that main shot during Phase 1 instead of truncating its source facts"
-            )
-        current.extend(group)
-        capacity = next_capacity
-        if len(current) >= capacity:
-            chunks.append(current)
-            current, capacity = [], 10
-    if current:
-        chunks.append(current)
-    return chunks or [items]
-
-
-def _editor_review_chunks(windows, batch_size=None):
-    """Batch complete review capsules without exceeding their context budget."""
-    tiers = {"light": 10, "standard": 6, "high": 4}
-    requested = max(int(batch_size), 1) if batch_size is not None else None
-    chunks, current, capacity = [], [], 10
-    for window in windows:
-        tier = str(window.get("review_tier", "standard"))
-        window_capacity = tiers.get(tier, 6)
-        if requested is not None:
-            window_capacity = min(window_capacity, requested)
-        next_capacity = min(capacity, window_capacity) if current else window_capacity
-        if current and (len(current) >= next_capacity or not editor_items_fit(current + [window])):
-            chunks.append(current)
-            current, capacity, next_capacity = [], 10, window_capacity
-        if not editor_items_fit([window]):
-            raise ValueError("single Editor review capsule exceeds context budget; split the main shot")
-        current.append(window)
-        capacity = next_capacity
-    if current:
-        chunks.append(current)
-    return chunks or [windows]
-
-
-def _batch_risk(items):
-    tiers = {"light": 0, "standard": 1, "high": 2}
-    risks = [dispatch_risk(item) for item in items]
-    selected = max(risks, key=lambda risk: tiers.get(risk.get("tier"), 1)) if risks else dispatch_risk({})
-    reasons = []
-    for risk in risks:
-        for reason in risk.get("reasons", []):
-            if reason not in reasons:
-                reasons.append(reason)
-    return {
-        "tier": selected.get("tier", "standard"),
-        "reasons": reasons or ["normal_contract"],
-        "batch_capacity": int(selected.get("batch_capacity", 6)),
-        "review_scope": selected.get("review_scope", "bounded_scene_window"),
-    }
-
-
-def _composer_group_id(item):
-    """Return an explicit continuity-chain id, falling back to main shot id."""
-    metadata = item.get("qa_metadata", {}) if isinstance(item.get("qa_metadata"), dict) else {}
-    fight = item.get("fight_continuity", metadata.get("fight_continuity", {}))
-    if isinstance(fight, dict) and fight.get("sequence_id"):
-        return "fight:%s" % fight["sequence_id"]
-    for key in (
-        "continuous_interaction_id", "interaction_chain_id", "continuous_chain_id",
-        "sequence_id", "performance_chain_id",
-    ):
-        value = item.get(key, metadata.get(key))
-        if value:
-            return "chain:%s" % value
-    return "shot:%s" % str(item.get("shot_id", "") or item.get("subshot_id", ""))
-
-
-def _last_group_start(items, respect_chains):
-    if not items:
-        return 0
-    last_id = _composer_group_id(items[-1]) if respect_chains else str(items[-1].get("subshot_id", ""))
-    index = len(items) - 1
-    while index > 0:
-        current_id = _composer_group_id(items[index - 1]) if respect_chains else str(items[index - 1].get("subshot_id", ""))
-        if current_id != last_id:
-            break
-        index -= 1
-    return index
+    return _plan_dynamic_master_chunks(items, _compact_composer_item, force_single=force_single)
 
 
 def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_lock_cache_path):
@@ -781,6 +620,23 @@ def _repair_fields(issues):
             if token in text and token not in fields:
                 fields.append(token)
     return fields or ["validator_reported_field"]
+
+
+def _retry_examples(retry_context_path):
+    """Return only structural examples relevant to the failed retry fields."""
+    context = _load_optional_json(retry_context_path)
+    fields = set()
+    for item in context.get("items", []) if isinstance(context.get("items"), list) else []:
+        fields.update(str(value) for value in item.get("repair_fields", []) or [])
+    for values in context.get("fields_by_main_shot", {}).values() if isinstance(context.get("fields_by_main_shot"), dict) else []:
+        fields.update(str(value) for value in values or [])
+    skill_root = os.path.dirname(os.path.dirname(__file__))
+    paths = []
+    if fields & {"full_prompt", "camera_beat_map", "dramatic_design", "coverage_role"}:
+        paths.append(os.path.join(skill_root, "references", "format_example.txt"))
+    if fields & {"performance_contract", "continuity_contract", "reroll_control", "qa_metadata"}:
+        paths.append(os.path.join(skill_root, "references", "quality_exemplar", "S2-03_high_quality_example.txt"))
+    return [path for path in paths if os.path.isfile(path)]
 
 
 def _write_scene_lock_cache(run_dir, items, dispatch_dir, group_tag):

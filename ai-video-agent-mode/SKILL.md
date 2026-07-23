@@ -30,7 +30,7 @@ description: >
 8. Phase 2、Phase 6、Phase 8 的语义产出必须由 Agent 完成；格式归一化、合并和验证优先使用脚本。
 9. 台词、OV、OS 按 `引用ID—类型—人物—原文` 确定性锁定，逐字逐标点保留；语气、停顿和情绪只写在独立控制字段，不得改写原文。OV/OS 无口型同步；无原文时禁止新增台词、旁白或内心声。
 10. 失败阶段必须修复或重派，不能跳过门禁。
-11. Composer dispatch 的 constraints sidecar 必须含可迁移的中性结构规则；只有当前 packet 缺少某个必要模式时才按需读取中性示例，禁止每批重复全量加载。
+11. Composer dispatch 的 constraints sidecar 必须含可迁移的中性结构规则；首轮不得读取格式或质量示例。只有重试包的失败字段属于 `full_prompt/camera_beat_map/dramatic_design/coverage_role` 时才附带格式示例，属于三份合同或 `qa_metadata` 时才附带质量示例；禁止每批重复全量加载。
 12. `full_prompt` 只允许模型可执行内容。工程字段、QA 结论、戏剧分析、负面词和迁移说明必须放在独立 JSON 字段；导出时从此规范正文自动派生无栏目标签的“即梦直接投喂提示词”，用户复制后者而不是审阅结构。
 13. 恢复项目时重新运行 `dispatch_cache.py`；只接受当前契约生成的 packet，禁止复用旧 packet、旧 constraints sidecar 或仍持有旧规则上下文的 Agent。本技能直接维护一个当前契约，不提供旧版兼容、迁移分支或双写结构。
 14. 人物镜必须先完成三份合同再写提示词：`qa_metadata.performance_contract` 绑定表情、身体动作、视线、反应延迟、观众共情锚点、画面可读瞬间、可读的画面推进、运镜压力、场景压力和落幅残留；`qa_metadata.continuity_contract` 绑定起止状态、位置、视线、道具、光源和下一镜承接；`qa_metadata.reroll_control` 只评估 T2V 的身份、服装、左右站位、空间、动作、镜头和口型风险，并给出人工首轮验证建议。缺任一合同不得进入导出。

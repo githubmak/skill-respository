@@ -38,6 +38,7 @@ from modec_v4 import (
 )
 from negative_prompts import PLACEHOLDER, is_fight_context
 from shot_semantics import quality_contract as derive_quality_contract
+from contract_registry import QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
 
 
 FORBIDDEN_ENGINES = ["C4D", "Octane", "Blender", "Redshift", "Arnold", "Unreal Engine"]
@@ -76,10 +77,7 @@ def validate_composer_output(path, run_dir=None, report_path=None):
         if sid in seen:
             issues.append(prefix + "subshot_id重复")
         seen.add(sid)
-        for field in (
-            "shot_id", "subshot_id", "duration", "full_prompt", "negative_prompt",
-            "qa_metadata", "generation_control",
-        ):
+        for field in sorted(SHOT_REQUIRED_FIELDS):
             if field not in shot:
                 issues.append(prefix + f"缺少字段{field}")
 
@@ -340,14 +338,7 @@ def _validate_metadata(prefix, metadata, director_item, full_prompt, audio_enabl
     if not isinstance(metadata, dict):
         issues.append(prefix + "qa_metadata必须是对象")
         return
-    for field in (
-        "dramatic_goal", "performance_priority", "action_budget", "start_state", "end_state",
-        "performance_contract", "continuity_contract", "reroll_control", "dialogue_refs", "dialogue_events",
-        "editorial_mode", "camera_beat_map", "sequence_context", "quality_contract",
-        "dramatic_design", "duration_design", "viewpoint", "visual_hierarchy",
-        "entry_strategy", "reveal_strategy", "focus_strategy",
-        "temporal_transition_contract",
-    ):
+    for field in QA_REQUIRED_FIELDS:
         if field not in metadata:
             issues.append(prefix + f"qa_metadata缺少{field}")
     if len(str(metadata.get("dramatic_goal", "")).strip()) < 6:

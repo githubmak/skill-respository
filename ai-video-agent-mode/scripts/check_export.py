@@ -34,6 +34,7 @@ from modec_v4 import (
     visibility_issues,
 )
 from negative_prompts import PLACEHOLDER, is_fight_context
+from contract_registry import QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
 
 
 FORBIDDEN_ENGINES = ["C4D", "Octane", "Blender", "Redshift", "Arnold", "Unreal Engine"]
@@ -68,10 +69,6 @@ def check_export(md_path, run_dir, quality_mode=False):
         if not condition:
             failures.append(f"{label}: {detail}")
 
-    required = {
-        "shot_id", "subshot_id", "duration", "full_prompt", "negative_prompt",
-        "qa_metadata", "generation_control",
-    }
     ids = [shot.get("subshot_id", "") for shot in shots if isinstance(shot, dict)]
     expected_ids = set(plan_map)
 
@@ -80,7 +77,7 @@ def check_export(md_path, run_dir, quality_mode=False):
     check(3, "Single shots authority", set(package) == {"contract_version", "shots"} and isinstance(shots, list), str(sorted(package)))
     check(4, "Subshot coverage", set(ids) == expected_ids, f"{len(set(ids))}/{len(expected_ids)}")
     check(5, "Unique subshots", len(ids) == len(set(ids)), f"{len(ids) - len(set(ids))} duplicate(s)")
-    missing_fields = sum(1 for shot in shots if not required.issubset(shot))
+    missing_fields = sum(1 for shot in shots if not SHOT_REQUIRED_FIELDS.issubset(shot))
     check(6, "Required shot fields", missing_fields == 0, f"{missing_fields} incomplete")
     bad_duration = sum(1 for shot in shots if not isinstance(shot.get("duration"), (int, float)) or shot.get("duration", 0) <= 0)
     check(7, "Positive durations", bad_duration == 0, f"{bad_duration} invalid")
@@ -146,12 +143,7 @@ def check_export(md_path, run_dir, quality_mode=False):
             negative_ambiguous += 1
 
         metadata = shot.get("qa_metadata")
-        if not isinstance(metadata, dict) or any(key not in metadata for key in (
-            "dramatic_goal", "performance_priority", "action_budget", "start_state", "end_state",
-            "performance_contract", "continuity_contract", "reroll_control", "dialogue_refs", "dialogue_events",
-            "dramatic_design", "duration_design", "viewpoint", "visual_hierarchy",
-            "entry_strategy", "reveal_strategy", "focus_strategy",
-        )):
+        if not isinstance(metadata, dict) or any(key not in metadata for key in QA_REQUIRED_FIELDS):
             metadata_missing += 1
             metadata = metadata if isinstance(metadata, dict) else {}
         plan_item = plan_map.get(sid, {})

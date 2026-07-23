@@ -13,7 +13,8 @@ from emotion_camera_audit import audit as emotion_camera_audit
 from spatial_storyboard import build_spatial_storyboard_reference
 from validate_scene_locks import validate
 from shot_semantics import dispatch_risk, temporal_transition_candidate
-from dispatch_cache import _dynamic_master_chunks, _editor_review_chunks
+from dispatch_cache import _dynamic_master_chunks, _editor_review_chunks, _retry_examples
+from contract_registry import QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
 from dispatch_receipts import heartbeat as receipt_heartbeat, issue as issue_receipt, load_and_verify as verify_dispatch_receipt
 from pipeline_state import load_state, record_heartbeat as state_heartbeat, set_agent_id
 from record_batch_provenance import record as record_provenance, verify as verify_provenance
@@ -23,6 +24,8 @@ from pipeline_runner import _local_phase_valid, _materialize
 from check_export import INTERNAL_TITLE_LEAK
 from preflight_check import PLACEHOLDER_CHARACTER_NAMES
 from validate_durations import _estimate_action_seconds
+from build_shotplan import _estimate_dialogue_seconds as split_dialogue_seconds
+from validate_durations import _estimate_dialogue_seconds as validated_dialogue_seconds
 
 
 def run():
@@ -41,6 +44,8 @@ def run():
         _write(nested_locks_path, nested_locks)
         assert any("light_source must be a non-empty flat string" in issue for issue in validate(nested_locks_path))
         assert _estimate_action_seconds("我看见你了", {"dialogue_refs": ["D1"]}) == 0.0
+        long_dialogue = "我最近砸资源的那个男明星跟我告白了，现在我有两个男朋友了，怎么办宝宝？"
+        assert split_dialogue_seconds(long_dialogue) == validated_dialogue_seconds(long_dialogue)
         plan = {"shots": [{"shot_id": "S1", "scene": "场景A", "subshots": [{"subshot_id": "S1-01"}]},
                           {"shot_id": "S2", "scene": "场景A", "subshots": [{"subshot_id": "S2-01"}]}]}
         package = {"shots": [{"shot_id": "S1", "source_subshot_ids": ["S1-01"], "duration": 4, "full_prompt": "x", "qa_metadata": {}},
@@ -54,6 +59,15 @@ def run():
         assert "full_prompt" not in windows[0]["next"]
         assert editor_items_fit(windows)
         assert check({"items": [{"shot_id": "S1"}]}) > 0
+        assert {"shot_id", "subshot_id", "duration", "full_prompt", "negative_prompt", "qa_metadata", "generation_control"} == SHOT_REQUIRED_FIELDS
+        assert "temporal_transition_contract" in QA_REQUIRED_FIELDS
+        retry_context_path = os.path.join(run_dir, "retry_context.json")
+        _write(retry_context_path, {"items": [{"repair_fields": ["full_prompt"]}]})
+        assert [os.path.basename(path) for path in _retry_examples(retry_context_path)] == ["format_example.txt"]
+        _write(retry_context_path, {"items": [{"repair_fields": ["performance_contract"]}]})
+        assert [os.path.basename(path) for path in _retry_examples(retry_context_path)] == ["S2-03_high_quality_example.txt"]
+        _write(retry_context_path, {"items": [{"repair_fields": ["full_prompt", "qa_metadata"]}]})
+        assert {os.path.basename(path) for path in _retry_examples(retry_context_path)} == {"format_example.txt", "S2-03_high_quality_example.txt"}
         assert INTERNAL_TITLE_LEAK.search("S02 | S1-02 | | 11.6s | dialogue | latent")
         assert not INTERNAL_TITLE_LEAK.search("### S1-02｜11.6秒")
         assert "主角" in PLACEHOLDER_CHARACTER_NAMES

@@ -190,21 +190,11 @@ def split_dialogue(text, max_chars_per_segment=None, max_seconds=None, reserve_s
 
 
 def _estimate_dialogue_seconds(text):
-    text = str(text or "")
-    import re as _re_est
-    spoken_chars = len(_re_est.sub(r"[\s，,、；;：:。！？!?…—‘’“”\"'「」『』（）()【】\[\]]", "", text))
-    short_pauses = len(_re_est.findall(r"[，,、]", text))
-    medium_pauses = len(_re_est.findall(r"[；;：:]", text))
-    sentence_ends = len(_re_est.findall(r"[。！？!?]+", text))
-    long_pauses = len(_re_est.findall(r"…{2,}|—{2,}", text))
-    seconds = (
-        spoken_chars / 4.5
-        + short_pauses * 0.25
-        + medium_pauses * 0.35
-        + sentence_ends * 0.5
-        + long_pauses * 0.6
-    )
-    return max(round(seconds, 1), 0.5)
+    # Phase 1 splitting must use the exact lower-bound model that preflight
+    # validates.  A local approximation here previously under-budgeted long
+    # dialogue and made fresh runs fail their own duration gate.
+    from validate_durations import _estimate_dialogue_seconds as estimate
+    return estimate(text)
 
 if __name__ == "__main__":
     import sys

@@ -9,7 +9,7 @@ import json, os, re, sys
 def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
     sys.path.insert(0, os.path.dirname(__file__))
     from build_shotplan import split_dialogue
-    from validate_durations import _estimate_action_seconds
+    from validate_durations import _estimate_action_seconds, _estimate_dialogue_seconds
 
     # Load config if provided, else use defaults
     if config_path and os.path.exists(config_path):
@@ -128,12 +128,12 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
             else:
                 speech_kind = "\u53f0\u8bcd"
             is_narr = speech_kind in ("OS", "OV")
-            segments = split_dialogue(content, max_seconds=max_shot_duration, reserve_seconds=0.8)
+            segments = split_dialogue(content, max_seconds=max_shot_duration, reserve_seconds=0.5)
             entries = {}
             for i, (seg, dur) in enumerate(segments):
                 k = f"D{dialogue_counter + i}"
                 entries[k] = seg
-                dialogue_duration_map[k] = dur
+                dialogue_duration_map[k] = _estimate_dialogue_seconds(seg, tone)
             for k, v in entries.items():
                 dialogue_map[k] = v
                 dialogue_event_map[k] = {
@@ -313,7 +313,10 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
 
 
 def _visible_beat_texts(text):
-    parts = [part.strip() for part in re.split(r"[。！？；;]+", str(text or "")) if part.strip()]
+    # Source punctuation provides ordered, non-invented beats for long
+    # dialogue. This lets duration validation distinguish real rhetorical
+    # progression from a line stretched with atmosphere or residue.
+    parts = [part.strip() for part in re.split(r"[。！？；;，、]+", str(text or "")) if part.strip()]
     return parts[:3] or [str(text or "").strip()]
 
 
@@ -453,10 +456,10 @@ def _group_character_name(characters):
     return "其他所有人"
 
 
-def _interaction_duration(turns, reserve_seconds=0.8, turn_pause=0.35):
+def _interaction_duration(turns, reserve_seconds=0.5):
     turns = list(turns or [])
     speech = sum(float(turn.get("speech_duration", 0) or 0) for turn in turns)
-    return round(max(2.5, speech + reserve_seconds + max(0, len(turns) - 1) * turn_pause), 1)
+    return round(max(2.5, speech + reserve_seconds), 1)
 
 
 def _pack_interaction_beats(beats, max_shot_duration):
