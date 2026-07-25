@@ -13,7 +13,7 @@ from emotion_camera_audit import audit as emotion_camera_audit
 from spatial_storyboard import build_spatial_storyboard_reference
 from validate_scene_locks import validate
 from shot_semantics import dispatch_risk, temporal_transition_candidate
-from dispatch_cache import _dynamic_master_chunks, _editor_review_chunks, _retry_examples
+from dispatch_cache import _dynamic_master_chunks, _editor_review_chunks, _retry_examples, prepare_dispatch_packets
 from contract_registry import QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
 from dispatch_receipts import heartbeat as receipt_heartbeat, issue as issue_receipt, load_and_verify as verify_dispatch_receipt
 from pipeline_state import load_state, record_heartbeat as state_heartbeat, set_agent_id
@@ -52,6 +52,14 @@ def run():
                              {"shot_id": "S2", "source_subshot_ids": ["S2-01"], "duration": 4, "full_prompt": "y", "qa_metadata": {}}]}
         _write(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"), plan)
         _write(os.path.join(run_dir, ".cache", "composer", "merged.prompt_package.json"), package)
+        packet_paths = prepare_dispatch_packets(run_dir, "master_production", 6)
+        assert packet_paths
+        packet = _read(packet_paths[0])
+        assert "local_validation_command" in packet and packet["local_validation_command"][-2] == "--run-dir"
+        assert packet.get("context_policy", {}).get("quality_policy", "").startswith("Execution hints are speed aids")
+        assert all("execution_hints" in item for item in packet.get("items", []))
+        assert "grid_storyboard" in GATES and GATES["grid_storyboard"]["output"] == [".cache/grid_storyboard/packages.json"]
+        assert not any("execution_hints" in shot for shot in package["shots"])
         windows = build(run_dir)
         assert len(windows) == 2 and windows[0]["current"]["shot_id"] == "S1" and windows[1]["previous"]["shot_id"] == "S1"
         assert windows[0]["capsule_version"] == "editor-review-v1"
@@ -168,8 +176,16 @@ def run():
         assert [len(batch) for batch in _dynamic_master_chunks(light_items)] == [10]
         high_items = [_master_item("F%02d" % index, "两人打斗后互相格挡") for index in range(1, 6)]
         high_risk = dispatch_risk(high_items[0])
-        assert high_risk["tier"] == "high" and high_risk["batch_capacity"] == 4
-        assert [len(batch) for batch in _dynamic_master_chunks(high_items)] == [4, 1]
+        assert high_risk["tier"] == "high" and high_risk["batch_capacity"] == 2
+        assert [len(batch) for batch in _dynamic_master_chunks(high_items)] == [2, 2, 1]
+        dialogue_items = [_master_item("D%02d" % index, "角色A说了一段很长的解释台词，角色B保持倾听") for index in range(1, 7)]
+        for item in dialogue_items:
+            item["source_subshots"][0]["dialogue_refs"] = ["DIALOGUE"]
+            item["source_subshots"][0]["dialogue_events"] = [{"text": "这是一段超过三十二个字的对白，用来证明单纯长对白不会被拆到复杂动作级别。"}]
+            item["source_subshots"][0]["duration"] = 9
+        dialogue_risk = dispatch_risk(dialogue_items[0])
+        assert dialogue_risk["tier"] == "high" and dialogue_risk["batch_capacity"] == 3
+        assert [len(batch) for batch in _dynamic_master_chunks(dialogue_items)] == [3, 3]
         large_items = [_master_item("L%02d" % index, "动作" + "x" * 5000) for index in range(1, 3)]
         assert [len(batch) for batch in _dynamic_master_chunks(large_items)] == [1, 1]
         editor_windows = [dict(windows[0], review_tier="light") for _ in range(10)]

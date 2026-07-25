@@ -130,6 +130,10 @@ def validate_composer_output(path, run_dir=None, report_path=None):
         if isinstance(source_ids, list) and source_ids:
             plan_item = _aggregate_context(plan_map, source_ids)
             director_item = _aggregate_context(director_map, source_ids)
+            # The current pipeline has no separate Director artifact. Phase 1
+            # carries the authoritative dialogue ledger and subshot facts.
+            if not director_item:
+                director_item = plan_item
             expected_sources = main_plan.get(str(shot.get("shot_id", "")), [])
             if expected_sources and source_ids != expected_sources:
                 issues.append(prefix + "source_subshot_ids必须与主镜头计划一致")
@@ -237,7 +241,7 @@ def _load_main_plan(run_dir):
 def _aggregate_context(index, source_ids):
     """Use subshot facts for semantic QA while preserving main-shot identity."""
     values = [index.get(str(identifier), {}) for identifier in source_ids]
-    values = [value for value in values if isinstance(value, dict)]
+    values = [value for value in values if isinstance(value, dict) and value]
     if not values:
         return {}
     result = dict(values[0])

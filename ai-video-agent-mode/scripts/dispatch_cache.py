@@ -15,7 +15,7 @@ if not os.environ.get("PYTHONPYCACHEPREFIX") and not getattr(sys, "pycache_prefi
     sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(__file__))
 from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_prefix
-from shot_semantics import quality_contract, temporal_transition_candidate
+from shot_semantics import dispatch_risk, quality_contract, temporal_transition_candidate
 from context_budget import check as check_context_budget
 from batch_planner import analysis_chunks as _analysis_chunks, batch_risk as _batch_risk
 from batch_planner import dynamic_master_chunks as _plan_dynamic_master_chunks
@@ -154,6 +154,36 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
                 "Do not paste unchanged source content back into chat."
             ),
         }
+        if phase == "master_production":
+            packet["local_validation_command"] = [
+                "python3",
+                os.path.join(os.path.dirname(__file__), "validate_composer_output.py"),
+                batch_output,
+                "--run-dir",
+                run_dir,
+            ]
+            packet["context_policy"] = {
+                "fixed_global_context": [
+                    "project_config_path",
+                    "constraints_path",
+                    "composer_scaffold_path",
+                    "scene_lock_cache_path",
+                ],
+                "per_shot_context": [
+                    "packet.items[].source_subshots",
+                    "packet.items[].dialogue_events",
+                    "packet.items[].dramatic_design",
+                    "packet.items[].duration_design",
+                    "packet.items[].execution_hints",
+                ],
+                "history_policy": "Do not read full source history by default. Use scene locks plus packet items; cross-shot continuity must come from packet sequence_context, continuity fields, and scaffold locks.",
+                "quality_policy": "Execution hints are speed aids only. They cannot remove required qa_metadata fields, Composer validation, provenance, Editor passes, final validation, export checks, or grid_storyboard behavior.",
+            }
+            packet["instruction"] += (
+                " Composer batch output top-level must be exactly {\"shots\": [...]}; "
+                "do not include contract_version in the batch file. Before final response, run local_validation_command. "
+                "If validation fails, patch only the reported fields and rerun until PASS."
+            )
         if retry_context_path:
             packet["retry_context_path"] = retry_context_path
             packet["retry_mode"] = retry_mode
@@ -323,7 +353,7 @@ def _write_constraints_sidecar(run_dir, phase, dispatch_dir, dispatch_tag):
             "full_prompt contains exactly 生成规格/主体与空间锁定/主镜头连续规则/子镜头组/光照、声音与稳定约束; "
             "Within every time range, lead with one in-focus subject and screen position, then one trigger/action, one visible performance proof, voice/lip-sync boundary, and only the stability controls needed now. Do not repeat already-locked style, wardrobe, light, space, or generic prohibitions. Replace abstract outcome language with visible evidence; do not spend duration or characters on filler. "
             "negative_prompt is a sibling field containing only {{NEGATIVE_PROMPT_AUTO_INJECT}}; QA and generation-control data stay in sibling objects. "
-            "The performance timeline uses 2-3 continuous decimal ranges from 0.0 to exact duration. Never invent reference-asset paths."
+            "For continuous_take, the performance timeline uses one continuous decimal range from 0.0 to exact duration; for shot_group, use 2-3 contiguous ranges. Never invent reference-asset paths."
         ),
         "editor_pass2": "Use §B/§C for review context. Do not rewrite format-only issues; return semantic review JSON only.",
     }.get(phase, "Follow the referenced phase contract.")
@@ -689,7 +719,120 @@ def _compact_composer_item(item):
     copied.pop("generation_control", None)
     copied["scene_lock_ref"] = str(item.get("scene", "") or "__default__")
     copied["composer_scaffold_ref"] = str(item.get("subshot_id", ""))
+    copied["execution_hints"] = _composer_execution_hints(item)
     return copied
+
+
+def _composer_execution_hints(item):
+    risk = dispatch_risk(item)
+    sources = item.get("source_subshots")
+    sources = sources if isinstance(sources, list) and sources else [item]
+    visible = _visible_characters(item, sources)
+    dialogue_events = [
+        event for source in sources if isinstance(source, dict)
+        for event in source.get("dialogue_events", []) or []
+        if isinstance(event, dict)
+    ]
+    dialogue_text_length = sum(len(str(event.get("text", "") or "")) for event in dialogue_events)
+    duration = _safe_float(item.get("duration", 0))
+    reasons = risk.get("reasons", [])
+    editorial_mode = str(item.get("editorial_mode", "continuous_take") or "continuous_take")
+    template = _composer_template(reasons, visible, dialogue_events, item)
+    return {
+        "template": template["name"],
+        "risk": risk.get("tier", "standard"),
+        "reasons": reasons,
+        "duration_mode": _duration_mode(duration, reasons),
+        "visible": visible,
+        "fill_order": template["fill_order"],
+        "checks": _composer_preflight_checks(editorial_mode, visible, dialogue_events, reasons, dialogue_text_length),
+    }
+
+
+def _composer_template(reasons, visible, dialogue_events, item):
+    if "fight_or_force" in reasons:
+        return {
+            "name": "fight_causal_unit",
+            "fill_order": ["initiator", "direction", "contact_or_judgment", "feedback", "end_lock"],
+        }
+    if "prop_transfer" in reasons:
+        return {
+            "name": "prop_information_transfer",
+            "fill_order": ["prop_start", "transfer_or_refusal", "detail", "recipient_state", "carryover"],
+        }
+    if "shot_group" in reasons or item.get("editorial_mode") == "shot_group":
+        return {
+            "name": "motivated_shot_group",
+            "fill_order": ["beat1_subject", "beat1_trigger", "one_handoff", "beat2_subject", "residue"],
+        }
+    if dialogue_events and len(visible) > 1:
+        return {
+            "name": "dialogue_relationship_lock",
+            "fill_order": ["speaker", "listener", "one_listener_reaction", "screen_lr", "mouth_boundary", "residue"],
+        }
+    if dialogue_events:
+        return {
+            "name": "single_speaker_performance",
+            "fill_order": ["speaker", "face", "body", "breath", "voice", "residue"],
+        }
+    if len(visible) > 1:
+        return {
+            "name": "relationship_blocking_or_movement",
+            "fill_order": ["primary", "supporting_pos", "one_change", "screen_dir", "residue"],
+        }
+    return {
+        "name": "stable_insert_or_single_action",
+        "fill_order": ["subject", "scene_anchor", "one_action_or_state", "camera", "residue"],
+    }
+
+
+def _duration_mode(duration, reasons):
+    if "fight_or_force" in reasons:
+        return "fight_one_causal_unit"
+    if duration <= 2.5:
+        return "single_micro_action"
+    if duration <= 6:
+        return "one_or_two_linked_actions"
+    return "continuous_dialogue_or_process"
+
+
+def _composer_preflight_checks(editorial_mode, visible, dialogue_events, reasons, dialogue_text_length):
+    checks = [
+        "top=shots",
+        "priority=visible",
+        "quality_evidence=literal_fragments",
+        "contracts_visible_in_prompt",
+    ]
+    if editorial_mode == "continuous_take":
+        checks.append("continuous_take=one_range")
+    else:
+        checks.append("shot_group=2-3_ranges_one_handoff")
+    if dialogue_events:
+        checks.append("dialogue_exact+breath")
+    if dialogue_text_length >= 32:
+        checks.append("long_dialogue=no_extra_plot")
+    if "fight_or_force" in reasons:
+        checks.append("fight_continuity=start_contact_end")
+    return checks
+
+
+def _visible_characters(item, sources):
+    values = item.get("visible_characters", item.get("characters", [])) or []
+    if not values:
+        values = [
+            character for source in sources if isinstance(source, dict)
+            for character in (source.get("visible_characters", source.get("characters", [])) or [])
+        ]
+    if isinstance(values, str):
+        values = [part.strip() for part in re.split(r"[;；,，、/]+", values) if part.strip()]
+    return list(dict.fromkeys(str(value).strip() for value in values if str(value).strip()))
+
+
+def _safe_float(value):
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _scene_costumes(costume_map, scene):

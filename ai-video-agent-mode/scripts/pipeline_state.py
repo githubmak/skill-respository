@@ -1,6 +1,8 @@
 """Pipeline state machine - phase progress, retries, agent ID tracking."""
 import json, os, time
 
+from pipeline_runtime import atomic_json
+
 # ========== Constants ==========
 MAX_RETRIES = 3          # Block when failure count reaches 3: initial attempt + 2 retries
 TIMEOUT_SECONDS = 900    # Default sub-agent timeout
@@ -92,8 +94,7 @@ def load_state(run_dir):
 
 def save_state(run_dir, state):
     path = get_state_path(run_dir)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
+    atomic_json(path, state)
 
 
 def set_agent_id(run_dir, phase, agent_id, dispatch_id=None):

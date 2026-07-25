@@ -228,7 +228,18 @@ def dispatch_risk(item):
     if transition.get("eligible"):
         reasons.append("temporal_transition")
     if reasons:
-        return {"tier": "high", "reasons": reasons, "batch_capacity": 4, "review_scope": "full_scene_window"}
+        # High risk is not one size.  Keep simple long-dialogue work reasonably
+        # grouped, but reduce the blast radius for shots that often force
+        # expensive full-batch retries.
+        complex_reasons = {
+            "fight_or_force",
+            "prop_transfer",
+            "shot_group",
+            "high_reroll_risk",
+            "temporal_transition",
+        }
+        capacity = 2 if any(reason in complex_reasons for reason in reasons) or len(reasons) > 1 else 3
+        return {"tier": "high", "reasons": reasons, "batch_capacity": capacity, "review_scope": "full_scene_window"}
     is_non_character = bool(sources) and all(is_true_non_action_subshot(source) for source in sources if isinstance(source, dict))
     single_stable = len(unique_characters) <= 1 and not has_shot_group and not any(
         token in text for token in FIGHT_OR_FORCE_WORDS + PROP_TRANSFER_WORDS

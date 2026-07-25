@@ -3,9 +3,10 @@
 import json
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(__file__))
-from pipeline_state import load_state
+from pipeline_state import AGENT_STALE_GRACE_SECONDS, PHASE_TIMEOUT_SECONDS, TIMEOUT_SECONDS, load_state
 
 
 def fill_slots(run_dir, phase, packet_paths, max_workers=None):
@@ -19,14 +20,21 @@ def fill_slots(run_dir, phase, packet_paths, max_workers=None):
     capacity = int(max_workers or (config.get("execution", {}) or {}).get("worker_slots", 4) or 4)
     state = load_state(run_dir)
     dispatches = state.get("phases", {}).get(phase, {}).get("dispatches", {})
-    active = sum(1 for entry in dispatches.values() if isinstance(entry, dict) and entry.get("status") in ("running", "waiting"))
+    active = sum(
+        1 for entry in dispatches.values()
+        if isinstance(entry, dict)
+        and entry.get("status") in ("running", "waiting")
+        and not _stale_dispatch(entry, phase)
+    )
     free = max(capacity - active, 0)
     selected = []
     for path in sorted(packet_paths):
         packet = _load(path)
         dispatch_id = packet.get("dispatch_id")
         status = (dispatches.get(dispatch_id) or {}).get("status")
-        if status in ("running", "waiting", "done", "partial"):
+        if status in ("done", "partial"):
+            continue
+        if status in ("running", "waiting"):
             continue
         if free <= 0:
             break
@@ -55,6 +63,14 @@ def _load(path):
             return json.load(handle)
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def _stale_dispatch(entry, phase):
+    heartbeat = entry.get("heartbeat_at") or entry.get("spawn_time")
+    if not isinstance(heartbeat, (int, float)):
+        return False
+    threshold = PHASE_TIMEOUT_SECONDS.get(phase, TIMEOUT_SECONDS) + AGENT_STALE_GRACE_SECONDS
+    return time.time() - heartbeat > threshold
 
 
 if __name__ == "__main__":
