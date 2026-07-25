@@ -33,9 +33,15 @@ Do not repeat these blocks verbatim inside every shot.
 
 ## Negative prompt
 
-Create `## 负面提示词｜直接复制` immediately after `## 全局锁帧模板`, containing exactly:
+Create `## 负面提示词｜直接复制` immediately after `## 全局锁帧模板`, containing the fixed baseline plus anti-stiffness terms exactly:
 
-`五官漂移、换脸、脸型变形、发型错乱、服装变色、手指畸形、肢体穿模、多手多臂、非说话者口型乱动、口型错位、嘴部崩坏、背景重构、人物瞬移、站位互换、道具漂浮穿手、画面跳帧、过度磨皮、模糊失焦、夸张翻白眼`
+`五官漂移、换脸、脸型变形、发型错乱、服装变色、手指畸形、肢体穿模、多手多臂、非说话者口型乱动、口型错位、嘴部崩坏、背景重构、人物瞬移、站位互换、道具漂浮穿手、画面跳帧、过度磨皮、模糊失焦、夸张翻白眼、人物僵硬、全身静止、无眨眼、空洞呆滞眼神、面部无任何变化、肢体不动、木偶式静止、死板、定格、面部僵硬`
+
+## Lock tables
+
+`## 人物位置与拍摄侧锁定表` must be created before shot cards. Each location/group row states: fixed static anchor, physical topology, group-internal order, screen zone, depth layer, facing/eyeline, distance/barrier/contact object, camera side(s) allowed, and forbidden swaps. Same-side people must be one group first, e.g. `A和B为同侧邻位双人组，A组内左位，B组内右位，二人并排、不隔物、不面对面；C在隔物对面，不插入二人之间`.
+
+`## 场景与道具锁定表` must separately lock every active prop: opening owner, exact table/hand/pocket/contact position, reachable character, movement path if transferred, release/final rest position, and forbidden drift. Props cannot be moved from another character's side unless the direct prompt first stages reach/contact.
 
 ## Fixed shot card
 
@@ -46,6 +52,9 @@ Every shot must use this field order:
 
 【镜号】
 [Shot ID]，[duration]s，[main generation risk / first validation target]。
+
+【出现人物】
+[One visible character or visible group per line. Do not include OS/system voices unless they have a visible entity.]
 
 【画面描述｜直接复制】
 [Actual Jimeng feed prompt, <=500 Chinese characters.]
@@ -84,7 +93,7 @@ Every shot must use this field order:
 ## Direct-copy usage
 
 - Positive prompt for one clip: `全局锁帧模板 + 【画面描述｜直接复制】 + 【必要约束｜可追加】`.
-- Negative prompt for one clip: `负面提示词｜直接复制 + shot-specific negative risks from 必要约束`.
+- Negative prompt for one clip: paste `负面提示词｜直接复制` in the negative field, then add only a few shot-specific negative risks when truly needed. Do not stuff negative words or full stability lists into the positive `【画面描述｜直接复制】`.
 - QA fields are production contracts; their core information must already be compressed into `【画面描述｜直接复制】`.
 
 ## Cross-scene flashback handoff
@@ -99,6 +108,6 @@ For a memory, dream, imagination, montage, or time/place change, deliver at leas
 
 Before shot cards, create one row per scene. Use only observable natural language:
 
-`scene ID | fixed objects and their relative positions | character physical slots | screen left/centre/right and depth | facing and eye-lines | movement lanes and empty areas | prop owner/state | light source | facts that may change`.
+`scene ID | fixed objects and their relative positions | character physical slots and same-side/opposite-side topology | group-internal order | screen left/centre/right and depth | facing and eye-lines | distance/barrier/contact object | movement lanes and empty areas | prop owner/state | light source | facts that may change`.
 
-Each shot reads its opening facts from this table and writes only its changes to `【状态继承】`. If a new camera view is used, restate the visible facts; never replace them with abstract position jargon.
+Each shot reads its opening facts from this table and writes only its changes to `【状态继承】`. If a new camera view is used, restate the visible facts; never replace them with abstract position jargon. For same-side seated/standing groups, keep the group as one physical unit in every direct prompt before assigning foreground/background, for example: `A和B是同侧邻位双人组，A在组内左位，B在组内右位，二人并排、不隔物、不面对面；C在隔物对面，不插入二人之间`.
