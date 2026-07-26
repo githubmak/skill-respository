@@ -1,28 +1,16 @@
-# Agent Protocol
+# Agent 协议
 
-The supervisor owns the pipeline loop. It executes deterministic local phases
-and asks the Codex host to dispatch Agent packets only when
-`workflow_supervisor.py` returns `host_dispatch_required`. The host must resume
-the same supervisor after recording verified provenance; it must not treat a
-worker completion as a user-confirmation point.
+状态监督器负责整个流程循环。它先执行本地确定性阶段；只有当
+`workflow_supervisor.py` 返回 `host_dispatch_required` 时，才请求 Codex 宿主派发 Agent packet。宿主记录并验证 provenance 后，必须继续同一个状态监督器；worker 完成不能被当成“等待用户确认”的节点。
 
-Only three dispatch roles exist:
+当前只允许三类派发角色：
 
-- **Scene Lock Agent:** one `scenes[]` record per scene; it writes immutable production facts only.
-- **Master Production Agent:** one T2V `shots[]` task per main shot, with `source_subshot_ids` for internal beats.
-- **Editor Pass 2 Agent:** one bounded scene-window review per packet; it writes only `windows[]` review records and may request field-scoped repairs.
+- **Scene Lock Agent：** 每个场景写一条 `scenes[]` 记录，只产出不可变制作事实。
+- **Master Production Agent：** 每个主镜写一条 T2V `shots[]` 任务，`source_subshot_ids` 用于记录该主镜内部节拍来源。
+- **Editor Pass 2 Agent：** 每个 packet 审查一个有边界的场景窗口，只写 `windows[]` 审查记录，并可请求按字段修复。
 
-Workers write only `packet._batch_output_path`, then provenance is recorded. A running worker emits a heartbeat. Retries receive the validator issue store and patch only named fields of the owning main-shot task. No other Agent role or phase may be dispatched.
+Worker 只能写 `packet._batch_output_path`，随后记录 provenance。运行中的 worker 必须记录心跳。重试包只接收 validator 问题库，并且只修复所属主镜任务中被点名的字段。不得派发其他 Agent 角色或阶段。
 
-For every packet returned by the supervisor, the host performs exactly this
-sequence: spawn one worker, call `register_dispatch_agent.py`, record at least
-one `record_dispatch_heartbeat.py` result while running, wait for a parseable
-batch file, call `record_batch_provenance.py`, then resume the supervisor.
+状态监督器每返回一个 packet，宿主必须按固定顺序执行：spawn 一个 worker，调用 `register_dispatch_agent.py`，运行期间至少记录一次 `record_dispatch_heartbeat.py`，等待可解析的 batch 文件，调用 `record_batch_provenance.py`，然后继续状态监督器。
 
-Before Editor Pass 2, the local `pre_editor_gate.py` writes one SHA-256-keyed
-deterministic-plus-semantic audit artifact for the merged package. A
-deterministic failure blocks dispatch; semantic findings are passed to Editor
-for repair. Editor still performs Agent semantic review for every window:
-`light` windows inspect the current shot plus carryover, while `high` windows
-inspect the full bounded scene window. A light tier never waives an Agent pass,
-final validation, or export QA.
+进入 Editor Pass 2 前，本地 `pre_editor_gate.py` 会为合并包写一份按 SHA-256 缓存的“确定性 + 语义”审查产物。确定性失败会阻断派发；语义问题交给 Editor 修复。Editor 仍需对每个窗口执行 Agent 语义复审：`light` 窗口审当前主镜和承接摘要，`high` 窗口审完整有界场景窗口。`light` 风险层级绝不免除 Agent 复审、最终验证或导出质检。

@@ -1,153 +1,181 @@
-# Shot Patterns
+# 镜头模式参考
 
-Load this only when the source contains multi-person blocking, table/vehicle/door scenes, props, movement, flashbacks, or when validation finds spatial/camera ambiguity.
+只有源文包含多人物调度、桌边/车辆/门口场景、道具、移动、闪回，或校验发现空间/机位歧义时，才读取本文件。
 
-## Fixed space phrase bank
+## 固定空间语句库
 
-Use stable phrases; do not freely rewrite high-risk topology.
+使用稳定语句；不要自由改写高风险物理关系。
 
-## Candidate selection rule
+## 候选模板选择规则
 
-Scene phrases are candidates, not automatic templates.
+场景语句只是候选，不是自动套用模板。
 
-Before using one, confirm source evidence for:
+使用前先确认源文是否支持：
 
-- fixed objects/anchors;
-- entrance/exit or movement lane;
-- character slots and posture;
-- barrier/contact object;
-- active props and reachability.
+- 固定物或锚点；
+- 入口/出口或移动路线；
+- 人物槽位和姿态；
+- 隔物或接触物；
+- 活动道具和可触达关系。
 
-If any required fact conflicts with the source, keep only the compatible part and return to the generic order:
+如果任何必要事实与源文冲突，只保留兼容部分，并回到通用顺序：
 
-`static anchor -> physical slots -> screen/depth -> facing/eyeline -> distance/barrier -> prop owner/state`.
+`固定锚点 -> 物理槽位 -> 画面位置/纵深 -> 身体朝向/视线 -> 距离/隔物 -> 道具归属/状态`。
 
-Do not invent a throne, long table, car door, palace gate, or same-side table pair just because the genre suggests it.
+不要因为题材像，就凭空发明御座、长桌、车门、宫门或同侧桌位。
 
-### Same-side table pair with opposite-side character
+### 同侧桌边双人组与对面人物
 
 `同一张长餐桌横贯画面下半区，桌沿与画框平行。A和B是桌内侧同排双人组；以二人坐在桌内侧、面朝餐桌对面的身体左右为基准，A在B左手边，B在A右手边；二人肩线并排、相距半身，桌沿在二人身前，不隔桌、不面对面、不一前一后。C在餐桌对面，与双人组隔桌，不插入A和B之间。`
 
-For oblique camera:
+斜向机位写法：
 
 `摄影机在餐桌对面偏A这一端约25-35度斜向拍过桌面；A是同侧双人组近端，B是同侧双人组远端，二人仍同侧邻座、不隔桌、不面对面、不换位。`
 
-### Foreground-shoulder dialogue
+### 前景肩线对白
 
 `摄影机在A肩后，A前景肩线弱虚化占画面1/5，镜头对准B；A身体面向B，B身体面向A，二人隔桌/车门/门框/半身距离，B清晰说话或反应。A闭口并在关键词后做低幅度反应。`
 
-Paired view:
+配对反打：
 
 `摄影机在B肩后，B前景肩线弱虚化占画面1/5，镜头对准A；B身体面向A，A身体面向B，两人保持同一隔物、距离、背景锚点和视线方向。`
 
-Strict shot/reverse-shot pair:
+严格正反打配对：
 
 `若镜头A是“摄影机在A肩后拍B”，下一条反打必须写成“摄影机在B肩后拍A”，不可改写成B右前方、A侧前方或模糊机位。两条都重复同一对话轴：A身体面向B，B身体面向A，二人相距半身/一米/隔着同一固定物；同一手持道具、胸前/腰侧/桌面位置和背景锚点必须逐条重申。正反打中前景肩线只占画面边缘，不能替代身体面向。`
 
-### Orientation reset after shot change
+### 切换景别后的朝向重置
 
 `切换景别、肩后反打、正反打、从行走转对白、从柜台/门口/车窗动作转对白时，新镜第一句重新写完整身体朝向：A身体面向B，B身体面向A，二人相距半身/一米/隔着固定物。若上一镜A身体面向道路/柜台/门外，本镜必须先写A转身停稳再开口；只有回避、拒绝、离开、被阻挡时才允许身体仍面向出口或固定物、仅头部转向对方。`
 
-### Vehicle / car door
+### 车辆 / 车门
 
-`车身/车窗/车门先作固定隔物。A在车外画面右前朝左前，B在车内左后朝右前；二人隔车窗或打开车门约1米。司机只在后座门旁服务位，手握门把手，不遮挡主角脸。`
+`车身/车窗/车门先作固定隔物。A在车外画面右前朝左前，B在车内左后朝右前；二人隔车窗或打开车门约1米。司机站在后座车门外侧靠车尾半步，手握门把手，不遮挡主角脸。`
 
-### Door / hallway / gate
+### 门口 / 走廊 / 大门
 
 `门框/立柱/道路边线先作固定锚点。A在门内侧/路边画面右前，目标方向写成画面左侧道路/门外通道；人物移动写方向、距离、步速、脚掌贴地和尾帧。`
 
-### Palace / hall authority scene
+### 柜台 / 窗口 / 签字台 / 缴费台
 
-Use only if the source has a hall/seat/desk/door hierarchy.
+不要写 `来客位`、`办事位`、`工作人员位`、`服务位`。这些词太抽象，不能稳定告诉即梦人物在隔物哪一侧。必须拆成固定物、内外侧、画面区域、身体朝向和可触达关系。不要把下面示例当固定模板；示例里的画面左右、人物数量、签字台结构、工作人员是否入画，都必须按源文、上一镜尾帧和当前机位重新判断。
+
+可变槽位：
+
+- `固定物`：柜台、窗口、签字台、缴费台是否真实存在；不存在就不要写。
+- `工作人员`：是否可见；若可见，写在柜台内侧/窗口内侧；若不入画，只写柜台内侧或窗口背景。
+- `办事者`：在柜台外侧/签字台外沿；若要和身后人说话，先写身体从柜台方向转向对方并停稳。
+- `同伴`：在办事者身侧、身后半身距离、一米外或画外；写清是否同在柜台外侧、是否可触达办事者或道具。
+- `隔物`：柜台、签字台、玻璃窗口、刷卡终端；写清谁和谁隔着它，谁与谁同侧。
+- `道具`：银行卡、签字笔、纸、手机、缴费单在谁哪只手里，或在台面哪一侧；道具移动必须写接触、路径、松手和尾帧。
+- `画面区域`：按当前机位分配画面左/右/前/后，不继承示例默认值。
+
+可用示例：
+
+- 只有主角签字：`柜台外侧的签字台占画面下半区，A站在签字台前，身体面向台面，右手持笔贴近纸面；工作人员不入画，柜台内侧只保留模糊窗口背景。`
+- 有工作人员对话：`柜台横在二人之间，工作人员在柜台内侧，A站在柜台外侧，身体面向工作人员；二人隔柜台半米，签字台在A手边。`
+- 有身后同伴：`A站在柜台外侧签字台前，B站在A左后半步，同在柜台外侧，身体转向A右手；工作人员在柜台内侧弱虚化，B能触达A手腕，但不能越过柜台。`
+
+签字/刷卡近景：
+
+`手部特写或斜俯拍近景，画面只保留签字台外沿、纸面、笔、刷卡终端和相关人物的手。先写哪只手持笔/银行卡、手腕是否被接触、道具在台面哪一侧；若手腕被握住，不能同时自由签字，必须先写握手松开或引导手移动的可见路径。`
+
+柜台对白：
+
+`平视中近景，工作人员在柜台内侧清晰或半身可见，办事者在柜台外侧身体面向柜台；二人之间隔着柜台/签字台。若办事者转身和身后角色说话，先写办事者身体离开柜台方向并转向对方，身体停稳后再开口。`
+
+### 宫殿 / 大厅权力场
+
+只有源文明确存在大厅、座位、桌案、门口层级时才使用。
 
 `殿内固定物先入画：长案/御座/屏风/殿门/烛台择一到二个作锚点。主体A位于主控位置坐姿或站姿，主体B位于A一侧半身距离；入口/殿门位于画面某侧。移动人物从入口方向进入或被拖向出口方向，A与B若不参与动作则以低幅度静态反应形成静动对比。`
 
-### Hotel / lobby / banquet hall
+### 酒店 / 大堂 / 宴会厅
 
-Use only if the source has public interior anchors.
+只有源文明确存在公共室内锚点时才使用。
 
 `水晶灯/金色灯带/香槟桌/大堂立柱/电梯口择一到二个作固定锚点。主对话人物分置画面左/右或前景肩线/清晰主体，宾客/人流只在远处虚化区低幅活动，不抢焦、不做可读对白。`
 
-## Prop transfer contracts
+## 道具转移规则
 
-No prop may flash into hand. Always confirm the giver can reach the prop and the receiver can physically receive it before writing the transfer.
+道具不能凭空闪现到手里。写转移前，必须确认递出者能拿到道具，接收者也能在物理上接到道具。
 
-One prop:
+单一道具：
 
 `道具X开头在A右手/胸前/桌面A正前方；A用右手接触X外沿，沿桌面/手臂方向移动到B正前方/手中，A松手；尾帧X停在B正前方/由B持有。`
 
-From bag/pocket:
+从包或口袋取出：
 
 `道具X开头在A手包/外套口袋内；A右手打开包口/伸入口袋，完整取出X并停在A胸前或两人之间；B已经身体面向A且站在可触达距离；B右手接触X边缘，A松手；尾帧X稳定在B右手。`
 
-Receiver behind or turned away:
+接收者在身后或背向：
 
 `若B在A身后、侧后、被第三人挡住、背向A、或距离超过一臂，先写定位镜：B身体转向A/走到A面前半身距离/A走到B面前；尾帧二人形成可递交关系。下一镜再写道具从A手包/手中到B手中的接触与松手。`
 
-Two-prop exchange:
+两个道具交换：
 
 `先写X和Y起点。A先移动X到B正前方并松手，再移动Y到A正前方并松手。尾帧X/Y各自停在新位置，A双手离开，不再拿回。`
 
-If a prop is not within reach, do not let that character move it; write a reaction or first stage a reach path.
+如果道具不在可触达范围内，不要让人物直接移动它；先写人物反应，或先写接近/伸手路径。
 
-Barrier verbs:
+隔物动作：
 
-- Only gaze crosses barrier: `A站直/坐直留在隔物本侧，上半身不前压，视线越过桌沿/车窗线落到目标。`
-- Intentional lean: `A脚步留在原位，上半身前倾10-15度，单/双手撑在隔物边缘，胸口不越过中线。`
+- 只有视线越过隔物：`A站直/坐直留在隔物本侧，上半身不前压，视线越过桌沿/车窗线落到目标。`
+- 主动前倾：`A脚步留在原位，上半身前倾10-15度，单/双手撑在隔物边缘，胸口不越过中线。`
 
-## Camera trigger matrix
+## 镜头触发矩阵
 
-- New place/group/changed blocking: wide or medium establish with 0.5-0.8s opening hold.
-- Dialogue exchange: foreground-shoulder or two-person medium close; one visible mouth at a time.
-- Long line: split by speaker/emotion turn or use shoulder view; do not keep many listeners static.
-- Important listener reaction: start on speaker for lip-sync, then push/shift focus to listener after mouth close.
-- Tiny face/hand/prop detail: close-up/insert or medium-to-close push; no fixed medium.
-- Prop ownership change: hand/prop close or relation-to-prop compound shot.
-- Pressure: oblique relation shot -> push/focus to eyes/fist/prop; keep body on its side of barrier.
-- Comedy pause: relation frame, slight pull-back if useful, 0.3-0.6s closed-mouth hold.
-- Walking/chase/exit: side-follow along named lane; do not overtake or cross in front.
-- Flashback/montage: independent short clips with stable head/tail handles; transition in QA/sound only.
+- 新地点、新群体关系或调度变化：用全景/中景建立关系，开头保留 0.5-0.8 秒稳定停顿。
+- 对白交锋：用前景肩线或双人中近景；同一时间只让一个可见人物开口。
+- 长台词：按说话者或情绪转折拆分，或使用肩后镜头；不要让多个听者长时间僵住。
+- 重要听者反应：先拍说话者稳定口型，说话者闭嘴后再推近或转焦到听者。
+- 细小脸部/手部/道具细节：用特写/插入，或从中景推到近景；不要用固定中景硬拍微表情。
+- 道具归属变化：用手部/道具近景，或人物关系 + 道具的复合镜头。
+- 压力：先用斜向关系镜头，再推近或落焦到眼睛、拳头或道具；身体保持在隔物本侧。
+- 喜剧停顿：用关系镜头，需要时轻微拉开，保留 0.3-0.6 秒闭口停顿。
+- 行走/追逐/离场：沿明确路线同侧跟拍；不要超过人物或从人物前方横穿。
+- 闪回/蒙太奇：用独立短片段，头尾留稳定画面；转场只写在校验/声音字段里。
 
-## Shot group templates
+## 镜头组模板
 
-Use these when one direct prompt becomes too dense. Each subshot is a normal full card.
+当一条直接提示词过密时使用。每个子镜头仍然是一张完整镜头卡。
 
-### Phone/photo reveal during dialogue
+### 对白中展示手机/照片
 
-- `Sx-A relation lock`: `3秒，中景，固定商业街/室内锚点。A在画面右前朝左前停步，B在A左后半身距离，二人同向/斜对关系清楚；A看向B，B准备取物但手还未进入包。`
-- `Sx-B prop close`: `3秒，手机/小包近景。B先松开与A的接触，右手打开小包外袋，取出手机停在胸前；手机不凭空出现，A只保留边缘肩线弱虚化。`
-- `Sx-C dialogue/reaction`: `4-6秒，中近景。B手机已在右手胸前，拇指点出照片后屏幕斜向A；B眼睛发亮，以指定语气说原文台词。A侧头看手机，听见后闭口做延迟微反应。摄影机可轻推或转焦一次。`
+- `示例子镜头一｜关系锁定`：`3秒，中景，固定商业街/室内锚点。A在画面右前朝左前停步，B在A左后半身距离，二人同向/斜对关系清楚；A看向B，B准备取物但手还未进入包。`
+- `示例子镜头二｜道具近景`：`3秒，手机/小包近景。B先松开与A的接触，右手打开小包外袋，取出手机停在胸前；手机不凭空出现，A只保留边缘肩线弱虚化。`
+- `示例子镜头三｜对白/反应`：`4-6秒，中近景。B手机已在右手胸前，拇指点出照片后屏幕斜向A；B眼睛发亮，以指定语气说原文台词。A侧头看手机，听见后闭口做延迟微反应。摄影机可轻推或转焦一次。`
 
-### Table pressure after prop swap
+### 道具交换后的桌边压力
 
-- `Sx-A relation lock`: `2-3秒，三人桌边中景，先锁长桌、同侧双人组、桌对面人物和两只餐盘最终位置。`
-- `Sx-B prop/hand pressure`: `2-4秒，桌面近景或中景推近。焦点落餐盘/整只手/拳头；压迫者留在隔桌边缘，不越桌、不插入同侧二人之间。`
-- `Sx-C reaction/dialogue`: `3-6秒，中近景或越肩。说话者口型清晰，其他可见人物闭口并做低幅反应。`
+- `示例子镜头一｜关系锁定`：`2-3秒，三人桌边中景，先锁长桌、同侧双人组、桌对面人物和两只餐盘最终位置。`
+- `示例子镜头二｜道具/手部压力`：`2-4秒，桌面近景或中景推近。焦点落餐盘/整只手/拳头；压迫者留在隔桌边缘，不越桌、不插入同侧二人之间。`
+- `示例子镜头三｜反应/对白`：`3-6秒，中近景或越肩。说话者口型清晰，其他可见人物闭口并做低幅反应。`
 
-### Entering character with line
+### 人物入场并说话
 
-- `Sx-A entry`: `2-4秒，中景，固定门/桌/道路锚点，写入画方向、距离、步速、尾帧站位。`
-- `Sx-B line`: `3-7秒，中近景或越肩，从新站位开头，角色说原文台词，听者闭口反应。`
+- `示例子镜头一｜入场`：`2-4秒，中景，固定门/桌/道路锚点，写入画方向、距离、步速、尾帧站位。`
+- `示例子镜头二｜台词`：`3-7秒，中近景或越肩，从新站位开头，角色说原文台词，听者闭口反应。`
 
-## Safe camera wording
+## 稳定运镜写法
 
-- Push: `前0.5秒锁住锚点和槽位；随后摄影机沿直线推近0.2-0.4米，焦点落到A眼睛/整只手/道具，尾帧保留原人物位置。`
-- Pull: `摄影机沿原方向后退0.3-0.5米，露出空位/隔物距离，人物槽位不变。`
-- Side follow: `摄影机胸高沿人物同侧平行跟拍0.8-1.2米，不超过人物。`
-- Turn: `摄影机从A脸小幅左/右摇15-25度到A视线目标B，共享背景锚点不变。`
-- Focus: `焦点用0.3秒从A眼睛转到道具/监听者，只转一次。`
+- 推近：`前0.5秒锁住锚点和槽位；随后摄影机沿直线推近0.2-0.4米，焦点落到A眼睛/整只手/道具，尾帧保留原人物位置。`
+- 拉开：`摄影机沿原方向后退0.3-0.5米，露出空位/隔物距离，人物槽位不变。`
+- 侧跟：`摄影机胸高沿人物同侧平行跟拍0.8-1.2米，不超过人物。`
+- 摇镜：`摄影机从A脸小幅左/右摇15-25度到A视线目标B，共享背景锚点不变。`
+- 转焦：`焦点用0.3秒从A眼睛转到道具/监听者，只转一次。`
 
-## Emotion-function action bank
+## 情绪功能动作库
 
-Pick by dramatic function, then adapt to current prop/body state. Use 1-2 visible leaks per beat; avoid repeating the same leak across many shots.
+先按戏剧功能选择动作，再适配当前道具和身体状态。每个节拍只使用 1-2 个可见情绪泄露点，避免多个镜头重复同一种泄露动作。
 
-- Controlled authority: gaze lands slowly; fingers release/steady a prop; shoulders stay still; voice slows with low volume and flat tail.
-- Hidden panic / guilt: eyelashes flick once; breath shortens; hand presses clothing/bag/phone; feet angle toward exit.
-- Suppressed anger: jaw tightens; whole hand closes at side or on prop edge; gaze fixes on target; voice lowers and tail cuts off.
-- Awkward comedy: action freezes half a beat; eyes search between people/props; mouth opens slightly then closes; shoulders shrink or settle.
-- Gentle test / persuasion: body leans forward under 10°; volume lowers; brows soften; tail rises slightly.
-- Cold refusal: gaze does not chase; shoulders stay square; hand leaves the prop; voice is even with downward tail.
-- Sudden realization: eyes stop on clue; breath holds; hand pauses mid-action; camera may push to eyes or clue.
-- Public embarrassment: slow blink; lips press; hand withdraws to table/body edge; listener glances away without speaking.
-- Grief/defeat: shoulders drop; gaze falls to empty space/prop; hand loosens; voice thins or becomes post-silence.
-- Curiosity/eating瓜: eyes brighten; body turns a little toward speaker; hand pauses over food/phone; voice tail rises.
+- 克制权威：视线缓慢落定；手指松开或稳住道具；肩膀不动；音量低，语速变慢，尾音平。
+- 隐藏慌乱/心虚：睫毛轻颤一次；呼吸变短；手压衣料、包或手机；脚尖偏向出口。
+- 压抑愤怒：下颌收紧；整只手在身侧或道具边缘握住；视线锁定目标；声音变低，尾音切断。
+- 尴尬喜剧：动作冻结半拍；眼神在人物/道具之间寻找；嘴微张后闭合；肩膀缩起或沉下。
+- 温和试探/劝说：身体前倾不超过 10 度；音量降低；眉眼放软；尾音略微上扬。
+- 冷拒：视线不追对方；肩线保持平直；手离开道具；声音平稳，尾音下落。
+- 突然意识到：眼睛停在关键线索上；屏息；手停在半动作；镜头可推近眼睛或线索。
+- 公开难堪：慢眨眼；嘴唇压住；手退回桌边或身体边；听者不说话地移开视线。
+- 失落/败下阵来：肩膀下沉；视线落向空处或道具；手松开；声音变薄或沉默后再说。
+- 好奇/吃瓜：眼睛发亮；身体略向说话者转去；手停在食物/手机上方；尾音上扬。

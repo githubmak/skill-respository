@@ -218,6 +218,11 @@
 
 - `shot_size`：大特写、特写、中近景、中景、全景、大远景。
 - `movement_type`：固定、推、拉、摇、移、跟、升、降、俯、仰、环绕、甩、变焦、旋转、手持、穿梭。
+- `shot_function` 枚举中文含义：`establish`=建立空间，`reveal`=揭示信息，`entrance`=人物出场，`reaction`=人物反应，`confrontation`=对峙冲突，`transition`=转场承接，`action`=动作推进，`dialogue`=对白/台词镜，`object`=物件/道具信息。
+- `duration_rationale` 枚举中文含义：`simple_action`=简单动作，`continuous_dialogue`=连续对白，`continuous_interaction`=连续互动，`continuous_action`=连续动作，`sustained_reveal`=持续揭示。
+- `editorial_mode` 枚举中文含义：`continuous_take`=一条连续摄影轨迹，`shot_group`=同一 T2V 任务内 1–3 个由表演重音触发的连续子镜。
+- `camera_response` 枚举中文含义：`hold`=保持机位，`push_in`=推近，`pull_back`=拉远，`reframe`=单向重构图，`rack_focus`=拉焦，`hard_cut`=无转场硬切，`cut_detail`=切入细节，`follow`=跟随。
+- `quality_contract.profile` 枚举中文含义：`environment`=环境镜，`object`=物件/道具镜，`action`=动作镜，`dialogue`=对白/台词镜，`dramatic`=强戏剧/关系张力镜。
 - `emotion_driver` 是运镜前置输入，人物镜必须填写，环境/物件镜可写中性 `N/A` 说明。Camera/Composer 不得新增其中没有的情绪结论。`emotion_driver.trigger/start_state/visible_leak/face_or_eyeline/voice_or_breath/end_residue/tension_intent/empathy_anchor` 必须与 `performance_contract` 同向，且关键可见证据进入 `子镜头组`。
 - `continuous_take` 每子镜只能有一个主要 `movement_type`；复合移动必须是同一方向的连续轨迹。`movement_detail` 必须说明固定机位是否允许极慢推近，并排除未授权的摇移、跟拍、拉焦或变焦；这只锁定摄影机，不得抹掉 `visual_progression` 中已确认的人物、道具、视线或关系变化。`shot_group` 使用 1–3 项 `camera_beat_map`，每项必须由同一 `narrative_beat_id` 下 `emotion_driver` 或 `performance_chain` 的表情、细部/道具泄露、身体承接、语气落点、道具状态变化或台词落点触发；每项明确发生时间、`focus_owner`、`focus_subject`、落幅景别、`camera_response`、机位/运动锁、屏幕锁、轴线承接、转场类型与状态承接。允许一次 `A→B` 的自然反打/切特写/移镜；同一即梦任务禁止 `A→B→A`、第二次人物交接或第二个独立剧情节拍，必须拆为下一 T2V 任务并交后期硬切。
 - `hard_cut` 只用于 `shot_group`，每个即梦任务最多一次，必须由具体表演重音触发并写明准确时间点；它表示无淡入淡出、无黑场、无特效过渡的瞬时硬切。切后必须重新写明景别、实焦主体、屏幕左右、轴线关系和可见承接，禁止只写“明确剪切”。若需要回切到切前人物，不得在本条继续写第二次硬切；以当前落幅作为剪辑接点，在下一条 T2V 的起幅继承状态。

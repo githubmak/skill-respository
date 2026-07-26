@@ -1,11 +1,11 @@
-# Output Template
+# 输出模板
 
-## Required Markdown structure
+## 必须使用的 Markdown 结构
 
-Generate this compact structure only. It separates material the user pastes into Jimeng from production notes that are needed only for complex shots.
+只生成以下紧凑结构。它会把用户真正粘贴进即梦的内容，和复杂镜头才需要看的制作说明分开。
 
 ```markdown
-# [Title] 即梦投喂分镜
+# [标题] 即梦投喂分镜
 
 ## 使用说明
 ## 全局锁定
@@ -16,41 +16,41 @@ Generate this compact structure only. It separates material the user pastes into
 ## 附录｜复杂镜头验证（按需）
 ```
 
-Do not output either appendix for ordinary delivery. Always perform the underlying checks internally.
+普通交付不要输出两个附录，但内部仍然要完成对应检查。
 
-## Global locks
+## 全局锁定
 
-Create `## 全局锁定` as short reusable blocks:
+把 `## 全局锁定` 写成简短、可复用的锁定块：
 
-- `G-style`: aspect ratio, visual style, platform, and quality words.
-- `G-character`: stable identity anchors and recurring clothing/body-state facts.
-- `G-scene`: 2-3 fixed anchors, light direction, color temperature, and background control for each location.
-- `G-state`: a compact current-state rule for recurring props or clothing only when the story needs it.
-- `G-ui` (only when needed): the UI type, side-safe zone, face-safe zone, maximum readable text, and whether the UI is post-production rather than generated in-scene.
+- `全局风格`：画幅比例、视觉风格、平台和质量词。
+- `人物锁定`：人物稳定身份锚点，以及会反复出现的服装/身体状态。
+- `场景锁定`：每个地点的 2-3 个固定锚点、光线方向、色温和背景控制。
+- `状态锁定`：仅在剧情需要时，写入反复出现的道具或服装当前状态规则。
+- `界面文字锁定`（仅必要时）：界面类型、侧边安全区、面部安全区、最多可读文字量，以及界面文字是后期叠字还是画内生成。
 
-Do not repeat these blocks in every shot. For one clip, paste `全局锁定 + 【画面描述｜直接复制】 + optional 【必要约束】` into the positive prompt field.
+不要在每个镜头里重复这些全局块。单条视频生成时，把 `全局锁定 + 【画面描述｜直接复制】 + 可选的【必要约束】` 粘进正向提示词。
 
-## Negative prompt
+## 负面提示词
 
-Create `## 通用负面提示词｜直接复制` immediately after the global locks. It contains this baseline once:
+在全局锁定后立即创建 `## 通用负面提示词｜直接复制`，并只写一次以下基础负面词：
 
 `五官漂移、换脸、脸型变形、发型错乱、服装变色、手指畸形、肢体穿模、多手多臂、非说话者口型乱动、口型错位、嘴部崩坏、背景重构、人物瞬移、站位互换、道具漂浮穿手、画面跳帧、过度磨皮、模糊失焦、夸张翻白眼、人物僵硬、全身静止、无眨眼、空洞呆滞眼神、面部无任何变化、肢体不动、木偶式静止、死板、定格、面部僵硬`
 
-Add only real shot-specific risks beside an individual shot. Never copy this list into the positive prompt.
+只有某个单独镜头确实有额外风险时，才在该镜头旁边补充镜头专属风险。不要把这整段负面词复制到正向提示词里。
 
-## Scene state table
+## 场景状态表
 
-Use one compact row per location or changed state:
+每个地点或状态变化使用一条精简记录：
 
-`scene/state ID | fixed anchor and light | people topology and screen zones | active prop/clothing owner and position | facts allowed to change`
+`场景/状态ID | 固定锚点和光线 | 人物物理关系和画面区域 | 活动道具/服装持有人和位置 | 允许变化的事实`
 
-Only list facts that recur across more than one shot. Do not create separate position, prop, and space tables for the same information.
+只列会跨多个镜头延续的事实。不要为同一信息重复创建人物位置表、道具表和空间表。
 
-For multi-scene stories, add a short `### 本集关键状态线` under this section. Track only cross-scene changes, such as `陆序穿着外套 -> 沈星雨披着外套 -> 沈星洲穿着外套`; do not repeat per-shot details already covered by `【状态继承】`.
+多场景故事在本节下添加简短的 `### 本集关键状态线`。只追踪跨场景变化，例如 `陆序穿着外套 -> 沈星雨披着外套 -> 沈星洲穿着外套`；不要重复 `【状态继承】` 已覆盖的逐镜细节。
 
-## Shot group and child cards
+## 镜头组和子镜头卡
 
-`#### S1-01｜镜头组总时长：7.5s` is a human-readable story-beat group, not an additional Jimeng prompt. It represents one concrete change in audience recognition. Put the visible cast once at group level. Sum all child-shot durations in that group and write the total beside the group ID. The consecutive `【镜号】1/2/3` blocks are separately generated Jimeng child shots; each has its own duration and one main task. Do not add `分镜1` headings.
+`#### S1-01｜镜头组总时长：7.5s` 是便于阅读的剧情节拍组，不是额外的即梦提示词。它代表一个具体的观众认知变化。可见人物只在组级写一次。把组内所有子镜头时长相加，并写在组号旁边。连续的 `【镜号】1/2/3` 是分别生成的即梦子镜头；每条都有自己的时长和一个主要任务。不要添加 `分镜1` 这类标题。
 
 ```text
 **场景一｜商业街**
@@ -65,86 +65,87 @@ For multi-scene stories, add a short `### 本集关键状态线` under this sect
 1，2s，普通。
 
 【画面描述｜直接复制】
-[Actual Jimeng positive prompt, normally 220-380 Chinese characters and never over 500. It naturally includes: shot size + camera placement/angle + static/one path + body/prop relation + one action or dialogue landing.]
+[实际可粘贴进即梦的正向提示词，通常 220-380 个中文字符，绝不超过 500 个中文字符。要自然包含：景别 + 机位/角度 + 静止或一条路径 + 人物/道具关系 + 一个动作或台词落点。]
 
 【表演与声音】
-[Only this child's new performance stage and sound.]
+[只写本子镜头新增的表演阶段和声音。]
 
 【状态继承】
-[Visible tail facts required by the next child or group.]
+[下一子镜头或下一组必须继承的尾帧可见事实。]
 
 【镜号】
 2，2.5s，普通。
 ...
 ```
 
-Every child contains exactly these four default fields, in this order:
+每个子镜头都按以下顺序包含四个默认字段：
 
 ```text
 【镜号】
-[Group ID-child number]，[duration]s，[普通 / 复杂]。
+[本组内子镜号]，[时长]s，[普通 / 复杂]。
 
 【画面描述｜直接复制】
-[Actual Jimeng positive prompt, normally 220-380 Chinese characters and never over 500.]
+[实际可粘贴进即梦的正向提示词，通常 220-380 个中文字符，绝不超过 500 个中文字符。]
 
 【表演与声音】
-[Only the active dialogue, OS, OV, system, ambience, or essential reaction: timing, mouth rule, pace, pause/tail tone, and motive. Write only this child's new performance stage, not the full emotional chain again. State sound priority when two or more layers overlap: visible dialogue > key sound effect > OS/system > ambience. Say “无台词” when applicable.]
+[只写本子镜头正在发生的对白、OS、OV、系统音、环境声或必要反应：时间、口型规则、语速、停顿/尾音和动机。只写本子镜头新增的表演阶段，不重复完整情绪链。两层或更多声音重叠时，写清声音优先级：可见对白 > 关键音效 > OS/系统音 > 环境声。没有台词时写“无台词”。]
 
 【状态继承】
-[Current visible opening facts for the next shot: position/facing, prop holder, clothing, emotional residue, and next-shot anchor.]
+[下一镜开头需要继承的当前可见事实：位置/朝向、道具持有人、服装、情绪余波和下一镜锚点。]
 ```
 
-Before writing a child, make this internal one-line declaration and then translate it into natural Chinese inside `【画面描述｜直接复制】`:
+写子镜头前，内部先建立这一行声明，再把它翻译成自然中文写进 `【画面描述｜直接复制】`：
 
 `可见主体 | 身体朝向锚点 | 头/眼转向（按需） | 相对站位或接触物 | 景别 | 机位侧/角度 | 静止或单一路径 | 本镜唯一落点`
 
-Do not output the declaration itself. A hand/object insert uses only the hands/props actually in frame; a relation frame names every visible person. Never use a fallback subject, conditional orientation, or generic camera phrase.
+不要输出这条内部声明。手部/物件插入镜头只写画面中真正出现的手和道具；关系镜头要写出每个可见人物。不要使用兜底主体、条件朝向或泛泛机位词。
 
-## Optional fields
+## 可选字段
 
-Add an optional field only when it prevents a real generation failure. Do not add empty placeholders.
+只有可选字段能防止真实生成失败时才添加。不要添加空占位字段。
 
 ```text
 【空间与道具锁定】
-[Use for three or more visible people, a table/door/vehicle topology, or any prop transfer. State reachable hand/path/release state.]
+[用于三人及以上可见人物、桌/门/车等物理关系，或任何道具转移。写清手能否触达、移动路径和松手状态。]
 
 【镜头执行】
-[Use for a non-static camera move, focus shift, or visual micro-action. State hold, path, focus target, and landing frame.]
+[用于非静止运镜、焦点变化或视觉微动作。写清起始停顿、路径、焦点目标和落点画面。]
 
 【口型分窗】
-[Use for two or more visible speakers, dialogue longer than 5 seconds, or a handoff where mouth timing is risky. Start with `优先级：口型 > 听者反应 > 运镜`. Name one visible speaker per window and the mouth-close boundary. If a camera move is also used, state that the listener holds still except breathing/gaze, or remove the move.]
+[用于两个或更多可见说话者、超过 5 秒的对白，或口型交接有风险的镜头。开头必须写 `优先级：口型 > 听者反应 > 运镜`。每个时间窗只写一个可见说话者，并写清何时闭嘴。如果同镜还有运镜，要说明听者除呼吸/视线外保持不动；否则取消运镜。]
 
 【镜内状态转换】
-[Use only when this card visibly changes body pose, hand/prop contact or owner, clothing, door/window/light/UI, relation distance, speaking mode, or event result before dialogue/reaction. State `起始：...；转换：...；终态直投句：...；台词/反应：...；尾帧直投句：...`. The two direct-copy sentences must appear verbatim in `【画面描述｜直接复制】`.]
+[仅在本卡对白或反应前，可见改变身体姿态、手/道具接触或归属、服装、门窗、灯光、UI、人物距离、说话状态或事件结果时使用。写成 `起始：...；转换：...；终态直投句：...；台词/反应：...；尾帧直投句：...`。两个直投句必须原句出现在 `【画面描述｜直接复制】` 中。]
 
 【剪辑衔接】
-[Use for a scene/time change, flashback, continuous prop transfer/action continuity, or an independent object/empty-space/result cutaway. For an independent cutaway, state `独立生成；后期接入...声音` and the preceding/following state anchor.]
+[用于场景/时间变化、闪回、连续道具转移/动作衔接，或独立物件/空景/结果切入。独立切入镜头必须写 `独立生成；后期接入...声音`，并写清前后状态锚点。]
 
 【必要约束】
-[At most three shot-specific positive constraints or risks.]
+[最多三条本镜头专属正向约束或风险提示。]
 
 【校验记录】
-[Use only for complex shots; never paste into Jimeng.]
+[只用于复杂镜头；不要粘贴进即梦。]
 ```
 
-## Direct-copy rules
+## 直接复制提示词规则
 
-- The direct prompt must work with the global locks and restate current visible state that changed in the prior shot.
-- Prioritize: current static anchor -> every visible person's body orientation toward a person/fixed object -> head/eye turn when different -> relative position/prop relationship -> shot size and camera placement/angle -> static hold or one path -> one main action and visible emotion -> dialogue or post-production voice rule -> tail state. `画面左/右` only supplements the relationship; it cannot replace body direction, distance, barrier, or camera side.
-- A new dialogue/reaction card after a shot-size change, reverse angle, over-shoulder, walking beat, exit beat, counter/cabinet/door action, or prop transfer must reopen with complete body-facing facts. For ordinary face-to-face dialogue, write `A身体面向B，B身体面向A` before camera placement. If the prior tail has a character facing a door, road, counter, phone, or third person, the next card must either restate the changed face-to-face body orientation or show a visible turn before the dialogue begins.
-- For a paired shot/reverse-shot, preserve the pair literally: the reverse of `机位在A肩后拍B，A前景肩线弱虚化` is `机位在B肩后拍A，B前景肩线弱虚化`, with the same distance/barrier, prop state, and background anchor repeated. Avoid loose reverse wording such as `B右前方` or `侧前方`, because it breaks the axis for AI generation.
-- Prop transfer prompts must prevent object flashing and impossible reach: state where the prop starts, whose hand retrieves or presents it, how the receiver is physically reachable, when receiver contact happens, when giver release happens, and where the prop rests at tail. If the receiver starts behind/side-behind/turned away/out of reach, first write a positioning child where the receiver turns or the giver walks to face them; do not combine that reposition, prop retrieval, transfer, and dialogue in one child.
-- Every child names a shot size and a camera state. For a static shot, state the camera side/angle and what the frame holds; for a moving shot, state one path and its landing target. Do not output bare `中近景固定` or leave camera information implicit.
-- Do not put headings, checklists, prohibitions, or generic acting theory into the direct prompt.
-- If a prompt needs more than one main generation task, split it. A subshot must restate its current visible facts rather than say `继承` or `延续上一镜`.
-- For a same-card state change, write the direct prompt in time order: start state, one visible change, stable result, then visible dialogue/reaction and tail state. Copy `终态直投句` and `尾帧直投句` from `【镜内状态转换】` verbatim into it. Do not describe a phone as both at an ear and already put away, a door as both open and closed, or a prop as held by two owners without its contact/release sequence.
-- For UI, phone text, payment alerts, or system overlays, reserve a side-safe zone and keep it off faces and active hands. Treat dense text as post-production unless the user explicitly needs it generated in-scene.
-- For a standalone object/empty-space/result cutaway, add `【剪辑衔接】`. In `【必要约束】`, use only needed constraints such as `本镜无人入画；不生成口型；保持上一镜同场景光线和道具终态`. Do not require a face -> empty space -> face hard cut inside one generated clip.
+- 直接提示词必须能配合全局锁定独立成立，并重写上一镜改变后的当前可见状态。
+- 信息优先级：当前固定锚点 -> 每个可见人物身体面向哪个人物或固定物 -> 头/眼方向与身体不同时再写头/眼转向 -> 相对位置/道具关系 -> 景别和机位/角度 -> 静止或一条路径 -> 一个主要动作和可见情绪 -> 台词口型或后期声音处理方式 -> 尾帧状态。`画面左/右` 只能补充关系，不能替代身体方向、距离、隔物或机位侧。
+- 柜台/窗口/签字台场景必须使用可见内外侧词，但不要固定套用示例左右。先确认本镜真实固定物和人物：柜台/窗口/签字台是否存在、工作人员是否入画、办事者在柜台外侧还是已转身离开、同伴是否同在柜台外侧且可触达、道具在手里还是台面上。不要写 `来客位`、`办事位`、`工作人员位`、`服务位`。可用词包括：`柜台内侧`、`柜台外侧`、`签字台外沿`、`窗口内侧`、`画面右前方/左后方`。示例只展示写法，不继承左右和人物数量：`民警在柜台内侧画面左后方，沈星雨站在柜台外侧的签字台前画面右前方，二人之间隔着签字台和柜台。`
+- 景别变化、反打、肩后、行走节拍、离场节拍、柜台/门/道具动作之后，新对白/反应卡必须重新写完整身体朝向。普通面对面对话要先写 `A身体面向B，B身体面向A`，再写机位。如果上一镜尾帧人物面向门、道路、柜台、手机或第三人，下一镜必须重写已变成面对面的身体朝向，或先展示转身后再开始对白。
+- 成对正反打必须保留成对写法：`机位在A肩后拍B，A前景肩线弱虚化` 的反打是 `机位在B肩后拍A，B前景肩线弱虚化`，同时重复相同距离/隔物、道具状态和背景锚点。不要写 `B右前方` 或 `侧前方` 这类松散反打，它会破坏 AI 生成轴线。
+- 道具转移提示词必须防止物品闪现和不可触达：写清道具从哪里开始、谁的哪只手取出或呈递、接收者如何处于可触达位置、何时接触、何时松手、尾帧道具停在哪里。如果接收者开头在身后/侧后/背向/不可触达，先写一个定位子镜头让接收者转身或让递交者走到其面前；不要把重新站位、取道具、递交和对白挤在同一子镜头。
+- 每个子镜头都要写景别和镜头状态。静止镜头要写机位侧/角度和画面承载任务；运动镜头要写一条路径和落点目标。不要只写 `中近景固定`，也不要让镜头信息隐含。
+- 不要把标题、检查清单、禁止事项或通用表演理论写进直接提示词。
+- 如果提示词需要超过一个主要生成任务，就拆分。子镜头必须重写当前可见事实，不要写 `继承` 或 `延续上一镜`。
+- 同卡状态变化按时间顺序写：开头状态、一个可见变化、稳定结果，然后才是可见对白/反应和尾帧状态。把 `【镜内状态转换】` 里的 `终态直投句` 和 `尾帧直投句` 原句复制进直接提示词。不要把手机同时写成“贴着耳朵”和“已经放下”，不要把门同时写成“开着”和“关上”，不要在没有接触/松手链的情况下把道具写成两个人同时持有。
+- UI、手机文字、付款提示、系统叠字要预留侧边安全区，避开脸、嘴和活动手。除非用户明确要求画内生成清晰文字，否则密集文字都按后期叠字处理。
+- 独立物件/空景/结果切入必须添加 `【剪辑衔接】`。在 `【必要约束】` 中只写真正需要的约束，例如 `本镜无人入画；不生成口型；保持上一镜同场景光线和道具终态`。不要要求模型在同一条生成视频里硬切“脸 -> 空景 -> 脸”。
 
-## Flashback handoff
+## 闪回衔接
 
-For memory, dream, montage, or a time/place change, use independent clips. The real-time trigger ends on a 0.5-0.8s stable physical hold; the inserted clip begins with a 0.5-1.0s stable scene anchor. Put only the visible states in the direct prompts; put a dissolve or sound bridge in `【剪辑衔接】`.
+回忆、梦境、蒙太奇或时间/地点变化使用独立片段。现实触发镜头结尾保留 0.5-0.8 秒稳定身体停顿；插入片段开头保留 0.5-1.0 秒稳定场景锚点。直接提示词只写可见状态；淡入淡出或声音桥写在 `【剪辑衔接】`。
 
-## Optional appendices
+## 可选附录
 
-`附录｜原文保留检查` is a concise source-beat checklist. `附录｜复杂镜头验证` lists only complex shot IDs, first-generation risks, and the required first-pass observation. Neither appendix is part of a normal Jimeng paste workflow.
+`附录｜原文保留检查` 是精简源文节拍核对表。`附录｜复杂镜头验证` 只列复杂镜头编号、首轮生成风险和需要优先观察的结果。两个附录都不属于普通即梦投喂流程。

@@ -1,164 +1,164 @@
-# Prompt and Performance Rules
+# 提示词与表演规则
 
-## Source fidelity
+## 原文保真
 
-Do not preserve only dialogue. Every source paragraph or beat, including `△` action description, narration, reaction, scene heading, flashback marker, OS/inner monologue, system line, crowd reaction, and prop/state change, must have a shot landing.
+不要只保留台词。源文里的每个段落或节拍都必须有镜头落点，包括 `△` 画面动作、叙述、人物反应、场景标题、闪回标记、OS/内心独白、系统音、人群反应、道具变化和状态变化。
 
-- Create `## 原文保留检查表` covering all source beats, not only spoken lines.
-- Columns: source index, original text excerpt, type, target shot, handling method.
-- Handling method must be one of: `直接入画面描述`, `压缩入画面描述`, `进入声音轴`, `进入状态继承`, `后期蒙太奇/字幕`, or `合并到相邻镜`.
-- Plot-driving non-dialogue beats must appear in `【画面描述｜直接复制】`, not only in QA fields.
-- Do not replace concrete source beats with vague wording such as `三人反应停住`, `气氛变化`, `众人议论`, or `关系尴尬` unless the visible action is also written.
+- 需要审计时，建立 `## 原文保留检查表`，覆盖所有源文节拍，而不是只覆盖可说出口的台词。
+- 检查表列名用中文：源文序号、原文摘录、类型、对应镜头、处理方式。
+- 处理方式只能从以下选项中选择：`直接入画面描述`、`压缩入画面描述`、`进入声音轴`、`进入状态继承`、`后期蒙太奇/字幕`、`合并到相邻镜`。
+- 推动剧情的非对白节拍必须进入 `【画面描述｜直接复制】`，不能只写在校验字段里。
+- 不要用 `三人反应停住`、`气氛变化`、`众人议论`、`关系尴尬` 这类含糊词替代具体源文节拍；除非同时写出可见动作。
 
-## Direct prompt style
+## 直接提示词写法
 
-`【画面描述｜直接复制】` is the final Jimeng feed prompt, not a director note.
+`【画面描述｜直接复制】` 是最终投喂即梦的正向提示词，不是导演备注。
 
-- Keep it `<=500` Chinese characters.
-- Use one readable narrative paragraph.
-- The paragraph must be semantic natural language, not a compressed state table. Avoid unclear coordinate fragments such as `A右、B左、道具不变`. Write drawable relations in full sentences: who sits/stands where, beside/across/behind whom, which direction they face, what object separates them, and where each active prop visibly rests.
-- Do not be lazy or under-specified. The direct prompt must be rich enough to generate the clip by itself: space, state, performance, voice, camera, reactions, and tail must be inside the paragraph. QA fields can expand them, but cannot be the only place they appear.
-- Put shot-specific identity/position/action/lip-sync/prop/camera information before style polish.
-- Include the minimum visible anchors when pasted alone: static scene anchor, subject screen zone, coordinate basis, front/back layer, facing relation, eyeline, distance/barrier object, active prop, core action, visible emotion leak, original dialogue or post-audio handling with tone, camera path, and tail state.
-- At the start of a continuation shot, translate the previous shot's tail state into current visible facts inside the direct prompt: likely visible characters, their screen zones/physical slots/facing, and prop positions/owners. Do not leave these facts only in `【状态继承】`.
-- For table/room/crowd shots, begin with an unmoving spatial anchor before people: table edge, doorframe, window, counter, sofa, bed, wall lamp, hallway line, vehicle door, or other fixed object that frames perspective.
-- Spatial words must be unambiguous: use `画面左/右/中/前景/背景` for screen position; use `在A的右侧/桌对面/身后半身距离` only for relationship position, and ideally pair both in one phrase.
-- Group-internal left/right must name its basis. Do not write only `组内左座/右座`. Write `以二人坐在桌内侧、面朝餐桌对面的身体左右为基准，A在B左手边，B在A右手边`; then separately state screen near/far or foreground/background if the camera is oblique.
-- Do not convert camera depth into story position: `左前景` means the subject is closer to camera, not necessarily across the table. Preserve source relationship first, then describe screen layer.
-- For stable seated scenes, include the physical topology phrase in the direct prompt when there is risk of swapping: `A和B是桌内侧同排双人组；以二人坐在桌内侧、面朝餐桌对面的身体左右为基准，A在B左手边，B在A右手边；二人椅背在同一条平行画框的水平深度线、肩线平齐、到镜头距离一致，相距半身，桌沿在二人身前，不隔桌、不面对面、不一前一后；C在餐桌对面，与双人组隔桌，不插入A和B之间`.
-- In direct prompts, do not write `继承`, `延续上一镜`, `空间保持`, `位置继承`, or `物理座位不变`. These are QA concepts. Replace with visible facts such as `A和B是同侧邻位双人组，A在组内左位，B在组内右位，道具X停在B正前方`.
-- Do not write trailing labels such as `声音语气：`, `表情：`, `动作：`, `表演增强：`, or `情绪：`. Rewrite them as embodied narrative.
-- Do not write editing/meta words such as `剪辑`, `切到`, `反打到`, or `下一镜执行`. Two-person shot intent must appear as a visible foreground shoulder, subject position, facing direction, and background anchor.
-- Do not use `脑海浮现`, `原剧情闪过`, or `后期插入` to carry plot-critical visible action inside another shot. If the viewer must see the action, split it into an independent flashback/montage shot with its own scene anchor, characters, action, and tail state.
-- If any visible important listener is present during another character's dialogue or OS, the direct prompt must give that listener a causally triggered low-amplitude reaction: gaze follow, blink, brow/mouth change, shoulder/hand/prop micro-action, or posture change. `闭口` alone is invalid for important listeners.
+- 控制在 `<=500` 个中文字符。
+- 使用一段可读的叙事自然语言。
+- 这一段必须是语义完整的自然语言，不能是压缩状态表。避免 `A右、B左、道具不变` 这类坐标碎片。用完整句子写出可画关系：谁坐/站在哪里，在谁旁边/对面/身后，身体面向哪里，中间有什么隔物，每个活动道具停在哪里。
+- 不要偷懒或写得过空。直接提示词本身必须足够生成片段：空间、状态、表演、声音、机位、反应和尾帧都要在这一段里。校验字段可以补充，但不能成为唯一出现位置。
+- 镜头专属的信息要放在风格修饰前：身份、位置、动作、口型、道具、机位。
+- 单独复制粘贴时，也至少包含这些可见锚点：固定场景锚点、主体画面区域、坐标基准、前后层级、身体朝向关系、视线、距离/隔物、活动道具、核心动作、可见情绪泄露、原台词或后期声音处理方式与语气、摄影机路径、尾帧状态。
+- 连续镜头开头，要把上一镜尾帧状态翻译成当前可见事实写进直接提示词：可见人物、画面区域/物理槽位/身体朝向、道具位置/持有人。不要只留在 `【状态继承】`。
+- 桌边、房间、人群镜头，人物出现前先写不动的空间锚点：桌沿、门框、窗、柜台、沙发、床、壁灯、走廊线、车门或其他能固定透视的物体。
+- 空间词必须无歧义：`画面左/右/中/前景/背景` 用于屏幕位置；`在A的右侧/桌对面/身后半身距离` 用于人物关系位置；最好在同一句里同时写两者。
+- 组内左/右必须说明基准。不要只写 `组内左座/右座`。写 `以二人坐在桌内侧、面朝餐桌对面的身体左右为基准，A在B左手边，B在A右手边`；如果机位斜切，再单独写画面近端/远端或前景/背景。
+- 不要把摄影机深度当成剧情站位：`左前景` 只表示更靠近镜头，不一定是桌对面。先保留源文人物关系，再描述画面层级。
+- 稳定坐姿场景有换位风险时，直接提示词必须加入物理拓扑句：`A和B是桌内侧同排双人组；以二人坐在桌内侧、面朝餐桌对面的身体左右为基准，A在B左手边，B在A右手边；二人椅背在同一条平行画框的水平深度线、肩线平齐、到镜头距离一致，相距半身，桌沿在二人身前，不隔桌、不面对面、不一前一后；C在餐桌对面，与双人组隔桌，不插入A和B之间`。
+- 直接提示词里不要写 `继承`、`延续上一镜`、`空间保持`、`位置继承` 或 `物理座位不变`。这些是校验概念。要改成可见事实，例如 `A和B是同侧邻位双人组，A在组内左位，B在组内右位，道具X停在B正前方`。
+- 不要在句末挂标签：`声音语气：`、`表情：`、`动作：`、`表演增强：`、`情绪：`。把它们改写成身体化叙事。
+- 不要写 `剪辑`、`切到`、`反打到` 或 `下一镜执行` 这类剪辑/元叙事词。双人镜头意图必须表现为可见前景肩线、主体位置、身体朝向和背景锚点。
+- 不要用 `脑海浮现`、`原剧情闪过` 或 `后期插入` 承载剧情关键画面。如果观众必须看到动作，就拆成独立闪回/蒙太奇镜头，给它自己的场景锚点、人物、动作和尾帧状态。
+- 如果画面里有重要听者，而另一个角色正在说台词或出现 OS，直接提示词必须给听者一个由台词触发的低幅反应：视线跟随、眨眼、眉/嘴变化、肩/手/道具微动作或姿态变化。只写 `闭口` 对重要听者无效。
 
-Recommended flow:
+推荐顺序：
 
-`[时长/画幅/镜头方式] + [静物锚点/物理槽位/画面分区] + [隔物/同侧/桌对面关系] + [触发原因] + [眼神/眉尾/嘴角/呼吸] + [手/肩背/步伐/道具动作] + [对白/OS/系统声处理与语气] + [摄影机物理路径/焦点/落幅] + [尾帧可见事实]`
+`[时长/画幅/镜头方式] + [静物锚点/物理槽位/画面分区] + [隔物/同侧/桌对面关系] + [触发原因] + [眼神/眉尾/嘴角/呼吸] + [手/肩背/步伐/道具动作] + [台词或后期声音处理方式与语气] + [摄影机物理路径/焦点/落幅] + [尾帧可见事实]`
 
-Weak: `她说：“...”；声音语气：语速轻快、尾音上扬。`
+弱写法：`她说：“...”；声音语气：语速轻快、尾音上扬。`
 
-Strong: `说话者眼睛一亮、身体微前倾，以轻快语速、尾音上扬说：“...”。`
+强写法：`说话者眼睛一亮、身体微前倾，以轻快语速、尾音上扬说：“...”。`
 
-Weak: `A皱眉，脑海浮现B被多人围住，C报警并挺身而出。`
+弱写法：`A皱眉，脑海浮现B被多人围住，C报警并挺身而出。`
 
-Strong split:
+强拆法：
 
 - `现实反应镜：A站在固定场景物右侧看向B远去方向，皱眉，闭口思考。`
 - `闪回镜：独立新场景，B被3名路人从三侧围住，C在右后举手机报警并上前半步。`
 - `回到现实镜：A回神，抬眼寻找C。`
 
-## Flashback transition handoff
+## 闪回转场交接
 
-Treat a flashback as one continuous editorial beat built from independent generation clips, not as a single clip that transforms its setting.
+把闪回当成由多个独立生成片段组成的连续剪辑节拍，不要当成一个地点变形成另一个地点的单条提示词。
 
-- **Trigger/return clip:** end on a concrete 0.5-0.8s stable visual handle, such as a gaze stopping on a prop, a hand holding still, or a breath/shoulder settling. The direct prompt must describe only that physical hold; it must not say `闪白进入回忆`, `淡出`, or ask the model to transform the set.
-- **Inserted clip:** open on a 0.5-1.0s stable establishing handle: fixed scene anchor, characters already in their starting poses, and no visible dialogue before the new world is readable. Start lip-sync only after this handle.
-- **Post-production bridge:** write the exact white-flash/dissolve duration and J/L sound bridge in `【声音轴】` or `【校验记录】`. A practical default is 3-5 white frames, real-world ambience fading under the flash, and memory ambience entering 0.2s before the inserted image.
-- **Return:** apply the same rule in reverse. The last memory clip ends on a stable pose; the present clip begins with its present-day anchor and an initial silent hold before OS or dialogue.
+- **触发/返回镜头：** 尾部停在 0.5-0.8 秒的具体稳定视觉把手上，例如视线停在道具、手保持静止、呼吸/肩膀落定。直接提示词只描述这个物理停顿；不要写 `闪白进入回忆`、`淡出`，也不要要求模型让场景变形。
+- **插入镜头：** 开头保留 0.5-1.0 秒稳定建立把手：固定场景锚点、人物已处在起始姿势，新时空可读前不要出现可见口型。口型必须在这个把手之后开始。
+- **后期桥接：** 在 `【声音轴】` 或 `【校验记录】` 写清白闪/叠化时长和声画错位衔接。实用默认值：3-5 帧白闪，现实环境音在白闪下压低，回忆环境音提前 0.2 秒进入。
+- **返回现实：** 反向使用同一规则。最后一个回忆镜头停在稳定姿势上；现实镜头先建立现实锚点并静默稳定，再开始 OS 或对白。
 
-Weak: `现实场景里A看着B离开，尾端闪白变成回忆场景。`
+弱写法：`现实场景里A看着B离开，尾端闪白变成回忆场景。`
 
-Strong pair:
+强配对：
 
 - `现实触发镜：B离开后，A视线从出口落到正前方道具，右手悬停，尾0.6秒保持静止。`
 - `回忆起幅镜：回忆道具横在画面下半区，B在左侧做准备动作、A在右侧站定，前0.7秒二人闭口不动，随后A开始说原文。`
 
-Weak: `B右侧近景，A左前景朝右，C左后虚化。`
+弱写法：`B右侧近景，A左前景朝右，C左后虚化。`
 
-Strong: `同一张长桌横贯画面下半区，桌沿与画框平行；A和B是桌内侧同排双人组，双人组位于画面中右区域，以二人面朝隔物对面的身体左右为基准，A在B左手边、B在A右手边，二人椅背在同一水平深度线、肩线平齐、到镜头距离一致，不隔桌、不面对面、不一前一后；本镜从B侧拍近景，A只作为组内同排前景肩线弱虚化；C在餐桌对面，与双人组隔桌，不插入二人之间。`
+强写法：`同一张长桌横贯画面下半区，桌沿与画框平行；A和B是桌内侧同排双人组，双人组位于画面中右区域，以二人面朝隔物对面的身体左右为基准，A在B左手边、B在A右手边，二人椅背在同一水平深度线、肩线平齐、到镜头距离一致，不隔桌、不面对面、不一前一后；本镜从B侧拍近景，A只作为组内同排前景肩线弱虚化；C在餐桌对面，与双人组隔桌，不插入二人之间。`
 
-## Emotion and acting
+## 情绪和表演
 
-Every emotion must be driven by:
+每个情绪都必须由以下链条驱动：
 
 `触发原因 -> 表情控制 -> 肢体动作 -> 说话语气`
 
-If no emotion is explicit, infer it from immediate goal, obstacle, relationship, and previous residue. Express it through visible micro-action and voice tone, not labels.
+如果原文没有明说情绪，就从角色当下目标、阻碍、关系和上一节拍残留推断。用可见微动作和声音语气表达，不要只贴情绪标签。
 
-Useful visible leaks: eye pause, brow-tail pressure, mouth-corner control, breath hold, shoulder tension, finger pause, grip tightening, small step, clothing/prop contact.
+常用可见泄露：眼神停顿、眉尾压紧、嘴角控制、憋住呼吸、肩膀绷紧、手指停住、握紧、小半步、衣物/道具接触。
 
-For every important beat, the direct prompt should contain a compact performance chain in natural language:
+每个重要节拍，直接提示词应包含一条紧凑的自然语言表演链：
 
-`because/after trigger + eyes/brow/mouth/breath + fingers/shoulders/body/prop + voice pace/volume/tail tone + listener delayed reaction`.
+`触发后 + 眼/眉/嘴/呼吸 + 手指/肩膀/身体/道具 + 语速/音量/尾音 + 听者延迟反应`。
 
-Weak: `A很生气，B尴尬。`
+弱写法：`A很生气，B尴尬。`
 
-Strong: `听见“没关系”后，A眼神停半拍、下颌线绷紧，垂在裤侧的右手攥紧又松开；B夹在中间，筷子停在餐盘上方，肩背轻僵但闭口。`
+强写法：`听见“没关系”后，A眼神停半拍、下颌线绷紧，垂在裤侧的右手攥紧又松开；B夹在中间，筷子停在餐盘上方，肩背轻僵但闭口。`
 
-Do not let performance live only in `【表演轴】`. The direct prompt must show at least two visible micro-expression/body clues for the main emotional turn and one delayed listener micro-reaction when another important character is visible.
+不要让表演只存在于 `【表演轴】`。主要情绪转折至少要在直接提示词里写出两个可见面部/身体线索；如果另一个重要角色可见，还要写一个延迟听者微反应。
 
-## Action and performance density
+## 动作和表演密度
 
-Every direct prompt must contain at least one visible performance leak and one physical action or stillness contract.
+每条直接提示词至少包含一个可见表演泄露点，以及一个物理动作或静止契约。
 
-- Treat a shot as one **visual-emotional unit**, not one sentence of text. If a micro-action belongs to the same emotional beat and the same physical relationship, do not automatically split it out. Use an internally staged camera path such as `关系中景起幅 -> 轻推/转焦到可读手部或眼神 -> 尾帧回到情绪状态` so the beat stays continuous.
-- Split only when the shot would otherwise contain too many competing tasks: visible speaker handoff without mouth-close gap, time/place/world change, a new subject becoming the main performer, two or more prop transfers, physical contact plus camera movement plus long dialogue, or a micro-action hidden below frame that cannot be reached by a safe push/focus.
-- Choose shot size from the action's required pixel share before writing the prompt. Broad blocking and group relation need wide/medium; dialogue and face reaction need medium close/close-up; fingertip/phone/card/plate ownership needs close-up or a timed push/focus landing. If the prompt contains `眼神细变、嘴角、喉间、手指、拳头、筷子、银行卡、餐盘边缘`, the shot must either start already close enough or move there with time anchors.
-- Fixed camera is invalid for a shot whose dramatic information depends on subtle hand/finger/eye/prop details unless the shot is already a close-up/insert and the fixed frame is for precise lip-sync or contact. In medium/wide frames, use a push/focus landing or enlarge the action to whole hand/shoulder/body movement.
-- Replace emotion labels with body evidence: not `慌乱`, but `眼睫颤一下、指节压住领口、肩膀微缩`.
-- Strengthen important emotional turns with at least two facial/body details: eye movement, brow-tail pressure, mouth-corner control, breath, shoulder, finger, posture, step, clothing/prop contact.
-- Put the trigger before the reaction: `听见关键词后，听者延迟半拍抬眼，指尖停在道具边`.
-- Match micro-action to shot size. A multi-person medium shot can show a whole hand, shoulder, or body recoil, but not reliable fingertip details. If the beat depends on `指尖`, `指节`, `戒指`, `签字笔尖`, `筷子尖`, or a hand disappearing below a table, use a hand/prop close-up or enlarge the action to `整只手离开道具、退回桌沿内侧`.
-- If a medium shot must first establish multiple people but the emotional reveal is in a hand/fist/plate reaction, write a continuous internal camera path: first lock the spatial anchor and slots, then push/shift focus to the close readable detail, then state where the other characters remain. This is preferred over leaving the whole beat in a static medium frame.
-- Limit action budget: one main action plus one listener micro-reaction per beat. If there are two hand actions, a speaker change, and camera movement, split or simplify.
-- State the action path and result: `右手把道具沿桌面推到角色B当前座位正前方，手离开道具边`.
-- Separate gaze from body movement. Do not write `角色越过桌面/越过柜台看道具` unless the body should lean or cross the barrier. If only the gaze crosses a barrier, write `角色站直留在隔物对面，上半身不前压，视线越过桌沿/柜台边缘落到道具`. If leaning is intentional, make it a quantified body contract: `角色脚步留在原位，上半身向前倾约10-15度，单手/双手撑在桌沿，胸口不越过桌面中线，视线落到道具，尾帧保持前倾但不穿桌`.
-- Do not move a prop that is not at the mover's current opening position. If `道具Y` ended the previous shot at `角色B正前方`, the next direct prompt must not say `角色A把道具Y挪回` unless it first places `角色A` within reach and shows the reach/contact path.
-- For exchanging two props, stage the action instead of writing one simultaneous sentence: first state both props' starting positions, then move prop X to its new owner/place and release it, then move prop Y to its new owner/place and release it, then state the tail frame. Add `双手离开` or `不再拿回` when the final ownership matters.
-- Stillness is also action: write `尾0.6秒筷子悬在餐盘上方、眼神停在桌面` instead of vague `保持`.
+- 把镜头当成一个“视觉情绪单位”，不是一句文本。如果某个微动作属于同一个情绪节拍和同一个物理关系，不要自动拆出去。可以用镜内分阶段机位路径保持节拍连续，例如 `关系中景起幅 -> 轻推/转焦到可读手部或眼神 -> 尾帧回到情绪状态`。
+- 只有镜头任务过载时才拆分：可见说话者切换但没有闭口间隙、时间/地点/现实层变化、新主体成为主要表演者、两个以上道具转移、身体接触 + 运镜 + 长对白同时存在、或微动作藏在画面下方且无法安全推近/转焦读到。
+- 写提示词前，先按动作所需画面占比选择景别。大调度和群体关系需要广景/中景；对白和脸部反应需要中近景/近景；指尖、手机、卡、餐盘归属需要近景，或带时间锚点的推近/转焦落点。如果提示词包含 `眼神细变、嘴角、喉间、手指、拳头、筷子、银行卡、餐盘边缘`，镜头必须开头就足够近，或按时间锚点移动到足够近。
+- 依赖细小手部、手指、眼睛或道具细节的戏剧信息，不能使用中景/广景固定镜头；除非画面已经是近景/插入镜头，且固定镜头服务于精准口型或接触动作。中景/广景里要使用推近/转焦落点，或把动作放大成整只手、肩膀、身体动作。
+- 用身体证据替代情绪标签：不要只写 `慌乱`，要写 `眼睫颤一下、指节压住领口、肩膀微缩`。
+- 重要情绪转折至少用两个脸部/身体细节加强：眼神、眉尾、嘴角、呼吸、肩膀、手指、姿态、小步、衣物/道具接触。
+- 先写触发，再写反应：`听见关键词后，听者延迟半拍抬眼，指尖停在道具边`。
+- 微动作必须匹配景别。多人中景可以展示整只手、肩膀或身体后缩，但不能稳定展示指尖细节。如果节拍依赖 `指尖`、`指节`、`戒指`、`签字笔尖`、`筷子尖` 或桌下手部动作，就用手部/道具近景，或把动作放大成 `整只手离开道具、退回桌沿内侧`。
+- 如果中景必须先建立多人物关系，而情绪揭示落在手、拳头或餐盘反应上，就写连续镜内机位路径：先锁空间锚点和槽位，再推近/转焦到可读细节，最后说明其他角色仍留在哪里。这优先于把整个节拍塞进静止中景。
+- 限制动作预算：每个节拍一个主动作 + 一个听者微反应。如果同时出现两个手部动作、说话者切换和运镜，就拆分或简化。
+- 写清动作路径和结果：`右手把道具沿桌面推到角色B当前座位正前方，手离开道具边`。
+- 分开写视线和身体移动。除非身体真的要前倾或越过隔物，不要写 `角色越过桌面/越过柜台看道具`。如果只是视线越过隔物，写 `角色站直留在隔物对面，上半身不前压，视线越过桌沿/柜台边缘落到道具`。如果确实前倾，要写成量化身体契约：`角色脚步留在原位，上半身向前倾约10-15度，单手/双手撑在桌沿，胸口不越过桌面中线，视线落到道具，尾帧保持前倾但不穿桌`。
+- 不要移动一个不在当前起始位置可触达范围内的道具。如果 `道具Y` 上一镜停在 `角色B正前方`，下一条直接提示词不能写 `角色A把道具Y挪回`，除非先让 `角色A` 进入可触达位置，并展示伸手/接触路径。
+- 交换两个道具时，不要写成一个同时发生的句子。先写两个道具的起点，再移动道具 X 到新持有人/新位置并松手，再移动道具 Y 到新持有人/新位置并松手，最后写尾帧。最终归属重要时，补 `双手离开` 或 `不再拿回`。
+- 静止也是动作：写 `尾0.6秒筷子悬在餐盘上方、眼神停在桌面`，不要只写含糊的 `保持`。
 
-## Camera execution strength
+## 机位执行强度
 
-Camera wording in direct prompts must be physical and readable by an image/video model.
+直接提示词里的机位词必须是物理可读、图像/视频模型能理解的。
 
-- Fixed camera: say why visually, e.g. `摄影机固定，焦点锁手腕和银行卡接触点`.
-- Push/pull: write path and distance, e.g. `摄影机沿直线缓慢推近0.3米，焦点锁主体双眼`.
-- Follow: write lane and speed, e.g. `摄影机胸高沿餐桌右侧平行侧跟1米，不超过人物`.
-- Foreground-shoulder view: write camera owner, shoulder share, subject, barrier, and shared anchor.
-- Avoid camera words that imply editing or model-invisible logic: do not put `镜头语言表达压迫`, `正反打`, `沿轴线`, or `连续变景别` in direct prompts.
+- 固定镜头：写出视觉原因，例如 `摄影机固定，焦点锁手腕和银行卡接触点`。
+- 推/拉：写路径和距离，例如 `摄影机沿直线缓慢推近0.3米，焦点锁主体双眼`。
+- 跟拍：写路线和速度，例如 `摄影机胸高沿餐桌右侧平行侧跟1米，不超过人物`。
+- 前景肩线镜头：写清机位归属、肩线占比、清晰主体、隔物和共享锚点。
+- 避免会暗示剪辑或模型不可见逻辑的机位词：不要在直接提示词里写 `镜头语言表达压迫`、`正反打`、`沿轴线` 或 `连续变景别`。
 
-## Dialogue and timing
+## 台词和时长
 
-- Preserve original words exactly.
-- Short Mandarin line estimate: roughly 4-6 Chinese characters/second, then add reaction margin.
-- For 2-4 character lines, lip-sync window is usually 0.4-0.9s; after the line, write `说完即闭口`.
-- Long lines must be split if real/TTS audio plus reaction margin exceeds 15s.
-- Only one visible mouth speaks in a shot unless overlap is explicitly required; true overlap goes to post-production.
-- Every dialogue/OS/system line must have pace, volume, pause/tail tone, emotional motive, and mouth-sync/post-production handling.
-- OS/OV/system/inner monologue/phone text/UI text/dense captions are post-production audio/overlays by default; visible mouths stay closed.
+- 原文台词必须逐字保留。
+- 短中文台词可按每秒约 4-6 个中文字估算，再加反应余量。
+- 2-4 个字的短句，口型窗口通常为 0.4-0.9 秒；说完后写 `说完即闭口`。
+- 长台词如果真实配音或 AI 配音音频加反应余量超过 15 秒，必须拆分。
+- 除非原文明确要求打断或重叠，同一镜头只允许一张可见嘴巴说话；真正重叠台词交给后期声音处理。
+- 每条台词、OS 或系统音都要有语速、音量、停顿/尾音、情绪动机，以及“可见口型或后期声音处理方式”。
+- OS、OV、系统音、内心独白、手机文字、UI 文字、密集字幕默认由后期配音或叠字处理；画面中可见嘴巴保持闭合。
 
-## Mouth windows and speaking handoff
+## 口型分窗和说话交接
 
-`【口型分窗】` is mandatory whenever there is visible dialogue. It is a QA/timing record, not a loose prompt label. One row is required for every speaking window:
+只要存在可见台词，必须写 `【口型分窗】`。它是校验/时长记录，不是随意的提示标签。每个说话窗口都需要一行：
 
-`D1｜visible speaker｜original words｜start-end｜opening pose → mouth closes｜pause and weighted word｜other visible people closed-mouth rule｜listener reaction after the trigger`
+`D1｜可见说话者｜原文台词｜开始-结束｜开头姿势 → 说完闭口｜停顿和重音词｜其他可见人物闭口规则｜触发后的听者反应`
 
-- One window has one visible speaker. The speaker's face and mouth must be readable; if that cannot be kept stable, move the line to post-production audio or split the shot.
-- Start a new visible speaker only after the previous speaker has finished, closed their mouth, and left a short reaction gap. Use a 0.2-0.4s gap as a planning target unless the source explicitly requires an interruption.
-- Mark meaningful punctuation in natural language: a short comma pause, a held ellipsis, a question rising at the end, or a word that receives weight. Do not force every punctuation mark into the same duration; fit it to natural speech and real/TTS audio.
-- For interruption, write the exact cut-off word, the first speaker's mouth-closing moment, the second speaker's start time, and the frozen/changed hand gesture. For true overlap, preserve one visible mouth and place the second voice in post-production.
-- Split a line before it overloads the image: speaker change, emotion turn, action turn, camera view change, strong pause, or a line that leaves too little time for an opening pose, readable speech, mouth close, and listener reaction are all valid split points. Duration alone is not the only criterion.
+- 一个窗口只有一个可见说话者。说话者脸和嘴必须可读；如果无法稳定保证，就把台词改为后期配音，或拆镜。
+- 新的可见说话者只能在上一位说话者说完、闭口并留出短反应间隙后开始。除非源文明示抢话，规划时默认留 0.2-0.4 秒间隙。
+- 用自然语言标注有意义的标点：短逗号停顿、省略号拖住、问句尾音上扬、某个词被加重。不要把所有标点机械分配同样时长，要适配自然说话和真实配音或 AI 配音音频。
+- 抢话时写清被打断的具体字、第一位说话者闭口时刻、第二位说话者开始时刻，以及被冻结或改变的手势。真正重叠时，保留一个可见口型，另一个声音交给后期。
+- 在台词让画面过载前拆分：说话者切换、情绪转折、动作转折、视角变化、强停顿，或一条台词让开头姿势、可读口型、闭口和听者反应时间不足，都是合理拆点。时长不是唯一标准。
 
-OS/system pattern:
+OS/系统音写法：
 
 `角色A闭口，OS以偏快语速、低音量、尾音心虚收住响起：“原文”。`
 
-If visible system text is requested:
+如果需要可见系统文字：
 
 `系统文字仅在侧边安全区作彩色悬浮字幕，不遮脸、不遮手、不生成系统实体。`
 
-## Listener reactions
+## 听者反应
 
-Do not solve non-speaking characters by writing only `闭口`.
+不要只用 `闭口` 解决不说话角色。
 
-- Reaction timing: start 0.2-0.6s after the speaker's trigger word or after the line lands.
-- Reaction budget: one micro-action per listener per beat.
-- Motion scale: listeners move less than the speaker. Keep head turns around 5-10°, shoulders/body shifts under 15°, single micro-action 1.2-2.5s, slow natural blink, no repeated fidget unless source requires.
-- Reaction cause: state what they react to, such as `听见“帅哥”后`, `被当众点名后`, `看到餐盘被推走后`.
-- Mouth rule: non-speakers stay closed-mouth unless they have their own dialogue window.
-- Focus rule: listener reactions support the main speaker and must not steal focus.
+- 反应时机：在说话者触发词后或台词落下后 0.2-0.6 秒开始。
+- 反应预算：每个节拍每个听者只给一个微动作。
+- 动作幅度：听者动作小于说话者。头部转动约 5-10 度，肩膀/身体偏移低于 15 度，单个微动作 1.2-2.5 秒，慢速自然眨眼；除非源文要求，不要重复抖动。
+- 反应原因：写出他们对什么反应，例如 `听见“帅哥”后`、`被当众点名后`、`看到餐盘被推走后`。
+- 闭口规则：非说话者保持闭口，除非他们拥有自己的台词窗口。
+- 焦点规则：听者反应服务于主说话者，不能抢主焦点。
 
-Example:
+示例：
 
 `角色B说话时，角色A延迟半拍抬眼，整只手停在自己道具边、肩背轻僵但闭口；角色C视线从A移到B，下颌轻收不说话。`

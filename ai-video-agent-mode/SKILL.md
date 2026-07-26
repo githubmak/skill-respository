@@ -1,11 +1,10 @@
 ---
 name: ai-video-agent-mode
 description: >
-  Contract-driven multi-agent pipeline for converting scripts, storyboards, scenes, keyframes, or
-  nine-panel plans into production-ready AI video prompt packages with low reroll
-  risk, high-performance tension, action budgets, character priority, Jimeng T2V
-  controls, continuity, semantic review, and validated Markdown/XLSX
-  export. Use for agent模式、多agent、剧本转AI视频提示词、专业分镜提示词、降低抽卡率、
+  合同驱动的 AI 视频提示词生产流程：把剧本、分镜、场景、关键帧或九宫格方案
+  转换为可直接生产的 AI 视频提示词包，并控制抽卡风险、人物表演张力、动作预算、
+  角色优先级、即梦 T2V 生成规则、跨镜连续、语义审查和 Markdown/XLSX 导出。
+  适用于 agent模式、多agent、剧本转AI视频提示词、专业分镜提示词、降低抽卡率、
   表演增强、关键帧提示词、九宫格剧情分镜提示词、Seedance/即梦视频提示词。
 ---
 

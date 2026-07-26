@@ -1,10 +1,10 @@
-# Runbook
+# 运行手册
 
-1. Build and validate the shot plan.
-2. Dispatch one Scene Lock task per scene.
-3. Dispatch Master Production tasks by main shot, using only their scene lock, source beats and adjacent carryover summary.
-4. Run deterministic review, then parallel Editor Pass 2 scene windows.
-5. Apply only validator-named fields to the affected main-shot task and repeat its window review.
-6. Export only after every window is clear.
+1. 生成并验证镜头计划。
+2. 每个场景派发一个 Scene Lock 任务。
+3. 按主镜派发 Master Production 任务；每个任务只能使用对应场景锁定、源文节拍和相邻承接摘要。
+4. 先运行确定性审查，再并行派发 Editor Pass 2 场景窗口复审。
+5. 只修复 validator 点名的字段，并只作用于受影响的主镜任务；修复后重复该窗口复审。
+6. 只有所有窗口都清空问题后，才允许导出。
 
-Packet limit is 12,000 characters. Split at a main-shot or scene-window boundary; never truncate dialogue.
+Packet 上限为 12,000 字符。只能在主镜或场景窗口边界拆分；绝不能截断台词。

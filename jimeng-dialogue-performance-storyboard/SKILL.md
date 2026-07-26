@@ -1,99 +1,100 @@
 ---
 name: jimeng-dialogue-performance-storyboard
-description: Convert a supplied script, novel scene, or dialogue-heavy beat into a Jimeng/Seedance-ready formal storyboard Markdown in one pass. Use when the user provides source text/file plus export directory, visual style, and aspect ratio, and expects directly usable fixed-template prompts with original dialogue preserved, semantic direct-copy picture descriptions, camera timing, emotion-driven acting, lip-sync/OS handling, prop/spatial continuity, negative prompts, and shots of 15 seconds or less.
+description: 将用户提供的剧本、小说场景或对白密集剧情段落，一次性转换为可直接投喂即梦/Seedance 的正式分镜 Markdown。适用于用户提供源文本或文件、导出目录、视觉风格和画幅比例，并需要保留原台词、生成可直接复制的画面提示词、镜头时长、情绪表演、口型/OS处理、道具与空间连续性、负面提示词，且单镜不超过15秒的任务。
 ---
 
-# Jimeng Dialogue Performance Storyboard
+# 即梦对白表演分镜
 
-## Required inputs
+## 必填输入
 
-Ask only for missing required inputs:
+只询问缺失的必填输入。括号内是内部字段名，询问用户时优先使用中文说法：
 
-- `export_dir`
-- `style`
-- `aspect_ratio`
-- source text/file
+- 导出目录（`export_dir`）
+- 视觉风格（`style`）
+- 画幅比例（`aspect_ratio`）
+- 源文本或源文件
 
-Do not ask for extra format choices unless the source is absent or unreadable.
+除非源文本缺失或无法读取，不要额外询问格式选择。
 
-## Token-efficient loading
+## 低耗上下文加载
 
-For normal generation, read only:
+常规生成时只读取：
 
-1. [references/runtime-brief.md](references/runtime-brief.md) — low-token execution contract.
-2. [references/output-template.md](references/output-template.md) — required Markdown structure and field order.
+1. [references/runtime-brief.md](references/runtime-brief.md) — 精简执行规则。
+2. [references/output-template.md](references/output-template.md) — 必须使用的 Markdown 结构和字段顺序。
 
-Read [references/shot-patterns.md](references/shot-patterns.md) only when the source contains any of these, or validation flags them:
+只有当源文本包含以下内容，或校验提示相关问题时，才读取 [references/shot-patterns.md](references/shot-patterns.md)：
 
-- multi-person blocking;
-- table/vehicle/door/gate/hallway scenes;
-- palace/hotel/lobby/street/campus/canteen scenes where a candidate space phrase may help but must be verified against source facts;
-- prop transfer, clothing transfer, money/card/phone/plate ownership;
-- walking/chase/entry/exit;
-- flashback, montage, memory, dream, imagination;
-- an overloaded single prompt that combines space setup, prop retrieval/reveal, dialogue, listener reaction, and camera/focus changes;
-- a user complaint about spatial ambiguity, camera language, stiff listeners, or weak emotion.
+- 多人物调度；
+- 桌边、柜台/窗口/签字台、车辆、门口、门廊、走廊等空间；
+- 宫殿、警局、医院、银行、酒店、大堂、街道、校园、食堂等可能需要空间模板但必须按原文核实的场景；
+- 道具转移、衣物转移、钱/卡/手机/餐盘的归属变化；
+- 行走、追逐、入场、离场；
+- 闪回、蒙太奇、回忆、梦境、想象；
+- 单条提示词过载，同时包含空间建立、取出/展示道具、对白、听者反应、运镜或焦点变化；
+- 用户指出空间含糊、镜头语言不准、听者僵硬或情绪弱。
 
-Before saving, run `scripts/validate_storyboard.py <output.md>` for fast structural validation. If it reports issues, fix the named shots. Read [references/validation-checklist.md](references/validation-checklist.md) only for final manual audit or when the script flags ambiguity not covered by simple checks.
+保存前运行 `scripts/validate_storyboard.py <output.md>` 做快速结构校验。如果脚本报告问题，按镜号修复对应镜头。只有在最终人工复核，或脚本提示简单检查覆盖不了的歧义时，才读取 [references/validation-checklist.md](references/validation-checklist.md)。
 
-This skill targets the current fixed template only. Do not preserve, repair around, or silently accept older output formats. If an older Markdown conflicts with the current contract, regenerate it with the current template instead of adding compatibility branches.
+本技能只面向当前固定模板。不要保留、兼容或默许旧格式。如果旧 Markdown 与当前规则冲突，必须按当前模板重新生成，不要添加兼容分支。
 
-## Hard defaults
+## 硬性默认规则
 
-- Export one final Markdown directly to `export_dir`; do not output a draft table first.
-- Preserve all original dialogue, OS, OV, system, inner monologue, punctuation, quotes, ellipses, odd spacing, and typo names exactly unless the user permits edits.
-- Keep every shot `<=15s`; estimate duration as `max(visible action, real/TTS audio) + 0.5-1.5s reaction margin`.
-- `【画面描述｜直接复制】` is the final Jimeng positive prompt and must be self-contained with the global locks, semantic, and `<=500` Chinese characters; prefer `220-380` Chinese characters.
-- Treat global style/light/background/negative as reusable locks; do not repeat them verbatim in every direct prompt.
-- OS/OV/system/inner lines, phone text, UI text, and dense captions are post-production audio/overlays by default; visible mouths stay closed.
-- For an episode or multi-scene source, internally maintain a compact key-state line for cross-scene clothing, props, injuries, and UI states. Output it only in the scene state table when it affects later shots.
-- Do not reference or reuse other local skills.
-- Infer missing visual details from source context, genre, style, and scene logic; record material assumptions in `使用说明`.
-- Do not optimize for old generated files. The acceptance target is the current template, current direct-prompt rules, and current validator.
+- 直接导出一个最终 Markdown 到 `export_dir`；不要先输出草稿表。
+- 除非用户允许修改，必须原样保留所有原台词、OS、OV、系统音、内心独白、标点、引号、省略号、异常空格和疑似错名。
+- 每个镜头必须 `<=15s`；时长按“可见动作、真实配音或 AI 配音音频中更长者 + 0.5-1.5秒反应余量”估算。
+- `【画面描述｜直接复制】` 是最终即梦正向提示词，必须配合全局锁定后能独立成立，且 `<=500` 个中文字符；优先控制在 `220-380` 个中文字符。
+- 全局风格、灯光、背景、负面提示词视为可复用锁定，不要在每条直接提示词里逐字重复。
+- OS、OV、系统音、内心独白、手机文字、UI文字、密集字幕默认由后期配音或叠字处理；画面中可见人物嘴巴保持闭合。
+- 对集数或多场景源文，内部维护一条精简关键状态线，只追踪跨场景延续的服装、道具、伤痕和 UI 状态；只有影响后续镜头时才输出到场景状态表。
+- 不引用或复用其他本地技能。
+- 缺失的视觉细节可依据原文语境、类型、风格和场景逻辑合理推断；重要假设写入 `使用说明`。
+- 不为旧生成文件优化。验收目标是当前模板、当前直接提示词规则和当前校验器。
 
-## Core workflow
+## 核心流程
 
-1. Read the supplied source and extract beats: scene, visible cast, dialogue/OS/system/OV, action, prop/clothing state, crowd/background, memory/flashback boundaries, UI overlays, and sound effects. When regenerating, do not read, transform, prefix, or preserve a prior storyboard; the source text and current skill contract are the only generation inputs.
-2. Build a compact episode state line before scene locks: track only cross-scene clothing, props, injuries, UI, and ownership changes. Build scene locks from that line: fixed anchors, physical slots, screen zones, facing/eyelines, movement lanes, active props, allowed changes, forbidden swaps.
-3. Build one internal story-beat contract for every meaningful turn: what the viewer does not know at the opening, what visible cue changes that understanding, the emotional turn, and the concrete state at the end. A visible `S场景-节拍` group may contain exactly one such new recognition. If arrival, accusation, confession, relation redefinition, or departure each change what the viewer knows, make separate groups even when they occur in the same location. This contract is never output as a card or pasted into Jimeng; use it only to select child shots that collectively deliver the new recognition.
-4. Select any scene phrase only as a candidate. Use it only after confirming the source supports its fixed objects, entrances/exits, character slots, and prop logic; otherwise fall back to generic space locking.
-5. Assign each beat a shot function: establish, dialogue, reaction, prop transfer, pressure, comedy pause, movement, flashback insert, return, object insert, or emotional cutaway. When a turn needs two or more visible links to create its recognition, make one visible shot group such as `S1-03`, with children numbered `1/2/3`: one child may show the cue/evidence, one may carry a simple gaze/focus movement, and one may land the dialogue or changed relation. The group is a reading container, not a Jimeng prompt; output no master-shot card. Put the summed child-shot duration beside the group ID, put `【出现人物】` once on the group, then write the actual Jimeng prompts continuously with `【镜号】1/2/3`; do not add `分镜1` headings. The children collectively deliver the internal beat. For dialogue, default to relation, speaker, and listener-reaction frames. Add an object/empty-space cutaway only for a source-supported change, and treat it as a separate T2V card unless it qualifies as an in-place focus landing.
-6. Choose camera by function. Every child must state a readable shot size, camera placement/angle, static or one bounded path, and visual landing task in its direct prompt. `固定` is a deliberate choice for stable lip-sync or stillness, never the default; do not default to `中近景固定`. State physical relation separately from screen composition: for every visible named person, name body orientation toward a fixed anchor or another person, then head/eye turn only if it differs, then relative position, then camera side. Do not use a bare `朝左/朝右` as a body direction. Avoid abstract film-school terms in direct prompts.
-7. Write compact shot groups in the fixed template. Each group has `【出现人物】` once; every actual child card contains the four default child fields `【镜号】`, `【画面描述｜直接复制】`, `【表演与声音】`, and `【状态继承】`. Add optional fields only when the child genuinely needs them. If one child changes a visible state before dialogue or reaction, design its start, one visible transition, stable end, and tail before writing the prompt. Put essential space, action, emotion, voice, camera, prop state, listener reactions, and tail state inside `【画面描述｜直接复制】`; production notes may expand but cannot replace it. Estimate spoken duration from the original Chinese text before assigning seconds; never shorten a line merely to keep a group compact.
-8. For every person/prop position or ownership change, write the new visible fact into the next shot's direct prompt opening.
-9. Internally check every dialogue and non-dialogue source beat. Include `原文保留检查` only when the user requests auditability, source fidelity is disputed, or the scene is high risk.
-10. Run `scripts/validate_storyboard.py` on the saved Markdown; fix failures by rewriting to the current template, not by weakening rules. For high-risk scenes, add the compact validation appendix and perform a manual audit against `validation-checklist.md`. If useful, also copy to the current task `outputs/` folder.
+1. 阅读源文并提取节拍：场景、可见人物、对白/OS/系统音/OV、动作、道具/服装状态、人群/背景、回忆/闪回边界、UI叠字和音效。重新生成时，不读取、不转换、不补前缀、不继承旧分镜；唯一输入是源文和当前技能规则。
+2. 在建立场景锁定前，先整理一条精简本集状态线：只追踪跨场景延续的服装、道具、伤痕、UI和归属变化。再由这条状态线建立场景锁定：固定锚点、人物物理槽位、画面区域、身体朝向/视线、移动路线、活动道具、允许变化和禁止交换。
+3. 为每个有意义的剧情转折建立内部节拍规则：观众开场不知道什么、哪个可见线索改变理解、情绪如何转向、镜头结束时具体状态是什么。一个可见的 `S场景-节拍` 组只能承载一个新的观众认知。到场、指认、供述、关系重定义、离场如果分别改变观众理解，即使在同一地点也要拆成不同组。这个内部规则不输出为镜头卡，也不粘进即梦，只用于选择共同完成认知变化的子镜头。
+4. 任何场景模板语句都只能作为候选。必须确认原文支持它的固定物、入口/出口、人物槽位和道具逻辑后才能使用；否则回到通用空间锁定写法。
+5. 给每个节拍分配镜头功能：建立关系、对白、反应、道具转移、压力、喜剧停顿、移动、闪回插入、回到现实、物件插入、情绪切空等。一个转折需要两个或更多可见环节时，建立一个可见镜头组，例如 `S1-03`，子镜头编号为 `1/2/3`：一个子镜头可展示线索/证据，一个子镜头可承接视线或焦点移动，一个子镜头落下台词或关系变化。镜头组只是阅读容器，不是即梦提示词；不要输出主镜头卡。镜头组标题旁写入所有子镜头秒数之和，组内只写一次 `【出现人物】`，然后连续输出实际可投喂的 `【镜号】1/2/3` 子镜头；不要添加 `分镜1` 标题。对白默认使用关系镜头、说话者镜头、听者反应镜头。只有当物件/空景切入能承载原文支持的变化时才加入，并默认作为独立 T2V 卡，除非它只是同镜内一次连续焦点落点。
+6. 按镜头功能选择景别和机位。每个子镜头的直接提示词必须写清：可读景别、机位/角度、静止或一条明确路径、视觉落点。`固定` 是为了稳定口型或表现静止而主动选择，不是默认偷懒；不要默认写 `中近景固定`。物理关系要和画面构图分开写：每个可见具名人物都要说明身体面向哪个固定锚点或哪个人；只有头/眼方向与身体不同时才单独写头/眼转向；再写相对位置，最后写机位侧。不要只写 `朝左/朝右` 作为身体方向。直接提示词里避免抽象电影术语。
+7. 按固定模板写紧凑镜头组。每组只出现一次 `【出现人物】`；每个实际子镜头卡必须包含四个默认字段：`【镜号】`、`【画面描述｜直接复制】`、`【表演与声音】`、`【状态继承】`。只有子镜头确实需要时才添加可选字段。若一个子镜头在对白或反应前改变可见状态，先设计开头状态、一个可见转换、稳定终态和尾帧，再写提示词。关键空间、动作、情绪、声音、机位、道具状态、听者反应和尾帧状态必须写进 `【画面描述｜直接复制】`；制作说明可以补充，但不能替代直接提示词。按原中文台词估算说话时长后再分配秒数；不要为了压缩镜头组而缩短原文台词。
+8. 任何人物位置、道具位置或归属变化，都要在下一镜的直接提示词开头重新写入新的可见事实。
+9. 内部检查每个对白和非对白源文节拍。只有用户要求可审计、源文保真有争议或场景高风险时，才输出 `原文保留检查`。
+10. 保存 Markdown 后运行 `scripts/validate_storyboard.py`；若失败，按当前模板重写修复，不要削弱规则。高风险场景可加入精简校验附录，并按 `validation-checklist.md` 做人工复核。如有需要，也复制到当前任务的 `outputs/` 文件夹。
 
-## Non-negotiable direct-prompt rules
+## 不可妥协的直接提示词规则
 
-- Start complex shots with a fixed physical anchor: table, doorframe, car door/window, hallway line, counter, bed, sofa, gate pillar, road edge, or background window.
-- Lock story topology before screen composition: same-side/opposite-side, beside/across/behind, distance, barrier/contact object, facing, eyeline, active prop owner/state.
-- Name coordinate basis: `画面左/右/前景/背景` for screen; `A的右手边/桌对面/身后半身距离` for character relation.
-- Do not use direct-prompt shorthand: `继承`, `延续上一镜`, `空间保持`, `位置继承`, `物理座位不变`, `剪辑`, `切到`, `反打到`, `下一镜执行`, `脑海浮现`, `后期插入`, `声音语气：`, `表情：`, `动作：`, `情绪：`.
-- Do not list OS/system voices or mentioned-only/offscreen characters under a group-level `【出现人物】`. List only visible people/groups, one per line. A person may remain listed for the whole group even when a particular child only retains their blurred shoulder or offscreen reaction; do not repeat the cast field on children.
-- Do not merge a long visible line, a speaker handoff, and a meaningful body/position change into one child. Keep the line on its speaking child; put an exit, turn-away, approach, transfer, or newly exposed relation in the preceding or following child.
-- Every direct prompt must naturally include: `景别` + `机位/角度` + `镜头静止或单一路径` + `每个可见人物的身体朝向锚点、必要时的头部/视线转向、相对位置` + `本镜唯一动作/台词落点`. Use `身体面向柜台/面向A/背向入口` rather than a bare `朝左/朝右`; screen left/right alone does not establish body direction or relationship.
-- On every shot-size change, reverse angle, over-shoulder shot, or new dialogue card after movement, restate the full body-facing relation from zero. For a face-to-face dialogue landing, the speaker and listener default to `身体面向对方`; do not preserve a prior walking/counter/exit-facing body with only `头部转向对方` unless the story intentionally shows avoidance, refusal, leaving, or being blocked. If a character must turn before speaking or receiving a line, make that turn the visible opening transition and only start dialogue after the body is fully facing the target.
-- For strict shot/reverse-shot dialogue, pair the camera wording exactly: `A肩后拍B` must be followed by `B肩后拍A` when the next child is the reverse. Do not drift into `B右前方/侧前方` for the reverse. Both sides must repeat the same face-to-face body orientation, distance/barrier, prop holder/position, and background anchor.
-- Write only people, props, and fixed anchors actually visible in this child. A group may list a wider visible cast, but a hand insert must not carry off-frame police, crowd, or listener orientation. Never use placeholders or alternatives such as `当前主角`, `当前对话者`, `或当前对话者`, or `视情况` in a direct prompt.
-- Never let props flash into existence or move through impossible body geometry. Before any prop transfer, the direct prompt must show the prop's current owner/container/surface, the hand that retrieves or presents it, the receiver becoming physically reachable, contact, release, and final holder. If the receiver is behind, side-behind, turned away, seated out of reach, or separated by another person/object, first make a separate positioning child where the receiver turns, steps forward, or the giver moves to face them; only then transfer the prop.
-- Match shot size to occupancy. A frame limited to hands, a card, a pen, a phone, or a tabletop is `手部特写` or `斜俯拍近景`, never a medium shot. A character cannot keep a wrist restrained while independently signing unless the prompt visibly states how the hand is guided; otherwise end the restraint first and show signing in the next child.
-- Treat any visible carry-over fact as a state: body pose/facing/gaze, hand and prop owner/position/contact, clothing/accessories/injury, door/window/light/UI state, relation distance/barrier, speaking-mouth mode, and a plot event's visible result. Track only the states that change or must be visible in the next shot.
-- When one T2V card contains a state change, write it in this order: opening state -> one visible transition -> stable end state -> dialogue/reaction -> tail state. Put the stable end state and tail state as exact natural-language sentences inside `【画面描述｜直接复制】`, not only in `【镜内状态转换】` or `【状态继承】`. A state being left and its replacement must never be described as simultaneous. Do not use story summaries such as `打完电话` or `递给B`; write the observable transition and the new stable state.
-- Permit at most one high-impact state change in a dialogue card: for example, phone leaves ear, a person sits, a door closes, a coat is put on, or a cup changes owner. Complete the transition before visible dialogue begins. Split the card when it also needs a transfer, crossing, second state change, or non-static camera move.
-- For a phone call, name the full chain when it matters: `phone at which ear/hand -> thumb ends call -> phone leaves ear -> final hand/table/pocket position -> ear clear -> dialogue mouth opens`. The following shot must open from that final position, never from the prior calling pose.
-- For a long or multi-speaker visible dialogue card, allocate the generation budget in this order: correct speaking mouth -> one listener response -> camera. Keep a long single-speaker line on a fixed frame with one small listener reaction, or use one slow push with the listener motionless except closed-mouth breathing. Split speaker handoff into separate windows; do not combine long lip-sync, a moving listener, and a moving camera in one card.
-- Distribute an important emotional turn across its child-shot group instead of repeating a full emotion chain in every card: show one pressure leak or external cue, then one perception change, then the controlled line/reaction and residual state. Each child must reveal a new stage; do not repeat the same eye, jaw, hand, and breath description across adjacent children unless the source deliberately holds it.
-- Non-speaking visible important characters need closed-mouth micro-reactions caused by the speaker/action; `闭口` alone is insufficient.
-- Micro-actions must match shot size. If the beat depends on eyes, mouth corners, throat, fingertips, fists, chopsticks, card, phone, or plate edge, use close-up/insert or a timed push/focus landing.
-- Choose dialogue framing by the visible evidence it needs: use a two-person medium shot to show distance, a door/table/sofa barrier, and who advances or retreats; use a medium close-up for a normal reply with shoulders and active hands; use a close-up for a visible breath, jaw, gaze, or mouth-corner change; use an insert for a hand, phone, clothing, or object that changes the meaning of the line. Return to a relation shot after 2-3 dialogue turns or whenever distance, power, or prop ownership changes.
-- Do not describe dialogue framing with abstract labels such as `压迫感`, `呼吸感`, `掌握主动`, or `情绪张力`. Translate them into visible facts: frame edge distance, empty space, body distance, door/table barrier, gaze direction, breath, hand contact, or a camera push/pull.
-- An object or empty-space cutaway must carry the current interaction: a phone turned face-down, a hand leaving a sleeve, an empty seat, a door gap, an untouched cup, a lift display, or another source-supported object/space. Generate a full empty-space/object cutaway as a separate T2V card by default and use `【剪辑衔接】` to state the sound bridge; never insert generic scenery merely to break up dialogue.
-- Keep an insert in the same T2V card only when it is one continuous focus landing on a prop already visible in the opening frame: same location and light, no hard cut, no visible speaking mouth during the insert, no prop/contact transfer or character crossing, no return to a different face, and only one focus/camera event in the card. Otherwise split it into an independent card.
-- For an emotional peak, it is valid to omit the full action only as an independent result card when the unseen action could imply transfer, impact, or a changed character state. State the offscreen actor/action and the visible result clearly; keep all visible mouths closed and use post-production sound. Do not rely on vague words such as `留白`, `意象`, or `日漫感`.
-- Split or simplify if one shot combines three or more high-risk tasks: multi-person blocking, prop/contact transfer, visible lip-sync, camera movement, character crossing, crowd/cars/doors, or world/time change.
-- Use shot groups for overloaded but continuous beats: each subshot has one main generation task, restates the current physical facts, and preserves original dialogue/OS without changing order.
+- 复杂镜头开头必须先写固定物理锚点：桌子、门框、车门/车窗、走廊线、柜台、床、沙发、门柱、路沿或背景窗。
+- 先锁剧情物理关系，再写画面构图：同侧/对侧、并排/对面/身后、距离、隔物/接触物、身体朝向、视线、活动道具归属/状态。
+- 坐标基准必须写清：`画面左/右/前景/背景` 用于屏幕位置；`A的右手边/桌对面/身后半身距离` 用于人物关系。
+- 柜台、窗口、签字台、缴费台、前台、问询台等服务空间，必须翻译成可见内外侧关系，但不得套用固定左右模板。不要写 `来客位`、`工作人员位`、`办事位`、`服务位` 这类抽象站位词。先按源文和上一镜尾帧判断哪些固定物真实存在、工作人员是否可见、签字台是否存在、同伴在同侧还是隔物另一侧；再使用 `柜台内侧`、`柜台外侧`、`签字台外沿/靠近办事者的一边`、`柜台后方/窗口内侧`、`画面左前/右前/左后/右后` 等可见词，并写明人物隔着柜台/签字台还是同侧可触达。示例里的画面左右、人物数量和签字台结构不能直接继承。
+- 直接提示词不要使用简称或元叙述：`继承`、`延续上一镜`、`空间保持`、`位置继承`、`物理座位不变`、`剪辑`、`切到`、`反打到`、`下一镜执行`、`脑海浮现`、`后期插入`、`声音语气：`、`表情：`、`动作：`、`情绪：`。
+- 组级 `【出现人物】` 只列画面中可见的人或群体，不列 OS/系统音、被提到但不出画的人、画外人物。每行只写一个可见人物或群体。某个人即使在某个子镜头里只保留虚化肩线，也可以保留在组级人物表；不要在子镜头里重复人物表。
+- 不要把长可见台词、说话者交接、重要身体/位置变化合并进同一子镜头。台词留在说话者子镜头里；离场、转身、靠近、交接、暴露新关系等动作放到前一条或后一条子镜头。
+- 每条直接提示词必须自然包含：`景别` + `机位/角度` + `镜头静止或单一路径` + `每个可见人物的身体朝向锚点、必要时的头部/视线转向、相对位置` + `本镜唯一动作/台词落点`。使用 `身体面向柜台/面向A/背向入口`，不要只写 `朝左/朝右`；画面左右不能替代身体方向或人物关系。
+- 每次换景别、反打、肩后镜头，或移动后进入新对白卡，都要从零重写完整身体朝向。面对面对话默认说话者和听者 `身体面向对方`；除非剧情明确表现回避、拒绝、离开或被挡住，不要保留上一镜行走/柜台/出口方向，只写 `头部转向对方`。如果人物需要先转向才能说话或接话，就把转身作为开头可见转换，身体完全面向目标后再开始对白。
+- 严格正反打必须成对写镜头：`A肩后拍B` 的反打必须写 `B肩后拍A`。不要把反打漂成 `B右前方/侧前方`。两边都必须重复相同的面对面身体朝向、距离/隔物、道具持有人/位置和背景锚点。
+- 只写本子镜头画面里实际可见的人、道具和固定锚点。组级人物表可以更宽，但手部插入镜头不得写画外警察、人群或听者朝向。不要使用 `当前主角`、`当前对话者`、`或当前对话者`、`视情况` 等占位或备选表达。
+- 道具不能凭空闪现，也不能穿过不可能的身体关系。任何道具转移前，直接提示词必须写出道具当前持有人/容器/表面、哪只手取出或呈递、接收者如何变成可触达、接触、松手、最终持有人。如果接收者在身后、侧后、背向、坐在不可触达处，或被人物/物体隔开，先写单独定位子镜头，让接收者转身、走近，或让递交者走到其面前；之后才能转移道具。
+- 景别必须匹配画面内容。只拍手、卡、笔、手机或桌面的镜头是 `手部特写` 或 `斜俯拍近景`，绝不是中景。人物不能一边手腕被限制一边自由签字，除非提示词明确写出手如何被引导；否则先解除限制，再写签字。
+- 所有需要延续的可见事实都视为状态：身体姿态/朝向/视线、手和道具的持有人/位置/接触、服装/配饰/伤痕、门窗/灯光/UI、人物距离/隔物、说话口型状态，以及剧情事件留下的可见结果。只追踪发生变化或下一镜必须可见的状态。
+- 一条 T2V 卡内有状态变化时，按顺序写：开头状态 -> 一个可见转换 -> 稳定终态 -> 台词/反应 -> 尾帧状态。稳定终态和尾帧状态必须以自然句写进 `【画面描述｜直接复制】`，不能只写在 `【镜内状态转换】` 或 `【状态继承】`。旧状态和新状态不能同时存在。不要用 `打完电话` 或 `递给B` 这类剧情概括，要写可观察转换和新的稳定状态。
+- 对白卡最多包含一个高影响状态变化，例如手机离开耳边、人物坐下、门关闭、披上外套、杯子换持有人。变化必须在可见对白开始前完成。如果同一卡还要道具转移、人物穿越、第二个状态变化或非静止运镜，必须拆分。
+- 电话状态必须写完整链条：`手机在哪只手、贴哪只耳朵 -> 拇指挂断 -> 手机离开耳朵 -> 最终停在手里/桌上/口袋里 -> 耳边没有手机 -> 对话口型开始`。下一镜必须从这个最终位置开头，不能回到之前通话姿势。
+- 长对白或多说话者对白卡按这个优先级分配生成注意力：正确口型 -> 一个听者反应 -> 运镜。长单人台词用稳定画面 + 一个小听者反应，或慢推 + 听者只保留闭口呼吸；说话者交接要拆分口型窗口。不要把长口型、听者大动作和运动镜头塞进同一卡。
+- 重要情绪转折要分配到子镜头组里，不要每张卡重复完整情绪链：先给一个压力泄露或外部线索，再给一个感知变化，再落下克制台词/反应和情绪余波。每个子镜头都要推进一个新阶段；除非原文故意保持，否则不要连续重复同一套眼神、下颌、手和呼吸描述。
+- 不说话但重要的可见人物，需要闭口微反应；只写 `闭口` 不够。反应必须由说话者或动作触发。
+- 微动作必须匹配景别。节拍依赖眼睛、嘴角、喉咙、指尖、拳头、筷子、卡、手机或盘边时，要用特写/插入，或定时推近/落焦。
+- 对白景别由可见证据决定：双人中景用于展示距离、门/桌/沙发隔物，以及谁靠近或退开；中近景用于普通回应，保留肩部和活动手；近景/特写用于呼吸、下颌、视线、嘴角变化；插入镜头用于手、手机、衣物或改变台词意义的物件。每 2-3 轮对白后，或距离、权力关系、隔物、道具归属变化时，要回到关系镜头。
+- 不要用 `压迫感`、`呼吸感`、`掌握主动`、`情绪张力` 这类抽象标签描述对白景别。要翻译成可见事实：画面边缘距离、空位、身体距离、门/桌隔物、视线方向、呼吸、手部接触、镜头推近或拉开。
+- 物件或空景切入必须承载当前互动：扣下的手机、离开袖口的手、空座位、门缝、没碰过的杯子、电梯显示等，必须有源文或当前关系支撑。完整物件/空景切入默认作为独立 T2V 卡，并用 `【剪辑衔接】` 写声音桥；不要为了打破对白而插入泛泛风景。
+- 插入镜头只有在同一地点同一光线下、开头已看见道具、只进行一次连续焦点落点、无硬切、无可见说话口型、无道具/接触转移、无人物穿越、不返回另一张脸时，才允许留在同一 T2V 卡。否则拆成独立卡。
+- 情绪峰值时，可以用独立结果卡省略完整动作，但前提是未见动作可能造成转移、冲击或人物状态改变。要明确写出画外执行者/动作和画内可见结果；所有可见嘴巴闭合，声音由后期处理。不要依赖 `留白`、`意象` 或 `日漫感` 这类模糊词。
+- 如果一个镜头同时包含三项或更多高风险任务，必须拆分或简化：多人物调度、道具/接触转移、可见口型、运镜、人物穿越、人群/车辆/门、时空变化。
+- 过载但连续的节拍使用镜头组：每个子镜头只承担一个主要生成任务，重写当前物理事实，并按原文顺序保留对白/OS。
 
-## Output location
+## 输出位置
 
-Save the final Markdown in the user-provided `export_dir`. If the Codex environment also needs a user-facing copy, place it under the current task’s `outputs/` folder and mention the copy path in the final response.
+将最终 Markdown 保存到用户提供的 `export_dir`。如果 Codex 当前任务也需要一份可点击副本，复制到当前任务的 `outputs/` 文件夹，并在最终回复中说明副本路径。

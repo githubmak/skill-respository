@@ -1,47 +1,47 @@
-# Stable Shot Contract
+# 稳定镜头契约
 
-This is the hard stability contract for Jimeng dialogue/performance storyboards. Apply it before writing any shot card.
+这是即梦对白表演分镜的硬稳定规则。写任何镜头卡之前都要先应用这些规则。
 
 ## 1. 前期分镜脚本规范
 
-- Treat each shot as a visual-emotional unit. Do not split only because a micro-action exists; first try an internal camera path that keeps the emotional beat continuous.
-- Split only for real structural changes: time/place/world change, new speaking subject without a mouth-close handoff, new dominant performer, overloaded prop/contact action, or camera view that cannot preserve the same spatial relationship.
-- Every shot must state visible cast only. Do not list OS/system voices or characters that are only mentioned, remembered, or outside frame.
-- Build a scene topology before shots: fixed static anchors, physical slots, screen zones, front/back depth, facing/eyeline, barrier/contact objects, movement lanes, empty areas, prop owners, and allowed changes.
-- If a person or prop changes position/owner in shot N, shot N+1 direct prompt must restate the new visible position/owner as current-frame fact. Never rely on `继承/延续/保持` shorthand.
+- 把每个镜头当成一个“视觉 + 情绪”的完整单位。不要只因为有一个微动作就拆镜；先尝试用镜内推近、转焦或轻微移动保持情绪节拍连续。
+- 只有出现真实结构变化时才拆镜：时间/地点/现实层改变、说话主体切换但没有闭口交接、新的表演主体占主导、道具/接触动作过载、或当前机位无法保住同一空间关系。
+- 每个镜头只写画面中实际可见的人物。不要把 OS、系统音、被提到的人、回忆里的人或画外人物列入可见人物。
+- 写镜头前先建立场景拓扑：固定静物锚点、人物物理槽位、画面区域、前后层级、身体朝向/视线、隔物/接触物、移动路线、空位、道具持有人和允许变化。
+- 如果人物或道具在第 N 镜改变位置/归属，第 N+1 镜的直接提示词必须把新的可见位置/归属当成当前画面事实重新写明。不要依赖 `继承/延续/保持` 这类省略词。
 
 ## 2. AI 提示词量化约束
 
-- `【画面描述｜直接复制】` is the final positive prompt. It must be one semantic natural-language paragraph, not a table fragment.
-- It must include: static anchor, visible character positions, physical topology, facing/eyeline, prop positions, acting trigger, facial/body reaction, dialogue/OS/system tone, camera path, focus landing, and tail state.
-- No ambiguous coordinate words: write `画面左侧道路`, `A的右手边`, `桌对面`, `镜头前景`, `背景窗口前`; never bare `左边/右边/前面/后面/左外`.
-- No ambiguous pronouns for key actions. Name the actor and prop owner when anyone speaks, moves, holds, receives, pushes, points, pays, signs, or reacts.
-- Do not use compressed shorthand in direct prompts: `继承`, `延续上一镜`, `空间保持`, `位置不变`, `画面切到`, `反打到`, `剪辑`, `后期插入`, `脑海浮现`.
-- Negative prompt must include both the identity/stability baseline and anti-stiffness terms: `人物僵硬、全身静止、无眨眼、空洞呆滞眼神、面部无任何变化、肢体不动、木偶式静止、死板、定格、面部僵硬`.
+- `【画面描述｜直接复制】` 是最终正向提示词。它必须是一段语义完整的自然语言，不是表格碎片。
+- 直接提示词必须包含：固定锚点、可见人物位置、物理关系、身体朝向/视线、道具位置、表演触发点、面部/身体反应、台词/OS/系统音的处理方式、摄影机路径、焦点落点和尾帧状态。
+- 不使用含糊坐标词：写 `画面左侧道路`、`A的右手边`、`桌对面`、`镜头前景`、`背景窗口前`；不要只写 `左边/右边/前面/后面/左外`。
+- 关键动作不使用含糊代词。任何人说话、移动、持有、接收、推、指、付款、签字或反应时，都要点名动作人物和道具持有人。
+- 直接提示词里不要使用压缩省略语：`继承`、`延续上一镜`、`空间保持`、`位置不变`、`画面切到`、`反打到`、`剪辑`、`后期插入`、`脑海浮现`。
+- 负面提示词必须同时包含身份/稳定基础和防僵硬词：`人物僵硬、全身静止、无眨眼、空洞呆滞眼神、面部无任何变化、肢体不动、木偶式静止、死板、定格、面部僵硬`。
 
 ## 3. 镜头调度
 
-- Shot size must match action readability:
-  - 广中景/中景: location, lanes, group relation, whole-body/whole-hand actions.
-  - 中近景: one speaker plus one listener/shoulder reaction, readable face and upper-body acting.
-  - 近景/特写/插入: eyes, mouth corners, throat movement, fingers, fists, chopsticks, phone/card/plate ownership.
-- A fixed camera is forbidden when the shot relies on subtle face/hand/prop micro-actions unless the shot is already close enough and the fixed frame is explicitly for precision lip-sync or contact. If a medium/wide shot contains micro-actions, use an internal push/focus or enlarge the action.
-- Preferred compound pattern: `0.0-0.6秒关系中景锁静物和人物槽位 -> 0.6-X秒沿视线/手臂/桌面轻推0.2-0.4米或转焦一次 -> X-尾秒落到手部/眼神/道具近景并保留原空间关系`.
-- For three-person table scenes: establish same-side pair and opposite-side standing person first; keep the table as barrier; do not let the standing person insert between same-side seated characters; if the dramatic beat is the standing person's pressure after another person speaks, start on speaker for lip-sync and land on the standing person's eyes/whole hand/fist after mouth close.
-- Do not use hard cuts inside `【画面描述｜直接复制】`. If a true reverse/insert is needed, make a new card with its own visible shoulder/foreground composition and incoming first-frame facts.
+- 景别必须匹配动作可读性：
+  - 广中景/中景：地点、动线、群体关系、全身动作或整只手动作。
+  - 中近景：一个说话者加一个听者肩线/反应，可读脸部和上半身表演。
+  - 近景/特写/插入：眼睛、嘴角、喉咙动作、手指、拳头、筷子、手机/银行卡/餐盘归属。
+- 当镜头依赖细微脸部、手部或道具微动作时，禁止使用距离过远的固定镜头；除非画面已经足够近，并且固定镜头明确服务于精准口型或接触动作。中景/广景里如果要读微动作，必须镜内推近/转焦，或把动作放大成整只手、肩背、身体姿态变化。
+- 推荐复合镜头写法：`0.0-0.6秒关系中景锁静物和人物槽位 -> 0.6-X秒沿视线/手臂/桌面轻推0.2-0.4米或转焦一次 -> X-尾秒落到手部/眼神/道具近景并保留原空间关系`。
+- 三人桌边戏：先建立同侧双人组和桌对面站立者；桌子始终是隔物；不要让站立者插入同侧坐着的两人之间。如果戏剧节拍是“别人说完后，站立者形成压力”，先给说话者口型，闭口后再把镜头落到站立者的眼神、整只手或拳头。
+- 不要在 `【画面描述｜直接复制】` 里写硬切。如果需要真正的反打或插入镜头，就另开一张镜头卡，并写清新的肩后/前景构图和入镜第一帧事实。
 
 ## 4. 表演微动作
 
-- Avoid dead listeners. Every visible important non-speaker needs a small, causally triggered reaction in the direct prompt, not only in `表演轴`.
-- Speaker is primary; listeners are low-amplitude and do not steal focus. Listener reaction defaults: gaze follows speaker, slow blink, slight brow/mouth/shoulder change, hand rests/touches prop with small movement.
-- Quantify listener motion when useful: head turn 5-10°, body/shoulder shift within 15°, single micro-action lasts 1.2-2.5s, no large repeated motions, no looping fidget unless source requires.
-- Table-scene listener menu: `视线缓慢跟随说话人`, `自然眨眼`, `手掌轻搭餐盘边`, `整只手离开筷子旁`, `肩背轻僵/下沉`, `嘴唇轻抿`, `眉尾短暂收紧后松开`, `水杯端起1cm停1秒再放下`. Use only one or two per listener per beat.
-- Emotion must be written as cause -> facial control -> body/prop action -> voice tone. Example: `听见“骗人”后，沈星雨眼神停半拍，被牵住的右手轻缩、肩背一僵，闭口OS以疑惑低音量响起：“...”`.
+- 避免“死听者”。每个画面中重要的非说话者，都要在直接提示词里有一个由台词或动作触发的小反应，不能只写在 `表演轴`。
+- 说话者是主任务；听者反应保持低幅度，不抢焦点。听者默认反应：视线跟随说话人、自然慢眨眼、眉/嘴/肩轻微变化、手搭在桌面或道具上做小动作。
+- 必要时量化听者动作：头部转动 5-10 度，身体/肩膀偏移不超过 15 度，单个微动作持续 1.2-2.5 秒；不要大幅重复动作，不要循环抖动，除非原文明确需要。
+- 桌边听者动作库：`视线缓慢跟随说话人`、`自然眨眼`、`手掌轻搭餐盘边`、`整只手离开筷子旁`、`肩背轻僵/下沉`、`嘴唇轻抿`、`眉尾短暂收紧后松开`、`水杯端起1cm停1秒再放下`。每个节拍每个听者只选一到两个。
+- 情绪必须写成“原因 -> 面部控制 -> 身体/道具动作 -> 声音语气”。示例：`听见“骗人”后，沈星雨眼神停半拍，被牵住的右手轻缩、肩背一僵，闭口OS以疑惑低音量响起：“...”`。
 
 ## 5. 后期补帧与闪回过渡
 
-- Flashbacks/memories are independently generated clips with post-production transition, not single prompts that morph one location into another.
-- Trigger/return clip: end with 0.5-0.8s stable physical handle: held eyeline, still hand, stopped breath/shoulder, or prop contact.
-- Inserted flashback clip: begin with 0.5-1.0s stable scene anchor and starting poses before action/dialogue.
-- Post bridge belongs in `声音轴/剪辑衔接/校验记录`: 3-5 white frames or short blur flash, present ambience dips, memory ambience enters 0.2s early, optional low-saturation/edge-vignette/mild handheld texture for the flashback clip.
-- Direct prompt may say `低饱和闪回质感、边缘轻暗角、轻微手持感`; it must not say `校门变成巷口` or ask the model to animate a location transformation.
+- 闪回/回忆是独立生成的片段，通过后期转场衔接；不要用单条提示词要求一个地点变形成另一个地点。
+- 触发/回到现实的镜头：尾部要保留 0.5-0.8 秒稳定物理把手，例如停住的视线、静止的手、停顿的呼吸/肩膀、或道具接触。
+- 插入的闪回镜头：动作/对白开始前，先用 0.5-1.0 秒锁住闪回地点锚点和人物起始姿态。
+- 后期桥接写在 `声音轴/剪辑衔接/校验记录`：3-5 帧白闪或短暂模糊闪，现实环境音压低，回忆环境音提前 0.2 秒进入；闪回片段可加低饱和、边缘轻暗角、轻微手持质感。
+- 直接提示词可以写 `低饱和闪回质感、边缘轻暗角、轻微手持感`；不要写 `校门变成巷口`，也不要要求模型生成地点变形动画。
