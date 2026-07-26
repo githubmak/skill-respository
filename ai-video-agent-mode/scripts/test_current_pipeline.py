@@ -6,7 +6,7 @@ import hashlib
 
 from context_budget import check, editor_items_fit
 from editor_scene_windows import build
-from modec_v4 import coverage_role_issues, dialogue_event_issues, expectation_anchor_issues, jimeng_feed_prompt, listener_reaction_issues, shot_group_handoff_issues, state_transition_replay_issues, temporal_transition_contract_issues
+from modec_v4 import coverage_role_issues, dialogue_event_issues, expectation_anchor_issues, insert_shot_issues, jimeng_feed_prompt, listener_reaction_issues, shot_group_handoff_issues, state_transition_replay_issues, temporal_transition_contract_issues
 from pipeline_runtime import atomic_json, cache_artifact, record_issues
 from adapt_nine_panel_storyboard import adapt
 from emotion_camera_audit import audit as emotion_camera_audit
@@ -26,6 +26,7 @@ from preflight_check import PLACEHOLDER_CHARACTER_NAMES
 from validate_durations import _estimate_action_seconds
 from build_shotplan import _estimate_dialogue_seconds as split_dialogue_seconds
 from validate_durations import _estimate_dialogue_seconds as validated_dialogue_seconds
+from generate_shotplan import _dramatic_design, _pack_action_beats, _pack_interaction_beats, _register_dramatic_beats
 
 
 def run():
@@ -79,6 +80,27 @@ def run():
         assert INTERNAL_TITLE_LEAK.search("S02 | S1-02 | | 11.6s | dialogue | latent")
         assert not INTERNAL_TITLE_LEAK.search("### S1-02｜11.6秒")
         assert "主角" in PLACEHOLDER_CHARACTER_NAMES
+        beat_records = []
+        beat_ids = _register_dramatic_beats(
+            beat_records,
+            {"type": "action", "source_ids": ["SRC0001"]},
+            "S1-01-01",
+            ["侍卫拖拽穿越女", "衣料擦过地砖"],
+        )
+        design = _dramatic_design({"type": "action"}, "侍卫拖拽穿越女", ["侍卫", "穿越女"], beat_ids)
+        assert design["narrative_beat_id"] == beat_ids[0]
+        assert {record["narrative_beat_id"] for record in beat_records} == {beat_ids[0]}
+        separated_actions = _pack_action_beats([
+            {"type": "action", "scene": "殿内", "text": "侍卫拖拽穿越女向殿门移动", "source_ids": ["SRC0001"]},
+            {"type": "action", "scene": "殿内", "text": "皇后冷漠看向殿门", "source_ids": ["SRC0002"]},
+        ], 10, ["侍卫", "穿越女", "皇后"])
+        assert len(separated_actions) == 2
+        packed_dialogue = _pack_interaction_beats([
+            {"type": "dialogue", "scene": "殿内", "speaker": "角色A", "text": "你来迟了。", "refs": ["D1"], "speech_duration": 1.0, "source_ids": ["SRC0003"]},
+            {"type": "dialogue", "scene": "殿内", "speaker": "角色B", "text": "我没有选择。", "refs": ["D2"], "speech_duration": 1.2, "source_ids": ["SRC0004"]},
+            {"type": "dialogue", "scene": "殿内", "speaker": "角色A", "text": "那就承担后果。", "refs": ["D3"], "speech_duration": 1.2, "source_ids": ["SRC0005"]},
+        ], 10)
+        assert len(packed_dialogue) == 2 and packed_dialogue[0]["type"] == "dialogue_group"
         atomic_json(os.path.join(run_dir, ".cache", "control.json"), {"ok": True})
         assert _read(os.path.join(run_dir, ".cache", "control.json"))["ok"] is True
         cache_artifact(run_dir, "test", {"value": 1})
@@ -150,6 +172,35 @@ def run():
         assert state_transition_replay_issues(phone_previous, "手机屏幕亮起显示来电", {}, phone_replay)
         assert not state_transition_replay_issues(phone_previous, "手机屏幕亮起显示来电", {}, "手机已亮屏，沈星雨直接抬手贴耳接听")
         assert shot_group_handoff_issues({"editorial_mode": "shot_group", "camera_beat_map": [{"focus_owner": "角色A"}, {"focus_owner": "角色B"}, {"focus_owner": "角色A"}]})
+        insert_prompt = canonical.replace(
+            "【镜头1｜0.0-1.0秒】画面",
+            "【镜头1｜0.0-1.0秒】角色A画面左侧面向角色B，前景桌沿作为场景锚点，落幅手停在桌边"
+            "【镜头2｜1.0-4.0秒】插入功能：信息补充，切到文件道具特写，文件角露出新线索，承接插入前桌面光源与画面左侧关系，随后切回角色A手停在桌边",
+        )
+        insert_metadata = {
+            "editorial_mode": "shot_group",
+            "reroll_control": {
+                "risk_level": "medium",
+                "risk_reason": "文件特写插入存在切入连续性风险",
+                "mitigation_steps": [
+                    "锁定插入前落幅：角色A手停在桌边",
+                    "锁定插入主体：文件角的新线索",
+                    "插入后切回到主线人物角色A手停在桌边",
+                    "用环境声作为声音桥承接切入前后",
+                ],
+            },
+        }
+        assert not insert_shot_issues(insert_metadata, insert_prompt, 4, ["角色A"])
+        decorative_insert = canonical.replace(
+            "画面",
+            "插入功能：节奏切割，切入回忆插入镜，装饰性空镜只为丰富画面",
+        )
+        assert any("时空意象插入" in issue or "装饰性" in issue for issue in insert_shot_issues(
+            {"editorial_mode": "shot_group", "reroll_control": {"risk_reason": "插入风险", "mitigation_steps": []}},
+            decorative_insert,
+            4,
+            ["角色A"],
+        ))
         risky = {"full_prompt": canonical.replace("空间", "甲画左、乙画右，酒店入口" ).replace("画面", "甲走向乙并递出手机"), "qa_metadata": {"dialogue_events": [{"speaker": "甲"}, {"speaker": "乙"}]}}
         assert build_spatial_storyboard_reference(risky, {"scene": "大堂"}) is not None
         board = {"source_summary": "角色相遇", "panels": [_panel(index) for index in range(1, 10)]}

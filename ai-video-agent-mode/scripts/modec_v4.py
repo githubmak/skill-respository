@@ -71,6 +71,14 @@ SPEECH_KINDS = {"台词", "OS", "OV"}
 SPEAKER_VISIBILITIES = {"visible", "offscreen", "nonphysical"}
 REROLL_RISK_LEVELS = {"low", "medium", "high"}
 TEMPORAL_TRANSITION_KINDS = {"none", "memory_flashback", "story_event_transition"}
+INSERT_FUNCTIONS = ("信息补充", "情绪放大", "节奏切割", "视线引导", "转场缓冲", "环境残压")
+INSERT_TERMS = (
+    "插入镜", "插入镜头", "切入", "切到", "局部特写", "细节特写", "道具特写",
+    "手部特写", "空镜", "环境残留", "环境残压", "反应镜", "回忆", "幻想", "闪回", "时空意象",
+)
+FACE_CLOSEUP_RE = re.compile(r"(?:脸部|面部|半脸|眼神|眼睛|眼眶|唇线|下颌).{0,8}(?:大特写|特写)|(?:大特写|特写).{0,8}(?:脸部|面部|半脸|眼神|眼睛|眼眶|唇线|下颌)")
+TEMPORAL_INSERT_RE = re.compile(r"(?:插入镜|切入|切到|插入).{0,24}(?:回忆|幻想|闪回|时空意象)|(?:回忆|幻想|闪回|时空意象).{0,24}(?:插入镜|切入|切到|插入)")
+DECORATIVE_INSERT_RE = re.compile(r"(?:无意义|装饰性|纯氛围|静态氛围|无关|好看|丰富画面)")
 GENERIC_PERFORMANCE_TERMS = {
     "紧张", "震惊", "愤怒", "悲伤", "害怕", "自然", "自然反应", "有张力",
     "情绪复杂", "表情细腻", "保持状态", "微微变化", "很强烈",
@@ -231,6 +239,121 @@ def action_budget_issues(metadata, duration, is_fight=False):
             issues.append("action_budget.editorial_response_count必须等于camera_beat_map数量")
     elif isinstance(beats, list) and beats:
         issues.append("continuous_take不得包含camera_beat_map")
+    return issues
+
+
+def emotion_driver_issues(metadata, full_prompt="", visible_characters=None):
+    """Require a concrete upstream emotion driver before camera design."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    visible = _string_list(visible_characters or [])
+    has_visible = bool(visible)
+    driver = metadata.get("emotion_driver")
+    if not has_visible and driver in (None, {}):
+        return []
+    if not isinstance(driver, dict):
+        return ["有人物镜头必须提供qa_metadata.emotion_driver"] if has_visible else [
+            "qa_metadata.emotion_driver必须是对象"
+        ]
+
+    issues = []
+    required = (
+        "trigger",
+        "start_state",
+        "visible_leak",
+        "face_or_eyeline",
+        "voice_or_breath",
+        "end_residue",
+        "tension_intent",
+        "empathy_anchor",
+    )
+    for field in required:
+        value = str(driver.get(field, "") or "").strip()
+        if len(value) < 2:
+            issues.append(f"emotion_driver.{field}不能为空")
+        elif value in GENERIC_PERFORMANCE_TERMS:
+            issues.append(f"emotion_driver.{field}过于抽象，必须写可见表演重音")
+    if driver.get("tension_intent") not in TENSION_INTENTS:
+        issues.append("emotion_driver.tension_intent只允许neutral/latent/rising/peak/release")
+
+    contract = metadata.get("performance_contract", {})
+    if isinstance(contract, dict):
+        contract_intent = contract.get("tension_intent")
+        if contract_intent in TENSION_INTENTS and driver.get("tension_intent") in TENSION_INTENTS:
+            if contract_intent != driver.get("tension_intent"):
+                issues.append("emotion_driver.tension_intent必须与performance_contract.tension_intent一致")
+
+    timeline = split_sections(full_prompt, PROMPT_LABELS).get("子镜头组", "")
+    visible_fields = ("visible_leak", "face_or_eyeline", "voice_or_breath", "end_residue")
+    grounded = [
+        field for field in visible_fields
+        if _fragment_grounded(driver.get(field, ""), timeline)
+    ]
+    if has_visible and timeline and not grounded:
+        issues.append("emotion_driver至少一个可见重音必须落实到子镜头组")
+    return issues
+
+
+def camera_beat_map_issues(metadata):
+    """Validate emotion-driven camera beat handoff for shot_group."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    beats = metadata.get("camera_beat_map", [])
+    if metadata.get("editorial_mode", "continuous_take") != "shot_group":
+        return []
+    if not isinstance(beats, list):
+        return ["camera_beat_map必须是数组"]
+
+    issues = []
+    driver = metadata.get("emotion_driver", {})
+    driver_text = " ".join(
+        str(value or "") for value in driver.values()
+    ) if isinstance(driver, dict) else ""
+    source_trigger_terms = (
+        "道具", "台词", "对白", "声音", "视线", "眼神", "手", "呼吸", "重心",
+        "身体", "表情", "肩", "步", "落点", "动作", "受力", "格挡", "闪避",
+    )
+    allowed_responses = {
+        "hold", "push_in", "pull_back", "reframe", "rack_focus",
+        "hard_cut", "cut_detail", "follow",
+    }
+    allowed_transitions = {"continuous", "hard_cut", "motivated_insert", "reframe", "hold"}
+    required = (
+        "time_range",
+        "focus_owner",
+        "focus_subject",
+        "framing",
+        "trigger",
+        "camera_response",
+        "camera_position",
+        "camera_movement",
+        "transition_type",
+        "screen_lock",
+        "axis_relation",
+        "axis_carryover",
+        "carryover",
+        "end_frame",
+    )
+    for index, beat in enumerate(beats):
+        if not isinstance(beat, dict):
+            issues.append(f"camera_beat_map[{index}]必须是对象")
+            continue
+        for field in required:
+            if len(str(beat.get(field, "") or "").strip()) < 2:
+                issues.append(f"camera_beat_map[{index}].{field}不能为空")
+        if not re.fullmatch(r"\d+(?:\.\d+)?-\d+(?:\.\d+)?秒", str(beat.get("time_range", "") or "").strip()):
+            issues.append(f"camera_beat_map[{index}].time_range必须是连续小数秒范围")
+        response = str(beat.get("camera_response", "") or "").strip()
+        if response and response not in allowed_responses:
+            issues.append(f"camera_beat_map[{index}].camera_response非法")
+        transition = str(beat.get("transition_type", "") or "").strip()
+        if transition and transition not in allowed_transitions:
+            issues.append(f"camera_beat_map[{index}].transition_type非法")
+
+        trigger = str(beat.get("trigger", "") or "").strip()
+        if trigger:
+            has_driver_fragment = _shares_meaningful_fragment(trigger, driver_text)
+            has_allowed_source = any(term in trigger for term in source_trigger_terms)
+            if driver_text and not has_driver_fragment and not has_allowed_source:
+                issues.append(f"camera_beat_map[{index}].trigger必须来自emotion_driver、道具状态、视线或台词落点")
     return issues
 
 
@@ -420,6 +543,83 @@ def shot_group_handoff_issues(metadata):
     if len(owners) > 2:
         return ["同一即梦shot_group出现第二次人物注意力交接（如A→B→A），必须拆为下一条T2V任务"]
     return []
+
+
+def insert_shot_issues(metadata, full_prompt="", duration=None, visible_characters=None):
+    """Validate motivated insert shots without adding a separate required schema."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    full_prompt = str(full_prompt or "")
+    sections = split_sections(full_prompt, PROMPT_LABELS)
+    timeline = sections.get("子镜头组", "")
+    beats = metadata.get("camera_beat_map", [])
+    beats = beats if isinstance(beats, list) else []
+    beat_text = " ".join(
+        " ".join(str(value or "") for value in beat.values())
+        for beat in beats if isinstance(beat, dict)
+    )
+    combined = timeline + "\n" + beat_text
+    has_insert = any(term in combined for term in INSERT_TERMS) or any(
+        isinstance(beat, dict) and str(beat.get("insert_function", "") or "").strip()
+        for beat in beats
+    )
+    if not has_insert:
+        return []
+
+    issues = []
+    if metadata.get("editorial_mode", "continuous_take") != "shot_group":
+        issues.append("插入镜头必须作为shot_group内部子镜，不得混入continuous_take")
+
+    children = [
+        match.group(3)
+        for match in JIMENG_CHILD_SHOT_RE.finditer(timeline)
+        if any(term in match.group(3) for term in INSERT_TERMS)
+        or any(function in match.group(3) for function in INSERT_FUNCTIONS)
+    ]
+    insert_count = len(children)
+    try:
+        seconds = float(duration or 0)
+    except (TypeError, ValueError):
+        seconds = 0
+    max_insert = 1 if seconds <= 6 else 2 if seconds <= 10 else 3
+    if insert_count > max_insert:
+        issues.append(f"插入镜头数量{insert_count}超过当前时长上限{max_insert}")
+
+    for index, body in enumerate(children, 1):
+        if not any(function in body for function in INSERT_FUNCTIONS):
+            issues.append(f"插入镜头{index}必须写清插入功能：{'/'.join(INSERT_FUNCTIONS)}")
+        if DECORATIVE_INSERT_RE.search(body):
+            issues.append(f"插入镜头{index}出现装饰性/无关动机，必须删除或改为有信息增量的细节")
+        if not re.search(r"信息|线索|伏笔|状态|变化|残留|压力|关系|道具|杯|文件|手机|钥匙|伤口|血迹|衣角|门|桌|光|影|声音桥|切回|回到|承接", body):
+            issues.append(f"插入镜头{index}缺少新信息、状态变化、关系压力或回到主线承接")
+    for first, second in zip(children, children[1:]):
+        if FACE_CLOSEUP_RE.search(first) and FACE_CLOSEUP_RE.search(second):
+            issues.append("插入镜头不得连续使用人物脸部大特写")
+
+    transition = metadata.get("temporal_transition_contract", {})
+    transition_enabled = isinstance(transition, dict) and transition.get("enabled") is True
+    if TEMPORAL_INSERT_RE.search(combined) and not transition_enabled:
+        issues.append("回忆/幻想/时空意象插入必须启用temporal_transition_contract，或拆为独立主镜")
+
+    visible = _string_list(visible_characters or [])
+    reroll = metadata.get("reroll_control", {})
+    if visible:
+        if not isinstance(reroll, dict):
+            issues.append("人物镜使用插入镜时必须提供reroll_control")
+        else:
+            risk_reason = str(reroll.get("risk_reason", "") or "")
+            if not any(token in risk_reason for token in ("插入", "切入", "特写", "空镜", "细节")):
+                issues.append("使用插入镜时reroll_control.risk_reason必须包含插入/切入风险来源")
+            mitigation = reroll.get("mitigation_steps")
+            mitigation_text = "；".join(str(step or "") for step in mitigation if str(step or "").strip()) if isinstance(mitigation, list) else ""
+            for label, pattern in (
+                ("插入前落幅", r"插入前|切入前|前一子镜|前落幅"),
+                ("插入主体", r"插入主体|切入主体|特写主体|细节主体|道具主体"),
+                ("回到主线状态", r"切回|回到主线|回到人物|返回主线|插入后"),
+                ("声音桥", r"声音桥|音效承接|环境声|对白尾音|旁白延续"),
+            ):
+                if not re.search(pattern, mitigation_text):
+                    issues.append(f"插入镜reroll_control.mitigation_steps缺少{label}稳定措施")
+    return issues
 
 
 def expectation_anchor_issues(metadata, full_prompt=""):
@@ -1076,3 +1276,19 @@ def _fragment_grounded(value, text):
         if len(fragment.strip()) >= 4 and fragment.strip() not in GENERIC_PERFORMANCE_TERMS
     ]
     return any(fragment in text for fragment in fragments[:4])
+
+
+def _shares_meaningful_fragment(value, source_text):
+    """Return true when value has a concrete phrase traceable to source_text."""
+    value = str(value or "").strip()
+    source_text = str(source_text or "")
+    if not value or not source_text:
+        return False
+    if value in source_text or source_text in value:
+        return True
+    fragments = [
+        fragment.strip()
+        for fragment in re.split(r"[，,；;。！？、\s]+", value)
+        if len(fragment.strip()) >= 4 and fragment.strip() not in GENERIC_PERFORMANCE_TERMS
+    ]
+    return any(fragment in source_text for fragment in fragments[:4])

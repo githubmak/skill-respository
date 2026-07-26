@@ -17,6 +17,7 @@ from modec_v4 import (
     dialogue_event_issues,
     fight_continuity_issues,
     fight_transition_issues,
+    insert_shot_issues,
     listener_reaction_issues,
     performance_causality_issues,
     prompt_length_issues,
@@ -104,11 +105,24 @@ def main(run_dir):
             errors.append(prefix + issue)
         for issue in camera_competition_issues(full_prompt, metadata.get("editorial_mode", shot.get("editorial_mode", "continuous_take"))):
             errors.append(prefix + issue)
-
         plan_item = expected.get(sid, {})
         director_item = director_map.get(sid, {})
+        dramatic = metadata.get("dramatic_design", {})
+        if isinstance(dramatic, dict):
+            narrative_beat_id = str(dramatic.get("narrative_beat_id", "") or "").strip()
+            dramatic_beat_ids = [str(beat_id).strip() for beat_id in dramatic.get("dramatic_beat_ids", []) or [] if str(beat_id).strip()]
+            if narrative_beat_id and narrative_beat_id not in dramatic_beat_ids:
+                errors.append(prefix + "dramatic_design.narrative_beat_id必须属于dramatic_beat_ids")
+            expected_narrative = str((plan_item.get("dramatic_design", {}) or {}).get("narrative_beat_id", "") or "").strip()
+            if expected_narrative and not narrative_beat_id:
+                errors.append(prefix + "dramatic_design.narrative_beat_id必须从Phase 1继承")
+            elif expected_narrative and narrative_beat_id != expected_narrative:
+                errors.append(prefix + "dramatic_design.narrative_beat_id必须与Phase 1一致")
+
         visible = _as_list(plan_item.get("visible_characters", plan_item.get("characters", [])))
         for issue in role_partition_issues(metadata, visible):
+            errors.append(prefix + issue)
+        for issue in insert_shot_issues(metadata, full_prompt, shot.get("duration", 0), visible):
             errors.append(prefix + issue)
         for issue in performance_causality_issues(metadata, visible):
             errors.append(prefix + issue)

@@ -171,16 +171,21 @@
   "editorial_mode": "continuous_take | shot_group",
   "camera_beat_map": [
     {
-      "trigger": "表演链中的具体重音",
+      "trigger": "emotion_driver表演重音、道具状态变化或台词落点",
       "visual_priority": "当前主要人物/道具/关系",
-      "camera_response": "hold | push_in | reframe | cut_reaction | cut_detail | follow",
+      "camera_response": "hold | push_in | pull_back | reframe | rack_focus | hard_cut | cut_detail | follow",
       "time_range": "1.2-2.0秒",
       "focus_owner": "承担当前画面注意力的人物名；道具细节写object；不得在同一T2V任务中A→B→A",
       "focus_subject": "承担本节拍的人物、手部或道具",
       "framing": "中近景 | 特写 | 双人中景等落幅景别与构图",
+      "camera_position": "机位位置、高度、前景肩膀/遮挡和空间锚点",
+      "camera_movement": "固定、极慢推近、拉远、单向重构图、拉焦、硬切或跟随之一",
+      "screen_lock": "画面左右、前中后景、实焦/虚焦关系",
       "axis_relation": "相对既有轴线的同侧/反打关系与左右位置",
-      "transition_type": "hold | motivated_cut | hard_cut | motivated_reframe | continuous_move",
-      "carryover": "切换后必须保留的人物、道具、轴线或光源状态"
+      "axis_carryover": "切换前后必须继承的轴线、朝向和左右关系",
+      "transition_type": "continuous | hard_cut | motivated_insert | reframe | hold",
+      "carryover": "切换后必须保留的人物、道具、轴线或光源状态",
+      "end_frame": "本子镜落幅交给下一段的姿态、视线、道具和焦点状态"
     }
   ],
   "scene_anchor_usage": {
@@ -213,7 +218,8 @@
 
 - `shot_size`：大特写、特写、中近景、中景、全景、大远景。
 - `movement_type`：固定、推、拉、摇、移、跟、升、降、俯、仰、环绕、甩、变焦、旋转、手持、穿梭。
-- `continuous_take` 每子镜只能有一个主要 `movement_type`；复合移动必须是同一方向的连续轨迹。`movement_detail` 必须说明固定机位是否允许极慢推近，并排除未授权的摇移、跟拍、拉焦或变焦；这只锁定摄影机，不得抹掉 `visual_progression` 中已确认的人物、道具、视线或关系变化。`shot_group` 使用 1–3 项 `camera_beat_map`，每项必须由 `performance_chain` 的表情、细部/道具泄露、身体承接或语气落点触发；每项明确发生时间、`focus_owner`、视觉主体、落幅景别、轴线关系、转场类型与状态承接。允许一次 `A→B` 的自然反打/切特写/移镜；同一即梦任务禁止 `A→B→A` 或第二次人物交接，必须拆为下一 T2V 任务并交后期硬切。
+- `emotion_driver` 是运镜前置输入，人物镜必须填写，环境/物件镜可写中性 `N/A` 说明。Camera/Composer 不得新增其中没有的情绪结论。`emotion_driver.trigger/start_state/visible_leak/face_or_eyeline/voice_or_breath/end_residue/tension_intent/empathy_anchor` 必须与 `performance_contract` 同向，且关键可见证据进入 `子镜头组`。
+- `continuous_take` 每子镜只能有一个主要 `movement_type`；复合移动必须是同一方向的连续轨迹。`movement_detail` 必须说明固定机位是否允许极慢推近，并排除未授权的摇移、跟拍、拉焦或变焦；这只锁定摄影机，不得抹掉 `visual_progression` 中已确认的人物、道具、视线或关系变化。`shot_group` 使用 1–3 项 `camera_beat_map`，每项必须由同一 `narrative_beat_id` 下 `emotion_driver` 或 `performance_chain` 的表情、细部/道具泄露、身体承接、语气落点、道具状态变化或台词落点触发；每项明确发生时间、`focus_owner`、`focus_subject`、落幅景别、`camera_response`、机位/运动锁、屏幕锁、轴线承接、转场类型与状态承接。允许一次 `A→B` 的自然反打/切特写/移镜；同一即梦任务禁止 `A→B→A`、第二次人物交接或第二个独立剧情节拍，必须拆为下一 T2V 任务并交后期硬切。
 - `hard_cut` 只用于 `shot_group`，每个即梦任务最多一次，必须由具体表演重音触发并写明准确时间点；它表示无淡入淡出、无黑场、无特效过渡的瞬时硬切。切后必须重新写明景别、实焦主体、屏幕左右、轴线关系和可见承接，禁止只写“明确剪切”。若需要回切到切前人物，不得在本条继续写第二次硬切；以当前落幅作为剪辑接点，在下一条 T2V 的起幅继承状态。
 - 有前中后景人物关系时，`composition` 或 `camera_beat_map.framing` 必须写清前景为实焦、轻度虚焦或强焦外，中景/背景哪个人物为实焦，焦点是否稳定；焦外人物用空间距离、景深和“不出现可辨认五官/不抢焦点”约束，不得以不合理压暗人物亮度替代景深控制。
 - 仅当一个连续剧情动作、长台词或连续关系判断必须拆成多个子镜时，填写 `sequence_context`。各段继承上一段的姿态、道具、声音边界和情绪残留；不得每段从中性站姿重新起演。
@@ -241,6 +247,14 @@
 
 下一时间段或下一镜必须从上一段的可见落幅状态起演，继承姿态、视线、道具接触、重心、屏幕左右、焦点关系与同源光；只有源文可见动作或已声明的硬切/走位可改变状态。人物名称相同不构成连续性证据。
 
+对手戏允许使用“心理距离景别反差”，但只能由源文中的不对等压力触发：焦虑、急迫、求回应、被压迫或失控的一方可用更窄景别、背景压缩、手部/呼吸细节和轻微推近；松弛、掌控、拒绝接招或旁观的一方可用中景/宽景、稳定机位、桌面/门框/屏风等空间留白保持呼吸感。该策略必须服务一个剧情节拍和一个注意力中心，不得变成“每轮对话一近一宽”的固定公式。
+
+插入镜头是主叙事镜头中的短暂辅助画面：局部特写、道具/手部细节、空镜、反应镜、环境残留或时空意象，再回到主线。它只能服务当前 `narrative_beat_id`，用于补充关键信息、标记伏笔、放大一个情绪泄露、切割长对话节奏、缓冲转场或保留环境残压；不能替代主线人物表演，也不能承载第二个剧情节拍。
+
+AI 漫剧互动戏的插入镜以稳定优先：已确认道具特写、环境残留最稳；手部/衣角/杯沿/文件等局部中高稳定；半脸/眼神特写只给关键破防；多人反应镜、连续快切、回忆/幻想插入为高风险。高风险插入如果包含新事件、新时空、新反应结论、第二次注意力交接或需要回切，应拆成下一主镜；回忆/幻想优先使用 `temporal_transition_contract` 或独立主镜。
+
+插入镜必须带来新的可见信息、道具状态变化、关系压力或情绪残留，并继承同一场景锚点、光源、轴线、左右站位、道具位置和插入前后的动作状态。无信息增量的装饰空镜、频繁人物脸部特写、未确认道具、改变空间关系或画质/光源割裂的插入镜属于抽卡风险。
+
 ### B1. 顶层与 shot 结构
 
 `risk_tier`、`risk_reasons`、`batch_capacity` 与 `review_scope` 仅存在于 dispatch packet；Editor review window 对应使用 `review_tier`、`risk_reasons` 与 `review_scope`。它们只决定批大小与可读上下文，不是 Composer 输出字段，不得写入 `full_prompt`、`qa_metadata`、`negative_prompt` 或 `generation_control`。`light` 只代表可缩窄审查上下文，绝不代表免除 Agent 复审、三份合同、确定性验证或最终导出验证。
@@ -263,6 +277,7 @@ Composer batch 只输出：
           "narrative_weight": "low | medium | high | critical",
           "information_gain": "本镜新增的唯一信息或关系变化",
           "reaction_ownership": "本镜拥有的反应人物；无则为空",
+          "narrative_beat_id": "B001",
           "dramatic_beat_ids": ["B001"],
           "visual_punctuation": ["camera_follow", "stop_mark"]
         },
@@ -274,7 +289,36 @@ Composer batch 只输出：
           "dramatic_beats": ["B001"]
         },
         "editorial_mode": "continuous_take | shot_group",
-        "camera_beat_map": [],
+        "emotion_driver": {
+          "trigger": "源文支持的情绪触发点、动作触发点或可见自主起势",
+          "start_state": "人物起幅情绪/身体状态",
+          "visible_leak": "身体、手部、道具或姿态先泄露的可见证据",
+          "face_or_eyeline": "当前景别可见的表情、视线或不可见时的N/A说明",
+          "voice_or_breath": "呼吸、语气、气口或无声时的可见呼吸控制",
+          "end_residue": "本镜落幅不复位的情绪、姿态、视线或道具残留",
+          "tension_intent": "neutral | latent | rising | peak | release",
+          "empathy_anchor": "观众能读懂角色此刻在怕、忍、护住或失去什么"
+        },
+        "camera_beat_map": [
+          {
+            "time_range": "0.0-1.2秒",
+            "focus_owner": "角色A | 角色B | object | environment",
+            "focus_subject": "承担本节拍的人物、手部、道具或关系",
+            "framing": "景别与实焦主体",
+            "trigger": "触发本子镜切换的emotion_driver表演重音、道具状态变化或台词落点",
+            "camera_response": "hold | push_in | pull_back | reframe | rack_focus | hard_cut | cut_detail | follow",
+            "camera_position": "机位位置、高度、前景肩膀/遮挡和空间锚点",
+            "camera_movement": "固定、极慢推近、拉远、单向重构图、拉焦、硬切或跟随之一；无则写固定",
+            "transition_type": "continuous | hard_cut | motivated_insert | reframe | hold",
+            "screen_lock": "画面左右、前中后景、实焦/虚焦关系",
+            "axis_relation": "相对既有轴线的同侧/反打关系与左右位置",
+            "axis_carryover": "切换前后必须继承的轴线、朝向和左右关系",
+            "carryover": "切换后必须继承的状态",
+            "end_frame": "本子镜落幅交给下一段的姿态、视线、道具和焦点状态",
+            "insert_function": "仅插入镜填写：信息补充 | 情绪放大 | 节奏切割 | 视线引导 | 转场缓冲 | 环境残压",
+            "new_information": "仅插入镜填写：新增信息、状态变化、关系压力或情绪残留"
+          }
+        ],
         "sequence_context": {},
         "viewpoint": "objective",
         "visual_hierarchy": "",
@@ -415,7 +459,6 @@ Composer batch 只输出：
 3. `主镜头连续规则：...`
 4. `子镜头组：...`
 5. `光照、声音与稳定约束：...`
-4. `光照、声音与稳定约束：...`
 
 段间恰好一个空行。禁止旧版八字段、模板编号、自包含验证、负面词、QA 结论和工程字段。
 
@@ -452,6 +495,7 @@ Composer batch 只输出：
 - 每段按 `可见触发 → 主角身体反应 → 对手必要反应 → 镜头落点` 写。
 - 每段只保留一个实焦主体。若该段的画面证据是主角的眼神、手部或关键道具，则这些可成为同一近距离焦平面的实焦；若该段承担另一人物的揭示，则该人物为实焦，主角只能作为轻度虚焦的前景或背景空间锚点。背景人物以焦外、不出现可辨认五官、不抢焦点控制，禁止要求所有人物同时清晰。
 - `shot_group` 的切换在对应时间段内写明转场类型与触发。使用硬切时，写“于 X.X 秒由〔具体视线/动作/台词〕触发无转场硬切”，随后立刻写切后景别、实焦主体、屏幕位置、轴线和承接状态；不得用“明确剪切”代替这些事实。
+- 插入镜作为 `shot_group` 子镜时必须写清插入功能：`信息补充 / 情绪放大 / 节奏切割 / 视线引导 / 转场缓冲 / 环境残压` 中的一项，并在该段正文中落地具体新信息或状态变化。3–6 秒主镜最多 1 次插入；6–10 秒最多 2 次；10–15 秒仍受 3 个子镜总量限制。插入镜不得连续使用人物脸部大特写，不得无触发切入静态空镜。
 - 每个人物镜必须有一个观众可直接读懂的共情锚点和画面可读瞬间：先明确角色此刻被什么刺中、想护住什么、怕失去什么或正在忍住什么，再落成一个可见证据。共情锚点不能是“观众共情、感染力强、情绪到位”等结果词。
 - 现代都市剧情人物镜默认表演克制：不用夸张瞪眼、扭曲表情或大幅肢体动作；以当前景别可见的眼神停留、呼吸变化、手部/关键道具力度、肩背姿态和重心微调承载情绪。原文明确要求夸张喜剧、惊吓或肢体爆发时，以原文事件为准。
 - 画面可读瞬间只选 1 个主证据并贯穿时间轴，如手停住、视线避开、肩背收紧、呼吸断半拍、道具状态改变或空间距离被压缩；不得为了画面感堆叠过多表情/肢体细节。
@@ -465,7 +509,7 @@ Composer batch 只输出：
 - 6–10 秒镜头：主动作≤2、情绪转折≤1、对手反应总数≤2、主要运镜≤1。
 - 10–15 秒连续互动：允许 2–3 个因果相接的内部节拍、多个短台词轮次和一次因果注意力交接。`continuous_take` 保持一条摄影机轨迹；`shot_group` 可由表演重音带出 1–3 个自然景别/视角变化。两者都只能服务一个整体戏剧目标；第二个独立戏剧目标、无触发的反复抢焦或无关动作链必须拆镜。
 - 时长服务于可见事件，不服务于氛围填充。单一微表情、一次视线变化、静态压场、群体凝视或落幅余韵默认不得超过 `project_config.max_static_shot_duration`（默认 6 秒）。落幅残留是承接下一镜的终态，不是额外延时。
-- Phase 1 先尝试把同一戏剧目标内因果连续的节拍打包到接近平台上限，再以内容所需时长落定，不强行补满。每镜记录 `duration_strategy=pack_toward_limit`、`justified_content_duration`、`utilization_ratio`、`duration_rationale` 与 `dramatic_beats[]`。超过静态上限时，rationale 仅允许 `continuous_dialogue / continuous_interaction / continuous_action / sustained_reveal`；6–10 秒至少 2 个可见因果节拍，10–15 秒至少 3 个。不得以“压迫感、静默、停顿、余韵、保持状态”作为理由。
+- Phase 1 只能把同一 `narrative_beat_id` 内因果连续的可见片段打包到平台上限内，再以内容所需时长落定，不强行补满。每镜记录 `duration_strategy=pack_toward_limit`、`justified_content_duration`、`utilization_ratio`、`duration_rationale` 与 `dramatic_beats[]`。超过静态上限时，rationale 仅允许 `continuous_dialogue / continuous_interaction / continuous_action / sustained_reveal`；6–10 秒至少 2 个可见因果片段，10–15 秒至少 3 个。不得以“压迫感、静默、停顿、余韵、保持状态”作为理由。
 - 有意静止仍可用于屏息、庄重或对峙，但必须在短镜内完成；若静止本身构成持续事件，`dramatic_beats[]` 必须写出期间发生的可见信息变化，而非重复“人物保持不动”。
 - 打斗镜优先作为一个不切镜的连续动作链：≤6 秒最多 1 个接触节拍、6–10 秒最多 2 个、10–15 秒最多 3 个；所有节拍必须因果相接并共享同一主要摄影机轨迹。攻防双方之间的因果注意力传递不算独立换焦；换轴、切到独立主编舞链/戏剧焦点、换场景、第二条无关动作链或超过 15 秒才拆片段。
 - 打斗镜按平台稳定性控制速度、幅度、接触节拍和镜头抖动；当动作复杂度超过单条可稳定生成范围时，必须在 `fight_continuity` 中锁定连续片段，或拆成下一生成片段。
@@ -523,11 +567,11 @@ Phase 10 可从已验证的主镜和连续性合同自动派生“人物站位�
 
 - 只用于制作和验证，不投喂视频模型。
 - `dramatic_goal` 必须是本镜具体目标。
-- `dramatic_design` 必须包含镜头功能、叙事权重、唯一信息增量、反应归属、`dramatic_beat_ids` 与 `visual_punctuation`。每个 beat ID 必须在 `dramatic_beat_ledger.json` 中唯一归属于当前子镜。high/critical 重要出场的 `visual_punctuation` 必须从 `occlusion_reveal / low_angle_scale / foreground_reaction / camera_follow / light_reveal / stop_mark / rack_focus` 中选 1–2 项；其他镜可为空。
+- `dramatic_design` 必须包含镜头功能、叙事权重、唯一信息增量、反应归属、唯一 `narrative_beat_id`、本节拍内部 `dramatic_beat_ids` 与 `visual_punctuation`。每个 beat ID 必须在 `dramatic_beat_ledger.json` 中唯一归属于当前子镜，且新生成的 shot plan 应让同一主镜内的 beat ID 共享同一个 `narrative_beat_id`。`dramatic_beat_ids` 和 `duration_design.dramatic_beats` 只证明该单一剧情节拍的起势、承接、转折或落幅；若出现新的事件目标、主动作链、反应归属、情绪结论、第二次人物注意力交接或需要回切的独立反打，必须拆成下一主镜。high/critical 重要出场的 `visual_punctuation` 必须从 `occlusion_reveal / low_angle_scale / foreground_reaction / camera_follow / light_reveal / stop_mark / rack_focus` 中选 1–2 项；其他镜可为空。
 - `duration_design` 必须逐字继承 Phase 1 的时长策略和依据；低利用率本身不是错误，缺少内容依据或用静态余韵填充才是错误。
 - `editorial_mode` 必须从 Director 逐字继承；它决定本镜执行一条连续轨迹，或一组由表演重音触发的镜头响应。
 - `camera_beat_map` 与 `sequence_context` 也必须从 Director 逐字继承。前者不得由 Composer 重新发明；后者要求连续拆分从上一段状态起演而非重置。
-- `shot_group` 的每个镜头节拍都写明 `trigger/time_range/focus_subject/framing/axis_relation/transition_type/carryover`；Composer 将这些信息落到主镜头连续规则与子镜头组，不增加未声明的切换。
+- `shot_group` 的每个镜头节拍都写明 `time_range/focus_owner/focus_subject/framing/trigger/camera_response/camera_position/camera_movement/transition_type/screen_lock/axis_relation/axis_carryover/carryover/end_frame`；Composer 将这些信息落到主镜头连续规则与子镜头组，不增加未声明的切换。子镜组是同一 `narrative_beat_id` 的视觉覆盖，不能把两个可独立复述的剧情动作或动作—反应结论并成一个主镜。
 - `quality_contract` 由子镜类型确定并从 Director 锁定继承。它适用于任何生成模型：环境镜也必须证明叙事功能、视觉锚点、空间光线和转场承接；物件镜证明道具状态与焦点；人物镜证明对应的动作、台词或表演因果。不得因为某项分析被跳过而省略合同要求。
 - `performance_priority` 覆盖全部可见人物且不能重叠。
 - `action_budget` 使用非负整数并满足 B4 上限。
@@ -596,6 +640,7 @@ Phase 10 可从已验证的主镜和连续性合同自动派生“人物站位�
 ```
 
 - `performance_contract` 的表情、身体、视线、呼吸/语气、观众共情锚点、画面可读瞬间、`visual_progression`、压制/释放、运镜压力、场景压力和落幅残留必须落实进 `full_prompt` 对应段落；只写“紧张、震惊、自然反应、有张力、表情细腻、感染力强、观众共情”等抽象词不合格。`visual_progression` 写起幅→可见变化→落幅，或在有意静止时写静止理由→低幅生命迹象→落幅；它不要求每镜切换景别或移动摄影机，但禁止用“固定机位/稳定”代替人物与画面的真实推进。
+- 当对手戏使用心理距离景别反差时，`camera_pressure` 必须写明谁被画面收窄、谁保留空间呼吸，以及触发依据；`scene_pressure` 必须写明桌面、门框、屏风、光线、道具或人物距离如何加压。若使用道具/环境插入镜，`visual_progression` 必须说明它带来的新信息或状态变化，`continuity_contract.prop_state/next_carryover` 必须继承该状态；不得把装饰性空镜当作张力证据。
 - `expectation_anchor` 是按需字段：仅当期待/等待会改变本镜焦点、切镜或下一镜连续性时增加。先写 `semantic_mode` 与 `source_interpretation`，以说明它是字面人物行为、借物拟人、需求/缺失还是象征意象；不得让登记类型替代语义判断。锚点可以是实体对象、人物动作、事件、空间位置或其他可见状态；无候选时省略该字段，不用填 `N/A`。有期待锚点时，必须在子镜头组落地锚点、进展事件、期待主体回反应和终态：
 
 ```json
@@ -648,6 +693,8 @@ Phase 10 可从已验证的主镜和连续性合同自动派生“人物站位�
 ```
 
 - T2V 人物镜不得把风险标为 `low`。T2V 的 `rising/peak` 人物镜必须标记 `manual_first_pass_check=true`，并用身份、服装、屏幕左右、场景、动作或镜头降负载等策略降低抽卡；不得要求或伪造外部素材。
+- 使用心理距离景别反差、人物脸部特写、shot_group 插入镜或道具/环境细节切镜时，`reroll_control.risk_reason` 必须包含对应风险来源，`mitigation_steps` 至少写明两项稳定措施：复用身份/服装锚点、固定屏幕左右、继承同一光源与轴线、优先手部/道具而非脸部大特写、限制为一次动机切换、或把第二个反应节拍拆到下一主镜。
+- 使用插入镜时，`reroll_control.mitigation_steps` 还必须覆盖插入前后承接：锁定插入前落幅、插入主体、插入后回到的主线人物/道具状态和声音桥。若插入镜为回忆/幻想/时空意象而未启用 `temporal_transition_contract` 或独立主镜，应标为 blocking。
 - 连续互动发生注意力交接时增加 `attention_handoff`；无交接时可省略：
 
 ```json

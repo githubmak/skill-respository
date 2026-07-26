@@ -60,6 +60,7 @@ def run(run_dir):
             if not isinstance(dramatic_design, dict):
                 issues.append(_issue(ssid, "DRAMATIC_DESIGN_MISSING", "dramatic_design is required"))
             else:
+                narrative_beat_id = str(dramatic_design.get("narrative_beat_id", "") or "").strip()
                 punctuation = dramatic_design.get("visual_punctuation")
                 if not isinstance(punctuation, list):
                     issues.append(_issue(ssid, "VISUAL_PUNCTUATION_TYPE", "dramatic_design.visual_punctuation must be an array"))
@@ -74,6 +75,10 @@ def run(run_dir):
                         and not 1 <= len(punctuation) <= 2
                     ):
                         issues.append(_issue(ssid, "VISUAL_PUNCTUATION_COUNT", "important entrance needs 1-2 visual punctuation devices"))
+                if narrative_beat_id:
+                    dramatic_beat_ids = [str(beat_id).strip() for beat_id in dramatic_design.get("dramatic_beat_ids", []) or [] if str(beat_id).strip()]
+                    if narrative_beat_id not in dramatic_beat_ids:
+                        issues.append(_issue(ssid, "NARRATIVE_BEAT_ID_MISMATCH", "narrative_beat_id must be one of dramatic_beat_ids"))
                 for beat_id in dramatic_design.get("dramatic_beat_ids", []) or []:
                     if beat_id in declared_beats:
                         issues.append(_issue(ssid, "DRAMATIC_BEAT_DUPLICATE_OWNER", "%s also owned by %s" % (beat_id, declared_beats[beat_id])))

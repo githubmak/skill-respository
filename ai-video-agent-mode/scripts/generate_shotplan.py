@@ -161,10 +161,11 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
     if current_scene:
         scenes.append(current_scene)
 
-    # Pack adjacent dialogue turns into one actual generation unit when they
-    # form one scene-local interaction and fit the user-confirmed duration.
+    # Pack only dialogue/action fragments that still belong to one narrative
+    # beat.  Clip capacity is never a reason to merge a second event goal,
+    # reaction ownership, or action chain into the same master shot.
     # Narration/OV/OS remains separate because it has a different lip-sync
-    # boundary. Actions remain explicit Orchestrator beats.
+    # boundary.
     merged = _pack_interaction_beats(beats, max_shot_duration)
     merged = _pack_action_beats(merged, max_shot_duration, characters_list)
 
@@ -323,6 +324,7 @@ def _visible_beat_texts(text):
 def _register_dramatic_beats(records, beat, owner_subshot_id, texts):
     beat_ids = []
     source_ids = list(dict.fromkeys(beat.get("source_ids", []) or []))
+    narrative_beat_id = ""
     for value in texts:
         text = value.get("text", "") if isinstance(value, dict) else value
         record_source_ids = (
@@ -332,8 +334,12 @@ def _register_dramatic_beats(records, beat, owner_subshot_id, texts):
         if not str(text or "").strip():
             continue
         beat_id = "B%04d" % (len(records) + 1)
+        if not narrative_beat_id:
+            narrative_beat_id = beat_id
         records.append({
             "beat_id": beat_id,
+            "narrative_beat_id": narrative_beat_id,
+            "beat_role": "primary" if beat_id == narrative_beat_id else "supporting",
             "source_ids": record_source_ids,
             "type": beat.get("type", "action"),
             "text": str(text).strip(),
@@ -399,6 +405,7 @@ def _dramatic_design(beat, text, characters, beat_ids):
         "narrative_weight": weight,
         "information_gain": content[:120],
         "reaction_ownership": reaction_owner,
+        "narrative_beat_id": beat_ids[0] if beat_ids else "",
         "dramatic_beat_ids": beat_ids,
         "visual_punctuation": visual_punctuation,
     }
@@ -492,6 +499,11 @@ def _pack_interaction_beats(beats, max_shot_duration):
             continue
         if group and beat.get("scene", "") != group[0].get("scene", ""):
             flush()
+        if group and len(group) >= 2:
+            # A master shot may cover one short exchange, but a third turn is
+            # usually a new decision/reaction beat and should start the next
+            # generation task instead of being packed for duration utilization.
+            flush()
         candidate = group + [beat]
         if group and _interaction_duration(candidate) > max_shot_duration + 1e-6:
             flush()
@@ -507,7 +519,7 @@ def _pack_interaction_beats(beats, max_shot_duration):
 
 
 def _pack_action_beats(beats, max_shot_duration, characters):
-    """Pack only demonstrably causal adjacent actions toward clip capacity."""
+    """Pack only demonstrably causal actions that share one narrative beat."""
     packed = []
     group = []
 
@@ -529,7 +541,9 @@ def _pack_action_beats(beats, max_shot_duration, characters):
             "随后", "接着", "同时", "这时", "于是", "继而", "转而",
             "停下", "继续", "紧接着", "下一刻",
         ))
-        return shared_character or causal_start
+        if _separate_reaction_beat(previous_text, current_text, causal_start):
+            return False
+        return (shared_character and _same_action_family(previous_text, current_text)) or causal_start
 
     def flush():
         nonlocal group
@@ -554,6 +568,8 @@ def _pack_action_beats(beats, max_shot_duration, characters):
             flush()
             packed.append(beat)
             continue
+        if group and len(group) >= 3:
+            flush()
         if group and not compatible(group[-1], beat):
             flush()
         candidate = group + [beat]
@@ -563,6 +579,34 @@ def _pack_action_beats(beats, max_shot_duration, characters):
         group = candidate
     flush()
     return packed
+
+
+def _separate_reaction_beat(previous_text, current_text, causal_start):
+    """Return True when the next action is likely a new reaction beat.
+
+    This deliberately catches the common over-pack case: a physical action
+    such as "侍卫拖拽穿越女" followed by a separate observer reaction such as
+    "皇后冷漠看待".  Immediate impact/feedback marked by clear causal words can
+    still remain inside the same action beat.
+    """
+    if causal_start:
+        return False
+    force_markers = ("拖", "拽", "抓", "按", "推", "撞", "打", "踢", "制服", "拉扯", "扭打", "抢")
+    reaction_markers = ("看", "望", "注视", "冷眼", "冷漠", "旁观", "沉默", "皱眉", "愣", "怔", "回头", "转头")
+    return any(marker in previous_text for marker in force_markers) and any(marker in current_text for marker in reaction_markers)
+
+
+def _same_action_family(previous_text, current_text):
+    """Avoid using one shared character as the only reason to merge beats."""
+    force_markers = ("拖", "拽", "抓", "按", "推", "撞", "打", "踢", "制服", "拉扯", "扭打", "抢")
+    dialogue_like_markers = ("说", "问", "回答", "解释", "喊", "低声")
+    reaction_markers = ("看", "望", "注视", "冷眼", "冷漠", "旁观", "沉默", "皱眉", "愣", "怔", "回头", "转头")
+    families = (force_markers, dialogue_like_markers, reaction_markers)
+    previous_families = {index for index, markers in enumerate(families) if any(marker in previous_text for marker in markers)}
+    current_families = {index for index, markers in enumerate(families) if any(marker in current_text for marker in markers)}
+    if not previous_families or not current_families:
+        return True
+    return bool(previous_families & current_families)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ SHOT_REQUIRED_FIELDS = frozenset({
 
 QA_REQUIRED_FIELDS = (
     "dramatic_goal", "performance_priority", "action_budget", "start_state", "end_state",
-    "performance_contract", "continuity_contract", "reroll_control", "dialogue_refs",
+    "emotion_driver", "performance_contract", "continuity_contract", "reroll_control", "dialogue_refs",
     "dialogue_events", "editorial_mode", "camera_beat_map", "sequence_context",
     "quality_contract", "dramatic_design", "duration_design", "viewpoint",
     "visual_hierarchy", "entry_strategy", "reveal_strategy",

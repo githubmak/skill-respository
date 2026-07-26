@@ -149,7 +149,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
                 "to _batch_output_path. Do not write output_path; the main agent merges batch files. "
                 "Require contract_version=jimeng-t2v-v1 and read constraints_path for the full phase contract; "
                 "a missing or older contract version requires redispatch. For master_production, start from "
-                "composer_scaffold_path, preserve every locked field, and create exactly one Jimeng task per packet item; read scene_lock_cache_path once per scene; "
+                "composer_scaffold_path, preserve every locked field, and create exactly one Jimeng task per packet item; each task serves one narrative_beat_id only, with any shot_group used only as internal coverage of that beat; read scene_lock_cache_path once per scene; "
                 "source_path is fallback context only and must not be read in full unless packet data is insufficient. "
                 "Do not paste unchanged source content back into chat."
             ),
@@ -336,10 +336,11 @@ def _write_constraints_sidecar(run_dir, phase, dispatch_dir, dispatch_tag):
         ),
         "master_production": (
             "Professional role: You are a short-drama AI video director and prompt supervisor. "
-            "Create one risk-controlled current-contract shot per subshot with a strict action budget and primary/supporting/background performance priority; "
+            "Create one risk-controlled current-contract shot per packet item and one narrative_beat_id with a strict action budget and primary/supporting/background performance priority; "
             "do not invent plot, rewrite dialogue, redesign clothing, add unconfirmed props, or expose engineering fields. "
             "Do not force characters to face the lens: distinguish camera-front position from character-facing direction, and only write direct-to-camera eyeline when explicitly sourced. Read qa_metadata.dramatic_design.coverage_role before choosing framing: only dialogue_performance or reaction may use the low-risk fallback of a medium/medium-close fixed frame. establish_space needs readable space, relationship_blocking needs the relationship geometry, prop_information needs the information-bearing prop or hand detail, movement_transition needs motivated movement coverage, power_reversal needs a motivated reframing or angle response, and environment_bridge needs environmental continuity. This is a narrative reason, not a shot-size quota; do not overwrite the locked coverage_role. "
-            "Execute the Director's performance_chain before inventing shot language: trigger, facial control, detail/prop leak, body follow-through, voice/breath landing, then residue. In shot_group, natural reaction/detail cuts and reframes are allowed only at those declared beats; preserve identity, prop state, axis, light, and the previous beat's residue. A single T2V task may hand attention from A to B once, never return B to A; any return cut is a new T2V task joined in post from the declared carryover. When a visible speaker has a supporting listener, fill listener_reaction_plan with one causal, low-amplitude closed-mouth reaction grounded in the timeline; do not freeze the listener or give them a competing action. Fight contexts use fight_continuity instead: both participants must react through the same action→force/judgment→result chain, not listener reactions. "
+            "For interaction scenes, you may use psychological-distance contrast only when source pressure supports it: compress anxious/urgent/pressured characters with tighter framing and breath/hand evidence, while preserving medium/wide breathing space for relaxed/controlling characters. Insert shots are allowed only as auxiliary evidence inside the same narrative_beat_id: information detail, emotion proof, pacing cut, gaze guidance, transition buffer, or environment residue. Prefer stable confirmed prop, hand, spatial-boundary, or environment-residue inserts over repeated face closeups; every insert must add new information, prop state, relationship pressure, or residue and must preserve axis, light, screen-left/right, scene anchors, and pre/post action state. Do not use decorative cutaways. Flashback/fantasy/time-shift inserts require temporal_transition_contract or a separate main shot. Treat insert shots as reroll risk unless mitigated. "
+            "Execute the Director's performance_chain before inventing shot language: trigger, facial control, detail/prop leak, body follow-through, voice/breath landing, then residue. First fill qa_metadata.emotion_driver as the camera input contract: trigger, start_state, visible_leak, face_or_eyeline, voice_or_breath, end_residue, tension_intent, and empathy_anchor. Then derive camera_beat_map only from emotion_driver, coverage_role, continuity_contract, and confirmed prop/dialogue triggers; do not add a camera move whose trigger is not in those fields. In shot_group, natural reaction/detail cuts and reframes are allowed only as start/middle/end coverage of the same narrative_beat_id; preserve identity, prop state, axis, light, and the previous beat's residue. Each camera_beat_map item must include time_range, focus_owner, focus_subject, framing, trigger, camera_response, camera_position, camera_movement, transition_type, screen_lock, axis_relation, axis_carryover, carryover, and end_frame. A single T2V task may hand attention from A to B once, never return B to A; a second narrative beat, return cut, or independent reaction conclusion is a new T2V task joined in post from the declared carryover. When a visible speaker has a supporting listener, fill listener_reaction_plan with one causal, low-amplitude closed-mouth reaction grounded in the timeline; do not freeze the listener or give them a competing action. Fight contexts use fight_continuity instead: both participants must react through the same action→force/judgment→result chain, not listener reactions. "
             "Before writing the performance contract, semantically interpret any packet expectation_anchor instead of relying on its type label: distinguish a literal human/character expectation, figurative personification, need-or-lack, or symbolic association; only literal agents can be staged as intentional performers, and absent satisfaction objects must not be shown as present. Bind only source-supported visible progress, camera decision, return reaction, and unresolved end state. Never cut to a static object merely because a character expects it; a detail cut or reframe needs that declared progress event. "
             "For every shot with visible physical characters, fill qa_metadata.performance_causality with calibrated tension intent, trigger, ordered response, physical logic, motion boundary, hold strategy, and end residue. "
             "Also fill qa_metadata.performance_contract, qa_metadata.continuity_contract, and qa_metadata.reroll_control before writing full_prompt: performance_contract must bind expression, body action, eyeline, reaction delay, voice/breath control, one viewer empathy anchor, one readable image moment, a visible start-to-end progression (or justified intentional hold with 1-2 life signs), camera pressure, scene pressure, and end residue into the subshot group; stable framing never authorizes a frozen performer. Each dialogue/OS/OV event also needs a literal breath_pause_plan with timed pre-utterance breath and end release; add a timed mid-line pause only at an actual clause, thought, or emotional turn, never mechanically at every punctuation mark. continuity_contract must preserve start/end anchors, eyelines, prop state, light, and next carryover. Any position, eyeline or movable-prop change must set state_change=true and record subject/from_state/to_state/cause/time_range; cause must be a visible action or explicit transition. reroll_control must score T2V identity, costume, screen-side, action, camera, and lip-sync risk, list concrete mitigation steps, and set manual_first_pass_check for rising/peak character shots. "
@@ -472,6 +473,16 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
                     "editorial_response_count": 0,
                 },
                 "editorial_mode": item.get("editorial_mode", "continuous_take"),
+                "emotion_driver": {
+                    "trigger": "",
+                    "start_state": "",
+                    "visible_leak": "",
+                    "face_or_eyeline": "",
+                    "voice_or_breath": "",
+                    "end_residue": "",
+                    "tension_intent": "",
+                    "empathy_anchor": "",
+                },
                 "camera_beat_map": list(item.get("camera_beat_map", []) or []),
                 "sequence_context": dict(item.get("sequence_context", {}) or {}),
                 "viewpoint": item.get("viewpoint", "objective"),
@@ -763,7 +774,7 @@ def _composer_template(reasons, visible, dialogue_events, item):
     if "shot_group" in reasons or item.get("editorial_mode") == "shot_group":
         return {
             "name": "motivated_shot_group",
-            "fill_order": ["beat1_subject", "beat1_trigger", "one_handoff", "beat2_subject", "residue"],
+            "fill_order": ["beat_subject", "beat_trigger", "one_hand_off_or_reframe", "beat_residue", "same_narrative_lock"],
         }
     if dialogue_events and len(visible) > 1:
         return {
@@ -806,7 +817,7 @@ def _composer_preflight_checks(editorial_mode, visible, dialogue_events, reasons
     if editorial_mode == "continuous_take":
         checks.append("continuous_take=one_range")
     else:
-        checks.append("shot_group=2-3_ranges_one_handoff")
+        checks.append("shot_group=2-3_ranges_one_narrative_beat")
     if dialogue_events:
         checks.append("dialogue_exact+breath")
     if dialogue_text_length >= 32:

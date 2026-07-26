@@ -65,7 +65,7 @@ def _master_task(planned, children, plan):
     full_prompt = "\n\n".join([
         "生成规格：" + _compact(first.get("生成规格", "")),
         "主体与空间锁定：" + "；".join(_compact(section.get("主体与空间锁定", "")) for section in sections),
-        "主镜头连续规则：同一戏剧目标、同一场景光源和人物关系；" + "；".join(_compact(section.get("主镜头连续规则", "")) for section in sections),
+        "主镜头连续规则：单一剧情节拍、同一戏剧目标、同一场景光源和人物关系；" + "；".join(_compact(section.get("主镜头连续规则", "")) for section in sections),
         "子镜头组：" + "\n".join(beats),
         "光照、声音与稳定约束：" + "；".join(_compact(section.get("光照、声音与稳定约束", "")) for section in sections),
     ])

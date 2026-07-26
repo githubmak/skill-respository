@@ -15,12 +15,15 @@ from modec_v4 import (
     action_budget_issues,
     attention_handoff_issues,
     camera_competition_issues,
+    camera_beat_map_issues,
     coverage_role_issues,
     continuity_contract_issues,
     dialogue_event_issues,
+    emotion_driver_issues,
     expectation_anchor_issues,
     fight_continuity_issues,
     fight_transition_issues,
+    insert_shot_issues,
     listener_reaction_issues,
     performance_causality_issues,
     performance_contract_issues,
@@ -151,6 +154,8 @@ def validate_composer_output(path, run_dir=None, report_path=None):
         _validate_scene_light_authority(prefix, director_item, full_prompt, issues)
         for problem in role_partition_issues(metadata, visible):
             issues.append(prefix + problem)
+        for problem in emotion_driver_issues(metadata, full_prompt, visible):
+            issues.append(prefix + problem)
         for problem in performance_causality_issues(metadata, visible):
             issues.append(prefix + problem)
         for problem in performance_contract_issues(metadata, full_prompt, visible):
@@ -158,6 +163,8 @@ def validate_composer_output(path, run_dir=None, report_path=None):
         for problem in listener_reaction_issues(metadata, full_prompt):
             issues.append(prefix + problem)
         for problem in expectation_anchor_issues(metadata, full_prompt):
+            issues.append(prefix + problem)
+        for problem in insert_shot_issues(metadata, full_prompt, duration, visible):
             issues.append(prefix + problem)
         for problem in continuity_contract_issues(metadata, full_prompt, visible):
             issues.append(prefix + problem)
@@ -167,6 +174,8 @@ def validate_composer_output(path, run_dir=None, report_path=None):
             plan_item.get("scene_type", ""), plan_item.get("shot_type", ""), full_prompt
         )
         for problem in action_budget_issues(metadata, duration, fight):
+            issues.append(prefix + problem)
+        for problem in camera_beat_map_issues(metadata):
             issues.append(prefix + problem)
         for problem in attention_handoff_issues(metadata, full_prompt):
             issues.append(prefix + problem)
@@ -368,6 +377,9 @@ def _validate_metadata(prefix, metadata, director_item, full_prompt, audio_enabl
     if not isinstance(dramatic, dict):
         issues.append(prefix + "dramatic_design必须是对象")
     else:
+        expected_design = director_item.get("dramatic_design", {}) if isinstance(director_item, dict) else {}
+        expected_design = expected_design if isinstance(expected_design, dict) else {}
+        expected_narrative_beat_id = str(expected_design.get("narrative_beat_id", "") or "").strip()
         if dramatic.get("narrative_weight") not in ("low", "medium", "high", "critical"):
             issues.append(prefix + "dramatic_design.narrative_weight无效")
         for field in ("shot_function", "information_gain"):
@@ -375,6 +387,15 @@ def _validate_metadata(prefix, metadata, director_item, full_prompt, audio_enabl
                 issues.append(prefix + "dramatic_design.%s不能为空" % field)
         if not isinstance(dramatic.get("dramatic_beat_ids"), list) or not dramatic.get("dramatic_beat_ids"):
             issues.append(prefix + "dramatic_design.dramatic_beat_ids必须是非空数组")
+        else:
+            narrative_beat_id = str(dramatic.get("narrative_beat_id", "") or "").strip()
+            dramatic_beat_ids = [str(beat_id).strip() for beat_id in dramatic.get("dramatic_beat_ids", []) if str(beat_id).strip()]
+            if narrative_beat_id and narrative_beat_id not in dramatic_beat_ids:
+                issues.append(prefix + "dramatic_design.narrative_beat_id必须属于dramatic_beat_ids")
+            if expected_narrative_beat_id and not narrative_beat_id:
+                issues.append(prefix + "dramatic_design.narrative_beat_id必须从Phase 1继承")
+            elif expected_narrative_beat_id and narrative_beat_id != expected_narrative_beat_id:
+                issues.append(prefix + "dramatic_design.narrative_beat_id必须与Phase 1一致")
         punctuation = dramatic.get("visual_punctuation")
         if not isinstance(punctuation, list):
             issues.append(prefix + "dramatic_design.visual_punctuation必须是数组")
