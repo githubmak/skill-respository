@@ -26,7 +26,7 @@ DEPRECATED_HEADINGS = [
 BANNED_DIRECT = [
     "继承", "延续上一镜", "空间保持", "位置继承", "物理座位不变", "剪辑", "切到", "反打到",
     "下一镜执行", "声音语气：", "表情：", "动作：", "情绪：", "脑海浮现", "后期插入", "左外",
-    "当前主角", "当前对话者", "视情况",
+    "当前主角", "当前对话者", "视情况", "出场人物", "所有人物", "全部人物", "所有出场人物",
 ]
 NEGATIVE_NEEDLE = "人物僵硬、全身静止、无眨眼"
 CUTAWAY_NEEDLES = ("镜头不拍人物", "空镜", "空椅", "门缝", "水纹", "走廊灯光")
@@ -36,7 +36,22 @@ CAMERA_STATE_TERMS = ("固定", "保持", "静止", "推", "拉", "摇", "移", 
 RELATION_TERMS = ("面对", "相对", "身侧", "身后", "前方", "后方", "之间", "隔着", "挽着", "肩线", "右手", "左手", "朝向", "背对", "侧身")
 FACING_TERMS = ("面向", "背向", "身体朝向", "身体仍朝", "上身朝向", "头部转向", "头部偏向")
 POST_AUDIO_TERMS = ("OS", "OV", "系统音", "内心独白", "画外", "后期", "配音", "旁白")
+POST_AUDIO_LABEL_TERMS = ("OS", "OV", "系统音", "内心独白", "旁白")
 VISIBLE_SPEECH_TERMS = ("可见口型", "可见说话者", "开口", "说：", "说:", "说“", "问：", "问:", "喊：", "喊:", "低语", "回应", "反问")
+BLAND_EXPRESSION_TERMS = ("眼神复杂", "神色复杂", "表情平淡", "神色变化")
+FACIAL_DETAIL_TERMS = ("眼睑", "睫毛", "眉尾", "嘴角", "下颌", "喉咙", "呼吸", "唇", "屏息")
+BODY_PROP_EMOTION_TERMS = ("肩", "背", "手", "指", "道具", "手机", "卡", "衣", "后退", "靠近", "距离", "遮挡", "门", "桌")
+PROP_TRANSFER_TERMS = ("递", "交给", "接过", "接住", "松手", "刷卡", "签字", "付款", "取出", "拿出", "塞给")
+CONTACT_TERMS = ("握住", "抓住", "拽住", "牵住", "拉住", "按住", "扶住", "扣住")
+MOVE_TERMS = ("走到", "走近", "上前", "后退", "转身", "离开", "入场", "进门", "出门", "坐下", "站起")
+CAMERA_MOVE_TERMS = ("推", "拉", "摇", "移", "跟拍", "环绕", "转焦", "拉焦", "上摇", "下摇")
+PROP_CONTINUITY_TERMS = ("右手", "左手", "手中", "掌中", "桌面", "台面", "包内", "口袋", "外袋", "胸前", "腰侧", "松手", "接触", "握住")
+REVERSE_SHOT_RE = re.compile(r"机位在([^，。；;]{1,12})肩后")
+ORIENTATION_LOCK_TERMS = ("背向", "背对", "侧身", "身体面向柜台", "身体面向入口", "身体面向出口", "身体面向道路", "身体面向门口", "身体面向车门", "身体面向手机", "身体面向屏幕", "身体面向签字台", "身体面向缴费台")
+ORIENTATION_TURN_TERMS = ("转身", "转向", "回身", "侧身转正", "肩线转正", "双脚停稳", "身体从")
+TRACKED_PROPS = ("手机", "银行卡", "卡片", "卡", "杯子", "茶盏", "瓷盏", "笔", "签字笔", "文件", "外套", "手包", "包", "钥匙", "餐盘", "照片", "纸")
+PROP_STATE_HINTS = ("右手", "左手", "手中", "掌中", "包内", "口袋", "外袋", "胸前", "腰侧", "桌面", "台面", "签字台", "柜台", "手边")
+PROP_TRANSFER_CHAIN_TERMS = ("取出", "拿出", "拿起", "递", "递到", "交给", "接触", "接过", "接住", "握住", "松手", "放下", "放到", "移动")
 
 
 def compact_len(text: str) -> int:
@@ -91,6 +106,24 @@ def visible_dialogue_quotes(text: str) -> list[str]:
     return lines
 
 
+def post_audio_format_issues(text: str) -> list[str]:
+    issues: list[str] = []
+    label_pattern = r"(?:OS|OV|系统音|内心独白|旁白)"
+    wrapped_pattern = re.compile(label_pattern + r"\s*[：:]\s*[“\"][^”\"]+[”\"]")
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or not any(label in line for label in POST_AUDIO_LABEL_TERMS):
+            continue
+        if "无台词" in line or re.fullmatch(r"无(?:OS|OV|系统音|内心独白|旁白).*", line):
+            continue
+        has_text_signal = any(mark in line for mark in ("“", "”", '"')) or any(
+            term in line for term in ("响起", "念出", "吐槽", "旁白", "低语", "声音", "内心")
+        )
+        if has_text_signal and not wrapped_pattern.search(line):
+            issues.append(line)
+    return issues
+
+
 def validate_child(group_id: str, number: int, header: str, block: str, issues: list[str]) -> None:
     sid = f"{group_id}-{number}"
     if not re.match(rf"^{number}\s*，\s*\d+(?:\.\d+)?s\s*，\s*(普通|复杂)。?$", header):
@@ -110,9 +143,8 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
     if compact_len(direct) > 500:
         issues.append(f"{sid}: direct prompt over 500 chars -> {compact_len(direct)}")
     if (
-        compact_len(direct) < 120
+        compact_len(direct) < 180
         and not any(term in direct for term in ("手部特写", "特写", "空镜", "只拍", "镜头不拍人物"))
-        and "无台词" not in performance
     ):
         issues.append(f"{sid}: ordinary dialogue/drama direct prompt looks too thin -> {compact_len(direct)} chars")
     if not any(term in direct for term in SHOT_SIZE_TERMS):
@@ -129,6 +161,21 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
         issues.append(f"{sid}: body direction must name a person or fixed anchor, not only left/right")
     if ("只拍" in direct or "只保留" in direct) and re.search(r"中景|中近景|中远景|全景|远景", direct):
         issues.append(f"{sid}: hand/object-only frame conflicts with medium or wide shot size")
+    if "肩后" in direct and "肩线" not in direct:
+        issues.append(f"{sid}: shoulder shot should state foreground shoulder line and target")
+    if "肩后" in direct and not re.search(r"身体面向[^，。；;]{1,12}，[^，。；;]{1,12}身体面向", direct):
+        issues.append(f"{sid}: shoulder/reverse shot should restate face-to-face body orientation")
+    if any(term in direct for term in PROP_TRANSFER_TERMS):
+        if ("取出" in direct or "拿出" in direct) and not any(place in direct for place in ("包", "口袋", "桌面", "台面", "手中", "掌中", "外袋")):
+            issues.append(f"{sid}: prop appearance needs starting holder/container/surface")
+        if any(term in direct for term in ("递", "交给", "接过", "接住", "塞给")):
+            if not any(term in direct for term in ("接触", "握住", "接住")) or "松手" not in direct:
+                issues.append(f"{sid}: prop transfer needs contact and release chain to prevent flashing")
+            if not any(term in direct for term in PROP_CONTINUITY_TERMS):
+                issues.append(f"{sid}: prop transfer needs clear final holder/location")
+    if any(term in direct for term in ("在身后", "侧后方", "身后半身")) and any(term in direct for term in ("递", "交给", "接过", "接住", "塞给")):
+        if not any(term in direct for term in ("转身", "走到", "走近", "面向")):
+            issues.append(f"{sid}: recipient behind/side-behind needs repositioning before prop transfer")
 
     duration_match = re.search(r"，\s*(\d+(?:\.\d+)?)s\s*，", header)
     spoken_chars = sum(len(re.sub(r"\s+", "", line)) for line in re.findall(r"“([^”]+)”", direct))
@@ -142,10 +189,22 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
     hits = [word for word in BANNED_DIRECT if word in direct]
     if hits:
         issues.append(f"{sid}: banned direct-prompt terms -> {','.join(hits)}")
+    bland_hits = [word for word in BLAND_EXPRESSION_TERMS if word in direct]
+    if bland_hits:
+        issues.append(f"{sid}: bland expression terms need concrete facial/body evidence -> {','.join(bland_hits)}")
+    if re.search(r"特写|(?<!中)近景", direct) and re.search(r"三人|四人|五人|众人|所有人|全部人", direct):
+        issues.append(f"{sid}: close-up/insert shot overloaded with group cast; split relation shot and close-up")
+    has_visible_emotion = any(word in direct for word in ("皱眉", "眼神", "委屈", "紧张", "焦虑", "愣", "僵", "怒", "冷", "慌", "压低", "哽", "红"))
+    if has_visible_emotion and not any(word in direct for word in FACIAL_DETAIL_TERMS + BODY_PROP_EMOTION_TERMS):
+        issues.append(f"{sid}: emotion needs readable facial/body/prop evidence matched to shot size")
+    if has_visible_emotion and re.search(r"全景|远景|中远景", direct) and any(word in direct for word in ("眼睑", "眉尾", "嘴角", "下颌", "喉咙", "唇")):
+        issues.append(f"{sid}: wide shot uses tiny facial details; use body/distance/prop evidence or cut closer")
     direct_quotes = set(quoted_lines(direct))
     for line in visible_dialogue_quotes(performance) + visible_dialogue_quotes(mouth_window):
         if line not in direct_quotes:
             issues.append(f"{sid}: visible dialogue must appear in direct prompt by default -> “{line}”")
+    for line in post_audio_format_issues(performance) + post_audio_format_issues(mouth_window):
+        issues.append(f"{sid}: OS/OV/系统音文本必须使用 标签：“...” 格式 -> {line}")
     if any(word in direct for word in CUTAWAY_NEEDLES):
         handoff = extract_optional_field(block, "【剪辑衔接】")
         in_place_focus = any(word in direct for word in ("焦点从", "焦点落到", "拉焦", "转焦"))
@@ -169,12 +228,82 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
         if camera_execution and re.search(r"推|拉|移|摇|跟拍|环绕|转焦|拉焦", camera_execution):
             if not any(term in mouth_window for term in ("听者保持", "听者不动", "听者静止", "仅呼吸", "仅视线")):
                 issues.append(f"{sid}: lip-sync with camera move needs listener hold declaration in 【口型分窗】")
+    high_risk_count = sum(
+        bool(condition)
+        for condition in (
+            re.search(r"三人|四人|五人|众人|混混|人群", direct),
+            any(term in direct for term in PROP_TRANSFER_TERMS + CONTACT_TERMS),
+            bool(direct_quotes),
+            any(term in direct for term in CAMERA_MOVE_TERMS),
+            any(term in direct for term in MOVE_TERMS),
+            any(term in direct for term in ("车", "人群", "闪回", "回忆", "梦境")),
+        )
+    )
+    if high_risk_count >= 4:
+        issues.append(f"{sid}: possible single-shot overload; split or simplify high-risk tasks")
 
 
 def camera_signature(direct: str) -> str:
     size = next((term for term in SHOT_SIZE_TERMS if term in direct), "")
     moving = any(term in direct for term in ("推", "拉", "摇", "移", "跟", "转焦", "拉焦"))
     return f"{size}:{'move' if moving else 'static'}"
+
+
+def shoulder_actor(direct: str) -> str:
+    match = REVERSE_SHOT_RE.search(direct)
+    return match.group(1).strip() if match else ""
+
+
+def orientation_jump(prev_state: str, next_direct: str) -> bool:
+    if not prev_state or not next_direct:
+        return False
+    if not any(term in prev_state for term in ORIENTATION_LOCK_TERMS):
+        return False
+    if any(term in next_direct for term in ORIENTATION_TURN_TERMS):
+        return False
+    next_demands_new_facing = (
+        ("身体面向" in next_direct and not any(term in next_direct for term in ORIENTATION_LOCK_TERMS))
+        or "面对面" in next_direct
+        or "肩后" in next_direct
+        or any(term in next_direct for term in ("开口", "接过", "接住", "递", "交给"))
+    )
+    return next_demands_new_facing
+
+
+def prop_contexts(text: str) -> dict[str, str]:
+    contexts: dict[str, str] = {}
+    for prop in TRACKED_PROPS:
+        if prop == "卡" and any(longer in text for longer in ("银行卡", "卡片")):
+            continue
+        if prop not in text:
+            continue
+        for match in re.finditer(re.escape(prop), text):
+            start = max(0, match.start() - 18)
+            end = min(len(text), match.end() + 22)
+            context = text[start:end]
+            if any(hint in context for hint in PROP_STATE_HINTS):
+                contexts[prop] = re.sub(r"\s+", "", context)
+                break
+    return contexts
+
+
+def prop_state_jump(prev_state: str, next_direct: str) -> list[str]:
+    if not prev_state or not next_direct:
+        return []
+    prev_props = prop_contexts(prev_state)
+    next_props = prop_contexts(next_direct)
+    if not prev_props or not next_props:
+        return []
+    has_visible_transfer = any(term in next_direct for term in PROP_TRANSFER_CHAIN_TERMS)
+    jumps: list[str] = []
+    for prop, prev_context in prev_props.items():
+        next_context = next_props.get(prop)
+        if not next_context or prev_context == next_context:
+            continue
+        if has_visible_transfer:
+            continue
+        jumps.append(prop)
+    return jumps
 
 
 def validate(path: Path) -> list[str]:
@@ -208,6 +337,24 @@ def validate(path: Path) -> list[str]:
         for expected_number, child in enumerate(children, start=1):
             child_count += 1
             validate_child(group_id, expected_number, child.group(1).strip(), child.group(0), issues)
+        child_directs = [
+            extract(child.group(0), "【画面描述｜直接复制】", "【表演与声音】")
+            for child in children
+        ]
+        child_states = [
+            extract(child.group(0), "【状态继承】")
+            for child in children
+        ]
+        for index in range(1, len(children)):
+            if orientation_jump(child_states[index - 1], child_directs[index]):
+                issues.append(
+                    f"{group_id}-{index + 1}: 上一镜状态为背向/侧身/面向固定物，下一镜改变朝向前必须写转身/回身/肩线转正/双脚停稳"
+                )
+            jumped_props = prop_state_jump(child_states[index - 1], child_directs[index])
+            if jumped_props:
+                issues.append(
+                    f"{group_id}-{index + 1}: 上一镜物品状态与下一镜开头不一致，{','.join(jumped_props)} 改变归属/位置前必须写取出/接触/移动/松手/稳定终态"
+                )
         child_durations = []
         for child in children:
             duration_match = re.search(r"，\s*(\d+(?:\.\d+)?)s\s*，", child.group(1))
@@ -224,6 +371,13 @@ def validate(path: Path) -> list[str]:
         for index in range(2, len(signatures)):
             if signatures[index] == signatures[index - 1] == signatures[index - 2] and signatures[index].endswith(":static"):
                 issues.append(f"{group_id}: three consecutive identical static camera tasks -> {signatures[index]}")
+        shoulder_actors = [
+            shoulder_actor(extract(child.group(0), "【画面描述｜直接复制】", "【表演与声音】"))
+            for child in children
+        ]
+        for index in range(1, len(shoulder_actors)):
+            if shoulder_actors[index - 1] and shoulder_actors[index] and shoulder_actors[index - 1] == shoulder_actors[index]:
+                issues.append(f"{group_id}: consecutive shoulder shots use same shoulder actor; reverse shot should swap foreground shoulder")
 
     if group_count == 0:
         issues.append("no shot groups found; use #### S1-01 with group-level 【出现人物】")
