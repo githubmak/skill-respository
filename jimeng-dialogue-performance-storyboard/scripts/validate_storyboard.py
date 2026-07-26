@@ -35,6 +35,8 @@ CAMERA_TERMS = ("镜头", "相机", "机位", "平视", "俯视", "仰视", "侧
 CAMERA_STATE_TERMS = ("固定", "保持", "静止", "推", "拉", "摇", "移", "跟", "转焦", "拉焦", "上摇", "下摇")
 RELATION_TERMS = ("面对", "相对", "身侧", "身后", "前方", "后方", "之间", "隔着", "挽着", "肩线", "右手", "左手", "朝向", "背对", "侧身")
 FACING_TERMS = ("面向", "背向", "身体朝向", "身体仍朝", "上身朝向", "头部转向", "头部偏向")
+POST_AUDIO_TERMS = ("OS", "OV", "系统音", "内心独白", "画外", "后期", "配音", "旁白")
+VISIBLE_SPEECH_TERMS = ("可见口型", "可见说话者", "开口", "说：", "说:", "说“", "问：", "问:", "喊：", "喊:", "低语", "回应", "反问")
 
 
 def compact_len(text: str) -> int:
@@ -73,6 +75,22 @@ def direct_sentence(state_change: str, label: str) -> str:
     return m.group(1).strip() if m else ""
 
 
+def quoted_lines(text: str) -> list[str]:
+    return [line.strip() for line in re.findall(r"“([^”]+)”", text) if line.strip()]
+
+
+def visible_dialogue_quotes(text: str) -> list[str]:
+    lines: list[str] = []
+    for raw_line in text.splitlines():
+        if not any(q in raw_line for q in ("“", "”")):
+            continue
+        if any(term in raw_line for term in POST_AUDIO_TERMS) and not any(term in raw_line for term in VISIBLE_SPEECH_TERMS):
+            continue
+        if any(term in raw_line for term in VISIBLE_SPEECH_TERMS):
+            lines.extend(quoted_lines(raw_line))
+    return lines
+
+
 def validate_child(group_id: str, number: int, header: str, block: str, issues: list[str]) -> None:
     sid = f"{group_id}-{number}"
     if not re.match(rf"^{number}\s*，\s*\d+(?:\.\d+)?s\s*，\s*(普通|复杂)。?$", header):
@@ -87,8 +105,16 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
     if not direct:
         issues.append(f"{sid}: missing direct prompt body")
         return
+    performance = extract(block, "【表演与声音】", "【状态继承】")
+    mouth_window = extract_optional_field(block, "【口型分窗】")
     if compact_len(direct) > 500:
         issues.append(f"{sid}: direct prompt over 500 chars -> {compact_len(direct)}")
+    if (
+        compact_len(direct) < 120
+        and not any(term in direct for term in ("手部特写", "特写", "空镜", "只拍", "镜头不拍人物"))
+        and "无台词" not in performance
+    ):
+        issues.append(f"{sid}: ordinary dialogue/drama direct prompt looks too thin -> {compact_len(direct)} chars")
     if not any(term in direct for term in SHOT_SIZE_TERMS):
         issues.append(f"{sid}: direct prompt missing shot size")
     if not any(term in direct for term in CAMERA_TERMS):
@@ -116,6 +142,10 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
     hits = [word for word in BANNED_DIRECT if word in direct]
     if hits:
         issues.append(f"{sid}: banned direct-prompt terms -> {','.join(hits)}")
+    direct_quotes = set(quoted_lines(direct))
+    for line in visible_dialogue_quotes(performance) + visible_dialogue_quotes(mouth_window):
+        if line not in direct_quotes:
+            issues.append(f"{sid}: visible dialogue must appear in direct prompt by default -> “{line}”")
     if any(word in direct for word in CUTAWAY_NEEDLES):
         handoff = extract_optional_field(block, "【剪辑衔接】")
         in_place_focus = any(word in direct for word in ("焦点从", "焦点落到", "拉焦", "转焦"))
@@ -131,7 +161,6 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
             elif sentence not in direct:
                 issues.append(f"{sid}: {label} must appear verbatim in direct prompt -> {sentence}")
 
-    mouth_window = extract_optional_field(block, "【口型分窗】")
     camera_execution = extract_optional_field(block, "【镜头执行】")
     if mouth_window:
         priority = "优先级：口型 > 听者反应 > 运镜"
