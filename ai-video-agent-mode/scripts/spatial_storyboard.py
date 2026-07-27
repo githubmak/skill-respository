@@ -64,7 +64,7 @@ def build_spatial_storyboard_reference(task, planned=None, canvas="16:9", visual
     )
     blocking_prompt = (
         f"{canvas}横向电影分镜图，{style}使用用户提供的场景图和人物图保持场景、人物身份与服装一致。"
-        f"为《{scene}》绘制一张人物站位与姿态控制关键帧：{spatial}。"
+        f"为《{scene}》绘制一张人物站位与姿态参考图：{spatial}。"
         f"人物为{character_text}；严格保持画面左右、前中后景距离、脚底接触地面、身体朝向、视线对象与关键道具归属。"
         f"关键动作与姿态：{timeline}。画面只保留一个明确视觉主体，其他人物按既定前景/中景/后景承担空间锚点；"
         "全身或至少膝上可读，手部和道具接触关系准确，人物不漂浮、不互相穿透、不无故换位。"

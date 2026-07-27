@@ -84,6 +84,37 @@ GENERIC_PERFORMANCE_TERMS = {
     "情绪复杂", "表情细腻", "保持状态", "微微变化", "很强烈",
     "感染力强", "观众共情", "共情感强", "画面感强", "情绪到位", "内心张力拉满",
 }
+READINESS_DIMENSIONS = {
+    "scene_space": "场景空间",
+    "continuity_risk": "穿帮风险",
+    "emotion_readability": "情绪可读",
+    "tension_pressure": "张力压迫",
+    "camera_emotion_fit": "运镜服务情绪",
+    "prop_continuity": "道具连续",
+    "visual_beauty": "画面美感",
+}
+READINESS_GENERIC_TERMS = {
+    "很好", "优秀", "合格", "稳定", "清晰", "有张力", "很有张力", "画面好看",
+    "空间清楚", "道具稳定", "情绪到位", "无明显问题", "整体不错", "执行性强",
+}
+PRESSURE_RELEASE_MODES = {
+    "action_completion",
+    "interrupted_release",
+    "attention_shift",
+    "cost_reveal",
+    "delayed_release",
+    "split_release",
+    "release",
+    "none",
+}
+STORY_PUNCH_FIELDS = (
+    "audience_question",
+    "character_pressure",
+    "visible_pressure_object",
+    "dramatic_turn",
+    "picture_punctuation",
+    "end_residue",
+)
 
 CAMERA_MOVE_PATTERNS = {
     "push": r"推镜|推近|摄影机[^。；]{0,12}推进",
@@ -357,6 +388,69 @@ def camera_beat_map_issues(metadata):
     return issues
 
 
+def prompt_state_machine_issues(metadata, full_prompt="", visible_characters=None):
+    """Validate the final prompt is assembled as spatial/prop continuity state, not loose prose."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    sections = split_sections(full_prompt, PROMPT_LABELS)
+    subject = sections.get("主体与空间锁定", "")
+    rules = sections.get("主镜头连续规则", "")
+    timeline = sections.get("子镜头组", "")
+    issues = []
+
+    visible = _string_list(visible_characters or [])
+    spatial_text = "\n".join([subject, rules, timeline])
+    screen_terms = ("画面左", "画面右", "画面中", "左侧", "右侧", "中间偏", "前景", "中景", "后景")
+    orientation_terms = ("身体朝向", "朝向画面", "面向画面", "视线落", "视线看", "视线指向")
+    vague_terms = ("旁边", "对面", "身后", "后面", "附近", "远处")
+    if len(visible) >= 3:
+        if not any(term in spatial_text for term in screen_terms) or not any(term in spatial_text for term in orientation_terms):
+            issues.append("三人或多人镜必须使用画面左/中/右、前景/中景/后景、身体朝向和视线落点锁定空间")
+        if any(term in spatial_text for term in vague_terms) and sum(1 for term in screen_terms if term in spatial_text) < 2:
+            issues.append("多人空间不能只写旁边/对面/身后/附近/远处，必须补屏幕坐标和景深层级")
+
+    contract = metadata.get("continuity_contract", {})
+    prop_state = ""
+    if isinstance(contract, dict):
+        prop_state = str(contract.get("prop_state", "") or "").strip()
+    if prop_state and not _is_no_prop_state(prop_state):
+        prop_text = "\n".join([subject, rules, timeline])
+        location_terms = (
+            "画面左", "画面右", "画面中", "左前", "右前", "中后", "前景", "中景", "后景",
+            "桌面", "桌角", "桌边", "椅", "门", "地面", "包内", "手中", "身前", "身侧",
+        )
+        contact_terms = (
+            "未被触碰", "未被任何人接触", "未接触", "接触", "归属", "握住", "拿起", "放下",
+            "递给", "压在", "仍在", "仍由", "离开", "瓶口", "朝向", "手中",
+        )
+        carry_terms = ("落幅", "结束", "下一镜", "继承", "保持", "仍在", "不变化", "不离开")
+        if not _fragment_grounded(prop_state, prop_text):
+            issues.append("continuity_contract.prop_state必须落实到主体与空间锁定、主镜头连续规则或子镜头组")
+        if not any(term in prop_text for term in location_terms):
+            issues.append("关键道具必须写清屏幕位置或场景位置，避免模型自动换位")
+        if not any(term in prop_text for term in contact_terms):
+            issues.append("关键道具必须写清归属和接触状态，例如未接触、仍在桌面、握在谁手中或由谁拿起")
+        if not any(term in prop_text for term in carry_terms):
+            issues.append("关键道具必须写清落幅或下一镜继承状态，避免道具复位或闪现")
+        if re.search(r"(?:突然|直接|已经|瞬间).{0,10}(?:到手|在手中|拿到|出现在手|转到|变成)", prop_text):
+            issues.append("关键道具变化不能直接跳到终态，必须写手接近、接触、拿起/递出/接住/落定等中间态")
+
+    if re.search(r"(?:突然|直接|已经|瞬间).{0,10}(?:转身|转向|朝向|站到|换到)", spatial_text):
+        issues.append("人物转向或站位变化不能直接跳到终态，必须写视线先变、头部半转、肩线/重心跟随和落幅")
+
+    if timeline:
+        for index, match in enumerate(JIMENG_CHILD_SHOT_RE.finditer(timeline), start=1):
+            body = match.group(3)
+            if len(body.strip()) < 10:
+                continue
+            has_position = any(term in body for term in ("画面左", "画面右", "画面中", "左侧", "右侧", "前景", "中景", "后景"))
+            has_end_state = any(term in body for term in ("落幅", "结束", "下一镜", "继承", "仍", "保持", "停在", "留在"))
+            if visible and not has_position:
+                issues.append(f"镜头{index}必须写当前实焦主体的屏幕位置或景深层级")
+            if not has_end_state:
+                issues.append(f"镜头{index}必须写结束状态或下一镜继承，不能只写过程动作")
+    return issues
+
+
 def performance_causality_issues(metadata, visible_characters=None):
     """Validate the structured performance-causality audit for character shots."""
     metadata = metadata if isinstance(metadata, dict) else {}
@@ -480,6 +574,224 @@ def performance_contract_issues(metadata, full_prompt="", visible_characters=Non
     if not _fragment_grounded(contract.get("scene_pressure", ""), scene_text):
         issues.append("performance_contract.scene_pressure未落实到主体与空间锁定或光照、声音与稳定约束")
     return issues
+
+
+def ai_model_readiness_issues(metadata, full_prompt="", visible_characters=None):
+    """Require a compact self-score focused on AI video model execution risk."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    readiness = metadata.get("ai_model_readiness_score")
+    visible = _string_list(visible_characters or [])
+    required = _readiness_required(metadata, full_prompt, visible)
+    has_content = _readiness_has_content(readiness)
+    if not required and not has_content:
+        return []
+    if not visible and readiness in (None, {}):
+        return []
+    if required and not has_content:
+        return ["高风险或人物复杂镜必须提供qa_metadata.ai_model_readiness_score；低风险镜可省略"]
+    if not isinstance(readiness, dict):
+        return ["qa_metadata.ai_model_readiness_score必须是对象，用于AI视频大模型可执行性自检"]
+
+    issues = []
+    scores = []
+    for key, label in READINESS_DIMENSIONS.items():
+        entry = readiness.get(key)
+        if not isinstance(entry, dict):
+            issues.append(f"ai_model_readiness_score.{key}（{label}）必须是对象")
+            continue
+        score = entry.get("score")
+        if not isinstance(score, int) or score < 1 or score > 10:
+            issues.append(f"ai_model_readiness_score.{key}.score必须是1-10整数")
+        else:
+            scores.append(score)
+        reason = str(entry.get("reason", "") or "").strip()
+        if len(reason) < 8 or reason in READINESS_GENERIC_TERMS:
+            issues.append(f"ai_model_readiness_score.{key}.reason必须说明具体可见依据或风险，不能只写空泛好评")
+
+    overall = readiness.get("overall")
+    if not isinstance(overall, dict):
+        issues.append("ai_model_readiness_score.overall必须是对象")
+    else:
+        score = overall.get("score")
+        if not isinstance(score, int) or score < 1 or score > 10:
+            issues.append("ai_model_readiness_score.overall.score必须是1-10整数")
+        weakest = str(overall.get("weakest_point", "") or "").strip()
+        first_pass = str(overall.get("first_pass_check", "") or "").strip()
+        if len(weakest) < 6 or weakest in READINESS_GENERIC_TERMS:
+            issues.append("ai_model_readiness_score.overall.weakest_point必须写最弱风险点，不能写空泛好评")
+        if len(first_pass) < 6:
+            issues.append("ai_model_readiness_score.overall.first_pass_check必须写人工首轮检查点")
+
+    if scores and min(scores) >= 9:
+        issues.append("ai_model_readiness_score不得所有核心维度都给9分以上；必须暴露T2V首轮最可能失败的维度")
+
+    sections = split_sections(full_prompt, PROMPT_LABELS)
+    prompt_text = "\n".join(sections.values())
+    if visible:
+        if not any(term in prompt_text for term in ("画面左", "画面右", "画面中", "前景", "中景", "后景")):
+            issues.append("ai_model_readiness_score不能替代空间锁定；人物镜full_prompt仍需屏幕坐标或景深层级")
+        if not any(term in prompt_text for term in ("落幅", "下一镜", "继承", "仍", "保持", "停在", "留在")):
+            issues.append("ai_model_readiness_score不能替代尾帧继承；full_prompt必须写落幅/下一镜承接")
+    return issues
+
+
+def _readiness_required(metadata, full_prompt="", visible=None):
+    visible = _string_list(visible or [])
+    if not visible:
+        return False
+    if len(visible) >= 2:
+        return True
+    if isinstance(metadata.get("dialogue_events"), list) and metadata.get("dialogue_events"):
+        return True
+    if str(metadata.get("editorial_mode", "")) == "shot_group":
+        return True
+    contract = metadata.get("continuity_contract", {})
+    if isinstance(contract, dict):
+        if contract.get("state_change") is True:
+            return True
+        prop_state = str(contract.get("prop_state", "") or "")
+        if prop_state and not _is_no_prop_state(prop_state):
+            return True
+    tension = ""
+    for key in ("performance_contract", "emotion_driver", "performance_causality"):
+        value = metadata.get(key, {})
+        if isinstance(value, dict) and value.get("tension_intent"):
+            tension = value.get("tension_intent")
+            break
+    if tension in ("rising", "peak"):
+        return True
+    reroll = metadata.get("reroll_control", {})
+    if isinstance(reroll, dict) and reroll.get("risk_level") == "high":
+        return True
+    return bool(re.search(r"拿起|递给|接住|放下|药瓶|手机|钥匙|刀|枪|门外|脚步|封条|转向|转身|硬切|拉焦", str(full_prompt or "")))
+
+
+def _readiness_has_content(readiness):
+    if not isinstance(readiness, dict):
+        return False
+    for value in readiness.values():
+        if isinstance(value, dict):
+            if any(str(child).strip() not in ("", "0", "False", "None", "none", "N/A") for child in value.values()):
+                return True
+        elif str(value).strip():
+            return True
+    return False
+
+
+def pressure_release_issues(metadata, full_prompt="", visible_characters=None):
+    """Validate pressure is built and released through executable visible beats."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    visible = _string_list(visible_characters or [])
+    tension = ""
+    if isinstance(metadata.get("performance_contract"), dict):
+        tension = metadata.get("performance_contract", {}).get("tension_intent", "")
+    if not tension and isinstance(metadata.get("emotion_driver"), dict):
+        tension = metadata.get("emotion_driver", {}).get("tension_intent", "")
+    if not visible and tension not in ("rising", "peak"):
+        return []
+
+    design = metadata.get("pressure_release_design")
+    if tension not in ("rising", "peak"):
+        return []
+    if not isinstance(design, dict):
+        return ["rising/peak镜必须提供qa_metadata.pressure_release_design，说明压力如何制造和释放"]
+
+    issues = []
+    for field in ("pressure_source", "pressure_object", "release_trigger", "release_mode", "release_result", "split_threshold"):
+        if len(str(design.get(field, "") or "").strip()) < 4:
+            issues.append(f"pressure_release_design.{field}不能为空或过于空泛")
+    mode = str(design.get("release_mode", "") or "").strip()
+    if mode and mode not in PRESSURE_RELEASE_MODES:
+        issues.append("pressure_release_design.release_mode只允许action_completion/interrupted_release/attention_shift/cost_reveal/delayed_release/split_release/release/none")
+
+    steps = design.get("escalation_steps")
+    if not isinstance(steps, list) or not steps:
+        issues.append("pressure_release_design.escalation_steps必须至少包含一个可见升级点")
+    else:
+        if len(steps) > 2:
+            issues.append("pressure_release_design.escalation_steps最多2个，避免同镜过载")
+        for index, step in enumerate(steps):
+            if not isinstance(step, dict):
+                issues.append(f"pressure_release_design.escalation_steps[{index}]必须是对象")
+                continue
+            for field in ("time_range", "visible_change", "audience_question"):
+                if len(str(step.get(field, "") or "").strip()) < 3:
+                    issues.append(f"pressure_release_design.escalation_steps[{index}].{field}不能为空")
+
+    sections = split_sections(full_prompt, PROMPT_LABELS)
+    prompt_text = "\n".join(sections.values())
+    grounded_fields = ("pressure_object", "release_trigger", "release_result")
+    for field in grounded_fields:
+        value = str(design.get(field, "") or "").strip() if isinstance(design, dict) else ""
+        if value and value not in ("N/A", "none", "无") and not _fragment_grounded(value, prompt_text):
+            issues.append(f"pressure_release_design.{field}必须落实到full_prompt的可见画面、声音或落幅状态")
+    if isinstance(steps, list):
+        for index, step in enumerate(steps):
+            if not isinstance(step, dict):
+                continue
+            visible_change = str(step.get("visible_change", "") or "").strip()
+            if visible_change and not _fragment_grounded(visible_change, prompt_text):
+                issues.append(f"pressure_release_design.escalation_steps[{index}].visible_change必须落实到full_prompt")
+    return issues
+
+
+def story_punch_issues(metadata, full_prompt="", visible_characters=None):
+    """Prevent structurally correct but dramatically flat character shots."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    visible = _string_list(visible_characters or [])
+    contract = metadata.get("story_punch_contract")
+    required = _story_punch_required(metadata, full_prompt, visible)
+    if not required and contract in (None, {}):
+        return []
+    if not isinstance(contract, dict):
+        return ["人物、对白、道具变化或高张力镜必须提供qa_metadata.story_punch_contract，防止提示词合规但平淡"]
+
+    issues = []
+    for field in STORY_PUNCH_FIELDS:
+        value = str(contract.get(field, "") or "").strip()
+        if len(value) < 4 or value in GENERIC_PERFORMANCE_TERMS or value in READINESS_GENERIC_TERMS:
+            issues.append(f"story_punch_contract.{field}必须写当前镜头的具体戏眼，不能写空泛情绪词")
+
+    question = str(contract.get("audience_question", "") or "")
+    if not re.search(r"谁|为什么|是否|怎么|何时|会不会|能否|真相|代价|阻挡|隐瞒|想要", question):
+        issues.append("story_punch_contract.audience_question必须让观众形成一个具体问题")
+
+    sections = split_sections(full_prompt, PROMPT_LABELS)
+    prompt_text = "\n".join(sections.values())
+    for field in ("visible_pressure_object", "dramatic_turn", "picture_punctuation", "end_residue"):
+        value = str(contract.get(field, "") or "").strip()
+        if value and value not in ("none", "无", "N/A") and not _fragment_grounded(value, prompt_text):
+            issues.append(f"story_punch_contract.{field}必须落实到full_prompt的可见动作、道具、构图或落幅残留")
+
+    timeline = sections.get("子镜头组", "")
+    has_visible_spike = any(token in timeline for token in (
+        "停在", "握住", "未", "第一次", "打断", "逼近", "移开视线", "收住",
+        "后撤", "压住", "仍", "落幅", "下一镜", "封条", "瓶盖", "门外", "亮屏",
+    ))
+    has_listener_or_dialogue = bool(metadata.get("dialogue_events"))
+    if required and not has_visible_spike and has_listener_or_dialogue:
+        issues.append("story_punch_contract要求对白/人物镜至少有一个可见戏剧尖刺：反应延迟、未完成动作、道具压力、视线错位、打断或尾帧残留")
+    return issues
+
+
+def _story_punch_required(metadata, full_prompt="", visible=None):
+    visible = _string_list(visible or [])
+    if len(visible) >= 1:
+        return True
+    if isinstance(metadata.get("dialogue_events"), list) and metadata.get("dialogue_events"):
+        return True
+    contract = metadata.get("continuity_contract", {})
+    if isinstance(contract, dict) and (contract.get("state_change") is True or contract.get("state_transitions")):
+        return True
+    tension = ""
+    for key in ("performance_contract", "emotion_driver", "performance_causality"):
+        value = metadata.get(key, {})
+        if isinstance(value, dict) and value.get("tension_intent"):
+            tension = value.get("tension_intent")
+            break
+    if tension in ("rising", "peak"):
+        return True
+    return bool(re.search(r"质问|拒绝|承认|反转|揭示|威胁|门外|脚步|药瓶|手机|钥匙|停住|打断|转身|递给|接住", str(full_prompt or "")))
 
 
 def listener_reaction_issues(metadata, full_prompt=""):
@@ -713,9 +1025,14 @@ def continuity_contract_issues(metadata, full_prompt="", visible_characters=None
         if not isinstance(transition, dict):
             issues.append(f"state_transitions[{index}]必须是对象")
             continue
-        for field in ("subject", "from_state", "to_state", "cause", "time_range"):
+        for field in ("subject", "from_state", "intermediate_state", "to_state", "cause", "time_range"):
             if not str(transition.get(field, "") or "").strip():
                 issues.append(f"state_transitions[{index}].{field}不能为空")
+        intermediate = str(transition.get("intermediate_state", "") or "").strip()
+        if intermediate and not _fragment_grounded(intermediate, full_prompt):
+            issues.append(f"state_transitions[{index}].intermediate_state必须落实到模型提示词中的可见承接动作")
+        if intermediate and _looks_like_terminal_state(intermediate):
+            issues.append(f"state_transitions[{index}].intermediate_state不能只写终态，必须写手伸向/接触/半转/重心跟随等中间动作")
     if not _fragment_grounded(contract.get("end_anchor", ""), full_prompt):
         issues.append("continuity_contract.end_anchor必须能在模型提示词中找到可见落幅")
     if not _fragment_grounded(contract.get("next_carryover", ""), full_prompt):
@@ -952,6 +1269,9 @@ def dialogue_event_issues(
             label = f"{speaker}（{kind}）"
             if label not in timeline:
                 issues.append(f"{prefix}必须在子镜头组明确人物与台词/OS类型")
+            quoted_label = f"{speaker}（{kind}）: \"{line}\""
+            if line and quoted_label not in timeline:
+                issues.append(f"{prefix}必须按半角格式写成 {speaker}（{kind}）: \"逐字原文\"")
             if delivery and delivery not in timeline:
                 issues.append(f"{prefix}.delivery未落实到子镜头组")
             if breath_pause_plan and breath_pause_plan not in timeline:
@@ -1276,6 +1596,26 @@ def _fragment_grounded(value, text):
         if len(fragment.strip()) >= 4 and fragment.strip() not in GENERIC_PERFORMANCE_TERMS
     ]
     return any(fragment in text for fragment in fragments[:4])
+
+
+def _is_no_prop_state(value):
+    text = str(value or "").strip().lower()
+    if not text:
+        return True
+    return any(term in text for term in ("无关键道具", "无道具", "不涉及道具", "n/a", "none"))
+
+
+def _looks_like_terminal_state(value):
+    text = str(value or "").strip()
+    if not text:
+        return False
+    terminal_terms = ("已在", "已经", "完成", "落幅", "最终", "转完", "拿到手", "到手上", "站到", "变成")
+    middle_terms = (
+        "伸向", "靠近", "接近", "指尖", "接触", "触碰", "拿起", "递出", "递到",
+        "接住", "放下", "落定", "半转", "微转", "先转", "头部", "肩线", "重心",
+        "跟随", "移向", "过渡", "途中",
+    )
+    return any(term in text for term in terminal_terms) and not any(term in text for term in middle_terms)
 
 
 def _shares_meaningful_fragment(value, source_text):

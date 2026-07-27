@@ -21,7 +21,6 @@ BASE_FIELDS = (
     "target_platform",
     "generation_control.mode",
     "generation_control.audio_enabled",
-    "storyboard_grid.enabled",
     "delivery.markdown_path",
 )
 
@@ -32,7 +31,7 @@ CONFIG_GROUPS = (
     ("export_base",),
     ("canvas", "visual_style"),
     ("max_shot_duration", "target_platform"),
-    ("generation_control.audio_enabled", "storyboard_grid.enabled"),
+    ("generation_control.audio_enabled",),
     ("delivery.markdown_path",),
 )
 
@@ -51,7 +50,6 @@ FIELD_PROMPTS = {
     "max_shot_duration": "请输入单条生成片段的最大时长（秒，不能超过平台能力）。",
     "target_platform": "请输入目标生成平台，例如 即梦、可灵、Runway 或 Veo。",
     "generation_control.audio_enabled": "是否启用原生音频？默认 true；请输入 true 或 false。",
-    "storyboard_grid.enabled": "请输入是否生成自动九宫格剧情包：true 或 false。",
     "delivery.markdown_path": "请输入本次交付 Markdown 的绝对路径；后续将自动导出到此位置。",
 }
 
@@ -80,7 +78,7 @@ def _get(config, dotted):
 
 
 def _value_is_present(field, value):
-    if field in ("generation_control.audio_enabled", "storyboard_grid.enabled"):
+    if field == "generation_control.audio_enabled":
         return isinstance(value, bool)
     if field == "max_shot_duration":
         return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0

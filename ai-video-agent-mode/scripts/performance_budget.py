@@ -48,7 +48,7 @@ def report(run_dir):
         "completed": completed,
         "within_target": bool(completed and elapsed is not None and elapsed <= TARGET_SECONDS),
         "phases": records,
-        "excludes_optional_grid_storyboard": True,
+        "scope": "50 main shots",
     }
     out_dir = os.path.join(run_dir, ".cache", "performance")
     os.makedirs(out_dir, exist_ok=True)

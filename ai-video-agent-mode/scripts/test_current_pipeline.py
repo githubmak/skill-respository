@@ -6,17 +6,17 @@ import hashlib
 
 from context_budget import check, editor_items_fit
 from editor_scene_windows import build
-from modec_v4 import coverage_role_issues, dialogue_event_issues, expectation_anchor_issues, insert_shot_issues, jimeng_feed_prompt, listener_reaction_issues, shot_group_handoff_issues, state_transition_replay_issues, temporal_transition_contract_issues
+from modec_v4 import continuity_contract_issues, coverage_role_issues, dialogue_event_issues, expectation_anchor_issues, insert_shot_issues, jimeng_feed_prompt, listener_reaction_issues, prompt_state_machine_issues, shot_group_handoff_issues, state_transition_replay_issues, temporal_transition_contract_issues
 from pipeline_runtime import atomic_json, cache_artifact, record_issues
-from adapt_nine_panel_storyboard import adapt
 from emotion_camera_audit import audit as emotion_camera_audit
 from spatial_storyboard import build_spatial_storyboard_reference
+from current_keyframe import build_current_shot_keyframe_reference
 from validate_scene_locks import validate
 from shot_semantics import dispatch_risk, temporal_transition_candidate
-from dispatch_cache import _dynamic_master_chunks, _editor_review_chunks, _retry_examples, prepare_dispatch_packets
+from dispatch_cache import _composer_execution_hints, _dynamic_master_chunks, _editor_review_chunks, _retry_examples, prepare_dispatch_packets
 from contract_registry import QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
 from dispatch_receipts import heartbeat as receipt_heartbeat, issue as issue_receipt, load_and_verify as verify_dispatch_receipt
-from pipeline_state import load_state, record_heartbeat as state_heartbeat, set_agent_id
+from pipeline_state import PHASE_ORDER, load_state, record_heartbeat as state_heartbeat, set_agent_id
 from record_batch_provenance import record as record_provenance, verify as verify_provenance
 from merge_agent_outputs import merge_agent_outputs
 from pipeline_templates import GATES
@@ -59,7 +59,8 @@ def run():
         assert "local_validation_command" in packet and packet["local_validation_command"][-2] == "--run-dir"
         assert packet.get("context_policy", {}).get("quality_policy", "").startswith("Execution hints are speed aids")
         assert all("execution_hints" in item for item in packet.get("items", []))
-        assert "grid_storyboard" in GATES and GATES["grid_storyboard"]["output"] == [".cache/grid_storyboard/packages.json"]
+        assert "grid_storyboard" not in GATES
+        assert "grid_storyboard" not in PHASE_ORDER
         assert not any("execution_hints" in shot for shot in package["shots"])
         windows = build(run_dir)
         assert len(windows) == 2 and windows[0]["current"]["shot_id"] == "S1" and windows[1]["previous"]["shot_id"] == "S1"
@@ -164,9 +165,62 @@ def run():
         assert not dialogue_event_issues(dialogue_metadata, None, [], canonical, False, 2)
         dialogue_metadata["dialogue_events"][0]["breath_pause_plan"] = ""
         assert any("breath_pause_plan" in issue for issue in dialogue_event_issues(dialogue_metadata, None, [], canonical, False, 2))
+        audible_dialogue_metadata = {"dialogue_refs": ["D-02"], "dialogue_events": [{
+            "ref": "D-02", "kind": "台词", "speaker": "角色A", "text": "你来迟了。",
+            "time_range": "0.0-1.0秒", "speaker_visibility": "visible", "facial_state": "角色A视线压住角色B",
+            "body_state": "角色A肩线不动", "delivery": "低声、尾音压住",
+            "breath_pause_plan": "句前0.2秒吸气；无中段气口；句末0.3秒收气", "lip_sync": True,
+        }]}
+        audible_prompt = canonical.replace(
+            "画面",
+            "角色A（台词）: \"你来迟了。\" 角色A视线压住角色B，角色A肩线不动，低声、尾音压住，句前0.2秒吸气；无中段气口；句末0.3秒收气，口型同步，落幅仍看向角色B",
+        )
+        assert not dialogue_event_issues(audible_dialogue_metadata, None, ["角色A"], audible_prompt, True, 2)
+        bad_audible_prompt = audible_prompt.replace("角色A（台词）: \"你来迟了。\"", "角色A（台词）：“你来迟了。”")
+        assert any("半角格式" in issue for issue in dialogue_event_issues(audible_dialogue_metadata, None, ["角色A"], bad_audible_prompt, True, 2))
         listener_prompt = canonical.replace("画面", "角色B视线停在角色A脸上，拇指在杯沿轻收一次，不起身、不转向抢画面；角色B口型闭合，手仍停在杯沿，视线留在角色A方向")
         listener_metadata = {"performance_priority": {"primary": "角色A", "supporting": ["角色B"], "background": []}, "dialogue_events": [{"kind": "台词", "speaker": "角色A", "speaker_visibility": "visible"}], "listener_reaction_plan": {"speaker": "角色A", "listener": "角色B", "trigger": "角色A说到关键事实", "time_range": "0.2-0.8秒", "visual_evidence": "角色B视线停在角色A脸上，拇指在杯沿轻收一次", "motion_limit": "不起身、不转向抢画面", "lip_sync": False, "end_residue": "角色B口型闭合，手仍停在杯沿，视线留在角色A方向"}}
         assert not listener_reaction_issues(listener_metadata, listener_prompt)
+        spatial_prop_prompt = (
+            "生成规格：规格\n\n"
+            "主体与空间锁定：角色A在画面左侧中景，身体朝向画面右侧；角色B在画面右侧中景，身体朝向画面左侧；角色C在画面中间偏后景，身体朝向画面前侧略偏左。药瓶在桌面右前角，瓶口朝画面左，未被任何人接触。\n\n"
+            "主镜头连续规则：单一剧情问题围绕角色A是否说出真相；角色A抬眼触发压力。空间保持A左、B右、C中后方，药瓶起始位于桌面右前角、瓶口朝画面左、无人接触，落幅仍在桌面右前角并由下一镜继承。主要运镜固定，禁止人物穿过A与B之间的屏幕空间线。\n\n"
+            "子镜头组：【镜头1｜0.0-1.0秒】角色A在画面左侧中景，视线落向角色B；药瓶仍在桌面右前角，未被任何人接触。角色A只抬眼停住半拍，固定机位保持中景，落幅药瓶仍在桌面右前角，下一镜继承，不离开桌面。\n\n"
+            "光照、声音与稳定约束：同源光照保持"
+        )
+        spatial_prop_metadata = {"continuity_contract": {"prop_state": "药瓶在桌面右前角，瓶口朝画面左，未被任何人接触"}}
+        assert not prompt_state_machine_issues(spatial_prop_metadata, spatial_prop_prompt, ["角色A", "角色B", "角色C"])
+        vague_prop_prompt = canonical.replace("空间", "角色A在角色B旁边，角色C在后面").replace("画面", "角色A看向角色B，药瓶突然到手上")
+        assert prompt_state_machine_issues(spatial_prop_metadata, vague_prop_prompt, ["角色A", "角色B", "角色C"])
+        transfer_prompt = (
+            "生成规格：规格\n\n"
+            "主体与空间锁定：角色A在画面左侧中景，身体朝向画面右侧；手机起幅在桌面右前角。\n\n"
+            "主镜头连续规则：角色A要接起电话，手机从桌面右前角转移到角色A右手，手先伸向手机、指尖接触后拿起，落幅手机在角色A右手中，下一镜继承。\n\n"
+            "子镜头组：【镜头1｜0.0-1.0秒】角色A在画面左侧中景，右手从身侧伸向桌面右前角手机，指尖接触手机边缘后拿起，落幅手机在角色A右手中，下一镜继承。\n\n"
+            "光照、声音与稳定约束：光照"
+        )
+        transfer_metadata = {"continuity_contract": {
+            "start_anchor": "手机起幅在桌面右前角",
+            "end_anchor": "落幅手机在角色A右手中",
+            "position_continuity": "角色A在画面左侧中景",
+            "eyeline_continuity": "角色A视线落向手机",
+            "prop_state": "手机从桌面右前角转移到角色A右手",
+            "lighting_continuity": "同源光照保持",
+            "next_carryover": "手机在角色A右手中，下一镜继承",
+            "state_change": True,
+            "state_transitions": [{
+                "subject": "手机",
+                "from_state": "手机起幅在桌面右前角",
+                "intermediate_state": "右手从身侧伸向桌面右前角手机，指尖接触手机边缘后拿起",
+                "to_state": "落幅手机在角色A右手中",
+                "cause": "角色A要接起电话",
+                "time_range": "0.0-1.0秒",
+            }],
+        }}
+        assert not continuity_contract_issues(transfer_metadata, transfer_prompt, ["角色A"])
+        bad_transfer = json.loads(json.dumps(transfer_metadata, ensure_ascii=False))
+        bad_transfer["continuity_contract"]["state_transitions"][0].pop("intermediate_state")
+        assert any("intermediate_state" in issue for issue in continuity_contract_issues(bad_transfer, transfer_prompt, ["角色A"]))
         phone_previous = {"end_state": "手机持续亮屏显示来电", "continuity_contract": {"next_carryover": "手机亮屏的来电状态"}}
         phone_replay = "手机屏幕亮起或震动，显示来电界面"
         assert state_transition_replay_issues(phone_previous, "手机屏幕亮起显示来电", {}, phone_replay)
@@ -203,11 +257,19 @@ def run():
         ))
         risky = {"full_prompt": canonical.replace("空间", "甲画左、乙画右，酒店入口" ).replace("画面", "甲走向乙并递出手机"), "qa_metadata": {"dialogue_events": [{"speaker": "甲"}, {"speaker": "乙"}]}}
         assert build_spatial_storyboard_reference(risky, {"scene": "大堂"}) is not None
-        board = {"source_summary": "角色相遇", "panels": [_panel(index) for index in range(1, 10)]}
-        board_path = os.path.join(run_dir, "nine.json")
-        packages_path = os.path.join(run_dir, ".cache", "grid_storyboard", "packages.json")
-        _write(board_path, board)
-        assert len(adapt(board_path, packages_path)["packages"]) == 1
+        dramatic_keyframe_task = {
+            "full_prompt": spatial_prop_prompt.replace("单一剧情问题围绕角色A是否说出真相", "单一剧情问题围绕角色A是否揭示药瓶真相，药瓶形成压迫"),
+            "qa_metadata": {
+                "dramatic_goal": "角色A是否揭示药瓶真相",
+                "dialogue_events": [{"speaker": "角色A", "kind": "台词", "text": "你知道这是什么。"}],
+                "dramatic_design": {"narrative_weight": "high", "information_gain": "药瓶真相逼近"},
+                "pressure_release_design": {"pressure_source": "药瓶真相", "pressure_object": "桌面药瓶", "release_trigger": "角色A看向药瓶"},
+                "continuity_contract": {"end_anchor": "药瓶仍在桌面右前角，角色A视线压向角色B"},
+            },
+        }
+        keyframe = build_current_shot_keyframe_reference(dramatic_keyframe_task, {"scene": "审讯室"}, "16:9", "动态漫")
+        assert keyframe and "当前镜头剧情关键帧" in keyframe["keyframe_prompt"]
+        assert "不分格" in keyframe["keyframe_prompt"] and "九宫格" in keyframe["negative_prompt"]
         _write(os.path.join(run_dir, ".cache", "composer", "prompt_package.json"), {"shots": []})
         audit_result, _audit_path = emotion_camera_audit(run_dir)
         assert isinstance(audit_result.get("pass"), bool) and isinstance(audit_result.get("shots"), list)
@@ -229,6 +291,10 @@ def run():
         high_risk = dispatch_risk(high_items[0])
         assert high_risk["tier"] == "high" and high_risk["batch_capacity"] == 2
         assert [len(batch) for batch in _dynamic_master_chunks(high_items)] == [2, 2, 1]
+        low_hint = _composer_execution_hints({"subshot_id": "L1", "visible_characters": ["甲"], "duration": 2, "editorial_mode": "continuous_take"})
+        assert low_hint["risk_gated_contracts"] == {"ai_model_readiness_score": False, "pressure_release_design": False}
+        high_hint = _composer_execution_hints({"subshot_id": "H1", "visible_characters": ["甲", "乙"], "duration": 5, "editorial_mode": "shot_group", "emotion_driver": {"tension_intent": "rising"}})
+        assert high_hint["risk_gated_contracts"] == {"ai_model_readiness_score": True, "pressure_release_design": True}
         dialogue_items = [_master_item("D%02d" % index, "角色A说了一段很长的解释台词，角色B保持倾听") for index in range(1, 7)]
         for item in dialogue_items:
             item["source_subshots"][0]["dialogue_refs"] = ["DIALOGUE"]
@@ -287,10 +353,6 @@ def _sha256(path):
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
-
-
-def _panel(index):
-    return {"panel_id": "%02d" % index, "camera_setup": "中景", "camera_motion": "Static", "visual_description": "人物与场景", "ai_motion_control": "人物小幅动作", "narrative_tag": "节拍"}
 
 
 def _master_item(shot_id, action, non_character=False):

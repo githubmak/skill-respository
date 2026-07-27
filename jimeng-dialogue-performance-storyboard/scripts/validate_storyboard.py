@@ -9,6 +9,9 @@ from pathlib import Path
 
 
 CHILD_FIELDS = ["【镜号】", "【画面描述｜直接复制】", "【表演与声音】", "【状态继承】"]
+KEYFRAME_IMAGE_FIELD = "【关键帧生图提示】"
+KEYFRAME_VIDEO_FIELD = "【即梦视频提示｜配合关键帧】"
+DIRECT_NEXT_FIELDS = (KEYFRAME_IMAGE_FIELD, KEYFRAME_VIDEO_FIELD, "【表演与声音】")
 REQUIRED_TOP_SECTIONS = [
     "## 使用说明",
     "## 全局锁定",
@@ -20,6 +23,7 @@ DEPRECATED_HEADINGS = [
     "## 全局锁帧模板", "## 负面提示词｜直接复制", "## 角色锁定表",
     "## 人物位置与拍摄侧锁定表", "## 场景与道具锁定表", "## 分镜正式投喂表",
     "【画面描述｜直接复制投喂（含空间/表演/台词/运镜）】", "【画面描述｜直接复制投喂】",
+    "【画面描述｜直接复制｜无关键帧T2V】", "【即梦视频提示｜配合关键帧I2V】",
     "【导演校验记录】", "【主体与空间锁定】", "【摄影合同】", "【运镜/推拉/反打时机】",
     "【情绪与表演时间轴】", "【台词/OS/系统声与语气】",
 ]
@@ -38,7 +42,7 @@ FACING_TERMS = ("面向", "背向", "身体朝向", "身体仍朝", "上身朝�
 POST_AUDIO_TERMS = ("OS", "OV", "系统音", "内心独白", "画外", "后期", "配音", "旁白")
 POST_AUDIO_LABEL_TERMS = ("OS", "OV", "系统音", "内心独白", "旁白")
 VISIBLE_SPEECH_TERMS = ("可见口型", "可见说话者", "开口", "说：", "说:", "说“", "问：", "问:", "喊：", "喊:", "低语", "回应", "反问")
-BLAND_EXPRESSION_TERMS = ("眼神复杂", "神色复杂", "表情平淡", "神色变化")
+BLAND_EXPRESSION_TERMS = ("眼神复杂", "神色复杂", "表情平淡", "神色变化", "微微皱眉", "闭口看着")
 FACIAL_DETAIL_TERMS = ("眼睑", "睫毛", "眉尾", "嘴角", "下颌", "喉咙", "呼吸", "唇", "屏息")
 BODY_PROP_EMOTION_TERMS = ("肩", "背", "手", "指", "道具", "手机", "卡", "衣", "后退", "靠近", "距离", "遮挡", "门", "桌")
 PROP_TRANSFER_TERMS = ("递", "交给", "接过", "接住", "松手", "刷卡", "签字", "付款", "取出", "拿出", "塞给")
@@ -51,7 +55,31 @@ ORIENTATION_LOCK_TERMS = ("背向", "背对", "侧身", "身体面向柜台", "�
 ORIENTATION_TURN_TERMS = ("转身", "转向", "回身", "侧身转正", "肩线转正", "双脚停稳", "身体从")
 TRACKED_PROPS = ("手机", "银行卡", "卡片", "卡", "杯子", "茶盏", "瓷盏", "笔", "签字笔", "文件", "外套", "手包", "包", "钥匙", "餐盘", "照片", "纸")
 PROP_STATE_HINTS = ("右手", "左手", "手中", "掌中", "包内", "口袋", "外袋", "胸前", "腰侧", "桌面", "台面", "签字台", "柜台", "手边")
+STRONG_PROP_STATE_HINTS = ("右手", "左手", "包内", "口袋", "外袋", "胸前", "腰侧", "桌面", "台面", "签字台", "柜台", "掌中", "手中")
 PROP_TRANSFER_CHAIN_TERMS = ("取出", "拿出", "拿起", "递", "递到", "交给", "接触", "接过", "接住", "握住", "松手", "放下", "放到", "移动")
+ACTION_CHAIN_TERMS = (
+    "转身", "转向", "回身", "走到", "走近", "上前", "后退", "取出", "拿出", "拿起",
+    "抬", "递", "递到", "接触", "握住", "接过", "接住", "松手", "放下", "放到",
+    "离开", "坐下", "站起", "伸", "按下", "挂断",
+)
+POSTURE_RISK_TERMS = (
+    "躺", "伏", "趴", "靠在", "靠到", "抱住", "搂住", "扶住", "拉住", "拽住",
+    "摔倒", "倒向", "倒到", "翻身", "坐起", "起身", "蹲下", "跪下", "弯腰",
+    "前倾", "抱起", "背起", "腿上", "怀里",
+)
+POSTURE_STRUCTURE_TERMS = (
+    "头", "脸", "肩", "背", "腰", "臀", "腿", "膝", "脚", "手撑", "撑住",
+    "座垫", "座椅", "沙发", "床", "地面", "支撑", "接触点", "贴", "枕",
+    "压", "蜷", "非接触", "没有跨坐", "没有缠绕",
+)
+GARMENT_RISK_TERMS = ("披", "穿上", "脱下", "外套滑落", "衣摆")
+GARMENT_STRUCTURE_TERMS = ("领口", "袖", "肩", "臂弯", "衣摆", "双臂", "哪只手", "左手", "右手", "垂")
+DOOR_RISK_TERMS = ("开门", "关门", "推门", "拉门", "开车门", "关车门", "下车", "上车", "门把", "把手")
+DOOR_STRUCTURE_TERMS = ("把手", "门边", "打开", "关闭", "半掩", "车外", "车内", "路沿", "门槛", "踏", "站在")
+UI_RISK_TERMS = ("来电", "转账", "聊天记录", "付款码", "屏幕显示", "清晰文字", "文字")
+UI_STRUCTURE_TERMS = ("后期叠字", "安全区", "模糊", "不生成清晰文字", "斜向", "正对", "屏幕")
+CROWD_RISK_TERMS = ("人群", "围观", "混混", "路人", "宾客", "群众")
+CROWD_STRUCTURE_TERMS = ("后方", "背景", "虚化", "不靠近", "不抢焦", "不产生可见口型", "远处")
 
 
 def compact_len(text: str) -> int:
@@ -78,6 +106,17 @@ def extract(block: str, field: str, next_field: str | None = None) -> str:
     else:
         m = re.search(re.escape(field) + r"\n([\s\S]*)", block)
     return m.group(1).strip() if m else ""
+
+
+def extract_until_any(block: str, field: str, next_fields: tuple[str, ...]) -> str:
+    alternatives = "|".join(re.escape(next_field) for next_field in next_fields)
+    pattern = re.escape(field) + r"\n([\s\S]*?)(?=\n\n(?:" + alternatives + r")|\Z)"
+    m = re.search(pattern, block)
+    return m.group(1).strip() if m else ""
+
+
+def direct_prompt(block: str) -> str:
+    return extract_until_any(block, "【画面描述｜直接复制】", DIRECT_NEXT_FIELDS)
 
 
 def extract_optional_field(block: str, field: str) -> str:
@@ -134,12 +173,22 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
     if "【出现人物】" in block:
         issues.append(f"{sid}: cast belongs only at group level")
 
-    direct = extract(block, "【画面描述｜直接复制】", "【表演与声音】")
+    direct = direct_prompt(block)
     if not direct:
         issues.append(f"{sid}: missing direct prompt body")
         return
     performance = extract(block, "【表演与声音】", "【状态继承】")
     mouth_window = extract_optional_field(block, "【口型分窗】")
+    keyframe_image = extract_optional_field(block, KEYFRAME_IMAGE_FIELD)
+    keyframe_video = extract_optional_field(block, KEYFRAME_VIDEO_FIELD)
+    if keyframe_image and not keyframe_video:
+        issues.append(f"{sid}: {KEYFRAME_IMAGE_FIELD} should pair with {KEYFRAME_VIDEO_FIELD}")
+    if keyframe_video and not keyframe_image:
+        issues.append(f"{sid}: {KEYFRAME_VIDEO_FIELD} requires {KEYFRAME_IMAGE_FIELD}")
+    if keyframe_image and not any(label in keyframe_image for label in ("首帧", "尾帧")):
+        issues.append(f"{sid}: {KEYFRAME_IMAGE_FIELD} should include static frame labels such as 首帧/尾帧")
+    if any(term in keyframe_image + keyframe_video for term in ("T2V", "I2V")):
+        issues.append(f"{sid}: keyframe fields should not use T2V/I2V labels")
     if compact_len(direct) > 500:
         issues.append(f"{sid}: direct prompt over 500 chars -> {compact_len(direct)}")
     if (
@@ -176,6 +225,28 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
     if any(term in direct for term in ("在身后", "侧后方", "身后半身")) and any(term in direct for term in ("递", "交给", "接过", "接住", "塞给")):
         if not any(term in direct for term in ("转身", "走到", "走近", "面向")):
             issues.append(f"{sid}: recipient behind/side-behind needs repositioning before prop transfer")
+    if any(term in direct for term in POSTURE_RISK_TERMS):
+        posture_hits = [term for term in POSTURE_STRUCTURE_TERMS if term in direct]
+        if len(posture_hits) < 3:
+            issues.append(
+                f"{sid}: posture action needs physical structure: head/shoulder/waist-hip/legs/feet/support/contact/boundary"
+            )
+    if any(term in direct for term in GARMENT_RISK_TERMS):
+        if not any(term in direct for term in GARMENT_STRUCTURE_TERMS):
+            issues.append(f"{sid}: garment action needs clothing start point, hand contact, sleeve/shoulder/hem final state")
+    if any(term in direct for term in DOOR_RISK_TERMS):
+        if not any(term in direct for term in DOOR_STRUCTURE_TERMS):
+            issues.append(f"{sid}: door/car-door action needs handle/contact, open-close direction, side crossing, final door state")
+    if any(term in direct for term in UI_RISK_TERMS):
+        if not any(term in direct for term in UI_STRUCTURE_TERMS):
+            issues.append(f"{sid}: UI/text needs screen direction, blur or post-production text safety-zone handling")
+    if any(term in direct for term in CROWD_RISK_TERMS):
+        if not any(term in direct for term in CROWD_STRUCTURE_TERMS):
+            issues.append(f"{sid}: crowd/background characters need region, depth/blur, approach and lip-sync control")
+    if keyframe_image and any(term in direct for term in POSTURE_RISK_TERMS):
+        keyframe_posture_hits = [term for term in POSTURE_STRUCTURE_TERMS if term in keyframe_image]
+        if len(keyframe_posture_hits) < 4:
+            issues.append(f"{sid}: posture keyframes should repeat body support/contact structure in each static frame")
 
     duration_match = re.search(r"，\s*(\d+(?:\.\d+)?)s\s*，", header)
     spoken_chars = sum(len(re.sub(r"\s+", "", line)) for line in re.findall(r"“([^”]+)”", direct))
@@ -241,6 +312,11 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
     )
     if high_risk_count >= 4:
         issues.append(f"{sid}: possible single-shot overload; split or simplify high-risk tasks")
+    action_chain_hits = [term for term in ACTION_CHAIN_TERMS if term in direct]
+    if len(action_chain_hits) >= 5:
+        issues.append(
+            f"{sid}: long action chain may be simplified by AI; split into prepare/contact/final-state shots -> {','.join(action_chain_hits[:8])}"
+        )
 
 
 def camera_signature(direct: str) -> str:
@@ -300,6 +376,10 @@ def prop_state_jump(prev_state: str, next_direct: str) -> list[str]:
         next_context = next_props.get(prop)
         if not next_context or prev_context == next_context:
             continue
+        if set(hint for hint in STRONG_PROP_STATE_HINTS if hint in prev_context) & set(
+            hint for hint in STRONG_PROP_STATE_HINTS if hint in next_context
+        ):
+            continue
         if has_visible_transfer:
             continue
         jumps.append(prop)
@@ -338,7 +418,7 @@ def validate(path: Path) -> list[str]:
             child_count += 1
             validate_child(group_id, expected_number, child.group(1).strip(), child.group(0), issues)
         child_directs = [
-            extract(child.group(0), "【画面描述｜直接复制】", "【表演与声音】")
+            direct_prompt(child.group(0))
             for child in children
         ]
         child_states = [
@@ -366,13 +446,13 @@ def validate(path: Path) -> list[str]:
                 issues.append(f"{group_id}: group duration {float(group_total):g}s != child sum {summed:g}s")
         signatures = []
         for child in children:
-            direct = extract(child.group(0), "【画面描述｜直接复制】", "【表演与声音】")
+            direct = direct_prompt(child.group(0))
             signatures.append(camera_signature(direct))
         for index in range(2, len(signatures)):
             if signatures[index] == signatures[index - 1] == signatures[index - 2] and signatures[index].endswith(":static"):
                 issues.append(f"{group_id}: three consecutive identical static camera tasks -> {signatures[index]}")
         shoulder_actors = [
-            shoulder_actor(extract(child.group(0), "【画面描述｜直接复制】", "【表演与声音】"))
+            shoulder_actor(direct_prompt(child.group(0)))
             for child in children
         ]
         for index in range(1, len(shoulder_actors)):

@@ -11,5 +11,13 @@ QA_REQUIRED_FIELDS = (
     "dialogue_events", "editorial_mode", "camera_beat_map", "sequence_context",
     "quality_contract", "dramatic_design", "duration_design", "viewpoint",
     "visual_hierarchy", "entry_strategy", "reveal_strategy",
-    "focus_strategy", "temporal_transition_contract",
+    "focus_strategy", "temporal_transition_contract", "story_punch_contract",
+)
+
+# Heavy semantic QA fields are risk-gated by modec_v4 validators instead of
+# globally required for every shot. This keeps light/environment/simple shots
+# from paying the same context and generation cost as high-risk character shots.
+RISK_GATED_QA_FIELDS = (
+    "ai_model_readiness_score",
+    "pressure_release_design",
 )

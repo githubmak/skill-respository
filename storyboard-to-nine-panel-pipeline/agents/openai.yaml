@@ -1,7 +1,7 @@
 interface:
   display_name: "九宫格剧情包"
   short_description: "分镜先拆剧情包，再批量生成九宫格"
-  default_prompt: "Use $storyboard-to-nine-panel-pipeline to convert this storyboard or beat bundle into /九宫格剧情包 JSON, splitting into story beat bundles before generating nine-panel grids."
+  default_prompt: "使用 $storyboard-to-nine-panel-pipeline 把这份分镜或剧情节拍拆为剧情包：每个剧情包只生成一条4-15秒视频，按源分镜实际可见变化输出1-9格关键帧，首格为起始参考、末格为末帧目标，中间格为核心关键帧。"
 
 policy:
   allow_implicit_invocation: true

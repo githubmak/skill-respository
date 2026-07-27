@@ -89,8 +89,6 @@ def execute_local_phase(run_dir, phase, source_path=None):
         if not result.get("pass"):
             raise ValueError("pre-editor deterministic gate failed: " + path)
         return {"gate_path": path}
-    if phase == "grid_storyboard":
-        raise RuntimeError("grid_storyboard requires the host to invoke nine-panel-video-storyboard and write packages.json")
     if phase == "validate":
         package_path = os.path.join(run_dir, ".cache", "composer", "merged.prompt_package.json")
         source_sha256 = _sha256(package_path)

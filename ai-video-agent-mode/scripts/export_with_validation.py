@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.dirname(__file__))
 from normalize_prompt_package import normalize_package
@@ -23,6 +24,7 @@ from materialize_master_tasks import materialize as materialize_master_tasks
 from validate_master_tasks import validate as validate_master_tasks
 from modec_v4 import jimeng_feed_prompt
 from spatial_storyboard import build_spatial_storyboard_reference
+from current_keyframe import build_current_shot_keyframe_reference
 from emotion_camera_audit import audit as audit_emotion_camera
 from pipeline_state import AGENT_PHASES, load_state
 from record_batch_provenance import verify as verify_provenance
@@ -58,16 +60,13 @@ def export_with_validation(md_path, run_dir):
         return quality.returncode
     package = _load(package_path)
     plan = _load(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"))
-    config = _load_optional(os.path.join(run_dir, "project_config.json"))
-    grid_enabled = _grid_enabled(config)
-    grid_packages = _load_optional(os.path.join(run_dir, ".cache", "grid_storyboard", "packages.json")) if grid_enabled else {}
     destination_dir = os.path.dirname(os.path.abspath(md_path))
     temp_dir = tempfile.mkdtemp(prefix=".jimeng-export-", dir=destination_dir)
     temporary_md = os.path.join(temp_dir, os.path.basename(md_path))
     temporary_xlsx = os.path.join(temp_dir, os.path.basename(os.path.splitext(md_path)[0]) + ".xlsx")
     try:
-        _write_master_markdown(temporary_md, master_package, plan, grid_packages)
-        xlsx_written = _write_workbook(temporary_xlsx, package, plan, {}, grid_packages, grid_enabled)
+        _write_master_markdown(temporary_md, master_package, plan)
+        xlsx_written = _write_workbook(temporary_xlsx, package, plan, {})
         result = subprocess.run(
             [sys.executable, CHECK_EXPORT, temporary_md, run_dir], text=True, capture_output=True,
         )
@@ -146,7 +145,7 @@ def _record_normalization_provenance(package_path, source_sha256):
     atomic_json(manifest_path, manifest)
 
 
-def _write_master_markdown(path, master_package, plan, grid_packages=None):
+def _write_master_markdown(path, master_package, plan):
     """Write the user-facing delivery from canonical main-shot tasks."""
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     masters = {item.get("shot_id", ""): item for item in master_package.get("shots", []) if isinstance(item, dict)}
@@ -182,22 +181,29 @@ def _write_master_markdown(path, master_package, plan, grid_packages=None):
             for event in events:
                 lines.append("| " + " | ".join(_md_cell(event.get(field, "")) for field in ("ref", "kind", "speaker", "text", "time_range", "facial_state", "body_state", "delivery", "breath_pause_plan", "lip_sync")) + " |")
             lines.append("")
+        keyframe_reference = build_current_shot_keyframe_reference(task, planned, plan.get("canvas", "16:9"), plan.get("visual_style", ""))
+        if keyframe_reference:
+            lines.extend([
+                f"**当前镜头剧情关键帧｜{keyframe_reference['priority']}生成**", "",
+                f"触发原因：{keyframe_reference['reason']}。", "",
+                "**当前镜头剧情关键帧生图提示词**", "", "```text", keyframe_reference["keyframe_prompt"], "```", "",
+                "**剧情关键帧负面提示词**", "", "```text", keyframe_reference["negative_prompt"], "```", "",
+            ])
         spatial_reference = build_spatial_storyboard_reference(task, planned, plan.get("canvas", "16:9"), plan.get("visual_style", ""))
         if spatial_reference:
             lines.extend([
                 f"**人物站位空间分镜图｜{spatial_reference['priority']}生成**", "",
                 f"触发原因：{spatial_reference['reason']}。", "",
                 "**俯视空间调度图提示词**", "", "```text", spatial_reference["overhead_map_prompt"], "```", "",
-                "**人物站位姿态分镜图提示词**", "", "```text", spatial_reference["blocking_board_prompt"], "```", "",
+                "**人物站位姿态参考图提示词**", "", "```text", spatial_reference["blocking_board_prompt"], "```", "",
                 "**分镜图负面提示词**", "", "```text", spatial_reference["negative_prompt"], "```", "",
             ])
         lines.extend(["---", ""])
-    _append_grid_packages(lines, grid_packages)
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("\n".join(lines))
 
 
-def _write_markdown(path, package, plan, director, grid_packages=None):
+def _write_markdown(path, package, plan, director):
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     shots = package.get("shots", [])
     by_id = {shot.get("subshot_id", ""): shot for shot in shots}
@@ -284,7 +290,6 @@ def _write_markdown(path, package, plan, director, grid_packages=None):
             else:
                 lines.extend(["无。", ""])
         lines.extend(["---", ""])
-    _append_grid_packages(lines, grid_packages)
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("\n".join(lines))
 
@@ -369,41 +374,6 @@ def _append_execution_beats(lines, director_item):
     lines.append("")
 
 
-def _append_grid_packages(lines, grid_packages):
-    packages = grid_packages.get("packages", []) if isinstance(grid_packages, dict) else []
-    if not packages:
-        return
-    lines.extend(["## 自动九宫格剧情包", ""])
-    for package in packages:
-        lines.extend([
-            f"### {package.get('chain_id', '')}｜{package.get('scene', '')}",
-            "",
-            "**九宫格总图生图提示词**",
-            "",
-            "```text",
-            str(package.get("grid_prompt", "") or ""),
-            "```",
-            "",
-            "**九宫格负面提示词**",
-            "",
-            "```text",
-            str(package.get("negative_prompt", "") or ""),
-            "```",
-            "",
-            "**九格剧情节拍**",
-            "",
-            "| 格 | 对应子镜头 | 剧情节拍 |",
-            "|---|---|---|",
-        ])
-        for beat in package.get("beats", []) if isinstance(package.get("beats"), list) else []:
-            lines.append("| %s | %s | %s |" % (
-                _md_cell(beat.get("panel_id", "")),
-                _md_cell(beat.get("source_subshot_id", "")),
-                _md_cell(beat.get("description", "")),
-            ))
-        lines.extend(["", "---", ""])
-
-
 def _build_transition_prompt(current_shot, next_shot):
     if not next_shot:
         return "无，段落结束。"
@@ -456,7 +426,7 @@ def _shorten(text, limit=120):
     return text[: limit - 1].rstrip("，。；; ") + "…"
 
 
-def _write_workbook(path, package, plan, director, grid_packages=None, grid_enabled=False):
+def _write_workbook(path, package, plan, director):
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Alignment, Font, PatternFill
@@ -560,21 +530,22 @@ def _write_workbook(path, package, plan, director, grid_packages=None, grid_enab
             item.get("lighting", ""), item.get("end_state", ""),
         ])
 
-    if grid_enabled:
-        grid_sheet = workbook.create_sheet("九宫格剧情分镜图")
-        grid_sheet.append(["分镜编号", "场景", "关联子镜头", "九宫格总图生图提示词", "九宫格负面提示词", "格", "对应子镜头", "剧情节拍"])
-        packages = grid_packages.get("packages", []) if isinstance(grid_packages, dict) else []
-        for package in packages:
-            beats = package.get("beats", []) if isinstance(package.get("beats"), list) else []
-            for index, beat in enumerate(beats):
-                grid_sheet.append([
-                    package.get("chain_id", "") if index == 0 else "",
-                    package.get("scene", "") if index == 0 else "",
-                    "；".join(package.get("subshot_ids", [])) if index == 0 else "",
-                    package.get("grid_prompt", "") if index == 0 else "",
-                    package.get("negative_prompt", "") if index == 0 else "",
-                    beat.get("panel_id", ""), beat.get("source_subshot_id", ""), beat.get("description", ""),
-                ])
+    plan_by_shot = {item.get("shot_id", ""): item for item in plan.get("shots", []) if isinstance(item, dict)}
+    keyframe_sheet = workbook.create_sheet("当前镜头剧情关键帧")
+    keyframe_sheet.append(["主镜头", "子镜头", "优先级", "触发原因", "剧情关键帧生图提示词", "负面提示词"])
+    for shot in shots:
+        planned = plan_by_shot.get(shot.get("shot_id", ""), {})
+        keyframe = build_current_shot_keyframe_reference(shot, planned, plan.get("canvas", "16:9"), plan.get("visual_style", ""))
+        if not keyframe:
+            continue
+        keyframe_sheet.append([
+            shot.get("shot_id", ""),
+            shot.get("subshot_id", ""),
+            keyframe.get("priority", ""),
+            keyframe.get("reason", ""),
+            keyframe.get("keyframe_prompt", ""),
+            keyframe.get("negative_prompt", ""),
+        ])
 
     header_fill = PatternFill("solid", fgColor="1F4E79")
     for sheet in workbook.worksheets:
@@ -617,11 +588,6 @@ def _load(path):
 
 def _load_optional(path):
     return _load(path) if os.path.exists(path) else {"items": []}
-
-
-def _grid_enabled(config):
-    grid = config.get("storyboard_grid", {}) if isinstance(config, dict) else {}
-    return isinstance(grid, dict) and grid.get("enabled") is True
 
 
 if __name__ == "__main__":

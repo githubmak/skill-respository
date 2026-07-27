@@ -10,7 +10,7 @@ TIMEOUT_SECONDS = 900    # Default sub-agent timeout
 # former 600s global threshold caused duplicate dispatches for 900s phases.
 AGENT_STALE_GRACE_SECONDS = 300
 BATCH_SIZE = 12          # Safe default; phase-specific sizes are below.
-CORE_PIPELINE_TARGET_SECONDS = 55 * 60  # 50 main shots, excludes optional grid
+CORE_PIPELINE_TARGET_SECONDS = 55 * 60  # 50 main shots
 
 PHASE_TIMEOUT_SECONDS = {
     "scene_lock": 480,
@@ -34,7 +34,6 @@ LOCAL_PHASES = {
     "user_confirm",
     "orchestrator",
     "editor_pass1",
-    "grid_storyboard",
     "validate",
     "export",
 }
@@ -42,7 +41,7 @@ LOCAL_PHASES = {
 PHASE_ORDER = [
     "user_confirm", "orchestrator",
     "scene_lock", "master_production",
-    "editor_pass1", "editor_pass2", "grid_storyboard", "validate", "export"
+    "editor_pass1", "editor_pass2", "validate", "export"
 ]
 
 # Phases that can be spawned in parallel (group name -> member phases)
@@ -214,26 +213,7 @@ def advance(run_dir):
     while idx < len(order) - 1:
         idx += 1
         next_phase = order[idx]
-        if _skip_optional_phase(run_dir, next_phase):
-            state["phases"][next_phase]["status"] = "skipped"
-            print("[STATE] skip optional phase: %s" % next_phase)
-            continue
         state["current_phase"] = next_phase
         save_state(run_dir, state)
         print("[STATE] %s -> %s" % (current, next_phase))
         return
-
-
-def _skip_optional_phase(run_dir, phase):
-    if phase != "grid_storyboard":
-        return False
-    config_path = os.path.join(run_dir, "project_config.json")
-    if not os.path.exists(config_path):
-        return True
-    try:
-        with open(config_path, "r", encoding="utf-8-sig") as handle:
-            config = json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        return True
-    grid = config.get("storyboard_grid", {})
-    return not isinstance(grid, dict) or grid.get("enabled") is not True

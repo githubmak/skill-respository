@@ -13,6 +13,7 @@ from modec_v4 import (
     LEGACY_LABELS,
     PROMPT_LABELS,
     action_budget_issues,
+    ai_model_readiness_issues,
     attention_handoff_issues,
     camera_competition_issues,
     camera_beat_map_issues,
@@ -27,12 +28,15 @@ from modec_v4 import (
     listener_reaction_issues,
     performance_causality_issues,
     performance_contract_issues,
+    pressure_release_issues,
+    prompt_state_machine_issues,
     prompt_length_profile,
     prompt_length_issues,
     prompt_soft_range,
     reroll_control_issues,
     role_partition_issues,
     shot_group_handoff_issues,
+    story_punch_issues,
     jimeng_shot_group_issues,
     split_sections,
     timeline_issues,
@@ -159,6 +163,14 @@ def validate_composer_output(path, run_dir=None, report_path=None):
         for problem in performance_causality_issues(metadata, visible):
             issues.append(prefix + problem)
         for problem in performance_contract_issues(metadata, full_prompt, visible):
+            issues.append(prefix + problem)
+        for problem in ai_model_readiness_issues(metadata, full_prompt, visible):
+            issues.append(prefix + problem)
+        for problem in pressure_release_issues(metadata, full_prompt, visible):
+            issues.append(prefix + problem)
+        for problem in story_punch_issues(metadata, full_prompt, visible):
+            issues.append(prefix + problem)
+        for problem in prompt_state_machine_issues(metadata, full_prompt, visible):
             issues.append(prefix + problem)
         for problem in listener_reaction_issues(metadata, full_prompt):
             issues.append(prefix + problem)

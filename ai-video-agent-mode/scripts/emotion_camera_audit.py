@@ -11,7 +11,7 @@ from modec_v4 import (
     coverage_role_issues,
     expectation_anchor_issues, jimeng_shot_group_issues, performance_causality_issues,
     listener_reaction_issues, performance_contract_issues, shot_group_handoff_issues,
-    state_transition_replay_issues,
+    state_transition_replay_issues, story_punch_issues,
 )
 
 
@@ -31,6 +31,7 @@ def audit(run_dir, output_path=None):
         issues = []
         issues.extend(performance_causality_issues(metadata, visible))
         issues.extend(performance_contract_issues(metadata, prompt, visible))
+        issues.extend(story_punch_issues(metadata, prompt, visible))
         issues.extend(listener_reaction_issues(metadata, prompt))
         issues.extend(expectation_anchor_issues(metadata, prompt))
         issues.extend(continuity_contract_issues(metadata, prompt, visible))

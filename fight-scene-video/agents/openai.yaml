@@ -1,0 +1,4 @@
+interface:
+  display_name: "打斗戏视频设计"
+  short_description: "Fight choreography, maps, and AI video prompts"
+  default_prompt: "Use $fight-scene-video to turn this fight scene into action beats, overhead blocking maps, and video prompts."

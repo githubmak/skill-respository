@@ -12,6 +12,7 @@ from modec_v4 import (
     LEGACY_LABELS,
     PROMPT_LABELS,
     action_budget_issues,
+    ai_model_readiness_issues,
     attention_handoff_issues,
     camera_competition_issues,
     dialogue_event_issues,
@@ -20,15 +21,20 @@ from modec_v4 import (
     insert_shot_issues,
     listener_reaction_issues,
     performance_causality_issues,
+    performance_contract_issues,
+    pressure_release_issues,
     prompt_length_issues,
+    reroll_control_issues,
     role_partition_issues,
     shot_group_handoff_issues,
+    story_punch_issues,
     jimeng_shot_group_issues,
     split_sections,
     timeline_issues,
     visibility_issues,
 )
 from negative_prompts import PLACEHOLDER, is_fight_context
+from contract_registry import QA_REQUIRED_FIELDS
 
 
 def main(run_dir):
@@ -79,6 +85,9 @@ def main(run_dir):
         full_prompt = str(shot.get("full_prompt", "") or "")
         metadata = shot.get("qa_metadata", {})
         metadata = metadata if isinstance(metadata, dict) else {}
+        for field in QA_REQUIRED_FIELDS:
+            if field not in metadata:
+                errors.append(prefix + "qa_metadata缺少" + field)
         required_metadata = (
             "dramatic_design", "duration_design", "viewpoint", "visual_hierarchy",
             "entry_strategy", "reveal_strategy", "focus_strategy",
@@ -125,6 +134,14 @@ def main(run_dir):
         for issue in insert_shot_issues(metadata, full_prompt, shot.get("duration", 0), visible):
             errors.append(prefix + issue)
         for issue in performance_causality_issues(metadata, visible):
+            errors.append(prefix + issue)
+        for issue in performance_contract_issues(metadata, full_prompt, visible):
+            errors.append(prefix + issue)
+        for issue in ai_model_readiness_issues(metadata, full_prompt, visible):
+            errors.append(prefix + issue)
+        for issue in pressure_release_issues(metadata, full_prompt, visible):
+            errors.append(prefix + issue)
+        for issue in story_punch_issues(metadata, full_prompt, visible):
             errors.append(prefix + issue)
         for issue in listener_reaction_issues(metadata, full_prompt):
             errors.append(prefix + issue)
@@ -173,6 +190,8 @@ def main(run_dir):
             audio_enabled,
             shot.get("duration", 0),
         ):
+            errors.append(prefix + issue)
+        for issue in reroll_control_issues(metadata, control, visible):
             errors.append(prefix + issue)
 
     for (previous_id, previous_metadata), (current_id, current_metadata) in zip(fight_records, fight_records[1:]):

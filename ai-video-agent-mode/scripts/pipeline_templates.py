@@ -35,15 +35,6 @@ GATES = {
         "output": [".cache/review/llm_gate_result.json"],
         "validator": None
     },
-    "grid_storyboard": {
-        "input": [
-            ".cache/composer/merged.prompt_package.json",
-            ".cache/orchestrator/shot_plan.json",
-            "project_config.json",
-        ],
-        "output": [".cache/grid_storyboard/packages.json"],
-        "validator": None
-    },
     "validate": {
         "input": [".cache/composer/merged.prompt_package.json", "project_config.json"],
         "output": [".cache/validate/result.json"],

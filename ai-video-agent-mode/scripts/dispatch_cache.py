@@ -177,7 +177,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
                     "packet.items[].execution_hints",
                 ],
                 "history_policy": "Do not read full source history by default. Use scene locks plus packet items; cross-shot continuity must come from packet sequence_context, continuity fields, and scaffold locks.",
-                "quality_policy": "Execution hints are speed aids only. They cannot remove required qa_metadata fields, Composer validation, provenance, Editor passes, final validation, export checks, or grid_storyboard behavior.",
+                "quality_policy": "Execution hints are speed aids only. They cannot remove required qa_metadata fields, Composer validation, provenance, Editor passes, final validation, or export checks.",
             }
             packet["instruction"] += (
                 " Composer batch output top-level must be exactly {\"shots\": [...]}; "
@@ -336,25 +336,19 @@ def _write_constraints_sidecar(run_dir, phase, dispatch_dir, dispatch_tag):
         ),
         "master_production": (
             "专业角色：你是 AI 短剧导演与提示词监督。"
-            "每个 packet item 只生成一个符合当前契约的主镜头任务，并且只服务一个 narrative_beat_id；必须使用严格动作预算，并区分 primary/supporting/background 表演优先级。"
-            "禁止虚构剧情、改写台词、重新设计服装、添加未确认道具或把工程字段写进模型提示词。"
-            "不要强迫角色面向镜头：要区分“角色在画面前侧”和“角色脸朝镜头”。只有源文明确授权自拍、直播、对观众说话或看镜头内设备时，才写直视镜头。选择景别前先读取 qa_metadata.dramatic_design.coverage_role：只有 dialogue_performance（台词表演）或 reaction（反应镜）可以默认用中景/中近景固定机位。establish_space 表示建立空间，relationship_blocking 表示关系站位，prop_information 表示道具信息，movement_transition 表示移动承接，power_reversal 表示权力反转，environment_bridge 表示环境承接。它们是剧情职责，不是景别配额；不得覆盖已锁定的 coverage_role。"
-            "互动镜只有在源文压力支持时，才使用心理距离景别反差：焦虑、急迫、被逼问或被压迫的一方可用更紧景别、呼吸和手部证据表现压力；松弛、掌控或回避的一方保留中景/宽景空间。插入镜只能作为同一 narrative_beat_id 内的辅助证据：补充信息、放大情绪证据、切分节奏、引导视线、缓冲转场或保留环境残压。优先使用已确认且稳定的道具、手部、空间边界或环境残留，少用重复脸部特写；每个插入镜必须带来新信息、道具状态、关系压力或残留，并继承轴线、光源、画面左右、场景锚点和插入前后的动作状态。禁止装饰性空镜。回忆、幻想或时空切换插入必须使用 temporal_transition_contract 或拆成独立主镜。插入镜默认有抽卡风险，必须写缓解。"
-            "先执行 Director 的 performance_chain，再设计镜头语言：触发原因、表情控制、细节/道具泄露、身体承接、语气/呼吸落点、终态残留。先填写 qa_metadata.emotion_driver 作为运镜输入合同：trigger、start_state、visible_leak、face_or_eyeline、voice_or_breath、end_residue、tension_intent、empathy_anchor。然后只能从 emotion_driver、coverage_role、continuity_contract 以及已确认的道具/台词触发点推导 camera_beat_map；没有这些触发依据，不得添加镜头运动。shot_group 中，自然反应、细节切入和重构图只能作为同一 narrative_beat_id 的起势/承接/转折/落幅覆盖；必须保留身份、道具状态、轴线、光源和上一节拍残留。每个 camera_beat_map item 必须包含 time_range、focus_owner、focus_subject、framing、trigger、camera_response、camera_position、camera_movement、transition_type、screen_lock、axis_relation、axis_carryover、carryover、end_frame。单个 T2V 任务只允许一次 A→B 注意力交接，不能 B→A 回切；第二个剧情节拍、回切或独立反应结论必须拆成下一条 T2V，并用已声明的承接状态交给后期剪辑。可见说话者同框存在 supporting 倾听者时，必须填写 listener_reaction_plan：只给一个由台词或动作触发的低幅闭口反应，不能让听者冻结，也不能让听者抢戏。打斗镜改用 fight_continuity：双方都按“动作→受力/判断→结果”连续反应，不使用 listener_reaction_plan。"
-            "写 performance_contract 前，先语义判断 packet 中的 expectation_anchor：它是字面人物期待、拟人修辞、需求/缺失，还是象征联想。只有字面人物可以被安排成有意图的表演主体；尚未出现的满足物不能被拍成已经在场。只绑定源文支持的可见进展、镜头决策、返回反应和未完成终态。不要因为角色期待某物就切静态物件；细节切入或重构图必须由已声明的进展事件触发。"
-            "每个有可见物理角色的镜头，都必须填写 qa_metadata.performance_causality：校准后的张力意图、触发点、反应顺序、物理逻辑、运动边界、停顿策略和终态残留。"
-            "写 full_prompt 前，还必须填写 qa_metadata.performance_contract、qa_metadata.continuity_contract 和 qa_metadata.reroll_control：performance_contract 必须把表情、身体动作、视线、反应延迟、语气/呼吸控制、一个观众共情锚点、一个可读画面瞬间、从起幅到落幅的可见推进（或有理由的静止与 1-2 个生命迹象）、运镜压力、场景压力和终态残留落实到子镜头组。稳定构图不等于人物可以冻结。每条台词/OS/OV 事件都必须有 breath_pause_plan：写开口前气口、句末收气；只有在真实分句、思考或情绪转折处才加中段停顿，不按每个标点机械停顿。continuity_contract 必须保留起止锚点、视线、道具状态、光源和下一镜承接。任何位置、视线或可移动道具变化，都必须设置 state_change=true，并记录 subject/from_state/to_state/cause/time_range；cause 必须是可见动作或明确转场。reroll_control 必须评估 T2V 身份、服装、画面左右、动作、运镜和口型同步风险，列出具体缓解方式，并为 rising/peak 人物镜设置 manual_first_pass_check。"
-            "如果 qa_metadata.temporal_transition_contract.kind 不是 none，必须精确遵守它的源文触发。它只是候选，不是装饰命令：要么写一个有边界的模型内转场，其唯一效果来自当前源文事件；要么记录忠于源文的正常切换理由。启用转场时，必须写有效时间窗、唯一效果及其源文依据、前后状态、逐字提示词锚点、声音桥、闭口/OS/OV 边界和降级方案。禁止叠加特效、虚构过去事件，或在合同外改变脸、服装、场景和时代。启用的时空转场一律视为高抽卡风险并需要人工首轮验证。"
-            "精确复制已锁定的 quality_contract。为每个 required_evidence 填写 qa_metadata.quality_evidence，格式为 {section, fragment}；section 只能是 主体与空间锁定/主镜头连续规则/子镜头组/光照、声音与稳定约束，fragment 必须是该段中真实出现的 3 个以上字符短语。环境镜和物件插入镜同样适用。"
-            "每条已锁定的台词事件，都必须逐字保留 ref/kind/speaker/text，并填写 time_range、speaker_visibility、facial_state、body_state、delivery、lip_sync。台词和 OS 原文绝对不能改写；OS 表示内心独白，OV 表示旁白或画外声，二者都不驱动口型同步。"
-            "只使用本 sidecar 中选出的契约段落。首轮不要读取示例。重试时若 packet.example_paths 存在，只读取这些文件，并且只用于修复指定失败字段。"
-            "示例只迁移结构：因果表演链、道具状态转移、时间线连续、系统文字安全区、台词/口型边界、终态残留和抽卡控制；不得继承示例的题材、柔光节奏、酒店/都市场景、漫画风格、服装、人物关系或具体道具事件，除非当前源文或配置明确提供。"
-            "本流程只适用于即梦 T2V：不得包含 I2V/R2V、参考素材、图片句柄或虚构锁定。通过简洁重复身份锚点、服装、画面左右、身体朝向、场景锚点和上一镜终态保持一致性。打斗镜通过限制速度、幅度、接触节拍和镜头抖动降低抽卡风险；过复杂的编舞必须拆成连续锁定片段。"
-            "从 packet.composer_scaffold_path 开始写，并保留所有已锁定字段。每个场景只读取一次 packet.scene_lock_cache_path，不要重新推导共享光源、空间、服装、画幅、风格或生成设置。"
-            "full_prompt 必须且只能包含五段：生成规格/主体与空间锁定/主镜头连续规则/子镜头组/光照、声音与稳定约束。"
-            "每个时间窗先写一个实焦主体和屏幕位置，再写一个触发/动作、一个可见表演证据、声音/口型边界，以及当前必要的稳定控制。不要重复已锁定的风格、服装、光源、空间或通用禁令。用可见证据替代抽象效果词；不要用时长或字数填充废话。"
-            "negative_prompt 是同级字段，只能包含 {{NEGATIVE_PROMPT_AUTO_INJECT}}；QA 和 generation_control 数据必须留在同级对象中。"
-            "continuous_take 使用从 0.0 到准确时长的连续小数秒时间线；shot_group 使用 2-3 个连续时间段。禁止虚构参考素材路径。"
+            "每个 packet item 只生成一个主镜头任务，只服务一个 narrative_beat_id；从 packet.composer_scaffold_path 开始写，保留锁定字段，并只从 scene_lock_cache_path 读取共享场景事实。"
+            "禁止虚构剧情、改写台词、重设服装、添加未确认道具、使用 I2V/R2V/参考素材，或把 QA/工程字段写进 full_prompt。"
+            "先满足不穿帮硬门槛，再追求创作表现：人物位置、身体面向、道具归属、口型、尾帧继承、单镜动作预算和状态变化中间态不稳时，必须降低运镜、补定位镜头或拆镜。"
+            "写作目标不是堆形容词，而是让 AI 视频大模型能稳定执行：空间坐标、道具生命周期、情绪触发、运镜响应和落幅继承必须逐项可见。"
+            "rising/peak 镜必须设计压力链：压力来源、一个压力物或压力机制、1-2个可见升级点、释放触发、释放结果和拆镜阈值；释放可以是动作完成、被打断、注意力转移、代价逼近或落幅悬置，不能只写气氛变紧。"
+            "字段接力固定为 emotion_driver → camera_beat_map → full_prompt；Camera 只响应可见表演重音、道具状态、视线或台词落点，Composer 只能翻译已声明的镜头设计。"
+            "写 full_prompt 前必须填满 performance_causality、performance_contract、continuity_contract、reroll_control、quality_contract、quality_evidence、dialogue_events；状态变化必须记录 subject/from_state/intermediate_state/to_state/cause/time_range。"
+            "ai_model_readiness_score 与 pressure_release_design 按 packet.items[].execution_hints.risk_gated_contracts 触发；false 时保持空对象即可，不要为了凑字段写长自评。"
+            "full_prompt 只能包含五段：生成规格/主体与空间锁定/主镜头连续规则/子镜头组/光照、声音与稳定约束。子镜头组按状态机写，台词/OS/OV 在原生音频开启时必须写成 {人物}（台词/OS/OV）: \"逐字原文\"。"
+            "需要 ai_model_readiness_score 时，按场景空间、穿帮风险、情绪可读、张力压迫、运镜服务、道具连续、画面美感七项逐项打 1-10 分，并写一句弱点或人工首轮检查点；不得全写空泛好评。"
+            "temporal_transition_contract 不是装饰命令；启用时只使用合同内唯一源文效果，未启用时正常切换。"
+            "只使用本 sidecar 中选出的契约段落；首轮不要读取示例。重试时若 packet.example_paths 存在，只读取这些文件且只修复指定失败字段。"
+            "示例只迁移结构，不继承示例题材、场景、光线、服装、人物关系或具体道具事件，除非当前源文或配置明确提供。"
         ),
         "editor_pass2": "使用 §B/§C 作为审查上下文。不要改写纯格式问题；只返回语义审查 JSON。",
     }.get(phase, "遵守所引用阶段的契约。")
@@ -493,6 +487,25 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
                 "temporal_transition_contract": _transition_contract_scaffold(item),
                 "quality_contract": dict(item.get("quality_contract", {}) or {}),
                 "quality_evidence": {},
+                "ai_model_readiness_score": {
+                    "scene_space": {"score": 0, "reason": ""},
+                    "continuity_risk": {"score": 0, "reason": ""},
+                    "emotion_readability": {"score": 0, "reason": ""},
+                    "tension_pressure": {"score": 0, "reason": ""},
+                    "camera_emotion_fit": {"score": 0, "reason": ""},
+                    "prop_continuity": {"score": 0, "reason": ""},
+                    "visual_beauty": {"score": 0, "reason": ""},
+                    "overall": {"score": 0, "weakest_point": "", "first_pass_check": ""},
+                },
+                "pressure_release_design": {
+                    "pressure_source": "",
+                    "pressure_object": "",
+                    "escalation_steps": [],
+                    "release_trigger": "",
+                    "release_mode": "",
+                    "release_result": "",
+                    "split_threshold": "",
+                },
                 "start_state": "",
                 "end_state": "",
                 "performance_causality": {
@@ -755,9 +768,39 @@ def _composer_execution_hints(item):
         "reasons": reasons,
         "duration_mode": _duration_mode(duration, reasons),
         "visible": visible,
+        "risk_gated_contracts": _risk_gated_contracts(item, visible, dialogue_events, reasons, editorial_mode),
         "fill_order": template["fill_order"],
         "checks": _composer_preflight_checks(editorial_mode, visible, dialogue_events, reasons, dialogue_text_length),
     }
+
+
+def _risk_gated_contracts(item, visible, dialogue_events, reasons, editorial_mode):
+    tension = _item_tension_intent(item)
+    readiness = bool(
+        len(visible) >= 2
+        or dialogue_events
+        or editorial_mode == "shot_group"
+        or tension in ("rising", "peak")
+        or any(reason in reasons for reason in ("prop_transfer", "fight_or_force", "high_reroll_risk", "temporal_transition"))
+    )
+    return {
+        "ai_model_readiness_score": readiness,
+        "pressure_release_design": tension in ("rising", "peak"),
+    }
+
+
+def _item_tension_intent(item):
+    for key in ("performance_contract", "emotion_driver", "performance_causality"):
+        value = item.get(key)
+        if isinstance(value, dict) and value.get("tension_intent"):
+            return str(value.get("tension_intent", "") or "")
+    metadata = item.get("qa_metadata")
+    if isinstance(metadata, dict):
+        for key in ("performance_contract", "emotion_driver", "performance_causality"):
+            value = metadata.get(key)
+            if isinstance(value, dict) and value.get("tension_intent"):
+                return str(value.get("tension_intent", "") or "")
+    return str(item.get("tension_intent", "") or "")
 
 
 def _composer_template(reasons, visible, dialogue_events, item):

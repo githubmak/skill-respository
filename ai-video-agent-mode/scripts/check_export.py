@@ -12,6 +12,7 @@ from modec_v4 import (
     LEGACY_LABELS,
     PROMPT_LABELS,
     action_budget_issues,
+    ai_model_readiness_issues,
     attention_handoff_issues,
     camera_competition_issues,
     coverage_role_issues,
@@ -23,10 +24,12 @@ from modec_v4 import (
     listener_reaction_issues,
     performance_causality_issues,
     performance_contract_issues,
+    pressure_release_issues,
     prompt_length_issues,
     reroll_control_issues,
     role_partition_issues,
     shot_group_handoff_issues,
+    story_punch_issues,
     jimeng_shot_group_issues,
     split_sections,
     timeline_issues,
@@ -51,7 +54,6 @@ def check_export(md_path, run_dir, quality_mode=False):
     package_path = _find_package(run_dir)
     package = _load(package_path) if package_path else {}
     llm_review = _load_optional(os.path.join(run_dir, ".cache", "review", "llm_gate_result.json"))
-    grid_packages = _load_optional(os.path.join(run_dir, ".cache", "grid_storyboard", "packages.json"))
     shots = package.get("shots", [])
     hard_max_chars = (config.get("prompt_limits", {}) or {}).get("hard_max_chars")
     plan_map, scene_by_id = _plan_index(plan)
@@ -155,6 +157,12 @@ def check_export(md_path, run_dir, quality_mode=False):
             performance_causality_errors += 1
         if performance_contract_issues(metadata, full_prompt, visible):
             performance_contract_errors += 1
+        if ai_model_readiness_issues(metadata, full_prompt, visible):
+            performance_contract_errors += 1
+        if pressure_release_issues(metadata, full_prompt, visible):
+            performance_contract_errors += 1
+        if story_punch_issues(metadata, full_prompt, visible):
+            performance_contract_errors += 1
         if listener_reaction_issues(metadata, full_prompt):
             performance_contract_errors += 1
         if expectation_anchor_issues(metadata, full_prompt):
@@ -249,9 +257,7 @@ def check_export(md_path, run_dir, quality_mode=False):
     check(28, "Story-correct eyeline", eyeline_issues == 0, f"{eyeline_issues} unauthorized")
     light_jumps = _light_jumps(plan, scene_by_id, scene_map)
     check(29, "Lighting continuity", light_jumps == 0, f"{light_jumps} unexplained jump(s)")
-    grid_enabled = _grid_enabled(config)
-    grid_expected = grid_enabled and bool(grid_packages.get("packages"))
-    export_ok, export_detail = _export_check(md_path, quality_mode, expected_ids, grid_enabled, grid_expected)
+    export_ok, export_detail = _export_check(md_path, quality_mode, expected_ids)
     editor_ok, editor_detail = _editor_review_check(llm_review)
     check(30, "Export separation/readiness", export_ok and engine_issues == 0 and editor_ok, export_detail + f"; engines={engine_issues}; editor={editor_detail}")
 
@@ -302,7 +308,7 @@ def _light_jumps(plan, scene_by_id, scene_map):
     return jumps
 
 
-def _export_check(md_path, quality_mode, expected_ids, grid_enabled=False, grid_expected=False):
+def _export_check(md_path, quality_mode, expected_ids):
     if quality_mode:
         return True, "quality mode"
     if not md_path or not os.path.exists(md_path):
@@ -314,10 +320,9 @@ def _export_check(md_path, quality_mode, expected_ids, grid_enabled=False, grid_
     forbidden_sections = ("QA元数据", "qa_metadata", "生成控制", "generation_control")
     separated = all(label in text for label in required_sections) and not any(label in text for label in forbidden_sections)
     title_ok = not bool(INTERNAL_TITLE_LEAK.search(text))
-    has_grid_section = "自动九宫格剧情包" in text
-    grid_ok = has_grid_section == grid_expected if grid_enabled else not has_grid_section
+    no_grid_section = "自动九宫格剧情包" not in text
     xlsx_path = os.path.splitext(md_path)[0] + ".xlsx"
-    return ids_ok and separated and title_ok and grid_ok and os.path.exists(xlsx_path), f"ids={ids_ok}, separated={separated}, title={title_ok}, grid={grid_ok}, xlsx={os.path.exists(xlsx_path)}"
+    return ids_ok and separated and title_ok and no_grid_section and os.path.exists(xlsx_path), f"ids={ids_ok}, separated={separated}, title={title_ok}, no_grid={no_grid_section}, xlsx={os.path.exists(xlsx_path)}"
 
 
 def _load(path):
@@ -327,11 +332,6 @@ def _load(path):
 
 def _load_optional(path):
     return _load(path) if os.path.exists(path) else {"items": []}
-
-
-def _grid_enabled(config):
-    grid = config.get("storyboard_grid", {}) if isinstance(config, dict) else {}
-    return isinstance(grid, dict) and grid.get("enabled") is True
 
 
 def _editor_review_check(llm_review):

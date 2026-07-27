@@ -23,8 +23,8 @@
 - 冲突节点按类型匹配转场逻辑：钩子→硬切+音效冲击；反转→慢镜头+溶解过渡；决策→定格+呼吸留白
 
 **剧情包间衔接锚定**：
-- 相邻剧情节包的末帧/首帧共享同一锚定帧（前包Panel 09画面 = 后包Panel 01参考图源）
-- 在bundle结构中增加 `adjacent_bundle_anchor` 字段，指向相邻包的衔接帧ID
+- 相邻剧情节包的末帧/首帧共享同一锚定帧（前包最后一个 `video_segment` 的最终渲染帧 = 后包首个 `video_segment` 的首帧参考图源），而非仅复用Panel 09的计划构图
+- 在bundle结构中增加 `adjacent_bundle_anchor` 字段，记录前一段末帧和后一段首帧的姿态、表情、手部、道具、视线、光线、机位关系及保持时长
 - 空间坐标连续性：打包时检查相邻包的光影参数K值偏差≤200K、场景底模ID一致
 
 **冲突节点在九宫格中的分发规则**：
@@ -56,7 +56,7 @@
 | bundle_hierarchy | string | core_layer/transition_layer/decoration_layer，按剧情分层优先级匹配 |
 | conflict_node_mapping | array | [{beat_index: 1-9, conflict_type: 钩子/冲突/反转/决策/余韵, source_shot_id}] |
 | character_asset_ids | object | {角色ID: {costume_version, pose_source_id, lighting_ref_id}} |
-| adjacent_bundle_anchor | object | {prev_bundle_id, prev_last_shot_id, anchor_type: 末帧复用/动作匹配/空间过渡} |
+| adjacent_bundle_anchor | object | {prev_bundle_id, prev_segment_id, prev_end_frame_id, anchor_type: 末帧复用/动作匹配/空间过渡, inherited_state: 姿态/表情/手部/道具/视线/光线/机位, hold_seconds: 0.3-0.5} |
 | action_vector_continuity | array | [{character_id, motion_direction, motion_speed, source_shot_range}] |
 
 ## 输出格式扩展
@@ -79,7 +79,10 @@
       "character_asset_ids": {},
       "adjacent_bundle_anchor": {},
       "action_vector_continuity": [],
-      "beat_bundle": {},
+      "beat_bundle": {
+        "panels": [],
+        "video_segments": []
+      },
       "nine_panel_storyboard": {},
       "quality_warnings": []
     }
@@ -96,3 +99,5 @@
 - 相邻bundle的action_vector_continuity中的运动方向偏差≤30°
 - 无冲突节点（decoration_layer）的bundle连续不超过2个
 - 所有bundle的adjacent_bundle_anchor形成可追溯的锚定链（首包→末包闭环）
+- 所有 `video_segments` 的 `duration_seconds` 均在4.0-15.0秒之间；跨segment长台词在语义/表演切点交接且原文可追溯
+- 每个跨bundle锚点引用前一 `video_segment` 的最终渲染帧，并在下一段保留0.3-0.5秒继承状态（明确硬切除外）

@@ -24,14 +24,14 @@
 ## 3D数字人专属帧锚定衔接法（跨段生成面板衔接）
 
 **首尾帧强制复用机制**：
-- 当九宫格作为剧情包输出到下一段生成时，Panel 09即为该剧情包的末帧锚定帧
-- 下一段生成的首帧（下一九宫格的Panel 01）参考图源 = 前段九宫格的Panel 09画面
+- 当剧情包输出到下一段生成时，前包的最终实际 Panel 即为该剧情包的末帧锚定帧
+- 下一段生成的首帧（下一剧情包的Panel 01）参考图源 = 前段剧情包最终实际 Panel 的画面
 - 在JSON输出中增加 `bundle_anchors` 字段（见输出扩展字段）
 
 **12帧缓冲规则（跨剧情包衔接）**：
 - 相邻剧情包衔接处保持前后各12帧（约0.4s@30fps）的重叠帧
 - 重叠区域内的人物姿态、光影、背景不可改变
-- 在 `seedance_full_video_prompt` 中标注衔接锚定："首帧参考图来自前包Panel 09末帧"
+- 在 `seedance_full_video_prompt` 中标注衔接锚定："首帧参考图来自前包最终关键帧末帧"
 
 **深度信息统一（跨Panel深度空间）**：
 - 同一剧情包内所有面板基于同一深度空间逻辑
@@ -85,7 +85,7 @@
 | costume_version | string | 服装版本号 | 与split-script阶段保持一致 |
 | lighting_ref_id | string | 光影参考图ID | 引用场景光影模块的预设LUT色卡编号 |
 | motion_match_note | string | 动作匹配标记 | 如 抬手预备→落定/转身起始→完成/行走中→到位 |
-| continuity_anchor_link | string | 帧衔接锚定链接 | 如 "前包末帧=Panel 09，本包首帧复用该帧" |
+| continuity_anchor_link | string | 帧衔接锚定链接 | 如 "前包末帧=前包最终Panel，本包Panel 01复用该帧" |
 
 以上扩展字段在标准JSON输出中与现有panel字段并列，不替换现有字段。
 

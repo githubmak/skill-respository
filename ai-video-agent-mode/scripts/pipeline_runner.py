@@ -172,7 +172,7 @@ def _completed_phase_valid(run_dir, phase, gate):
 
 
 def _local_phase_valid(run_dir, phase):
-    if phase in ("user_confirm", "orchestrator", "grid_storyboard"):
+    if phase in ("user_confirm", "orchestrator"):
         return True
     package_path = os.path.join(run_dir, ".cache", "composer", "merged.prompt_package.json")
     package_sha256 = _sha256(package_path) if os.path.isfile(package_path) else ""

@@ -1,18 +1,18 @@
 ---
 name: nine-panel-video-storyboard
-description: Professional AI video storyboard skill for converting either (1) a rough scene, plot outline, narrative beat, 九宫格剧情包, or 九宫格据情包 into a strict nine-panel story grid, or (2) a single camera instruction such as a 4-second push-in shot into 9 time-sequenced AI control keyframes with absolute consistency. Use when the user asks for 剧情九宫格, 九宫格分镜, 9镜连续分镜, AI视频分镜九宫格, 九宫格剧情包, 九宫格据情包, 单镜头9宫格关键帧, AI控图级关键帧, single scene to nine panels, or video-generation-ready storyboard JSON with camera setup, AI motion control, English prompts, audio SFX, timestamps, absolute screen coordinates, and narrative tags. Preserve source plot, dialogue, OV, narration, and OS; only reasonably split or visualize beats.
+description: Professional AI video storyboard skill for converting either (1) a rough scene, plot outline, narrative beat, 九宫格剧情包, or 九宫格据情包 into 1-9 time-sequenced story keyframes, or (2) a single camera instruction such as a 4-second push-in shot into AI control keyframes with absolute consistency. Use when the user asks for 剧情九宫格, 九宫格分镜, 9镜连续分镜, AI视频分镜九宫格, 九宫格剧情包, 九宫格据情包, 单镜头9宫格关键帧, AI控图级关键帧, single scene to nine panels, or video-generation-ready storyboard JSON with camera setup, AI motion control, English prompts, audio SFX, timestamps, absolute screen coordinates, and narrative tags. Preserve source plot, dialogue, OV, narration, and OS; only reasonably split or visualize beats.
 ---
 
 # Nine Panel Video Storyboard
 
 ## Core Output
 
-Convert input into exactly 9 panel objects. Output valid JSON only unless user explicitly asks for explanation.
+Convert input into the maximum meaningful `1-9` panel objects. Nine is preferred, not compulsory: when further panels would repeat a pose, add empty zoom, or invent story, stop at the actual count and set `reduction_reason`. Output valid JSON only unless user explicitly asks for explanation.
 
 ## Source Fidelity Rules
 
 - Preserve source script, outline, dialogue, OV, narration, OS. Do not rewrite/delete unless user asks.
-- Split into 9 visual panels without changing plot facts, causality, character intent, or ending direction.
+- Split into up to 9 visual panels without changing plot facts, causality, character intent, or ending direction.
 - Reasonable completion allowed: visible blocking, gestures, prop state changes, eyelines, reactions, transitions, spatial continuity implied by source.
 - Don't invent new events, characters, backstory, clues, or flashbacks not in/implied by source.
 - Long OV/dialogue → distribute across adjacent panels preserving wording and meaning.
@@ -29,6 +29,8 @@ Use this top-level shape:
  "storyboard_type": "nine-panel-ai-video-storyboard or single-shot-keyframe-grid",
  "source_summary": "one concise sentence",
  "total_duration": "duration in seconds when provided; otherwise null",
+ "panel_count": "integer from 1 through 9",
+ "reduction_reason": "null at 9; otherwise concrete reason",
  "panels": []
 }
 ```
@@ -51,12 +53,12 @@ Each panel must use this exact structure:
 
 ---
 
-## 九宫格叙事结构（核心约束）
+## 九宫格叙事结构（仅完整九格时适用）
 
 - 3 行分工：第1行(01-03)=铺垫，第2行(04-06)=冲突高潮，第3行(07-09)=结局收束
 - 3 列分工：左列(01/04/07)=人物内心，中列(02/05/08)=客观事件，右列(03/06/09)=环境伏笔
 - Panel 05 = 全九宫格唯一核心帧，`narrative_tag` 必须标注 `核心定格`
-- 9 格共用同一 `character_anchor_id`/`costume_version`/主色调/光源方向/透视高度
+- 全部实际输出格共用同一 `character_anchor_id`/`costume_version`/主色调/光源方向/透视高度
 
 > 📖 完整3×3叙事矩阵、Panel 05锚定规则、视觉权重表、景别分配比例、9:16节奏预分配、项目存档导出 → `references/nine-panel-narrative-architecture.md`
 
@@ -66,9 +68,9 @@ Each panel must use this exact structure:
 
 1. Identify visible story beats only: place, characters, props, conflict, action, OV/dialogue/OS placement, final image. For every major reaction/spoken line, identify immediate cause → controlled facial detail + body/prop action + voice tone.
 
-2. Compress/expand into 9 shots without changing/deleting required script content.
+2. Compress/expand into the maximum meaningful 1-9 shots without changing/deleting required script content. When fewer than 9 are justified, set `reduction_reason`; never use blank panels.
 
-3. Apply 1-3-3-2 shot-size rhythm: Panel 01=establishing, 02-04=medium development, 05-07=close conflict/detail, 08-09=resolution/freeze.
+3. At 9 panels, apply the 1-3-3-2 shot-size rhythm: Panel 01=establishing, 02-04=medium development, 05-07=close conflict/detail, 08-09=resolution/freeze. With fewer panels, preserve this order proportionally and make the final actual panel the resolution/freeze.
 
 4. Prevent repetition: never same shot size + camera angle in two consecutive non-blank panels.
 
@@ -86,9 +88,9 @@ Each panel must use this exact structure:
 
 ### Narrative Continuity Rules
 
-Every panel must advance at least one visible variable: subject state, prop state, relationship distance, eyeline, or information state. Do not output 9 zoom levels of the same moment. If three panels in a row keep same character posture/prop state/background/action, revise the middle panel.
+Every panel must advance at least one visible variable: subject state, prop state, relationship distance, eyeline, or information state. Do not output repeated zoom levels of the same moment. If further expansion would make three panels share the same character posture/prop state/background/action, stop and record `reduction_reason`.
 
-Minimum nine-panel story arc:
+Preferred nine-panel story arc:
 1. Space and power relationship
 2. Main subject/action introduced
 3. Inciting line, gesture, or disturbance
@@ -110,18 +112,18 @@ Minimum nine-panel story arc:
 
 ## Mode B: Single-Shot Keyframe Grid
 
-One continuous camera instruction, not a multi-shot scene. 9 panels = time-sequenced keyframes.
+One continuous camera instruction, not a multi-shot scene. Use the maximum meaningful 1-9 time-sequenced keyframes.
 
 ### Keyframe Timing
 1. Extract total duration. `4.0秒` → `total_duration: "4.0s"`
-2. Calculate interval = Total Duration / 8
-3. Assign timestamps: Panel 01=0×interval through Panel 09=8×interval
-4. No duration → null + progression markers: 0%, 12.5%, 25%, ..., 100%
+2. Choose `panel_count` from 1-9. Use 9 when the movement has nine meaningful states; otherwise document `reduction_reason`.
+3. When `panel_count >= 2`, calculate interval = Total Duration / (`panel_count - 1`) and assign timestamps from Panel 01=0 through the final panel=total duration. When count is 1, use timestamp 0 and an end hold.
+4. No duration → null + evenly spaced progression markers from 0% to 100%.
 
 ### Panel 01 Baseline Frame
 Exhaustively define all visible constants: character (facial features, makeup, hairstyle, expression, jewelry, posture, body orientation, hands, scars/marks), costume (garment layers, material, embroidery, texture, color, weathering), environment (architecture, props, ground, background, light source, shadow, haze, color temperature), absolute screen coordinates (画幅正中心, 左侧1/3, 右侧1/3, 底部1/3, 顶部1/4, 前景左下角).
 
-### Panels 02-09 Incremental Frames
+### Later Incremental Frames
 Force-copy Panel 01 constants. Preserve exact same wording for all constant details. Only these may change: camera progress percentage, tiny subject motion (eyelids lowering 2mm, sleeve swaying, fingers tightening), timestamp.
 
 ```
@@ -133,9 +135,9 @@ Force-copy Panel 01 constants. Preserve exact same wording for all constant deta
 - No changing character identity, age, face shape, makeup, hairstyle, costume, props, light source, weather, architecture, or screen coordinates after Panel 01
 - No introducing new objects after Panel 01 unless original instruction describes them entering
 - Absolute frame coordinates in every panel
-- One camera motion across all 9 panels; only progress percentage changes
+- One camera motion across all actual panels; only progress percentage changes
 - Micro-actions only. Large action → lock camera or convert to small staged increments
-- Panel 09 = final locked keyframe with hold/freeze instruction
+- The final actual panel = final locked keyframe with hold/freeze instruction
 
 ---
 
@@ -153,19 +155,17 @@ Short functional tags: `建立空间`, `引入主体`, `埋设道具`, `产生�
 
 ---
 
-## Blank Panel Rule
+## 少格规则
 
-If source doesn't support full 9-panel story, keep grid intact. For blank panels:
-```json
-{"panel_id": "08", "timestamp": null, "camera_setup": "留白", "camera_motion": "Static", "visual_description": "留白：原始内容不足，保留九宫格排版位置。", "ai_motion_control": "No generation required.", "ai_prompt_en": "[Blank Panel], no image generation required, reserved empty grid cell.", "seedance_full_video_prompt": "留白：无需生成视频，保留九宫格排版位置。", "audio_sfx": "静音", "narrative_tag": "留白"}
-```
+当源内容无法支持九个不重复、可见推进的画面时，直接输出实际 `1-8` 格，不生成留白格。`reduction_reason` 必须说明具体限制，例如“角色只完成一次取信动作，继续细分将重复手部姿势”或“仅为 4 秒环境建立镜头，只有起始与末帧状态”。
 
 ---
 
 ## Quality Check
 
 Before responding, verify:
-- Exactly 9 panels, `panel_id` from "01" to "09"
+- `panel_count` is 1-9, panel IDs are consecutive from "01" through the final actual panel, and `panels.length == panel_count`
+- `reduction_reason` is null at 9; for 1-8 it concretely explains why no extra meaningful panel exists
 - Every panel contains all required keys
 - `timestamp` in every panel; exact time for single-shot, null for narrative without duration
 - No consecutive non-blank panels repeat both shot size and angle
@@ -175,8 +175,8 @@ Before responding, verify:
 - Every `ai_prompt_en` includes default 10-item negative prompt
 - Every `seedance_full_video_prompt` is complete Seedance-ready (not camera-only note)
 - Major speaking/reaction panels have natural performance: emotion cause, expression control, body action, speaking tone
-- **Single-shot mode**: Panel 01 exhaustive baseline, Panels 02-09 preserve exact wording, only timestamp/camera progress/micro-action change; absolute screen coordinates in every panel
-- **Narrative mode**: Panels not merely progressive zooms; ≥7 of 9 panels have distinct visible action/prop state/eyeline/subject arrangement/camera relation; no 3 consecutive non-blank panels share same primary subject posture, same front-facing angle, and same background arrangement
+- **Single-shot mode**: Panel 01 exhaustive baseline; later actual panels preserve exact wording, only timestamp/camera progress/micro-action change; absolute screen coordinates in every panel
+- **Narrative mode**: Panels are not merely progressive zooms; every additional panel has distinct visible action/prop state/eyeline/subject arrangement/camera relation; no 3 consecutive panels share same primary subject posture, same front-facing angle, and same background arrangement
 
 ---
 
@@ -184,7 +184,7 @@ Before responding, verify:
 
 **核心摘要**：
 - 相邻面板构图匹配（水平线偏差≤5%、主体位移≤15%）、动作匹配（方向偏差≤15°）、光影匹配（色温偏差≤200K）
-- 跨剧情包衔接：Panel 09末帧=下一包Panel 01参考图源（12帧缓冲规则）
+- 跨剧情包衔接：前包最终实际 Panel 的末帧=下一包Panel 01参考图源（12帧缓冲规则）
 - 转场仅三类：硬切（默认）、淡入淡出溶解（0.3-0.6s）、遮挡转场（≥60%遮挡）
 - 被 `$storyboard-to-nine-panel-pipeline` 调用时需输出 bundle 扩展字段
 
