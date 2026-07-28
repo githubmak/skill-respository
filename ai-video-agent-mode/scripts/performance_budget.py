@@ -18,6 +18,7 @@ CORE_PHASES = (
     "editor_pass1", "editor_pass2", "validate",
 )
 TARGET_SECONDS = 55 * 60
+AGENT_PHASES = {"scene_lock", "master_production", "editor_pass2"}
 
 
 def report(run_dir):
@@ -31,24 +32,102 @@ def report(run_dir):
     started = state.get("pipeline_started_at")
     elapsed = max(now - started, 0) if isinstance(started, (int, float)) else None
     records = []
+    local_phase_sum = 0.0
+    agent_phase_wall_sum = 0.0
+    dispatch_worker_sum = 0.0
+    dispatch_summary = {
+        "total_dispatch_count": 0,
+        "done_dispatch_count": 0,
+        "running_dispatch_count": 0,
+        "waiting_dispatch_count": 0,
+        "failed_dispatch_count": 0,
+        "retry_count": 0,
+        "manifest_active_packet_count": 0,
+        "manifest_active_retry_packet_count": 0,
+        "manifest_superseded_packet_count": 0,
+        "state_superseded_packet_count": 0,
+        "retired_dispatch_count": 0,
+        "stale_or_superseded_packet_count": 0,
+    }
     for name in CORE_PHASES:
         item = phases.get(name, {}) if isinstance(phases.get(name), dict) else {}
+        dispatches = item.get("dispatches", {}) if isinstance(item.get("dispatches"), dict) else {}
+        stats = _dispatch_stats(dispatches)
+        manifest = _manifest_summary(run_dir, name)
+        state_superseded = _state_superseded_summary(item)
+        dispatch_elapsed = stats["dispatch_worker_seconds"]
+        phase_elapsed = item.get("elapsed_seconds")
+        if isinstance(phase_elapsed, (int, float)):
+            if name in AGENT_PHASES:
+                agent_phase_wall_sum += float(phase_elapsed)
+            else:
+                local_phase_sum += float(phase_elapsed)
+        dispatch_worker_sum += dispatch_elapsed
+        dispatch_summary["total_dispatch_count"] += stats["dispatch_count"]
+        dispatch_summary["done_dispatch_count"] += stats["done_dispatch_count"]
+        dispatch_summary["running_dispatch_count"] += stats["running_dispatch_count"]
+        dispatch_summary["waiting_dispatch_count"] += stats["waiting_dispatch_count"]
+        dispatch_summary["failed_dispatch_count"] += stats["failed_dispatch_count"]
+        dispatch_summary["retry_count"] += int(item.get("retries", 0) or 0)
+        dispatch_summary["manifest_active_packet_count"] += manifest["active_packet_count"]
+        dispatch_summary["manifest_active_retry_packet_count"] += manifest["active_retry_packet_count"]
+        dispatch_summary["manifest_superseded_packet_count"] += manifest["superseded_packet_count"]
+        dispatch_summary["state_superseded_packet_count"] += state_superseded["superseded_packet_count"]
+        dispatch_summary["retired_dispatch_count"] += state_superseded["retired_dispatch_count"]
+        dispatch_summary["stale_or_superseded_packet_count"] += (
+            manifest["superseded_packet_count"] + state_superseded["superseded_packet_count"]
+        )
         records.append({
             "phase": name,
+            "category": "agent" if name in AGENT_PHASES else "local",
             "status": item.get("status", "pending"),
-            "elapsed_seconds": item.get("elapsed_seconds"),
+            "elapsed_seconds": phase_elapsed,
+            "dispatch_worker_seconds": dispatch_elapsed,
+            "worker_wait_wall_seconds": round(float(phase_elapsed or 0), 3) if name in AGENT_PHASES and isinstance(phase_elapsed, (int, float)) else 0,
             "retries": item.get("retries", 0),
             "timeout_count": item.get("timeout_count", 0),
-            "dispatch_count": len(item.get("dispatches", {})) if isinstance(item.get("dispatches"), dict) else 0,
+            "dispatch_count": stats["dispatch_count"],
+            "done_dispatch_count": stats["done_dispatch_count"],
+            "running_dispatch_count": stats["running_dispatch_count"],
+            "waiting_dispatch_count": stats["waiting_dispatch_count"],
+            "failed_dispatch_count": stats["failed_dispatch_count"],
+            "mean_dispatch_seconds": stats["mean_dispatch_seconds"],
+            "max_dispatch_seconds": stats["max_dispatch_seconds"],
+            "manifest_active_packet_count": manifest["active_packet_count"],
+            "manifest_active_retry_packet_count": manifest["active_retry_packet_count"],
+            "manifest_superseded_packet_count": manifest["superseded_packet_count"],
+            "manifest_active_shot_count": manifest["active_shot_count"],
+            "state_superseded_packet_count": state_superseded["superseded_packet_count"],
+            "retired_dispatch_count": state_superseded["retired_dispatch_count"],
         })
     completed = all(record["status"] in ("done", "skipped") for record in records)
+    shot_plan_path = os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json")
+    shot_plan = _load_json(shot_plan_path)
+    main_shot_count = len(shot_plan.get("shots", [])) if isinstance(shot_plan, dict) else None
     result = {
         "target_seconds": TARGET_SECONDS,
         "elapsed_seconds": round(elapsed, 3) if elapsed is not None else None,
+        "time_breakdown": {
+            "wall_clock_seconds": round(elapsed, 3) if elapsed is not None else None,
+            "local_phase_seconds": round(local_phase_sum, 3),
+            "local_compute_seconds": round(local_phase_sum, 3),
+            "agent_phase_wall_seconds": round(agent_phase_wall_sum, 3),
+            "worker_wait_wall_seconds": round(agent_phase_wall_sum, 3),
+            "dispatch_worker_seconds": round(dispatch_worker_sum, 3),
+            "tracked_phase_wall_seconds": round(local_phase_sum + agent_phase_wall_sum, 3),
+            "unattributed_or_pause_seconds": (
+                round(max(elapsed - local_phase_sum - agent_phase_wall_sum, 0), 3)
+                if isinstance(elapsed, (int, float)) else None
+            ),
+            "parallelism_note": "dispatch_worker_seconds sums completed worker runtimes and may exceed worker_wait_wall_seconds when workers run in parallel.",
+        },
+        "dispatch_summary": dispatch_summary,
         "completed": completed,
-        "within_target": bool(completed and elapsed is not None and elapsed <= TARGET_SECONDS),
+        "main_shot_count": main_shot_count,
+        "slo_eligible": main_shot_count == 50,
+        "within_target": bool(completed and main_shot_count == 50 and elapsed is not None and elapsed <= TARGET_SECONDS),
         "phases": records,
-        "scope": "50 main shots",
+        "scope": "main shots",
     }
     out_dir = os.path.join(run_dir, ".cache", "performance")
     os.makedirs(out_dir, exist_ok=True)
@@ -56,6 +135,95 @@ def report(run_dir):
     with open(out_path, "w", encoding="utf-8") as handle:
         json.dump(result, handle, ensure_ascii=False, indent=2)
     return out_path, result
+
+
+def _load_json(path):
+    try:
+        with open(path, "r", encoding="utf-8-sig") as handle:
+            value = json.load(handle)
+            return value if isinstance(value, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _dispatch_stats(dispatches):
+    dispatches = dispatches if isinstance(dispatches, dict) else {}
+    durations = []
+    counts = {
+        "dispatch_count": 0,
+        "done_dispatch_count": 0,
+        "running_dispatch_count": 0,
+        "waiting_dispatch_count": 0,
+        "failed_dispatch_count": 0,
+    }
+    for entry in dispatches.values():
+        if not isinstance(entry, dict):
+            continue
+        counts["dispatch_count"] += 1
+        status = str(entry.get("status", "") or "waiting")
+        if status == "done":
+            counts["done_dispatch_count"] += 1
+        elif status == "running":
+            counts["running_dispatch_count"] += 1
+        elif status in ("failed", "error", "timeout"):
+            counts["failed_dispatch_count"] += 1
+        else:
+            counts["waiting_dispatch_count"] += 1
+        elapsed = entry.get("elapsed_seconds")
+        if isinstance(elapsed, (int, float)) and not isinstance(elapsed, bool):
+            durations.append(float(elapsed))
+    total = round(sum(durations), 3)
+    counts.update({
+        "dispatch_worker_seconds": total,
+        "mean_dispatch_seconds": round(total / len(durations), 3) if durations else 0,
+        "max_dispatch_seconds": round(max(durations), 3) if durations else 0,
+    })
+    return counts
+
+
+def _manifest_summary(run_dir, phase):
+    manifest = _load_json(os.path.join(
+        run_dir, ".cache", "dispatch", "active_%s_manifest.json" % _safe_phase(phase)
+    ))
+    if manifest.get("phase") != phase:
+        return {
+            "active_packet_count": 0,
+            "active_retry_packet_count": 0,
+            "superseded_packet_count": 0,
+            "active_shot_count": 0,
+        }
+    active_shots = manifest.get("active_shot_ids", [])
+    return {
+        "active_packet_count": int(manifest.get("active_packet_count", len(manifest.get("packets", []) or [])) or 0),
+        "active_retry_packet_count": int(manifest.get("active_retry_packet_count", 0) or 0),
+        "superseded_packet_count": int(manifest.get("superseded_packet_count", len(manifest.get("superseded_packets", []) or [])) or 0),
+        "active_shot_count": len(active_shots) if isinstance(active_shots, list) else 0,
+    }
+
+
+def _state_superseded_summary(phase_state):
+    phase_state = phase_state if isinstance(phase_state, dict) else {}
+    superseded_packet_count = 0
+    for round_info in phase_state.get("superseded_dispatches", []) or []:
+        if isinstance(round_info, dict):
+            packets = round_info.get("packets", [])
+            if isinstance(packets, list):
+                superseded_packet_count += len(packets)
+    retired_dispatch_count = 0
+    for round_info in phase_state.get("recovery_rounds", []) or []:
+        if isinstance(round_info, dict):
+            retired = round_info.get("retired_dispatch_ids", [])
+            if isinstance(retired, list):
+                retired_dispatch_count += len(retired)
+    return {
+        "superseded_packet_count": superseded_packet_count,
+        "retired_dispatch_count": retired_dispatch_count,
+    }
+
+
+def _safe_phase(phase):
+    import re
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(phase or "unknown"))
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ DEPRECATED_HEADINGS = [
     "【情绪与表演时间轴】", "【台词/OS/系统声与语气】",
 ]
 BANNED_DIRECT = [
-    "继承", "延续上一镜", "空间保持", "位置继承", "物理座位不变", "剪辑", "切到", "反打到",
+    "继承", "延续上一镜", "上一镜", "尾帧", "接上一镜", "空间保持", "位置继承", "物理座位不变", "剪辑", "切到", "反打到",
     "下一镜执行", "声音语气：", "表情：", "动作：", "情绪：", "脑海浮现", "后期插入", "左外",
     "当前主角", "当前对话者", "视情况", "出场人物", "所有人物", "全部人物", "所有出场人物",
 ]
@@ -65,19 +65,39 @@ ACTION_CHAIN_TERMS = (
 POSTURE_RISK_TERMS = (
     "躺", "伏", "趴", "靠在", "靠到", "抱住", "搂住", "扶住", "拉住", "拽住",
     "摔倒", "倒向", "倒到", "翻身", "坐起", "起身", "蹲下", "跪下", "弯腰",
-    "前倾", "抱起", "背起", "腿上", "怀里",
+    "前倾", "抱起", "背起", "腿上", "怀里", "坐在", "坐着", "靠着",
 )
 POSTURE_STRUCTURE_TERMS = (
     "头", "脸", "肩", "背", "腰", "臀", "腿", "膝", "脚", "手撑", "撑住",
-    "座垫", "座椅", "沙发", "床", "地面", "支撑", "接触点", "贴", "枕",
+    "座垫", "坐垫", "座椅", "椅背", "吊椅", "沙发", "床", "地面", "支撑", "接触点", "贴", "枕",
     "压", "蜷", "非接触", "没有跨坐", "没有缠绕",
 )
+SUPPORT_SURFACE_TERMS = (
+    "吊椅", "座椅", "椅子", "椅面", "椅背", "座垫", "坐垫", "靠背", "扶手",
+    "沙发", "床", "车座", "后排", "座位",
+)
+SUPPORT_BODY_TERMS = ("臀", "腰", "腰臀", "肩背", "背部", "腿", "膝", "脚", "头", "手")
+SUPPORT_CONTACT_TERMS = ("压在", "靠住", "贴住", "贴着", "抵住", "枕在", "搭在", "蜷在", "支撑", "接触")
+SUPPORT_CHANGE_TERMS = (
+    "挪", "移动", "调整", "滑", "蹭", "手撑", "撑住", "脚踩", "脚落地", "重心",
+    "离开", "抬起", "坐起", "起身", "转身", "重新贴住", "重新靠住",
+)
+GENERIC_SUPPORT_RE = re.compile(r"(?:坐在|躺在|靠在)[^，。；;\n]{0,14}(?:中间|中央|正中|中心)|坐姿|坐着|靠着|躺着")
 GARMENT_RISK_TERMS = ("披", "穿上", "脱下", "外套滑落", "衣摆")
 GARMENT_STRUCTURE_TERMS = ("领口", "袖", "肩", "臂弯", "衣摆", "双臂", "哪只手", "左手", "右手", "垂")
 DOOR_RISK_TERMS = ("开门", "关门", "推门", "拉门", "开车门", "关车门", "下车", "上车", "门把", "把手")
 DOOR_STRUCTURE_TERMS = ("把手", "门边", "打开", "关闭", "半掩", "车外", "车内", "路沿", "门槛", "踏", "站在")
 UI_RISK_TERMS = ("来电", "转账", "聊天记录", "付款码", "屏幕显示", "清晰文字", "文字")
 UI_STRUCTURE_TERMS = ("后期叠字", "安全区", "模糊", "不生成清晰文字", "斜向", "正对", "屏幕")
+SCREEN_INVISIBLE_TERMS = (
+    "手机背面朝向镜头", "屏幕完全不可见", "屏幕不可见", "屏幕朝向持机者本人",
+    "屏幕朝向人物本人", "屏幕朝向A本人", "屏幕朝向B本人", "屏幕朝向她本人", "屏幕朝向他本人",
+)
+SCREEN_UI_CONTENT_TERMS = ("屏幕显示", "模糊微信聊天界面", "微信聊天界面", "聊天界面", "屏幕文字", "屏幕光照出文字", "屏幕光照出")
+AI_SIDE_BUBBLE_TERMS = ("绿色微信消息气泡", "绿色聊天气泡", "消息气泡", "字幕浮层", "气泡浮层", "二维绿色")
+SIDE_OVERLAY_REQUIRED_TERMS = ("二维", "悬浮", "浮层", "安全区", "不属于手机", "不贴", "不跟随手机")
+SIDE_OVERLAY_NECESSARY_TERMS = ("不属于手机", "不贴")
+SIDE_OVERLAY_NEGATIVE_TERMS = ("聊天气泡贴手机", "文字贴手机壳", "手机背面文字", "UI错位")
 CROWD_RISK_TERMS = ("人群", "围观", "混混", "路人", "宾客", "群众")
 CROWD_STRUCTURE_TERMS = ("后方", "背景", "虚化", "不靠近", "不抢焦", "不产生可见口型", "远处")
 
@@ -163,6 +183,38 @@ def post_audio_format_issues(text: str) -> list[str]:
     return issues
 
 
+def is_screen_invisible_to_camera(text: str) -> bool:
+    if any(term in text for term in SCREEN_INVISIBLE_TERMS):
+        return True
+    if re.search(r"手机背面[^，。；;]{0,12}镜头", text):
+        return True
+    if re.search(r"屏幕朝向[^，。；;]{1,12}本人[^，。；;]{0,8}不可见", text):
+        return True
+    if re.search(r"屏幕[^，。；;]{0,16}完全不可见", text):
+        return True
+    return False
+
+
+def post_text_inside_direct(text: str) -> bool:
+    if "后期叠字" not in text:
+        return False
+    if re.search(r"后期叠字[：:]\s*[“\"][^”\"]+[”\"]", text):
+        return True
+    if re.search(r"后期叠字[^。；;\n]{0,18}[“\"][^”\"]+[”\"]", text):
+        return True
+    if re.search(r"[“\"][^”\"]+[”\"][^。；;\n]{0,18}后期叠字", text):
+        return True
+    return False
+
+
+def bubble_quotes(text: str) -> list[str]:
+    return [
+        match.group(1).strip()
+        for match in re.finditer(r"气泡[^。；;\n]{0,45}[“\"]([^”\"]+)[”\"]", text)
+        if match.group(1).strip()
+    ]
+
+
 def validate_child(group_id: str, number: int, header: str, block: str, issues: list[str]) -> None:
     sid = f"{group_id}-{number}"
     if not re.match(rf"^{number}\s*，\s*\d+(?:\.\d+)?s\s*，\s*(普通|复杂)。?$", header):
@@ -188,7 +240,7 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
     if keyframe_image and not any(label in keyframe_image for label in ("首帧", "尾帧")):
         issues.append(f"{sid}: {KEYFRAME_IMAGE_FIELD} should include static frame labels such as 首帧/尾帧")
     if any(term in keyframe_image + keyframe_video for term in ("T2V", "I2V")):
-        issues.append(f"{sid}: keyframe fields should not use T2V/I2V labels")
+        issues.append(f"{sid}: 关键帧字段不要使用 T2V/I2V 旧标签")
     if compact_len(direct) > 500:
         issues.append(f"{sid}: direct prompt over 500 chars -> {compact_len(direct)}")
     if (
@@ -239,7 +291,36 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
             issues.append(f"{sid}: door/car-door action needs handle/contact, open-close direction, side crossing, final door state")
     if any(term in direct for term in UI_RISK_TERMS):
         if not any(term in direct for term in UI_STRUCTURE_TERMS):
-            issues.append(f"{sid}: UI/text needs screen direction, blur or post-production text safety-zone handling")
+            issues.append(f"{sid}: UI/文字需要写清屏幕朝向、模糊界面或后期叠字安全区")
+    if post_text_inside_direct(direct):
+        issues.append(f"{sid}: 后期叠字的具体文字不要写进直接提示词；只预留安全区，具体文字写到【表演与声音】中的后期文字句")
+    if "后期叠字" in direct and not any(term in direct for term in ("安全区", "画面左侧", "画面右侧", "贴合屏幕平面", "预留")):
+        issues.append(f"{sid}: 后期叠字需要写清安全区/画面侧边/贴合屏幕平面的预留位置")
+    screen_invisible = is_screen_invisible_to_camera(direct)
+    if screen_invisible and any(term in direct for term in SCREEN_UI_CONTENT_TERMS):
+        issues.append(
+            f"{sid}: 手机屏幕对镜头不可见，但直接提示词仍描述屏幕/聊天界面；应写干净手机背面 + 侧边二维浮层或后期安全区"
+        )
+    has_ai_side_bubble = any(term in direct for term in AI_SIDE_BUBBLE_TERMS) and any(term in direct for term in ("安全区", "画面左侧", "画面右侧"))
+    if screen_invisible and has_ai_side_bubble:
+        if not any(term in direct for term in SIDE_OVERLAY_REQUIRED_TERMS):
+            issues.append(
+                f"{sid}: 手机屏幕不可见时，AI消息气泡必须声明为独立二维浮层，不能贴在手机上"
+            )
+        if not any(term in direct for term in ("单条", "一行", "一个", "仅一条", "仅一行")):
+            issues.append(f"{sid}: AI消息气泡必须限制为单条/一行短文本")
+        bubble_texts = bubble_quotes(direct)
+        if len(bubble_texts) > 1:
+            issues.append(f"{sid}: 同一镜不应同时生成多条精确气泡文字；请拆成多镜或合并为一个绿色气泡")
+        if any(compact_len(text) > 18 for text in bubble_texts):
+            if not all(term in direct for term in ("大号", "文字居中", "留白")):
+                issues.append(f"{sid}: 长AI消息气泡需要写“大号清晰气泡、文字居中、背景留白干净”，避免文字乱贴或变形")
+        necessary = extract_optional_field(block, "【本镜必要约束｜直接复制】")
+        negative = extract_optional_field(block, "【本镜补充负面提示词｜直接复制】")
+        if not all(term in necessary for term in SIDE_OVERLAY_NECESSARY_TERMS):
+            issues.append(f"{sid}: AI消息气泡需要【本镜必要约束｜直接复制】声明不属于手机且不贴手机")
+        if not any(term in negative for term in SIDE_OVERLAY_NEGATIVE_TERMS):
+            issues.append(f"{sid}: AI消息气泡需要【本镜补充负面提示词｜直接复制】压制手机背面文字/气泡贴手机")
     if any(term in direct for term in CROWD_RISK_TERMS):
         if not any(term in direct for term in CROWD_STRUCTURE_TERMS):
             issues.append(f"{sid}: crowd/background characters need region, depth/blur, approach and lip-sync control")
@@ -386,6 +467,37 @@ def prop_state_jump(prev_state: str, next_direct: str) -> list[str]:
     return jumps
 
 
+def has_body_support_detail(text: str) -> bool:
+    if not text:
+        return False
+    has_surface = any(term in text for term in SUPPORT_SURFACE_TERMS)
+    body_hits = [term for term in SUPPORT_BODY_TERMS if term in text]
+    has_contact = any(term in text for term in SUPPORT_CONTACT_TERMS)
+    return has_surface and has_contact and len(body_hits) >= 2
+
+
+def posture_support_jump(prev_state: str, next_direct: str) -> bool:
+    if not prev_state or not next_direct:
+        return False
+    if not has_body_support_detail(prev_state):
+        return False
+    shared_surface = [term for term in SUPPORT_SURFACE_TERMS if term in prev_state and term in next_direct]
+    if not shared_surface:
+        return False
+    if any(term in next_direct for term in SUPPORT_CHANGE_TERMS):
+        return False
+    next_body_hits = [term for term in SUPPORT_BODY_TERMS if term in next_direct]
+    next_has_contact = any(term in next_direct for term in SUPPORT_CONTACT_TERMS)
+    generic_reset = bool(GENERIC_SUPPORT_RE.search(next_direct))
+    if generic_reset and (len(next_body_hits) < 2 or not next_has_contact):
+        return True
+    prev_key_body = [term for term in ("臀", "腰", "腰臀", "肩背", "背部", "腿") if term in prev_state]
+    missing_key_body = [term for term in prev_key_body if term not in next_direct]
+    if len(prev_key_body) >= 2 and len(missing_key_body) >= 2 and generic_reset:
+        return True
+    return False
+
+
 def validate(path: Path) -> list[str]:
     text = path.read_text(encoding="utf-8")
     issues: list[str] = []
@@ -434,6 +546,10 @@ def validate(path: Path) -> list[str]:
             if jumped_props:
                 issues.append(
                     f"{group_id}-{index + 1}: 上一镜物品状态与下一镜开头不一致，{','.join(jumped_props)} 改变归属/位置前必须写取出/接触/移动/松手/稳定终态"
+                )
+            if posture_support_jump(child_states[index - 1], child_directs[index]):
+                issues.append(
+                    f"{group_id}-{index + 1}: 上一镜人体支撑点已锁定，下一镜不能概括成坐在中间/坐着/靠着；必须复写臀部/腰背/双腿与承载物接触点，或先写手撑、脚踩、腰臀挪动、重心转移和新支撑点稳定"
                 )
         child_durations = []
         for child in children:

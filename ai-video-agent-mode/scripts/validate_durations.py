@@ -210,6 +210,7 @@ def validate(sp_path, max_per_shot=15, max_total=600, project_config_path=None):
     total_dur = 0.0
     shots = data.get("shots", [])
     dialogue_map = data.get("dialogue_map", {})
+    dialogue_events = data.get("dialogue_events", {})
 
     for shot in shots:
         sid = shot.get("shot_id", "?")
@@ -238,7 +239,12 @@ def validate(sp_path, max_per_shot=15, max_total=600, project_config_path=None):
             for ref in dialogue_refs:
                 dia_text = dialogue_map.get(ref, "")
                 if dia_text:
-                    total_dialogue_secs += _estimate_dialogue_seconds(dia_text, emotion_tone)
+                    # Phase 1 estimates each source line with its own locked
+                    # tone. Reuse that value here so a mixed-speaker exchange
+                    # cannot be rejected by a different timing model.
+                    event = dialogue_events.get(ref, {})
+                    source_tone = event.get("source_tone", emotion_tone) if isinstance(event, dict) else emotion_tone
+                    total_dialogue_secs += _estimate_dialogue_seconds(dia_text, source_tone)
 
             action_secs = _estimate_action_seconds(ss.get("base_action", ""), ss)
             needed_secs = max(total_dialogue_secs, action_secs) + 0.5  # per SKILL.md: max(dialogue,action)+reaction_blank

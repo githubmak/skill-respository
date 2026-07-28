@@ -1,7 +1,7 @@
 """Pipeline state machine - phase progress, retries, agent ID tracking."""
 import json, os, time
 
-from pipeline_runtime import atomic_json
+from pipeline_runtime import atomic_json, json_lock
 
 # ========== Constants ==========
 MAX_RETRIES = 3          # Block when failure count reaches 3: initial attempt + 2 retries
@@ -96,43 +96,47 @@ def save_state(run_dir, state):
     atomic_json(path, state)
 
 
-def set_agent_id(run_dir, phase, agent_id, dispatch_id=None):
-    state = load_state(run_dir)
-    now = time.time()
-    phase_state = state["phases"][phase]
-    phase_state["agent_id"] = agent_id
-    phase_state["status"] = "running"
-    phase_state["spawn_time"] = now
-    phase_state["heartbeat_at"] = now
-    if dispatch_id:
-        phase_state.setdefault("dispatches", {})[dispatch_id] = {
-            "agent_id": agent_id,
-            "status": "running",
-            "spawn_time": now,
-            "heartbeat_at": now,
-        }
-    save_state(run_dir, state)
+def set_agent_id(run_dir, phase, agent_id, dispatch_id=None, spawn_time=None):
+    # Several packets may be registered at once. Serialize the full
+    # read-modify-write so one worker cannot erase another dispatch record.
+    with json_lock(get_state_path(run_dir)):
+        state = load_state(run_dir)
+        now = float(spawn_time) if isinstance(spawn_time, (int, float)) else time.time()
+        phase_state = state["phases"][phase]
+        phase_state["agent_id"] = agent_id
+        phase_state["status"] = "running"
+        phase_state["spawn_time"] = now
+        phase_state["heartbeat_at"] = now
+        if dispatch_id:
+            phase_state.setdefault("dispatches", {})[dispatch_id] = {
+                "agent_id": agent_id,
+                "status": "running",
+                "spawn_time": now,
+                "heartbeat_at": now,
+            }
+        save_state(run_dir, state)
 
 
 def record_heartbeat(run_dir, phase, agent_id=None, dispatch_id=None):
     """Record a real worker liveness signal without changing phase outcome."""
-    state = load_state(run_dir)
-    now = time.time()
-    entry = state["phases"][phase]
-    # A phase can own several concurrent dispatches.  The phase-level id is
-    # only a legacy summary; dispatch ownership is the authoritative check.
-    if not dispatch_id and agent_id and entry.get("agent_id") and entry.get("agent_id") != agent_id:
-        raise ValueError("agent_id does not own phase")
-    entry["heartbeat_at"] = now
-    if dispatch_id:
-        dispatch = entry.get("dispatches", {}).get(dispatch_id)
-        if not isinstance(dispatch, dict):
-            raise ValueError("unknown dispatch_id")
-        if agent_id and dispatch.get("agent_id") != agent_id:
-            raise ValueError("agent_id does not own dispatch")
-        dispatch["heartbeat_at"] = now
-    save_state(run_dir, state)
-    return now
+    with json_lock(get_state_path(run_dir)):
+        state = load_state(run_dir)
+        now = time.time()
+        entry = state["phases"][phase]
+        # A phase can own several concurrent dispatches.  The phase-level id is
+        # only a legacy summary; dispatch ownership is the authoritative check.
+        if not dispatch_id and agent_id and entry.get("agent_id") and entry.get("agent_id") != agent_id:
+            raise ValueError("agent_id does not own phase")
+        entry["heartbeat_at"] = now
+        if dispatch_id:
+            dispatch = entry.get("dispatches", {}).get(dispatch_id)
+            if not isinstance(dispatch, dict):
+                raise ValueError("unknown dispatch_id")
+            if agent_id and dispatch.get("agent_id") != agent_id:
+                raise ValueError("agent_id does not own dispatch")
+            dispatch["heartbeat_at"] = now
+        save_state(run_dir, state)
+        return now
 
 
 def mark_started(run_dir, phase):

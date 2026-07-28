@@ -4,12 +4,17 @@ import sys
 
 REQUIRED = ("scene", "space_anchor", "screen_positions", "wardrobe_lock", "prop_state",
             "light_source", "light_direction", "light_temperature", "audio_policy")
+OPTIONAL_FLAT_FIELDS = (
+    "space_id", "space_master_sentence", "entrance_exit", "prop_activity_zone",
+    "tone_palette", "light_texture_purpose",
+)
 
 
 def validate(path):
     with open(path, encoding="utf-8-sig") as handle:
         data = json.load(handle)
     issues, seen = [], set()
+    space_master_by_id = {}
     scenes = data.get("scenes", []) if isinstance(data, dict) else []
     if not isinstance(scenes, list) or not scenes:
         return ["scenes must be a non-empty list"]
@@ -27,6 +32,20 @@ def validate(path):
                 issues.append(prefix + " missing " + field)
             elif not isinstance(value, str):
                 issues.append(prefix + " " + field + " must be a non-empty flat string")
+        for field in OPTIONAL_FLAT_FIELDS:
+            if field not in item:
+                continue
+            value = item.get(field)
+            if value is None or value == "" or value == [] or value == {}:
+                issues.append(prefix + " " + field + " must be a non-empty flat string when present")
+            elif not isinstance(value, str):
+                issues.append(prefix + " " + field + " must be a non-empty flat string")
+        space_id = str(item.get("space_id", "") or "").strip()
+        master_sentence = str(item.get("space_master_sentence", "") or "").strip()
+        if space_id and master_sentence:
+            previous = space_master_by_id.setdefault(space_id, master_sentence)
+            if previous != master_sentence:
+                issues.append(prefix + " space_id reuses a different space_master_sentence")
     return issues
 
 

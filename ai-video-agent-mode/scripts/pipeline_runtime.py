@@ -9,6 +9,7 @@ half-written control file.
 import hashlib
 import json
 import os
+import re
 import time
 import uuid
 from contextlib import contextmanager
@@ -108,16 +109,73 @@ def patch_only(previous, replacement, fields):
     """Merge exactly named dotted fields; locked/unmentioned fields survive."""
     result = json.loads(json.dumps(previous, ensure_ascii=False))
     for field in fields or []:
-        source, target = replacement, result
-        bits = field.split(".")
-        for bit in bits[:-1]:
-            if not isinstance(source, dict) or bit not in source:
-                source = None; break
-            source = source[bit]
-            target = target.setdefault(bit, {})
-        if source is not None and isinstance(source, dict) and bits[-1] in source:
-            target[bits[-1]] = source[bits[-1]]
+        source_path = _composer_field_path(field)
+        value = _get_path(replacement, source_path)
+        if value is not _MISSING:
+            _set_path(result, source_path, value)
     return result
+
+
+_MISSING = object()
+_PATH_TOKEN_RE = re.compile(r"([^\[\]]+)(?:\[(\d+)\])?")
+
+
+def _composer_field_path(field):
+    """Map review-window paths back to the Composer shot schema."""
+    text = str(field or "")
+    if text.startswith("review_contracts."):
+        text = "qa_metadata." + text[len("review_contracts."):]
+    elif text in {"performance_contract", "continuity_contract", "reroll_control", "dialogue_events"}:
+        text = "qa_metadata." + text
+    return _parse_path(text)
+
+
+def _parse_path(field):
+    tokens = []
+    for part in str(field or "").split("."):
+        if not part:
+            continue
+        match = _PATH_TOKEN_RE.fullmatch(part)
+        if not match:
+            tokens.append(part)
+            continue
+        tokens.append(match.group(1))
+        if match.group(2) is not None:
+            tokens.append(int(match.group(2)))
+    return tokens
+
+
+def _get_path(value, path):
+    current = value
+    for token in path:
+        if isinstance(token, int):
+            if not isinstance(current, list) or token >= len(current):
+                return _MISSING
+            current = current[token]
+        else:
+            if not isinstance(current, dict) or token not in current:
+                return _MISSING
+            current = current[token]
+    return current
+
+
+def _set_path(value, path, replacement):
+    current = value
+    for token in path[:-1]:
+        if isinstance(token, int):
+            if not isinstance(current, list) or token >= len(current):
+                return
+            current = current[token]
+        else:
+            if not isinstance(current, dict):
+                return
+            current = current.setdefault(token, {})
+    last = path[-1] if path else None
+    if isinstance(last, int):
+        if isinstance(current, list) and last < len(current):
+            current[last] = replacement
+    elif last is not None and isinstance(current, dict):
+        current[last] = replacement
 
 
 def _infer_field(message):

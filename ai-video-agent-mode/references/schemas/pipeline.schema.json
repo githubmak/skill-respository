@@ -74,13 +74,19 @@
       "type": "object",
       "properties": {
         "scene": {"type": "string", "minLength": 1},
+        "space_id": {"type": "string", "minLength": 1},
         "space_anchor": {"type": "string", "minLength": 1},
+        "space_master_sentence": {"type": "string", "minLength": 1},
         "screen_positions": {"type": "string", "minLength": 1},
+        "entrance_exit": {"type": "string", "minLength": 1},
         "wardrobe_lock": {"type": "string", "minLength": 1},
         "prop_state": {"type": "string", "minLength": 1},
+        "prop_activity_zone": {"type": "string", "minLength": 1},
         "light_source": {"type": "string", "minLength": 1},
         "light_direction": {"type": "string", "minLength": 1},
         "light_temperature": {"type": "string", "minLength": 1},
+        "tone_palette": {"type": "string", "minLength": 1},
+        "light_texture_purpose": {"type": "string", "minLength": 1},
         "audio_policy": {"type": "string", "minLength": 1}
       },
       "required": ["scene", "space_anchor", "screen_positions", "wardrobe_lock", "prop_state", "light_source", "light_direction", "light_temperature", "audio_policy"],
@@ -139,10 +145,62 @@
         "audio_design": {"type": "string"},
         "full_prompt": {"type": "string"},
         "negative_prompt": {"type": "string"},
-        "qa_metadata": {"type": "object"},
+        "qa_metadata": {"$ref": "#/definitions/qa_metadata"},
         "generation_control": {"type": "object"}
       },
       "required": ["shot_id", "subshot_id", "duration", "full_prompt", "negative_prompt", "qa_metadata", "generation_control"]
+    },
+    "qa_metadata": {
+      "type": "object",
+      "properties": {
+        "source_constraint_basemap": {"$ref": "#/definitions/source_constraint_basemap"},
+        "scene_tone_palette": {"$ref": "#/definitions/scene_tone_palette"},
+        "screen_text_policy": {"$ref": "#/definitions/screen_text_policy"},
+        "tension_curve_role": {"$ref": "#/definitions/tension_curve_role"}
+      },
+      "additionalProperties": true
+    },
+    "source_constraint_basemap": {
+      "type": "object",
+      "properties": {
+        "space_basis": {"type": "string", "minLength": 1},
+        "state_prop_basis": {"type": "string", "minLength": 1},
+        "character_orientation_basis": {"type": "string", "minLength": 1},
+        "tension_curve_role": {"$ref": "#/definitions/tension_curve_role"},
+        "sound_lip_sync_basis": {"type": "string", "minLength": 1},
+        "screen_text_policy": {"type": "string", "minLength": 1},
+        "single_shot_risk": {"type": "string", "minLength": 1}
+      },
+      "required": ["space_basis", "state_prop_basis", "character_orientation_basis", "tension_curve_role", "sound_lip_sync_basis", "screen_text_policy", "single_shot_risk"],
+      "additionalProperties": false
+    },
+    "scene_tone_palette": {
+      "type": "object",
+      "properties": {
+        "space_id": {"type": "string", "minLength": 1},
+        "space_master_sentence": {"type": "string", "minLength": 1},
+        "tone_palette": {"type": "string", "minLength": 1},
+        "light_texture_purpose": {"type": "string", "minLength": 1},
+        "visual_scene_prefix": {"type": "string", "minLength": 1}
+      },
+      "required": ["space_id", "space_master_sentence", "tone_palette", "light_texture_purpose", "visual_scene_prefix"],
+      "additionalProperties": false
+    },
+    "screen_text_policy": {
+      "type": "object",
+      "properties": {
+        "mode": {"type": "string", "enum": ["none", "post", "ai_overlay", "ai_generated", "ai_ui"]},
+        "text_refs": {"type": "array", "items": {"type": "string"}},
+        "render_rule": {"type": "string"},
+        "safe_area": {"type": "string"},
+        "perspective_rule": {"type": "string"}
+      },
+      "required": ["mode", "text_refs", "render_rule", "safe_area", "perspective_rule"],
+      "additionalProperties": false
+    },
+    "tension_curve_role": {
+      "type": "string",
+      "enum": ["setup", "rise", "rising", "peak", "release", "buffer", "铺垫", "升压", "峰值", "释放", "缓冲"]
     }
   }
 }

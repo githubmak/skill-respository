@@ -9,6 +9,7 @@ performance report written by ``performance_budget.py``.  This utility never
 generates prompts or fabricates latency; it only summarizes measured runs.
 """
 
+import argparse
 import json
 import math
 import os
@@ -30,22 +31,30 @@ def evaluate(run_dirs):
     missing_scenarios = sorted(REQUIRED_SCENARIOS - scenarios)
     normal_scenarios = {item["scenario"] for item in valid if item["injected_failure_rate"] == 0}
     fault_scenarios = {item["scenario"] for item in valid if item["injected_failure_rate"] == 0.10}
+    synthetic_count = sum(1 for item in valid if item.get("evidence_kind") != "real_pipeline")
+    pass_basic = bool(
+        len(valid) >= 6
+        and not missing_scenarios
+        and REQUIRED_SCENARIOS <= normal_scenarios
+        and REQUIRED_SCENARIOS <= fault_scenarios
+        and p95 is not None
+        and p95 <= TARGET_SECONDS
+    )
     result = {
         "target_seconds": TARGET_SECONDS,
         "run_count": len(records),
         "valid_run_count": len(valid),
+        "synthetic_fixture_count": synthetic_count,
         "p95_seconds": p95,
         "scenarios": sorted(scenarios),
         "missing_scenarios": missing_scenarios,
         "normal_scenarios": sorted(normal_scenarios),
         "fault_injection_scenarios": sorted(fault_scenarios),
-        "pass": bool(
-            len(valid) >= 6
-            and not missing_scenarios
-            and REQUIRED_SCENARIOS <= normal_scenarios
-            and REQUIRED_SCENARIOS <= fault_scenarios
-            and p95 is not None
-            and p95 <= TARGET_SECONDS
+        "pass": pass_basic,
+        "real_slo_pass": pass_basic and synthetic_count == 0,
+        "evidence_note": (
+            "synthetic fixtures validate benchmark mechanics only; real SLO claims require real_pipeline evidence"
+            if synthetic_count else "all valid runs are marked real_pipeline"
         ),
         "runs": records,
     }
@@ -68,10 +77,18 @@ def _record(run_dir):
     failure_rate = (config or {}).get("benchmark", {}).get("injected_failure_rate", 0)
     if failure_rate not in (0, 0.10):
         issues.append("injected_failure_rate must be 0 or 0.10")
+    evidence_kind = str(
+        ((config or {}).get("benchmark", {}) or {}).get("evidence_kind")
+        or (report.get("evidence_kind") if isinstance(report, dict) else "")
+        or "real_pipeline"
+    ).strip()
+    if evidence_kind not in ("real_pipeline", "synthetic_fixture"):
+        issues.append("evidence_kind must be real_pipeline or synthetic_fixture")
     return {
         "run_dir": os.path.abspath(run_dir),
         "scenario": scenario,
         "injected_failure_rate": failure_rate,
+        "evidence_kind": evidence_kind,
         "elapsed_seconds": report.get("elapsed_seconds") if isinstance(report, dict) else None,
         "shot_count": shot_count,
         "issues": issues,
@@ -100,9 +117,22 @@ def _percentile(values, q):
     return round(values[lower] + (values[upper] - values[lower]) * (index - lower), 3)
 
 
+def _write(path, data):
+    directory = os.path.dirname(os.path.abspath(path))
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(data, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+
+
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        raise SystemExit("usage: benchmark_core_pipeline.py <run_dir> [<run_dir> ...]")
-    outcome = evaluate(sys.argv[1:])
+    parser = argparse.ArgumentParser(description="Evaluate real completed 50-main-shot pipeline runs.")
+    parser.add_argument("--out", help="Optional JSON report path for audit evidence.")
+    parser.add_argument("run_dirs", nargs="+")
+    args = parser.parse_args()
+    outcome = evaluate(args.run_dirs)
+    if args.out:
+        _write(args.out, outcome)
     print(json.dumps(outcome, ensure_ascii=False, indent=2))
     raise SystemExit(0 if outcome["pass"] else 1)

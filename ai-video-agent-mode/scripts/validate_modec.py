@@ -15,6 +15,7 @@ from modec_v4 import (
     ai_model_readiness_issues,
     attention_handoff_issues,
     camera_competition_issues,
+    direct_feed_prompt_issues,
     dialogue_event_issues,
     fight_continuity_issues,
     fight_transition_issues,
@@ -22,19 +23,27 @@ from modec_v4 import (
     listener_reaction_issues,
     performance_causality_issues,
     performance_contract_issues,
+    physical_transition_chain_issues,
     pressure_release_issues,
     prompt_length_issues,
     reroll_control_issues,
     role_partition_issues,
+    scene_tone_palette_issues,
+    screen_text_policy_issues,
+    screen_text_policy_metadata_issues,
     shot_group_handoff_issues,
+    source_constraint_basemap_issues,
     story_punch_issues,
     jimeng_shot_group_issues,
     split_sections,
+    tension_curve_role_issues,
     timeline_issues,
     visibility_issues,
+    visual_texture_issues,
 )
 from negative_prompts import PLACEHOLDER, is_fight_context
 from contract_registry import QA_REQUIRED_FIELDS
+from shot_semantics import validation_profile as derive_validation_profile
 
 
 def main(run_dir):
@@ -49,11 +58,12 @@ def main(run_dir):
     shots = package.get("shots", [])
     config = _load_optional_json(os.path.join(run_dir, "project_config.json"))
     hard_max_chars = (config.get("prompt_limits", {}) or {}).get("hard_max_chars")
-    expected = {
+    expected_subshots = {
         subshot.get("subshot_id", ""): subshot
         for shot in plan.get("shots", [])
         for subshot in shot.get("subshots", [])
     }
+    expected = _main_shot_expectations(plan)
     director_map = {
         item.get("subshot_id", ""): item for item in director.get("items", []) if item.get("subshot_id")
     }
@@ -75,8 +85,12 @@ def main(run_dir):
         errors.append("shots必须是非空数组")
     if set(package) != {"contract_version", "shots"}:
         errors.append("提示词包顶层只能包含contract_version与shots")
-    actual_ids = [shot.get("subshot_id", "") for shot in shots]
-    if set(actual_ids) != set(expected) or len(actual_ids) != len(expected):
+    actual_source_ids = [
+        source_id
+        for shot in shots
+        for source_id in _as_list(shot.get("source_subshot_ids", [shot.get("subshot_id", "")]))
+    ]
+    if set(actual_source_ids) != set(expected_subshots) or len(actual_source_ids) != len(expected_subshots):
         errors.append("subshot覆盖或唯一性不一致")
 
     for shot in shots:
@@ -114,7 +128,21 @@ def main(run_dir):
             errors.append(prefix + issue)
         for issue in camera_competition_issues(full_prompt, metadata.get("editorial_mode", shot.get("editorial_mode", "continuous_take"))):
             errors.append(prefix + issue)
-        plan_item = expected.get(sid, {})
+        for issue in visual_texture_issues(full_prompt):
+            errors.append(prefix + issue)
+        for issue in screen_text_policy_issues(full_prompt):
+            errors.append(prefix + issue)
+        for issue in source_constraint_basemap_issues(metadata):
+            errors.append(prefix + issue)
+        for issue in scene_tone_palette_issues(metadata):
+            errors.append(prefix + issue)
+        for issue in screen_text_policy_metadata_issues(metadata, full_prompt):
+            errors.append(prefix + issue)
+        for issue in tension_curve_role_issues(metadata):
+            errors.append(prefix + issue)
+        for issue in direct_feed_prompt_issues(full_prompt):
+            errors.append(prefix + issue)
+        plan_item = expected.get(shot.get("shot_id", sid), expected_subshots.get(sid, {}))
         director_item = director_map.get(sid, {})
         dramatic = metadata.get("dramatic_design", {})
         if isinstance(dramatic, dict):
@@ -129,22 +157,30 @@ def main(run_dir):
                 errors.append(prefix + "dramatic_design.narrative_beat_id必须与Phase 1一致")
 
         visible = _as_list(plan_item.get("visible_characters", plan_item.get("characters", [])))
+        validation_profile = derive_validation_profile(plan_item, metadata, visible)
         for issue in role_partition_issues(metadata, visible):
             errors.append(prefix + issue)
         for issue in insert_shot_issues(metadata, full_prompt, shot.get("duration", 0), visible):
             errors.append(prefix + issue)
-        for issue in performance_causality_issues(metadata, visible):
+        for issue in physical_transition_chain_issues(metadata, full_prompt):
             errors.append(prefix + issue)
-        for issue in performance_contract_issues(metadata, full_prompt, visible):
-            errors.append(prefix + issue)
-        for issue in ai_model_readiness_issues(metadata, full_prompt, visible):
-            errors.append(prefix + issue)
-        for issue in pressure_release_issues(metadata, full_prompt, visible):
-            errors.append(prefix + issue)
-        for issue in story_punch_issues(metadata, full_prompt, visible):
-            errors.append(prefix + issue)
-        for issue in listener_reaction_issues(metadata, full_prompt):
-            errors.append(prefix + issue)
+        if validation_profile["performance_contract"]:
+            for issue in performance_causality_issues(metadata, visible):
+                errors.append(prefix + issue)
+            for issue in performance_contract_issues(metadata, full_prompt, visible):
+                errors.append(prefix + issue)
+        if validation_profile["ai_model_readiness_score"]:
+            for issue in ai_model_readiness_issues(metadata, full_prompt, visible):
+                errors.append(prefix + issue)
+        if validation_profile["pressure_release_design"]:
+            for issue in pressure_release_issues(metadata, full_prompt, visible):
+                errors.append(prefix + issue)
+        if validation_profile["story_punch_contract"]:
+            for issue in story_punch_issues(metadata, full_prompt, visible):
+                errors.append(prefix + issue)
+        if validation_profile["listener_reaction_plan"]:
+            for issue in listener_reaction_issues(metadata, full_prompt):
+                errors.append(prefix + issue)
         fight = is_fight_context(
             plan_item.get("scene_type", ""), plan_item.get("shot_type", ""), full_prompt
         )
@@ -184,7 +220,7 @@ def main(run_dir):
         audio_enabled = control.get("audio_enabled") if isinstance(control, dict) else None
         for issue in dialogue_event_issues(
             metadata,
-            director_item.get("dialogue_events", []),
+            _source_dialogue_events(plan, metadata),
             visible,
             full_prompt,
             audio_enabled,
@@ -234,6 +270,42 @@ def _as_list(value):
     if isinstance(value, str):
         return [part.strip() for part in re.split(r"[;；,，、/]+", value) if part.strip()]
     return []
+
+
+def _main_shot_expectations(plan):
+    result = {}
+    for shot in plan.get("shots", []) if isinstance(plan.get("shots", []), list) else []:
+        shot_id = str(shot.get("shot_id", "") or "")
+        if not shot_id:
+            continue
+        subshots = shot.get("subshots", []) if isinstance(shot.get("subshots"), list) else []
+        characters = []
+        dialogue_refs = []
+        for subshot in subshots:
+            characters.extend(_as_list(subshot.get("visible_characters", subshot.get("characters", []))))
+            dialogue_refs.extend(_as_list(subshot.get("dialogue_refs", [])))
+        first = subshots[0] if subshots else {}
+        result[shot_id] = {
+            "shot_id": shot_id,
+            "subshot_ids": [subshot.get("subshot_id", "") for subshot in subshots if subshot.get("subshot_id")],
+            "characters": sorted(set(characters)),
+            "dialogue_refs": dialogue_refs,
+            "dramatic_design": first.get("dramatic_design", {}),
+            "scene_type": first.get("scene_type", shot.get("scene_type", "")),
+            "shot_type": first.get("shot_type", shot.get("shot_type", "")),
+            "shot_size": first.get("shot_size", shot.get("shot_size", "")),
+        }
+    return result
+
+
+def _source_dialogue_events(plan, metadata):
+    dialogue_events = plan.get("dialogue_events", {}) if isinstance(plan.get("dialogue_events"), dict) else {}
+    refs = _as_list(metadata.get("dialogue_refs", []))
+    return [
+        dict(dialogue_events[ref])
+        for ref in refs
+        if isinstance(dialogue_events.get(ref), dict)
+    ]
 
 
 if __name__ == "__main__":

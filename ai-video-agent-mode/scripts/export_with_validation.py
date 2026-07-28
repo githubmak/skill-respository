@@ -155,7 +155,8 @@ def _write_master_markdown(path, master_package, plan):
         "> 每个主镜头是一项即梦 T2V 生成任务；子镜仅作为同一任务内的连续节拍。", "",
     ]
     current_scene = None
-    for planned in plan.get("shots", []):
+    planned_shots = plan.get("shots", []) if isinstance(plan.get("shots", []), list) else []
+    for index, planned in enumerate(planned_shots):
         scene = planned.get("scene", "场景")
         if scene != current_scene:
             lines.extend([f"## {scene}", ""])
@@ -163,24 +164,34 @@ def _write_master_markdown(path, master_package, plan):
         task = masters.get(planned.get("shot_id", ""))
         if not task:
             continue
+        next_task = None
+        for following in planned_shots[index + 1:]:
+            candidate = masters.get(following.get("shot_id", ""))
+            if candidate:
+                next_task = candidate
+                break
         control = task.get("generation_control", {}) if isinstance(task.get("generation_control"), dict) else {}
         metadata = task.get("qa_metadata", {}) if isinstance(task.get("qa_metadata"), dict) else {}
         lines.extend([
             f"### {task.get('shot_id', '')}｜{float(task.get('duration', 0) or 0):g}秒", "",
             "**即梦操作卡**", "",
             f"模式：即梦 T2V｜画幅：{plan.get('canvas', '')}｜原生音频：{'开启' if control.get('audio_enabled') else '关闭'}", "",
-            "**即梦直接投喂提示词**", "", "```text", jimeng_feed_prompt(task.get("full_prompt", "")), "```", "",
+            "**模型提示词**", "", "```text", jimeng_feed_prompt(task.get("full_prompt", "")), "```", "",
             "<details><summary>制作结构化提示（审阅用，不必复制）</summary>", "", "```text", str(task.get("full_prompt", "") or ""), "```", "", "</details>", "",
             "**负面提示词**", "", "```text", str(task.get("negative_prompt", "") or ""), "```", "",
+            "**下一镜转场提示词**", "", _build_transition_prompt(task, next_task), "",
             "**内部子镜溯源与执行节拍**", "",
             "来源子镜：" + "、".join(task.get("source_subshot_ids", [])), "",
         ])
         events = metadata.get("dialogue_events", []) if isinstance(metadata.get("dialogue_events"), list) else []
+        lines.extend(["**台词/OS/OV表演**", ""])
         if events:
-            lines.extend(["**台词/OS/OV表演**", "", "| 引用 | 类型 | 人物 | 逐字原文 | 时间窗 | 神态 | 身体状态 | 语气 | 气口 | 口型同步 |", "|---|---|---|---|---|---|---|---|---|---|"])
+            lines.extend(["| 引用 | 类型 | 人物 | 逐字原文 | 时间窗 | 神态 | 身体状态 | 语气 | 气口 | 口型同步 |", "|---|---|---|---|---|---|---|---|---|---|"])
             for event in events:
                 lines.append("| " + " | ".join(_md_cell(event.get(field, "")) for field in ("ref", "kind", "speaker", "text", "time_range", "facial_state", "body_state", "delivery", "breath_pause_plan", "lip_sync")) + " |")
             lines.append("")
+        else:
+            lines.extend(["无。", ""])
         keyframe_reference = build_current_shot_keyframe_reference(task, planned, plan.get("canvas", "16:9"), plan.get("visual_style", ""))
         if keyframe_reference:
             lines.extend([

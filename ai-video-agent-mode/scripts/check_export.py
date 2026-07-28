@@ -17,6 +17,7 @@ from modec_v4 import (
     camera_competition_issues,
     coverage_role_issues,
     continuity_contract_issues,
+    direct_feed_prompt_issues,
     dialogue_event_issues,
     expectation_anchor_issues,
     fight_continuity_issues,
@@ -24,20 +25,28 @@ from modec_v4 import (
     listener_reaction_issues,
     performance_causality_issues,
     performance_contract_issues,
+    physical_transition_chain_issues,
     pressure_release_issues,
     prompt_length_issues,
     reroll_control_issues,
     role_partition_issues,
+    scene_tone_palette_issues,
+    screen_text_policy_issues,
+    screen_text_policy_metadata_issues,
     shot_group_handoff_issues,
+    source_constraint_basemap_issues,
     story_punch_issues,
     jimeng_shot_group_issues,
     split_sections,
+    tension_curve_role_issues,
     timeline_issues,
     timeline_ranges,
     visibility_issues,
+    visual_texture_issues,
 )
 from negative_prompts import PLACEHOLDER, is_fight_context
 from contract_registry import QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
+from shot_semantics import validation_profile as derive_validation_profile
 
 
 FORBIDDEN_ENGINES = ["C4D", "Octane", "Blender", "Redshift", "Arnold", "Unreal Engine"]
@@ -56,7 +65,7 @@ def check_export(md_path, run_dir, quality_mode=False):
     llm_review = _load_optional(os.path.join(run_dir, ".cache", "review", "llm_gate_result.json"))
     shots = package.get("shots", [])
     hard_max_chars = (config.get("prompt_limits", {}) or {}).get("hard_max_chars")
-    plan_map, scene_by_id = _plan_index(plan)
+    plan_map, scene_by_id, expected_source_ids = _plan_index(plan)
     director_map = {}
     scene_map = {}
     failures = []
@@ -72,12 +81,17 @@ def check_export(md_path, run_dir, quality_mode=False):
             failures.append(f"{label}: {detail}")
 
     ids = [shot.get("subshot_id", "") for shot in shots if isinstance(shot, dict)]
+    source_ids = [
+        source_id
+        for shot in shots if isinstance(shot, dict)
+        for source_id in _as_list(shot.get("source_subshot_ids", [shot.get("subshot_id", "")]))
+    ]
     expected_ids = set(plan_map)
 
     check(1, "Package exists", bool(package_path), package_path or "missing")
     check(2, "Current contract", package.get("contract_version") == "jimeng-t2v-v1", str(package.get("contract_version")))
     check(3, "Single shots authority", set(package) == {"contract_version", "shots"} and isinstance(shots, list), str(sorted(package)))
-    check(4, "Subshot coverage", set(ids) == expected_ids, f"{len(set(ids))}/{len(expected_ids)}")
+    check(4, "Subshot coverage", set(source_ids) == expected_source_ids, f"{len(set(source_ids))}/{len(expected_source_ids)}")
     check(5, "Unique subshots", len(ids) == len(set(ids)), f"{len(ids) - len(set(ids))} duplicate(s)")
     missing_fields = sum(1 for shot in shots if not SHOT_REQUIRED_FIELDS.issubset(shot))
     check(6, "Required shot fields", missing_fields == 0, f"{missing_fields} incomplete")
@@ -105,6 +119,7 @@ def check_export(md_path, run_dir, quality_mode=False):
     camera_budget_issues = 0
     coverage_issues = 0
     visible_detail_issues = 0
+    direct_feed_issues = 0
     dialogue_issues = 0
     mode_issues = 0
     asset_issues = 0
@@ -137,6 +152,12 @@ def check_export(md_path, run_dir, quality_mode=False):
             timeline_overload += 1
         if jimeng_shot_group_issues(full_prompt, (shot.get("qa_metadata", {}) or {}).get("editorial_mode", "continuous_take")):
             camera_budget_issues += 1
+        if visual_texture_issues(full_prompt):
+            visible_detail_issues += 1
+        if screen_text_policy_issues(full_prompt):
+            visible_detail_issues += 1
+        if direct_feed_prompt_issues(full_prompt):
+            direct_feed_issues += 1
 
         negative = str(shot.get("negative_prompt", "") or "").strip()
         if not negative or PLACEHOLDER in negative:
@@ -148,26 +169,38 @@ def check_export(md_path, run_dir, quality_mode=False):
         if not isinstance(metadata, dict) or any(key not in metadata for key in QA_REQUIRED_FIELDS):
             metadata_missing += 1
             metadata = metadata if isinstance(metadata, dict) else {}
+        metadata_semantic_issues = (
+            source_constraint_basemap_issues(metadata)
+            + scene_tone_palette_issues(metadata)
+            + screen_text_policy_metadata_issues(metadata, full_prompt)
+            + tension_curve_role_issues(metadata)
+        )
+        if metadata_semantic_issues:
+            metadata_missing += 1
         plan_item = plan_map.get(sid, {})
         visible = _as_list(plan_item.get("visible_characters", plan_item.get("characters", [])))
+        validation_profile = derive_validation_profile(plan_item, metadata, visible)
         role_errors = role_partition_issues(metadata, visible)
         if role_errors:
             role_issues += 1
-        if performance_causality_issues(metadata, visible):
-            performance_causality_errors += 1
-        if performance_contract_issues(metadata, full_prompt, visible):
+        if validation_profile["performance_contract"]:
+            if performance_causality_issues(metadata, visible):
+                performance_causality_errors += 1
+            if performance_contract_issues(metadata, full_prompt, visible):
+                performance_contract_errors += 1
+        if validation_profile["ai_model_readiness_score"] and ai_model_readiness_issues(metadata, full_prompt, visible):
             performance_contract_errors += 1
-        if ai_model_readiness_issues(metadata, full_prompt, visible):
+        if validation_profile["pressure_release_design"] and pressure_release_issues(metadata, full_prompt, visible):
             performance_contract_errors += 1
-        if pressure_release_issues(metadata, full_prompt, visible):
+        if validation_profile["story_punch_contract"] and story_punch_issues(metadata, full_prompt, visible):
             performance_contract_errors += 1
-        if story_punch_issues(metadata, full_prompt, visible):
-            performance_contract_errors += 1
-        if listener_reaction_issues(metadata, full_prompt):
+        if validation_profile["listener_reaction_plan"] and listener_reaction_issues(metadata, full_prompt):
             performance_contract_errors += 1
         if expectation_anchor_issues(metadata, full_prompt):
             performance_contract_errors += 1
         if continuity_contract_issues(metadata, full_prompt, visible):
+            continuity_contract_errors += 1
+        if physical_transition_chain_issues(metadata, full_prompt):
             continuity_contract_errors += 1
         if reroll_control_issues(metadata, shot.get("generation_control"), visible):
             reroll_control_errors += 1
@@ -215,7 +248,7 @@ def check_export(md_path, run_dir, quality_mode=False):
             audio_issues += 1
         dialogue_issues += len(dialogue_event_issues(
             metadata,
-            director_map.get(sid, {}).get("dialogue_events", []),
+            _source_dialogue_events(plan, metadata),
             visible,
             full_prompt,
             control.get("audio_enabled"),
@@ -249,7 +282,7 @@ def check_export(md_path, run_dir, quality_mode=False):
     check(20, "Exactly one primary when visible", primary_issues == 0, f"{primary_issues} bad")
     check(21, "Action budget/fight continuity", budget_issues == 0 and fight_continuity_errors == 0, f"budget={budget_issues}, fight={fight_continuity_errors}")
     check(22, "Camera budget and coverage role", camera_budget_issues == 0 and coverage_issues == 0, f"budget={camera_budget_issues}, coverage={coverage_issues}")
-    check(23, "Shot-size visibility", visible_detail_issues == 0, f"{visible_detail_issues} invisible-detail shot(s)")
+    check(23, "Shot-size/direct-feed visibility", visible_detail_issues == 0 and direct_feed_issues == 0, f"visible={visible_detail_issues}, direct={direct_feed_issues}")
     check(24, "Dialogue boundary", dialogue_issues == 0, f"{dialogue_issues} mismatch(es)")
     check(25, "Generation mode", mode_issues == 0, f"{mode_issues} invalid")
     check(26, "Reference assets", asset_issues == 0, f"{asset_issues} invalid")
@@ -286,13 +319,31 @@ def _find_package(run_dir):
 def _plan_index(plan):
     by_id = {}
     scene_by_id = {}
+    expected_source_ids = set()
     for shot in plan.get("shots", []):
-        for subshot in shot.get("subshots", []):
-            copied = dict(subshot)
-            copied.setdefault("scene_type", shot.get("scene_type", ""))
-            by_id[copied.get("subshot_id", "")] = copied
-            scene_by_id[copied.get("subshot_id", "")] = shot.get("scene", "")
-    return by_id, scene_by_id
+        shot_id = str(shot.get("shot_id", "") or "")
+        if not shot_id:
+            continue
+        subshots = shot.get("subshots", []) if isinstance(shot.get("subshots"), list) else []
+        characters = []
+        dialogue_refs = []
+        for subshot in subshots:
+            expected_source_ids.add(str(subshot.get("subshot_id", "") or ""))
+            characters.extend(_as_list(subshot.get("visible_characters", subshot.get("characters", []))))
+            dialogue_refs.extend(_as_list(subshot.get("dialogue_refs", [])))
+        first = subshots[0] if subshots else {}
+        by_id[shot_id] = {
+            "shot_id": shot_id,
+            "subshot_ids": [subshot.get("subshot_id", "") for subshot in subshots if subshot.get("subshot_id")],
+            "characters": sorted(set(characters)),
+            "dialogue_refs": dialogue_refs,
+            "dramatic_design": first.get("dramatic_design", {}),
+            "scene_type": first.get("scene_type", shot.get("scene_type", "")),
+            "shot_type": first.get("shot_type", shot.get("shot_type", "")),
+            "shot_size": first.get("shot_size", shot.get("shot_size", "")),
+        }
+        scene_by_id[shot_id] = shot.get("scene", "")
+    return by_id, scene_by_id, expected_source_ids
 
 
 def _light_jumps(plan, scene_by_id, scene_map):
@@ -351,6 +402,16 @@ def _as_list(value):
     if isinstance(value, str):
         return [part.strip() for part in re.split(r"[;；,，、/]+", value) if part.strip()]
     return []
+
+
+def _source_dialogue_events(plan, metadata):
+    dialogue_events = plan.get("dialogue_events", {}) if isinstance(plan.get("dialogue_events"), dict) else {}
+    refs = _as_list(metadata.get("dialogue_refs", []))
+    return [
+        dict(dialogue_events[ref])
+        for ref in refs
+        if isinstance(dialogue_events.get(ref), dict)
+    ]
 
 
 def _has_direct_to_camera(text):

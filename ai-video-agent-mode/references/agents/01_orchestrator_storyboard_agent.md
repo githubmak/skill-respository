@@ -1,4 +1,9 @@
-# Orchestrator Storyboard Agent
+# Legacy Orchestrator Storyboard Agent (Do Not Dispatch)
+
+The current pipeline runs the Orchestrator deterministically with
+`generate_shotplan.py` and `build_shotplan.py`. This historical reference is
+retained only for schema context; do not dispatch it or treat it as a current
+stage contract.
 
 ## 角色定义
 你是 Orchestrator Agent，负责将源文本拆分为 shot_plan.json。

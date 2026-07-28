@@ -10,12 +10,13 @@ import re
 import sys
 import time
 import uuid
+import hashlib
 
 if not os.environ.get("PYTHONPYCACHEPREFIX") and not getattr(sys, "pycache_prefix", None):
     sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(__file__))
 from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_prefix
-from shot_semantics import dispatch_risk, quality_contract, temporal_transition_candidate
+from shot_semantics import dispatch_risk, quality_contract, temporal_transition_candidate, validation_profile
 from context_budget import check as check_context_budget
 from batch_planner import analysis_chunks as _analysis_chunks, batch_risk as _batch_risk
 from batch_planner import dynamic_master_chunks as _plan_dynamic_master_chunks
@@ -58,7 +59,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
         pre_editor_result, pre_editor_gate_path = run_pre_editor_gate(run_dir)
         if not pre_editor_result.get("pass"):
             raise ValueError("Pre-Editor local gate failed; repair Composer output before semantic review")
-        items = build_editor_windows(run_dir)
+        items = build_editor_windows(run_dir, shot_ids=wanted or None)
     if phase == "master_production" and wanted:
         # A child-level validator finding is repaired inside its owning main
         # task. Reload just that task's siblings so the rebuilt T2V timeline
@@ -115,7 +116,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             packet_items = [_compact_composer_item(item) for item in chunk]
         retry_context_path = None
         retry_mode = None
-        if is_retry:
+        if is_retry and phase == "master_production":
             retry_context_path, retry_mode = _write_retry_context(
                 run_dir, phase, packet_items, out_dir, dispatch_tag
             )
@@ -128,6 +129,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             "phase": phase,
             "run_dir": run_dir,
             "source_path": source_path,
+            "source_sha256": _sha256(source_path),
             "project_config_path": os.path.join(run_dir, "project_config.json"),
             "constraints_path": constraints_path,
             "output_path": public_output,
@@ -200,6 +202,8 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             packet["composer_scaffold_path"] = scaffold_path
             packet["scene_lock_cache_path"] = scene_lock_cache_path
         if phase == "editor_pass2":
+            packet["targeted_review"] = bool(wanted)
+            packet["target_shot_ids"] = sorted(wanted)
             packet["review_packet_path"] = os.path.join(run_dir, ".cache", "review", "llm_gate_review.md")
             packet["pre_editor_gate_path"] = pre_editor_gate_path
             packet["emotion_camera_audit_path"] = pre_editor_result["semantic_audit_path"]
@@ -210,6 +214,15 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(packet, f, ensure_ascii=False, indent=2)
         paths.append(out_path)
+    _write_active_manifest(
+        run_dir,
+        phase,
+        source_path,
+        dispatch_group_id,
+        paths,
+        is_retry=is_retry,
+        target_ids=sorted(wanted),
+    )
     return paths
 
 
@@ -232,13 +245,118 @@ def prepare_parallel_dispatch(run_dir, phases, batch_sizes=None):
     }
 
 
+def active_packet_paths(run_dir, phase):
+    """Return the current effective packet queue for a phase.
+
+    The dispatch directory is append-only for auditability.  This manifest is
+    the small mutable index that tells the runner which packet files still
+    belong to the current attempt.  If an older run lacks the manifest, callers
+    can fall back to scanning the directory.
+    """
+    manifest = _load_optional_json(_active_manifest_path(run_dir, phase))
+    if manifest.get("phase") != phase:
+        return []
+    paths = []
+    for entry in manifest.get("packets", []):
+        path = entry.get("packet_path") if isinstance(entry, dict) else ""
+        if path and os.path.exists(path):
+            paths.append(path)
+    return paths
+
+
+def _active_manifest_path(run_dir, phase):
+    safe_phase = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(phase or "unknown"))
+    return os.path.join(run_dir, ".cache", "dispatch", "active_%s_manifest.json" % safe_phase)
+
+
+def _write_active_manifest(run_dir, phase, source_path, dispatch_group_id, packet_paths, is_retry=False, target_ids=None):
+    target_ids = set(target_ids or [])
+    current = _load_optional_json(_active_manifest_path(run_dir, phase))
+    entries = current.get("packets", []) if isinstance(current.get("packets"), list) else []
+    superseded = current.get("superseded_packets", []) if isinstance(current.get("superseded_packets"), list) else []
+    attempt = int(current.get("attempt", 0) or 0) + 1
+    if is_retry and target_ids:
+        # Keep original mixed batches because they may contain unaffected shots,
+        # but drop older retry packets that are fully covered by this newer
+        # retry target set.  New retry packets are appended so merge order lets
+        # them override original fields.
+        filtered = []
+        for entry in entries:
+            ids = set(entry.get("shot_ids", [])) if isinstance(entry, dict) else set()
+            previous_retry = bool(entry.get("is_retry")) if isinstance(entry, dict) else False
+            if previous_retry and ids and ids <= target_ids:
+                superseded.append(_superseded_manifest_entry(entry, attempt, "retry_replaced_by_newer_target"))
+                continue
+            filtered.append(entry)
+        entries = filtered
+    elif not is_retry:
+        for entry in entries:
+            if isinstance(entry, dict):
+                superseded.append(_superseded_manifest_entry(entry, attempt, "fresh_dispatch_group"))
+        entries = []
+    source_sha256 = _sha256(source_path) if source_path and os.path.isfile(source_path) else ""
+    for packet_path in packet_paths:
+        packet = _load_json(packet_path)
+        entries.append({
+            "packet_path": os.path.abspath(packet_path),
+            "dispatch_id": packet.get("dispatch_id", ""),
+            "dispatch_group_id": packet.get("dispatch_group_id", dispatch_group_id),
+            "created_at": packet.get("created_at"),
+            "is_retry": bool(packet.get("is_retry") or packet.get("retry_context_path")),
+            "shot_ids": _packet_shot_ids(packet),
+            "source_sha256": packet.get("source_sha256", source_sha256),
+            "attempt": attempt,
+        })
+    active_shot_ids = sorted({
+        shot_id
+        for entry in entries if isinstance(entry, dict)
+        for shot_id in entry.get("shot_ids", [])
+        if str(shot_id).strip()
+    })
+    _write_json(_active_manifest_path(run_dir, phase), {
+        "contract_version": "jimeng-t2v-v1",
+        "phase": phase,
+        "source_path": source_path,
+        "source_sha256": source_sha256,
+        "dispatch_group_id": dispatch_group_id,
+        "updated_at": time.time(),
+        "attempt": attempt,
+        "active_packet_count": len(entries),
+        "active_retry_packet_count": sum(1 for entry in entries if isinstance(entry, dict) and entry.get("is_retry")),
+        "active_shot_ids": active_shot_ids,
+        "superseded_packet_count": len(superseded),
+        "superseded_packets": superseded[-200:],
+        "packets": entries,
+    })
+
+
+def _superseded_manifest_entry(entry, attempt, reason):
+    copied = dict(entry)
+    copied["superseded_at"] = time.time()
+    copied["superseded_by_attempt"] = attempt
+    copied["superseded_reason"] = reason
+    return copied
+
+
+def _packet_shot_ids(packet):
+    ids = []
+    for item in packet.get("items", []) if isinstance(packet.get("items"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        shot_id = str(item.get("shot_id", "") or item.get("subshot_id", "") or "").strip()
+        if shot_id and shot_id not in ids:
+            ids.append(shot_id)
+    return ids
+
+
 def _extract_items(data, wanted):
     if "shots" in data:
         items = []
         for shot in data.get("shots", []):
+            shot_id = shot.get("shot_id", "")
             if isinstance(shot, dict) and "subshots" not in shot and shot.get("subshot_id"):
                 ssid = shot.get("subshot_id", "")
-                if wanted and ssid not in wanted:
+                if wanted and ssid not in wanted and shot_id not in wanted:
                     continue
                 copied = dict(shot)
                 copied.setdefault("visible_characters", copied.get("characters", []))
@@ -246,7 +364,7 @@ def _extract_items(data, wanted):
                 continue
             for ss in shot.get("subshots", []):
                 ssid = ss.get("subshot_id", "")
-                if wanted and ssid not in wanted:
+                if wanted and ssid not in wanted and shot_id not in wanted:
                     continue
                 source_events = [
                     dict(data.get("dialogue_events", {}).get(ref, {}))
@@ -332,18 +450,27 @@ def _write_constraints_sidecar(run_dir, phase, dispatch_dir, dispatch_tag):
     out_path = os.path.join(dispatch_dir, "%s_%s_constraints.md" % (phase, dispatch_tag))
     phase_note = {
         "scene_lock": (
-            "专业角色：场景锁定 Agent。请返回 {\"scenes\":[{\"scene\":\"...\",\"space_anchor\":\"...\",\"screen_positions\":\"...\",\"wardrobe_lock\":\"...\",\"prop_state\":\"...\",\"light_source\":\"...\",\"light_direction\":\"...\",\"light_temperature\":\"...\",\"audio_policy\":\"...\"}]}，每个 packet item 对应一条不可变场景锁定。所有必填值都必须是非空的扁平字符串；不要嵌套 lighting、wardrobe、props、positions 或 audio 对象。禁止写子镜分析、运镜设计、人物表演、台词或提示词正文。"
+            "专业角色：场景锁定 Agent。请返回 {\"scenes\":[{\"scene\":\"...\",\"space_anchor\":\"...\",\"screen_positions\":\"...\",\"wardrobe_lock\":\"...\",\"prop_state\":\"...\",\"light_source\":\"...\",\"light_direction\":\"...\",\"light_temperature\":\"...\",\"audio_policy\":\"...\"}]}，每个 packet item 对应一条不可变场景锁定。所有必填值都必须是非空的扁平字符串；不要嵌套 lighting、wardrobe、props、positions 或 audio 对象。可按同样扁平字符串补充 space_id、space_master_sentence、entrance_exit、prop_activity_zone、tone_palette、light_texture_purpose，用于全集空间索引和影调索引；不得重排同一地点的左右、入口或道具活动区。禁止写子镜分析、运镜设计、人物表演、台词或提示词正文。"
         ),
         "master_production": (
             "专业角色：你是 AI 短剧导演与提示词监督。"
             "每个 packet item 只生成一个主镜头任务，只服务一个 narrative_beat_id；从 packet.composer_scaffold_path 开始写，保留锁定字段，并只从 scene_lock_cache_path 读取共享场景事实。"
             "禁止虚构剧情、改写台词、重设服装、添加未确认道具、使用 I2V/R2V/参考素材，或把 QA/工程字段写进 full_prompt。"
+            "仅当 packet.items[].execution_hints.required_contracts 包含 story_punch_contract 时，先填观众问题、人物压力、可见压力物、剧情转折、画面标点和尾帧残留；人物/对白/道具变化镜缺少戏眼时必须先补戏眼，不得只机械填字段。"
+            "按 risk_tier 控制复杂度：light 镜只写适用的硬门槛与一个落幅残留；standard 镜落实适用的质量合同；high 镜再补 ai_model_readiness_score、pressure_release_design 和必要拆镜建议。"
             "先满足不穿帮硬门槛，再追求创作表现：人物位置、身体面向、道具归属、口型、尾帧继承、单镜动作预算和状态变化中间态不稳时，必须降低运镜、补定位镜头或拆镜。"
-            "写作目标不是堆形容词，而是让 AI 视频大模型能稳定执行：空间坐标、道具生命周期、情绪触发、运镜响应和落幅继承必须逐项可见。"
+            "写镜前先在 qa_metadata.source_constraint_basemap 中压缩锁定本镜源头底图：空间/状态道具/人物朝向/张弛功能/声音口型/UI文字策略/单镜风险；它是防返工底图，不得投喂到 full_prompt。"
+            "同一地点必须复用 Scene Lock 的 space_id、space_master_sentence、入口出口和道具活动区；同一场景的影调只从 tone_palette/light_texture_purpose 消费，单镜只选本镜需要的一个光影或构图锚点。"
+            "写作目标不是堆形容词，而是让 AI 视频大模型能稳定执行且有戏：空间坐标、道具生命周期、情绪触发、运镜响应、戏剧尖刺和落幅继承必须逐项可见。"
+            "画面质感必须可见，不得只写电影感/高级感/质感；按本镜任务选择1-2个锚点，写清光源方向或色温、脸/手/道具受光面、浅阴影/反光、背景虚化或剧情相关材质。"
+            "直接投喂即梦的文本不得保留上一镜/继承/尾帧/剪辑/切到/反打到等元叙述；canonical full_prompt 可用于验证落幅，但导出 feed 会转成当前可见事实，因此 Composer 必须优先写可见起幅和落幅。"
+            "手机聊天、来电名称、通知弹窗等 UI 文字若交给 AI 生成，必须写成独立二维浮层、安全区、不属于手机屏幕、不贴手机背面、不跟随手机透视；否则把具体文字留到后期文字表。"
+            "多人清晰入画时，非说话重要人物必须分配受击反应、观察反应或降为肩线/边缘虚化；OS/OV/系统音/内心声必须绑定可见闭口反应，不生成口型。"
+            "每镜标记 tension_curve_role：铺垫、升压、峰值、释放或缓冲；不要连续强推近、强表情、强停顿，关键台词后优先给被击中者余波或关系定格。"
+            "道具交接、转身、起身、开门、离场、手腕控制等物理变化必须写起始状态、接近/接触、移动/受力、释放或稳定终态；若动作强，运镜只能固定或低幅推近。"
             "rising/peak 镜必须设计压力链：压力来源、一个压力物或压力机制、1-2个可见升级点、释放触发、释放结果和拆镜阈值；释放可以是动作完成、被打断、注意力转移、代价逼近或落幅悬置，不能只写气氛变紧。"
             "字段接力固定为 emotion_driver → camera_beat_map → full_prompt；Camera 只响应可见表演重音、道具状态、视线或台词落点，Composer 只能翻译已声明的镜头设计。"
-            "写 full_prompt 前必须填满 performance_causality、performance_contract、continuity_contract、reroll_control、quality_contract、quality_evidence、dialogue_events；状态变化必须记录 subject/from_state/intermediate_state/to_state/cause/time_range。"
-            "ai_model_readiness_score 与 pressure_release_design 按 packet.items[].execution_hints.risk_gated_contracts 触发；false 时保持空对象即可，不要为了凑字段写长自评。"
+            "必须填写 packet.items[].execution_hints.required_contracts 中列出的质量合同；continuity_contract、reroll_control、quality_contract、quality_evidence、dialogue_events 与状态变化记录仍按适用的硬门槛执行。未列出的增强合同保持空对象，不要为了凑字段写长自评。"
             "full_prompt 只能包含五段：生成规格/主体与空间锁定/主镜头连续规则/子镜头组/光照、声音与稳定约束。子镜头组按状态机写，台词/OS/OV 在原生音频开启时必须写成 {人物}（台词/OS/OV）: \"逐字原文\"。"
             "需要 ai_model_readiness_score 时，按场景空间、穿帮风险、情绪可读、张力压迫、运镜服务、道具连续、画面美感七项逐项打 1-10 分，并写一句弱点或人工首轮检查点；不得全写空泛好评。"
             "temporal_transition_contract 不是装饰命令；启用时只使用合同内唯一源文效果，未启用时正常切换。"
@@ -457,7 +584,39 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
             "qa_metadata": {
                 "dramatic_goal": "",
                 "dramatic_design": dict(item.get("dramatic_design", {}) or {}),
+                "story_punch_contract": {
+                    "audience_question": "",
+                    "character_pressure": "",
+                    "visible_pressure_object": "",
+                    "dramatic_turn": "",
+                    "picture_punctuation": "",
+                    "end_residue": "",
+                },
                 "duration_design": dict(item.get("duration_design", {}) or {}),
+                "source_constraint_basemap": {
+                    "space_basis": "",
+                    "state_prop_basis": "",
+                    "character_orientation_basis": "",
+                    "tension_curve_role": "",
+                    "sound_lip_sync_basis": "",
+                    "screen_text_policy": "",
+                    "single_shot_risk": "",
+                },
+                "scene_tone_palette": {
+                    "space_id": "",
+                    "space_master_sentence": "",
+                    "tone_palette": "",
+                    "light_texture_purpose": "",
+                    "visual_scene_prefix": "",
+                },
+                "screen_text_policy": {
+                    "mode": "none",
+                    "text_refs": [],
+                    "render_rule": "",
+                    "safe_area": "",
+                    "perspective_rule": "",
+                },
+                "tension_curve_role": "",
                 "performance_priority": {"primary": "", "supporting": [], "background": []},
                 "action_budget": {
                     "primary_action_count": 0,
@@ -769,23 +928,20 @@ def _composer_execution_hints(item):
         "duration_mode": _duration_mode(duration, reasons),
         "visible": visible,
         "risk_gated_contracts": _risk_gated_contracts(item, visible, dialogue_events, reasons, editorial_mode),
+        "required_contracts": [
+            key for key, required in validation_profile(item, item.get("qa_metadata", {}), visible).items()
+            if key not in ("profile", "risk_tier") and required
+        ],
         "fill_order": template["fill_order"],
         "checks": _composer_preflight_checks(editorial_mode, visible, dialogue_events, reasons, dialogue_text_length),
     }
 
 
 def _risk_gated_contracts(item, visible, dialogue_events, reasons, editorial_mode):
-    tension = _item_tension_intent(item)
-    readiness = bool(
-        len(visible) >= 2
-        or dialogue_events
-        or editorial_mode == "shot_group"
-        or tension in ("rising", "peak")
-        or any(reason in reasons for reason in ("prop_transfer", "fight_or_force", "high_reroll_risk", "temporal_transition"))
-    )
+    profile = validation_profile(item, item.get("qa_metadata", {}), visible)
     return {
-        "ai_model_readiness_score": readiness,
-        "pressure_release_design": tension in ("rising", "peak"),
+        "ai_model_readiness_score": profile["ai_model_readiness_score"],
+        "pressure_release_design": profile["pressure_release_design"],
     }
 
 
@@ -923,6 +1079,14 @@ def _load_optional_json(path):
 def _write_json(path, data):
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(data, handle, ensure_ascii=False, indent=2)
+
+
+def _sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _append_reference_file(handle, path, title):

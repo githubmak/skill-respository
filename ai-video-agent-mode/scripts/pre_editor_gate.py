@@ -26,9 +26,14 @@ def run(run_dir):
     if not os.path.isfile(package_path):
         raise FileNotFoundError("Missing merged Composer package: %s" % package_path)
     package_sha256 = _sha256(package_path)
+    validator_sha256 = _sha256(os.path.join(os.path.dirname(__file__), "validate_composer_output.py"))
     gate_path = os.path.join(run_dir, GATE_RELATIVE_PATH)
     cached = _load(gate_path)
-    if cached.get("package_sha256") == package_sha256 and isinstance(cached.get("pass"), bool):
+    if (
+        cached.get("package_sha256") == package_sha256
+        and cached.get("validator_sha256") == validator_sha256
+        and isinstance(cached.get("pass"), bool)
+    ):
         return cached, gate_path
 
     review_dir = os.path.dirname(gate_path)
@@ -42,6 +47,7 @@ def run(run_dir):
         "contract_version": "jimeng-t2v-v1",
         "package_path": os.path.abspath(package_path),
         "package_sha256": package_sha256,
+        "validator_sha256": validator_sha256,
         "composer_validation_path": composer_report,
         "composer_pass": composer_pass,
         "semantic_audit_path": audit_path,

@@ -99,7 +99,8 @@ def execute_local_phase(run_dir, phase, source_path=None):
             raise ValueError("emotion/camera audit failed: " + audit_path)
         if validate_modec(run_dir) != 0:
             raise ValueError("validate_modec failed")
-        if check_export("", run_dir, quality_mode=True) != 0:
+        _passed, failed = check_export("", run_dir, quality_mode=True)
+        if failed != 0:
             raise ValueError("quality gate failed")
         path = os.path.join(run_dir, ".cache", "validate", "result.json")
         atomic_json(path, {"pass": True, "validated_at": time.time(), "emotion_camera_audit": audit_path,

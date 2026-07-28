@@ -139,6 +139,57 @@ def quality_contract(subshot):
     }
 
 
+def validation_profile(subshot, metadata=None, visible_characters=None):
+    """Return the single authority for risk-triggered Composer contracts.
+
+    Core delivery checks are intentionally not represented here: shape, source
+    locks, timeline, dialogue, action/camera budgets and continuity remain
+    mandatory in every applicable shot.  This profile only controls the
+    expensive, explanatory quality contracts so an environment insert is not
+    forced to impersonate a character-performance scene.
+    """
+    subshot = subshot if isinstance(subshot, dict) else {}
+    metadata = metadata if isinstance(metadata, dict) else {}
+    # Dispatch tier is an immutable routing fact.  Never let Agent-authored
+    # metadata promote a light packet during validation; that would make the
+    # packet hint and the validator disagree after the work has started.
+    risk = dispatch_risk(subshot)
+    quality = quality_contract(subshot)
+    profile = quality["profile"]
+    visible = visible_characters
+    if visible is None:
+        visible = subshot.get("visible_characters", subshot.get("characters", [])) or []
+    if isinstance(visible, str):
+        visible = [visible] if visible.strip() else []
+    visible = [str(value).strip() for value in visible if str(value).strip()]
+    events = metadata.get("dialogue_events", subshot.get("dialogue_events", []))
+    events = events if isinstance(events, list) else []
+    tension = ""
+    for key in ("performance_contract", "emotion_driver", "performance_causality"):
+        value = metadata.get(key, subshot.get(key, {}))
+        if isinstance(value, dict) and value.get("tension_intent"):
+            tension = str(value["tension_intent"])
+            break
+    has_character_performance = bool(visible) and profile in ("action", "dialogue", "dramatic")
+    reasons = set(risk.get("reasons", []))
+    prop_transition = "prop_transfer" in reasons or bool(
+        isinstance(metadata.get("continuity_contract"), dict)
+        and metadata["continuity_contract"].get("state_change")
+    )
+    expectation = metadata.get("expectation_anchor", {})
+    return {
+        "profile": profile,
+        "risk_tier": risk.get("tier", "standard"),
+        "performance_causality": has_character_performance,
+        "performance_contract": has_character_performance,
+        "story_punch_contract": has_character_performance or prop_transition,
+        "ai_model_readiness_score": risk.get("tier") == "high",
+        "pressure_release_design": tension in ("rising", "peak"),
+        "listener_reaction_plan": bool(events) and len(visible) > 1,
+        "expectation_anchor": isinstance(expectation, dict) and expectation.get("applicable") is True,
+    }
+
+
 def workload_units(subshot, phase):
     """Estimate context load for batching without changing any quality contract.
 

@@ -8,7 +8,7 @@ Read this file first. Select one explicit route, then read only the linked contr
 | Diagnose pacing, continuity, or prompt quality | `audit` | relevant exported prompt package, `format_constraints.md` | `check_export.py`, `validate_modec.py` |
 | Generate files from a passed package | `export` | `export_spec.md` | `check_export.py`, `export_with_validation.py` |
 | Repair one failed subshot | `single-repair` | packet `constraints_path`, `retry_context_path`, compact handoff | `dispatch_cache.py`, phase validator, provenance scripts |
-| Generate prompts from approved Director data | `compose` | Composer sections of `format_constraints.md` | `dispatch_cache.py`, `validate_composer_output.py` |
+| Generate prompts from an approved shot plan and Scene Lock | `compose` | Composer sections of `format_constraints.md` | `dispatch_cache.py`, `validate_composer_output.py` |
 
 ## Initialization
 

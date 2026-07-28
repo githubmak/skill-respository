@@ -48,6 +48,11 @@ FORBIDDEN_MODEL_TERMS = [
     "反打",
 ]
 
+DIRECT_FEED_META_TERMS = (
+    "延续上一镜", "上一镜", "尾帧", "位置不变", "剪辑", "切到", "反打到",
+    "后期插入", "脑海浮现", "当前主角", "当前对话者", "继承",
+)
+
 TIME_RANGE_RE = re.compile(r"(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)秒")
 JIMENG_CHILD_SHOT_RE = re.compile(
     r"【镜头\d+｜(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)秒(?:｜[^】]+)?】([^【]+)"
@@ -67,9 +72,27 @@ FIGHT_LOCK_FIELDS = [
 ]
 ATTENTION_HANDOFF_STRATEGIES = {"rack_focus", "single_reframe", "actor_blocking"}
 TENSION_INTENTS = {"neutral", "latent", "rising", "peak", "release"}
+TENSION_CURVE_ROLES = {
+    "setup", "rise", "rising", "peak", "release", "buffer",
+    "铺垫", "升压", "峰值", "释放", "缓冲",
+}
+TENSION_CURVE_ROLE_ALIASES = {
+    "setup": "setup",
+    "铺垫": "setup",
+    "rise": "rise",
+    "rising": "rise",
+    "升压": "rise",
+    "peak": "peak",
+    "峰值": "peak",
+    "release": "release",
+    "释放": "release",
+    "buffer": "buffer",
+    "缓冲": "buffer",
+}
 SPEECH_KINDS = {"台词", "OS", "OV"}
 SPEAKER_VISIBILITIES = {"visible", "offscreen", "nonphysical"}
 REROLL_RISK_LEVELS = {"low", "medium", "high"}
+SCREEN_TEXT_POLICY_MODES = {"none", "post", "ai_overlay", "ai_generated", "ai_ui"}
 TEMPORAL_TRANSITION_KINDS = {"none", "memory_flashback", "story_event_transition"}
 INSERT_FUNCTIONS = ("信息补充", "情绪放大", "节奏切割", "视线引导", "转场缓冲", "环境残压")
 INSERT_TERMS = (
@@ -115,6 +138,39 @@ STORY_PUNCH_FIELDS = (
     "picture_punctuation",
     "end_residue",
 )
+STORY_PUNCH_GENERIC_RE = re.compile(
+    r"气氛|氛围|情绪变化|表情变化|表情复杂|微表情|很紧张|更紧张|有戏|戏剧性|压迫感|张力感|"
+    r"保持状态|自然反应|若有所思|意味深长|沉默不语|看着对方|对视|凝视"
+)
+STORY_PUNCH_SPIKE_RE = re.compile(
+    r"停半拍|反应延迟|迟疑|犹豫|卡住|收住|"
+    r"未[^，。；;]{0,12}(?:拧开|递出|放下|说完|完成|落下|碰到|交出|拿走)|"
+    r"悬停|停在[^，。；;]{0,16}(?:边缘|杯沿|瓶盖|门把|屏幕|封条)|"
+    r"封条|瓶盖|杯沿|药瓶|钥匙|门把|亮屏|屏幕[^，。；;]{0,12}消息|"
+    r"视线[^，。；;]{0,16}(?:移开|错开|避开|滑到|停在|转向|留在)|"
+    r"打断|脚步[^，。；;]{0,16}逼近|门外|来电|铃声|推门|"
+    r"仍[^，。；;]{0,16}(?:握|停|看|攥|按|贴|悬)|没有复位|下一镜继承[^，。；;]{0,20}(?:手中|桌面|门口|视线|道具|药瓶|手机|钥匙)"
+)
+
+ABSTRACT_VISUAL_TERMS = (
+    "电影感", "高级感", "大片感", "质感很好", "细腻质感", "光影高级",
+    "视觉冲击", "高级质感", "真实感", "精致感",
+)
+LIGHT_SOURCE_RE = re.compile(
+    r"顶光|侧光|窗光|背光|逆光|补光|自然光|店铺光|灯箱|路灯|顶灯|"
+    r"光源|主光|轮廓光|冷白光|暖光|中性光|\d{4}K|受光"
+)
+VISIBLE_TEXTURE_ANCHOR_RE = re.compile(
+    r"脸侧|脸部|手背|手指|指尖|手腕|道具|卡面|屏幕|手机|银行卡|纸面|衣料|"
+    r"玻璃|金属|桌面|墙面|地面|门框|柜台|反光|高光|阴影|浅阴影|虚化|背景"
+)
+PHYSICAL_CHAIN_GROUPS = (
+    re.compile(r"伸向|靠近|接近|抬手|递出|前移|半转|头部轻转|肩线|重心|脚步"),
+    re.compile(r"指尖|接触|触碰|握住|抓住|攥住|接住|扶住|支撑|贴住"),
+    re.compile(r"松手|放下|收回|落定|稳定|停在|仍在|落幅|继承|保持"),
+)
+AI_SCREEN_TEXT_RE = re.compile(r"聊天消息|绿色气泡|通知弹窗|字幕浮层|UI文字|屏幕文字|来电名称")
+AI_SCREEN_TEXT_SAFE_RE = re.compile(r"二维浮层|安全区|不属于手机屏幕|不贴手机背面|不跟随手机透视")
 
 CAMERA_MOVE_PATTERNS = {
     "push": r"推镜|推近|摄影机[^。；]{0,12}推进",
@@ -155,9 +211,50 @@ def jimeng_feed_prompt(full_prompt):
     """
     sections = split_sections(full_prompt, PROMPT_LABELS)
     if list(sections) != PROMPT_LABELS:
-        return str(full_prompt or "").strip()
+        return _clean_direct_feed_prompt(str(full_prompt or "").strip())
     ordered = [sections[label].strip() for label in PROMPT_LABELS]
-    return "\n\n".join(part for part in ordered if part)
+    return _clean_direct_feed_prompt("\n\n".join(part for part in ordered if part))
+
+
+def direct_feed_prompt_issues(full_prompt, max_chars=None):
+    """Validate the user-copyable Jimeng feed view, not the canonical contract text."""
+    feed = jimeng_feed_prompt(full_prompt)
+    issues = []
+    if any(label + "：" in feed or label + ":" in feed for label in PROMPT_LABELS):
+        issues.append("即梦直接投喂提示词不得保留五段栏目名")
+    leaked = [term for term in DIRECT_FEED_META_TERMS if term in feed]
+    if leaked:
+        issues.append("即梦直接投喂提示词含元叙述/剪辑占位词：" + "、".join(leaked[:6]))
+    if isinstance(max_chars, (int, float)) and not isinstance(max_chars, bool) and max_chars > 0:
+        if len(feed) > int(max_chars):
+            issues.append(f"即梦直接投喂提示词{len(feed)}字，超过导出硬上限{int(max_chars)}字")
+    return issues
+
+
+def _clean_direct_feed_prompt(text):
+    """Convert verification-friendly carryover language into current visible facts for copy-ready prompts."""
+    text = str(text or "").strip()
+    replacements = (
+        (r"延续上一镜", "当前起幅保持"),
+        (r"承接上一镜", "当前起幅保持"),
+        (r"上一镜", "当前起幅"),
+        (r"尾帧", "落幅"),
+        (r"下一镜继承", "落幅保持"),
+        (r"由下一镜继承", "落幅保持"),
+        (r"并由下一镜继承", "并在落幅保持"),
+        (r"位置不变", "位置保持"),
+        (r"剪辑", "画面转换"),
+        (r"反打到", "转为"),
+        (r"切到", "转为"),
+        (r"后期插入", "画面内呈现"),
+        (r"脑海浮现", "画面呈现主观记忆感"),
+        (r"当前主角", "画面主体"),
+        (r"当前对话者", "说话人物"),
+        (r"继承", "保持"),
+    )
+    for pattern, replacement in replacements:
+        text = re.sub(pattern, replacement, text)
+    return text
 
 
 def timeline_ranges(full_prompt):
@@ -749,7 +846,12 @@ def story_punch_issues(metadata, full_prompt="", visible_characters=None):
     issues = []
     for field in STORY_PUNCH_FIELDS:
         value = str(contract.get(field, "") or "").strip()
-        if len(value) < 4 or value in GENERIC_PERFORMANCE_TERMS or value in READINESS_GENERIC_TERMS:
+        if (
+            len(value) < 4
+            or value in GENERIC_PERFORMANCE_TERMS
+            or value in READINESS_GENERIC_TERMS
+            or STORY_PUNCH_GENERIC_RE.search(value)
+        ):
             issues.append(f"story_punch_contract.{field}必须写当前镜头的具体戏眼，不能写空泛情绪词")
 
     question = str(contract.get("audience_question", "") or "")
@@ -764,10 +866,7 @@ def story_punch_issues(metadata, full_prompt="", visible_characters=None):
             issues.append(f"story_punch_contract.{field}必须落实到full_prompt的可见动作、道具、构图或落幅残留")
 
     timeline = sections.get("子镜头组", "")
-    has_visible_spike = any(token in timeline for token in (
-        "停在", "握住", "未", "第一次", "打断", "逼近", "移开视线", "收住",
-        "后撤", "压住", "仍", "落幅", "下一镜", "封条", "瓶盖", "门外", "亮屏",
-    ))
+    has_visible_spike = bool(STORY_PUNCH_SPIKE_RE.search(timeline))
     has_listener_or_dialogue = bool(metadata.get("dialogue_events"))
     if required and not has_visible_spike and has_listener_or_dialogue:
         issues.append("story_punch_contract要求对白/人物镜至少有一个可见戏剧尖刺：反应延迟、未完成动作、道具压力、视线错位、打断或尾帧残留")
@@ -1499,6 +1598,203 @@ def visibility_issues(full_prompt, shot_size):
     return (["景别不可见细节：" + "、".join(hits)] if hits else [])
 
 
+def visual_texture_issues(full_prompt):
+    """Reject decorative quality words unless they are grounded as visible light/material facts."""
+    text = str(full_prompt or "")
+    if not any(term in text for term in ABSTRACT_VISUAL_TERMS):
+        return []
+    sections = split_sections(text, PROMPT_LABELS)
+    visible_text = "\n".join(
+        sections.get(label, "") for label in ("主体与空间锁定", "子镜头组", "光照、声音与稳定约束")
+    ) or text
+    has_light_source = bool(LIGHT_SOURCE_RE.search(visible_text))
+    has_texture_anchor = bool(VISIBLE_TEXTURE_ANCHOR_RE.search(visible_text))
+    if has_light_source and has_texture_anchor:
+        return []
+    missing = []
+    if not has_light_source:
+        missing.append("光源方向/色温/受光关系")
+    if not has_texture_anchor:
+        missing.append("脸/手/道具受光、阴影/反光、背景虚化或剧情相关材质")
+    return ["抽象画面质感词必须落成可见执行锚点：" + "、".join(missing)]
+
+
+def physical_transition_chain_issues(metadata, full_prompt=""):
+    """Require start-contact-move-release/stable chains for state-changing shots."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    contract = metadata.get("continuity_contract", {})
+    if not isinstance(contract, dict) or not contract.get("state_change"):
+        return []
+    text = str(full_prompt or "")
+    transitions = contract.get("state_transitions", [])
+    if not isinstance(transitions, list) or not transitions:
+        return ["state_change=true时必须提供state_transitions，并在full_prompt写出中间过渡帧"]
+    issues = []
+    for index, transition in enumerate(transitions):
+        if not isinstance(transition, dict):
+            issues.append(f"state_transitions[{index}]必须是对象")
+            continue
+        subject = str(transition.get("subject", "") or "状态变化")
+        intermediate = str(transition.get("intermediate_state", "") or "").strip()
+        if not intermediate:
+            issues.append(f"state_transitions[{index}].intermediate_state不能为空")
+            continue
+        if not _fragment_grounded(intermediate, text):
+            issues.append(f"state_transitions[{index}].intermediate_state必须落实到full_prompt")
+        relevant_text = " ".join([
+            subject,
+            str(transition.get("from_state", "") or ""),
+            intermediate,
+            str(transition.get("to_state", "") or ""),
+            text,
+        ])
+        if _needs_physical_chain(relevant_text):
+            groups_hit = sum(1 for pattern in PHYSICAL_CHAIN_GROUPS if pattern.search(text))
+            if groups_hit < 2:
+                issues.append(f"{subject}发生归属/身体/空间变化时，full_prompt必须写出接近/接触/释放或稳定终态中的至少两段")
+    if re.search(r"(?:突然|直接|瞬间|已经).{0,12}(?:到手|拿到|出现在|换到|转到|站到|面对)", text):
+        issues.append("状态变化不能用突然/直接/瞬间跳到结果，必须写中间过渡链")
+    return issues
+
+
+def screen_text_policy_issues(full_prompt):
+    """Require Jimeng-friendly handling when the prompt asks the model to render UI text overlays."""
+    text = str(full_prompt or "")
+    if not AI_SCREEN_TEXT_RE.search(text):
+        return []
+    safe_hits = set(AI_SCREEN_TEXT_SAFE_RE.findall(text))
+    if len(safe_hits) >= 2:
+        return []
+    return ["AI生成聊天/通知/UI文字时必须声明独立二维浮层、安全区、不贴手机背面或不跟随手机透视中的至少两项；否则改为后期叠字"]
+
+
+def source_constraint_basemap_issues(metadata):
+    """Validate the pre-generation source basemap absorbed from Jimeng workflow.
+
+    Missing is tolerated for older completed fixtures. Once present, it must be
+    compact, structured, and agree with the shot-level tension role.
+    """
+    metadata = metadata if isinstance(metadata, dict) else {}
+    basemap = metadata.get("source_constraint_basemap")
+    if basemap in (None, {}, ""):
+        return []
+    if not isinstance(basemap, dict):
+        return ["qa_metadata.source_constraint_basemap必须是对象"]
+    issues = []
+    required = (
+        "space_basis",
+        "state_prop_basis",
+        "character_orientation_basis",
+        "tension_curve_role",
+        "sound_lip_sync_basis",
+        "screen_text_policy",
+        "single_shot_risk",
+    )
+    for field in required:
+        value = basemap.get(field)
+        if not isinstance(value, str) or len(value.strip()) < 2:
+            issues.append(f"source_constraint_basemap.{field}必须是非空扁平字符串")
+    for field, value in basemap.items():
+        if isinstance(value, (dict, list)):
+            issues.append(f"source_constraint_basemap.{field}必须保持扁平，不能嵌套对象或数组")
+    role = str(basemap.get("tension_curve_role", "") or "").strip()
+    if role and role not in TENSION_CURVE_ROLES:
+        issues.append("source_constraint_basemap.tension_curve_role只允许铺垫/升压/峰值/释放/缓冲")
+    shot_role = str(metadata.get("tension_curve_role", "") or "").strip()
+    if role and shot_role and _canonical_tension_curve_role(role) != _canonical_tension_curve_role(shot_role):
+        issues.append("source_constraint_basemap.tension_curve_role必须与qa_metadata.tension_curve_role一致")
+    return issues
+
+
+def scene_tone_palette_issues(metadata):
+    """Validate scene-level space/tone palette metadata if supplied."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    palette = metadata.get("scene_tone_palette")
+    if palette in (None, {}, ""):
+        return []
+    if not isinstance(palette, dict):
+        return ["qa_metadata.scene_tone_palette必须是对象"]
+    issues = []
+    for field in (
+        "space_id",
+        "space_master_sentence",
+        "tone_palette",
+        "light_texture_purpose",
+        "visual_scene_prefix",
+    ):
+        value = palette.get(field)
+        if not isinstance(value, str) or len(value.strip()) < 2:
+            issues.append(f"scene_tone_palette.{field}必须是非空扁平字符串")
+        elif isinstance(value, str) and len(value) > 240:
+            issues.append(f"scene_tone_palette.{field}过长，应压缩为空间/影调锁定句")
+    for field, value in palette.items():
+        if isinstance(value, (dict, list)):
+            issues.append(f"scene_tone_palette.{field}必须保持扁平，不能嵌套对象或数组")
+    return issues
+
+
+def screen_text_policy_metadata_issues(metadata, full_prompt=""):
+    """Validate the structured UI/screen-text policy and its prompt behavior."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    policy = metadata.get("screen_text_policy")
+    if policy in (None, {}, ""):
+        return []
+    if not isinstance(policy, dict):
+        return ["qa_metadata.screen_text_policy必须是对象"]
+    issues = []
+    mode = str(policy.get("mode", "") or "").strip()
+    if mode not in SCREEN_TEXT_POLICY_MODES:
+        issues.append("screen_text_policy.mode只允许none/post/ai_overlay/ai_generated/ai_ui")
+    refs = policy.get("text_refs", [])
+    if not isinstance(refs, list) or any(not isinstance(ref, str) or not ref.strip() for ref in refs):
+        issues.append("screen_text_policy.text_refs必须是字符串数组")
+    for field in ("render_rule", "safe_area", "perspective_rule"):
+        value = policy.get(field, "")
+        if not isinstance(value, str):
+            issues.append(f"screen_text_policy.{field}必须是字符串")
+    if mode == "none" and refs:
+        issues.append("screen_text_policy.mode=none时text_refs必须为空")
+    if mode == "post":
+        render_rule = str(policy.get("render_rule", "") or "")
+        if not any(token in render_rule for token in ("后期", "字幕表", "文字表", "post")):
+            issues.append("screen_text_policy.mode=post时render_rule必须声明后期叠字/文字表")
+    if mode in {"ai_overlay", "ai_generated", "ai_ui"}:
+        for field in ("render_rule", "safe_area", "perspective_rule"):
+            if len(str(policy.get(field, "") or "").strip()) < 2:
+                issues.append(f"screen_text_policy.mode={mode}时{field}不能为空")
+        issues.extend(screen_text_policy_issues(full_prompt))
+    elif AI_SCREEN_TEXT_RE.search(str(full_prompt or "")):
+        issues.append("full_prompt要求AI生成屏幕/UI文字，但screen_text_policy.mode未设为ai_overlay/ai_generated/ai_ui")
+    return issues
+
+
+def tension_curve_role_issues(metadata):
+    """Validate shot-level tension function for rhythm control."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    role = metadata.get("tension_curve_role")
+    basemap = metadata.get("source_constraint_basemap", {})
+    basemap_role = basemap.get("tension_curve_role") if isinstance(basemap, dict) else ""
+    if role in (None, "") and not basemap_role:
+        return []
+    issues = []
+    if not isinstance(role, str) or not role.strip():
+        issues.append("qa_metadata.tension_curve_role必须是非空字符串")
+    elif role.strip() not in TENSION_CURVE_ROLES:
+        issues.append("qa_metadata.tension_curve_role只允许铺垫/升压/峰值/释放/缓冲")
+    if basemap_role and role and _canonical_tension_curve_role(basemap_role) != _canonical_tension_curve_role(role):
+        issues.append("qa_metadata.tension_curve_role必须与source_constraint_basemap.tension_curve_role一致")
+    return issues
+
+
+def _needs_physical_chain(text):
+    return bool(re.search(
+        r"手机|银行卡|卡|钥匙|文件|纸|杯|药瓶|门|车门|手腕|手臂|身体|重心|"
+        r"递|接|拿|放|抢|夺|扶|抱|靠|转身|转向|起身|坐下|离开|进入|走向|"
+        r"归属|转移|持有|控制",
+        str(text or ""),
+    ))
+
+
 PROMPT_SOFT_RANGES = {
     "environment": (200, 700),
     "object": (200, 700),
@@ -1580,6 +1876,10 @@ def _string_list(value):
     if isinstance(value, str) and value.strip():
         return [part.strip() for part in re.split(r"[;；,，、/]+", value) if part.strip()]
     return []
+
+
+def _canonical_tension_curve_role(value):
+    return TENSION_CURVE_ROLE_ALIASES.get(str(value or "").strip(), str(value or "").strip())
 
 
 def _fragment_grounded(value, text):

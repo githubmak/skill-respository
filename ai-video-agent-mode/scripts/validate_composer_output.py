@@ -19,6 +19,7 @@ from modec_v4 import (
     camera_beat_map_issues,
     coverage_role_issues,
     continuity_contract_issues,
+    direct_feed_prompt_issues,
     dialogue_event_issues,
     emotion_driver_issues,
     expectation_anchor_issues,
@@ -28,6 +29,7 @@ from modec_v4 import (
     listener_reaction_issues,
     performance_causality_issues,
     performance_contract_issues,
+    physical_transition_chain_issues,
     pressure_release_issues,
     prompt_state_machine_issues,
     prompt_length_profile,
@@ -35,16 +37,22 @@ from modec_v4 import (
     prompt_soft_range,
     reroll_control_issues,
     role_partition_issues,
+    scene_tone_palette_issues,
     shot_group_handoff_issues,
+    screen_text_policy_issues,
+    screen_text_policy_metadata_issues,
+    source_constraint_basemap_issues,
     story_punch_issues,
     jimeng_shot_group_issues,
     split_sections,
+    tension_curve_role_issues,
     timeline_issues,
     temporal_transition_contract_issues,
     visibility_issues,
+    visual_texture_issues,
 )
 from negative_prompts import PLACEHOLDER, is_fight_context
-from shot_semantics import quality_contract as derive_quality_contract
+from shot_semantics import quality_contract as derive_quality_contract, validation_profile as derive_validation_profile
 from contract_registry import QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
 
 
@@ -63,8 +71,11 @@ def validate_composer_output(path, run_dir=None, report_path=None):
         data = json.load(handle)
     issues = []
     length_guidance = []
-    if set(data.keys()) != {"shots"}:
-        issues.append("batch顶层必须且只能包含shots")
+    allowed_top_levels = ({"shots"}, {"contract_version", "shots"})
+    if set(data.keys()) not in allowed_top_levels:
+        issues.append("batch顶层只能包含shots，或contract_version与shots")
+    if "contract_version" in data and data.get("contract_version") != "jimeng-t2v-v1":
+        issues.append("contract_version必须为jimeng-t2v-v1")
     shots = data.get("shots", [])
     if not isinstance(shots, list) or not shots:
         issues.append("shots必须是非空数组")
@@ -132,6 +143,18 @@ def validate_composer_output(path, run_dir=None, report_path=None):
             issues.append(prefix + problem)
         for problem in coverage_role_issues(metadata, full_prompt):
             issues.append(prefix + problem)
+        for problem in visual_texture_issues(full_prompt):
+            issues.append(prefix + problem)
+        for problem in screen_text_policy_issues(full_prompt):
+            issues.append(prefix + problem)
+        for problem in source_constraint_basemap_issues(metadata):
+            issues.append(prefix + problem)
+        for problem in scene_tone_palette_issues(metadata):
+            issues.append(prefix + problem)
+        for problem in screen_text_policy_metadata_issues(metadata, full_prompt):
+            issues.append(prefix + problem)
+        for problem in tension_curve_role_issues(metadata):
+            issues.append(prefix + problem)
 
         source_ids = shot.get("source_subshot_ids", [])
         if isinstance(source_ids, list) and source_ids:
@@ -150,6 +173,7 @@ def validate_composer_output(path, run_dir=None, report_path=None):
         visible = _as_char_list(
             plan_item.get("visible_characters", plan_item.get("characters", director_item.get("visible_characters", [])))
         )
+        validation_profile = derive_validation_profile(plan_item, metadata, visible)
         _validate_scaffold_lock(prefix, shot, scaffold_map.get(sid), issues)
         expected_transition = ((scaffold_map.get(sid) or {}).get("qa_metadata", {}) or {}).get("temporal_transition_contract", {})
         for problem in temporal_transition_contract_issues(metadata, full_prompt, duration, expected_transition):
@@ -158,27 +182,35 @@ def validate_composer_output(path, run_dir=None, report_path=None):
         _validate_scene_light_authority(prefix, director_item, full_prompt, issues)
         for problem in role_partition_issues(metadata, visible):
             issues.append(prefix + problem)
-        for problem in emotion_driver_issues(metadata, full_prompt, visible):
-            issues.append(prefix + problem)
-        for problem in performance_causality_issues(metadata, visible):
-            issues.append(prefix + problem)
-        for problem in performance_contract_issues(metadata, full_prompt, visible):
-            issues.append(prefix + problem)
-        for problem in ai_model_readiness_issues(metadata, full_prompt, visible):
-            issues.append(prefix + problem)
-        for problem in pressure_release_issues(metadata, full_prompt, visible):
-            issues.append(prefix + problem)
-        for problem in story_punch_issues(metadata, full_prompt, visible):
-            issues.append(prefix + problem)
+        if validation_profile["performance_contract"]:
+            for problem in emotion_driver_issues(metadata, full_prompt, visible):
+                issues.append(prefix + problem)
+            for problem in performance_causality_issues(metadata, visible):
+                issues.append(prefix + problem)
+            for problem in performance_contract_issues(metadata, full_prompt, visible):
+                issues.append(prefix + problem)
+        if validation_profile["ai_model_readiness_score"]:
+            for problem in ai_model_readiness_issues(metadata, full_prompt, visible):
+                issues.append(prefix + problem)
+        if validation_profile["pressure_release_design"]:
+            for problem in pressure_release_issues(metadata, full_prompt, visible):
+                issues.append(prefix + problem)
+        if validation_profile["story_punch_contract"]:
+            for problem in story_punch_issues(metadata, full_prompt, visible):
+                issues.append(prefix + problem)
         for problem in prompt_state_machine_issues(metadata, full_prompt, visible):
             issues.append(prefix + problem)
-        for problem in listener_reaction_issues(metadata, full_prompt):
-            issues.append(prefix + problem)
-        for problem in expectation_anchor_issues(metadata, full_prompt):
-            issues.append(prefix + problem)
+        if validation_profile["listener_reaction_plan"]:
+            for problem in listener_reaction_issues(metadata, full_prompt):
+                issues.append(prefix + problem)
+        if validation_profile["expectation_anchor"]:
+            for problem in expectation_anchor_issues(metadata, full_prompt):
+                issues.append(prefix + problem)
         for problem in insert_shot_issues(metadata, full_prompt, duration, visible):
             issues.append(prefix + problem)
         for problem in continuity_contract_issues(metadata, full_prompt, visible):
+            issues.append(prefix + problem)
+        for problem in physical_transition_chain_issues(metadata, full_prompt):
             issues.append(prefix + problem)
         for problem in reroll_control_issues(metadata, shot.get("generation_control"), visible):
             issues.append(prefix + problem)
@@ -199,6 +231,8 @@ def validate_composer_output(path, run_dir=None, report_path=None):
             fight_records.append((sid, metadata))
         shot_size = director_item.get("shot_size", plan_item.get("shot_size", ""))
         for problem in visibility_issues(full_prompt, shot_size):
+            issues.append(prefix + problem)
+        for problem in direct_feed_prompt_issues(full_prompt):
             issues.append(prefix + problem)
 
         control = shot.get("generation_control")

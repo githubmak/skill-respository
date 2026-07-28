@@ -7,6 +7,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(__file__))
 from pipeline_state import AGENT_STALE_GRACE_SECONDS, PHASE_TIMEOUT_SECONDS, TIMEOUT_SECONDS, load_state
+from dispatch_cache import active_packet_paths
 
 
 def fill_slots(run_dir, phase, packet_paths, max_workers=None):
@@ -44,6 +45,9 @@ def fill_slots(run_dir, phase, packet_paths, max_workers=None):
 
 
 def pending_packet_paths(run_dir, phase):
+    active = active_packet_paths(run_dir, phase)
+    if active:
+        return sorted(active)
     directory = os.path.join(run_dir, ".cache", "dispatch")
     if not os.path.isdir(directory):
         return []

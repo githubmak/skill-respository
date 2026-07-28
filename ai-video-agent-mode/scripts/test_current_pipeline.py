@@ -6,27 +6,34 @@ import hashlib
 
 from context_budget import check, editor_items_fit
 from editor_scene_windows import build
-from modec_v4 import continuity_contract_issues, coverage_role_issues, dialogue_event_issues, expectation_anchor_issues, insert_shot_issues, jimeng_feed_prompt, listener_reaction_issues, prompt_state_machine_issues, shot_group_handoff_issues, state_transition_replay_issues, temporal_transition_contract_issues
-from pipeline_runtime import atomic_json, cache_artifact, record_issues
+from modec_v4 import continuity_contract_issues, coverage_role_issues, dialogue_event_issues, direct_feed_prompt_issues, expectation_anchor_issues, insert_shot_issues, jimeng_feed_prompt, listener_reaction_issues, physical_transition_chain_issues, prompt_state_machine_issues, scene_tone_palette_issues, screen_text_policy_issues, screen_text_policy_metadata_issues, shot_group_handoff_issues, source_constraint_basemap_issues, state_transition_replay_issues, story_punch_issues, temporal_transition_contract_issues, tension_curve_role_issues, visual_texture_issues
+from pipeline_runtime import atomic_json, cache_artifact, patch_only, record_issues
 from emotion_camera_audit import audit as emotion_camera_audit
 from spatial_storyboard import build_spatial_storyboard_reference
 from current_keyframe import build_current_shot_keyframe_reference
 from validate_scene_locks import validate
-from shot_semantics import dispatch_risk, temporal_transition_candidate
-from dispatch_cache import _composer_execution_hints, _dynamic_master_chunks, _editor_review_chunks, _retry_examples, prepare_dispatch_packets
+from shot_semantics import dispatch_risk, temporal_transition_candidate, validation_profile
+from dispatch_cache import _composer_execution_hints, _dynamic_master_chunks, _editor_review_chunks, _retry_examples, active_packet_paths, prepare_dispatch_packets
 from contract_registry import QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
 from dispatch_receipts import heartbeat as receipt_heartbeat, issue as issue_receipt, load_and_verify as verify_dispatch_receipt
-from pipeline_state import PHASE_ORDER, load_state, record_heartbeat as state_heartbeat, set_agent_id
+from pipeline_state import PHASE_ORDER, load_state, record_heartbeat as state_heartbeat, save_state, set_agent_id
 from record_batch_provenance import record as record_provenance, verify as verify_provenance
 from merge_agent_outputs import merge_agent_outputs
 from pipeline_templates import GATES
-from pipeline_runner import _local_phase_valid, _materialize
-from check_export import INTERNAL_TITLE_LEAK
+from pipeline_runner import _local_phase_valid, _materialize, _review_target_shot_ids, run as pipeline_runner_run
+from prepare_master_retry import prepare as prepare_master_retry
+from check_export import INTERNAL_TITLE_LEAK, _export_check, _plan_index as export_plan_index, _source_dialogue_events as export_source_dialogue_events
+from validate_modec import _main_shot_expectations as validate_main_shot_expectations, _source_dialogue_events as validate_source_dialogue_events
 from preflight_check import PLACEHOLDER_CHARACTER_NAMES
+from pre_editor_gate import run as pre_editor_gate
 from validate_durations import _estimate_action_seconds
 from build_shotplan import _estimate_dialogue_seconds as split_dialogue_seconds
 from validate_durations import _estimate_dialogue_seconds as validated_dialogue_seconds
 from generate_shotplan import _dramatic_design, _pack_action_beats, _pack_interaction_beats, _register_dramatic_beats
+from validate_composer_output import validate_composer_output
+from performance_budget import report as performance_report
+from benchmark_core_pipeline import evaluate as evaluate_benchmark
+from create_benchmark_fixtures import create as create_benchmark_fixtures
 
 
 def run():
@@ -40,6 +47,22 @@ def run():
         lock_path = os.path.join(run_dir, ".cache", "analysis", "scene_locks.json")
         _write(lock_path, locks)
         assert not validate(lock_path)
+        rich_locks_path = os.path.join(run_dir, ".cache", "analysis", "rich_scene_locks.json")
+        rich_locks = {"scenes": [dict(
+            locks["scenes"][0],
+            space_id="SP-A",
+            space_master_sentence="门在画面右后，长桌横贯中景，甲左乙右",
+            entrance_exit="右后门进出",
+            prop_activity_zone="文件夹只在桌中央到甲右手之间活动",
+            tone_palette="冷白顶灯、低饱和青灰",
+            light_texture_purpose="让手与文件夹边缘有浅阴影",
+        )]}
+        _write(rich_locks_path, rich_locks)
+        assert not validate(rich_locks_path)
+        broken_rich_locks_path = os.path.join(run_dir, ".cache", "analysis", "broken_rich_scene_locks.json")
+        broken_rich_locks = {"scenes": [dict(rich_locks["scenes"][0], space_id="SP-A", space_master_sentence={"bad": True})]}
+        _write(broken_rich_locks_path, broken_rich_locks)
+        assert any("space_master_sentence must be a non-empty flat string" in issue for issue in validate(broken_rich_locks_path))
         nested_locks_path = os.path.join(run_dir, ".cache", "analysis", "nested_scene_locks.json")
         nested_locks = {"scenes": [dict(locks["scenes"][0], light_source={"kind": "顶灯"})]}
         _write(nested_locks_path, nested_locks)
@@ -53,17 +76,92 @@ def run():
                              {"shot_id": "S2", "source_subshot_ids": ["S2-01"], "duration": 4, "full_prompt": "y", "qa_metadata": {}}]}
         _write(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"), plan)
         _write(os.path.join(run_dir, ".cache", "composer", "merged.prompt_package.json"), package)
+        main_contract_plan = {"dialogue_events": {"D1": {"ref": "D1", "kind": "台词", "speaker": "甲", "text": "到这里。"}}, "shots": [
+            {"shot_id": "S10", "scene": "室内", "subshots": [
+                {"subshot_id": "S10-01", "characters": ["甲"], "dialogue_refs": ["D1"], "shot_size": "中景"}
+            ]}
+        ]}
+        export_index, _scene_index, expected_source_ids = export_plan_index(main_contract_plan)
+        validate_index = validate_main_shot_expectations(main_contract_plan)
+        assert expected_source_ids == {"S10-01"}
+        assert export_index["S10"]["characters"] == ["甲"]
+        assert validate_index["S10"]["dialogue_refs"] == ["D1"]
+        assert export_source_dialogue_events(main_contract_plan, {"dialogue_refs": ["D1"]})[0]["text"] == "到这里。"
+        assert validate_source_dialogue_events(main_contract_plan, {"dialogue_refs": ["D1"]})[0]["speaker"] == "甲"
+        export_fixture = os.path.join(run_dir, "export_contract.md")
+        with open(export_fixture, "w", encoding="utf-8") as handle:
+            handle.write("S10-01\n模型提示词\n负面提示词\n下一镜转场提示词\n台词/OS/OV表演\n")
+        with open(os.path.splitext(export_fixture)[0] + ".xlsx", "wb") as handle:
+            handle.write(b"PK")
+        assert _export_check(export_fixture, False, {"S10-01"})[0] is True
         packet_paths = prepare_dispatch_packets(run_dir, "master_production", 6)
         assert packet_paths
+        assert active_packet_paths(run_dir, "master_production") == packet_paths
         packet = _read(packet_paths[0])
+        assert packet.get("source_sha256")
         assert "local_validation_command" in packet and packet["local_validation_command"][-2] == "--run-dir"
         assert packet.get("context_policy", {}).get("quality_policy", "").startswith("Execution hints are speed aids")
         assert all("execution_hints" in item for item in packet.get("items", []))
+        retry_review = os.path.join(run_dir, ".cache", "review", "llm_gate_result_retry_fixture.json")
+        os.makedirs(os.path.dirname(retry_review), exist_ok=True)
+        _write(retry_review, {"contract_version": "jimeng-t2v-v1", "windows": [
+            {"window_id": "W001", "pass": False, "blocking": ["站位冲突"],
+             "repair_targets": [{"shot_id": "S1", "field": "full_prompt"}]}
+        ]})
+        retry_packets = prepare_master_retry(run_dir, retry_review)
+        assert retry_packets
+        active_after_s1_retry = active_packet_paths(run_dir, "master_production")
+        assert set(packet_paths).issubset(set(active_after_s1_retry))
+        assert set(retry_packets).issubset(set(active_after_s1_retry))
+        retry_packet = _read(retry_packets[0])
+        assert [item["shot_id"] for item in retry_packet["items"]] == ["S1"]
+        retry_context = _read(retry_packet["retry_context_path"])
+        assert retry_context["fields_by_main_shot"] == {"S1": ["full_prompt"]}
+        _write(retry_review, {"contract_version": "jimeng-t2v-v1", "windows": [
+            {"window_id": "W002", "pass": False, "blocking": [{"shot_id": "S2", "field_path": "review_contracts.reroll_control.mitigation_steps[1]"}],
+             "repair_targets": [{"shot_id": "S2", "field_path": "review_contracts.reroll_control.mitigation_steps[1]"}]}
+        ]})
+        retry_packets = prepare_master_retry(run_dir, retry_review)
+        active_after_s2_retry = active_packet_paths(run_dir, "master_production")
+        assert set(retry_packets).issubset(set(active_after_s2_retry))
+        retry_context = _read(_read(retry_packets[0])["retry_context_path"])
+        assert retry_context["fields_by_main_shot"] == {"S2": ["review_contracts.reroll_control.mitigation_steps[1]"]}
+        replacement_retry_packets = prepare_master_retry(run_dir, retry_review)
+        active_after_s2_replacement = active_packet_paths(run_dir, "master_production")
+        assert set(replacement_retry_packets).issubset(set(active_after_s2_replacement))
+        assert not set(retry_packets) & set(active_after_s2_replacement)
+        assert _read(replacement_retry_packets[0])["batch_size"] == 1
+        active_manifest = _read(os.path.join(run_dir, ".cache", "dispatch", "active_master_production_manifest.json"))
+        assert active_manifest["active_packet_count"] == len(active_after_s2_replacement)
+        assert active_manifest["active_retry_packet_count"] >= 2
+        assert any(
+            entry.get("packet_path") == os.path.abspath(retry_packets[0])
+            and entry.get("superseded_reason") == "retry_replaced_by_newer_target"
+            for entry in active_manifest.get("superseded_packets", [])
+        )
+        previous = {"qa_metadata": {"reroll_control": {"mitigation_steps": ["keep", "left hand"]}}}
+        replacement = {"qa_metadata": {"reroll_control": {"mitigation_steps": ["keep", "right hand"]}}}
+        patched = patch_only(previous, replacement, ["review_contracts.reroll_control.mitigation_steps[1]"])
+        assert patched["qa_metadata"]["reroll_control"]["mitigation_steps"] == ["keep", "right hand"]
+        os.makedirs(os.path.join(run_dir, ".cache", "review"), exist_ok=True)
+        _write(os.path.join(run_dir, ".cache", "review", "pre_editor_gate.json"),
+               {"pass": True, "package_sha256": "stale"})
+        state = load_state(run_dir)
+        state["current_phase"] = "editor_pass1"
+        state["phases"]["editor_pass1"]["status"] = "done"
+        save_state(run_dir, state)
+        stale_outcome = pipeline_runner_run(run_dir)
+        assert stale_outcome["action"] == "local_action_required"
+        assert load_state(run_dir)["phases"]["editor_pass1"]["status"] == "pending"
         assert "grid_storyboard" not in GATES
         assert "grid_storyboard" not in PHASE_ORDER
         assert not any("execution_hints" in shot for shot in package["shots"])
         windows = build(run_dir)
         assert len(windows) == 2 and windows[0]["current"]["shot_id"] == "S1" and windows[1]["previous"]["shot_id"] == "S1"
+        targeted_windows = build(run_dir, shot_ids=["S2"])
+        assert len(targeted_windows) == 1
+        assert targeted_windows[0]["current"]["shot_id"] == "S2"
+        assert targeted_windows[0]["previous"]["shot_id"] == "S1"
         assert windows[0]["capsule_version"] == "editor-review-v1"
         assert "full_prompt" in windows[0]["current"]
         assert "full_prompt" not in windows[0]["next"]
@@ -71,6 +169,7 @@ def run():
         assert check({"items": [{"shot_id": "S1"}]}) > 0
         assert {"shot_id", "subshot_id", "duration", "full_prompt", "negative_prompt", "qa_metadata", "generation_control"} == SHOT_REQUIRED_FIELDS
         assert "temporal_transition_contract" in QA_REQUIRED_FIELDS
+        assert "story_punch_contract" in QA_REQUIRED_FIELDS
         retry_context_path = os.path.join(run_dir, "retry_context.json")
         _write(retry_context_path, {"items": [{"repair_fields": ["full_prompt"]}]})
         assert [os.path.basename(path) for path in _retry_examples(retry_context_path)] == ["format_example.txt"]
@@ -146,6 +245,50 @@ def run():
             assert "DISPATCH_GATE" in str(error)
         canonical = "生成规格：规格\n\n主体与空间锁定：空间\n\n主镜头连续规则：规则\n\n子镜头组：【镜头1｜0.0-1.0秒】画面\n\n光照、声音与稳定约束：光声"
         assert "生成规格：" not in jimeng_feed_prompt(canonical)
+        feed_meta_prompt = canonical.replace("主镜头连续规则：规则", "主镜头连续规则：承接上一镜，下一镜继承手中手机，尾帧位置不变，切到角色A")
+        feed = jimeng_feed_prompt(feed_meta_prompt)
+        assert "上一镜" not in feed and "继承" not in feed and "尾帧" not in feed and "切到" not in feed
+        assert not direct_feed_prompt_issues(feed_meta_prompt)
+        unsafe_ui_prompt = canonical.replace("画面", "手机聊天消息以绿色气泡显示：你到了吗？")
+        assert screen_text_policy_issues(unsafe_ui_prompt)
+        safe_ui_prompt = canonical.replace("画面", "手机聊天消息以绿色气泡显示：你到了吗？文字为独立二维浮层，位于画面右侧安全区，不跟随手机透视")
+        assert not screen_text_policy_issues(safe_ui_prompt)
+        formal_metadata = {
+            "source_constraint_basemap": {
+                "space_basis": "甲左乙右，门在右后",
+                "state_prop_basis": "手机起幅在桌右前角",
+                "character_orientation_basis": "甲面向右，乙面向左",
+                "tension_curve_role": "升压",
+                "sound_lip_sync_basis": "甲说台词，乙闭口倾听",
+                "screen_text_policy": "AI二维浮层",
+                "single_shot_risk": "对白加手机屏幕，控制为中风险",
+            },
+            "scene_tone_palette": {
+                "space_id": "SP-A",
+                "space_master_sentence": "门在右后，长桌横贯中景，甲左乙右",
+                "tone_palette": "冷白顶灯、低饱和青灰",
+                "light_texture_purpose": "让手机玻璃边缘有低亮反光",
+                "visual_scene_prefix": "冷白顶灯下的长桌空间",
+            },
+            "screen_text_policy": {
+                "mode": "ai_overlay",
+                "text_refs": ["UI1"],
+                "render_rule": "聊天消息由AI作为独立二维浮层生成",
+                "safe_area": "画面右侧安全区",
+                "perspective_rule": "不贴手机背面，不跟随手机透视",
+            },
+            "tension_curve_role": "升压",
+        }
+        assert not source_constraint_basemap_issues(formal_metadata)
+        assert not scene_tone_palette_issues(formal_metadata)
+        assert not screen_text_policy_metadata_issues(formal_metadata, safe_ui_prompt)
+        assert not tension_curve_role_issues(formal_metadata)
+        bad_formal = json.loads(json.dumps(formal_metadata, ensure_ascii=False))
+        bad_formal["source_constraint_basemap"]["tension_curve_role"] = "乱写"
+        assert source_constraint_basemap_issues(bad_formal)
+        bad_ui_policy = json.loads(json.dumps(formal_metadata, ensure_ascii=False))
+        bad_ui_policy["screen_text_policy"]["safe_area"] = ""
+        assert screen_text_policy_metadata_issues(bad_ui_policy, unsafe_ui_prompt)
         fixed_medium = canonical.replace("规则", "中近景，固定机位")
         assert coverage_role_issues({"dramatic_design": {"coverage_role": "relationship_blocking"}}, fixed_medium)
         assert not coverage_role_issues({"dramatic_design": {"coverage_role": "dialogue_performance"}}, fixed_medium)
@@ -181,6 +324,13 @@ def run():
         listener_prompt = canonical.replace("画面", "角色B视线停在角色A脸上，拇指在杯沿轻收一次，不起身、不转向抢画面；角色B口型闭合，手仍停在杯沿，视线留在角色A方向")
         listener_metadata = {"performance_priority": {"primary": "角色A", "supporting": ["角色B"], "background": []}, "dialogue_events": [{"kind": "台词", "speaker": "角色A", "speaker_visibility": "visible"}], "listener_reaction_plan": {"speaker": "角色A", "listener": "角色B", "trigger": "角色A说到关键事实", "time_range": "0.2-0.8秒", "visual_evidence": "角色B视线停在角色A脸上，拇指在杯沿轻收一次", "motion_limit": "不起身、不转向抢画面", "lip_sync": False, "end_residue": "角色B口型闭合，手仍停在杯沿，视线留在角色A方向"}}
         assert not listener_reaction_issues(listener_metadata, listener_prompt)
+        flat_story_metadata = {"performance_priority": {"primary": "角色A", "supporting": [], "background": []}, "dialogue_events": [{"kind": "台词", "speaker": "角色A"}], "story_punch_contract": {"audience_question": "气氛是否紧张", "character_pressure": "紧张", "visible_pressure_object": "气氛紧张", "dramatic_turn": "情绪变化", "picture_punctuation": "表情复杂", "end_residue": "保持状态"}}
+        assert story_punch_issues(flat_story_metadata, audible_prompt, ["角色A"])
+        bland_prompt = canonical.replace("画面", "角色A看向角色B，角色A肩线保持不动；角色B看向角色A，落幅两人位置不变，下一镜继承两人位置")
+        bland_story_metadata = {"performance_priority": {"primary": "角色A", "supporting": ["角色B"], "background": []}, "dialogue_events": [{"kind": "台词", "speaker": "角色A"}], "story_punch_contract": {"audience_question": "角色A是否会回应角色B的沉默", "character_pressure": "角色A面对角色B的沉默不知道如何回应", "visible_pressure_object": "角色A看向角色B", "dramatic_turn": "角色B看向角色A", "picture_punctuation": "角色A肩线保持不动", "end_residue": "下一镜继承两人位置"}}
+        assert any("可见戏剧尖刺" in issue for issue in story_punch_issues(bland_story_metadata, bland_prompt, ["角色A", "角色B"]))
+        sharp_story_metadata = {"performance_priority": {"primary": "角色A", "supporting": ["角色B"], "background": []}, "dialogue_events": [{"kind": "台词", "speaker": "角色A"}], "story_punch_contract": {"audience_question": "角色B是否被角色A这句迟到指责刺中", "character_pressure": "角色B听见指责后压住反应，不让自己抢台词", "visible_pressure_object": "拇指在杯沿轻收一次", "dramatic_turn": "角色B视线停在角色A脸上", "picture_punctuation": "拇指在杯沿轻收一次", "end_residue": "视线留在角色A方向"}}
+        assert not story_punch_issues(sharp_story_metadata, listener_prompt, ["角色A", "角色B"])
         spatial_prop_prompt = (
             "生成规格：规格\n\n"
             "主体与空间锁定：角色A在画面左侧中景，身体朝向画面右侧；角色B在画面右侧中景，身体朝向画面左侧；角色C在画面中间偏后景，身体朝向画面前侧略偏左。药瓶在桌面右前角，瓶口朝画面左，未被任何人接触。\n\n"
@@ -218,9 +368,20 @@ def run():
             }],
         }}
         assert not continuity_contract_issues(transfer_metadata, transfer_prompt, ["角色A"])
+        assert not physical_transition_chain_issues(transfer_metadata, transfer_prompt)
+        abstract_visual_prompt = canonical.replace("光声", "电影感，高级质感，真实感")
+        assert visual_texture_issues(abstract_visual_prompt)
+        grounded_visual_prompt = canonical.replace("光声", "4300K冷白顶灯从上方落下，角色A手背受光，手机玻璃边缘有低亮反光，背景弱虚化")
+        assert not visual_texture_issues(grounded_visual_prompt)
+        jump_transfer_prompt = canonical.replace(
+            "画面",
+            "角色A把银行卡递给角色B，落幅角色B拿着银行卡"
+        )
+        assert physical_transition_chain_issues(transfer_metadata, jump_transfer_prompt)
         bad_transfer = json.loads(json.dumps(transfer_metadata, ensure_ascii=False))
         bad_transfer["continuity_contract"]["state_transitions"][0].pop("intermediate_state")
         assert any("intermediate_state" in issue for issue in continuity_contract_issues(bad_transfer, transfer_prompt, ["角色A"]))
+        assert any("intermediate_state" in issue for issue in physical_transition_chain_issues(bad_transfer, transfer_prompt))
         phone_previous = {"end_state": "手机持续亮屏显示来电", "continuity_contract": {"next_carryover": "手机亮屏的来电状态"}}
         phone_replay = "手机屏幕亮起或震动，显示来电界面"
         assert state_transition_replay_issues(phone_previous, "手机屏幕亮起显示来电", {}, phone_replay)
@@ -283,6 +444,43 @@ def run():
             "pass": True, "package_sha256": _sha256(package_path),
         })
         assert _local_phase_valid(run_dir, "validate")
+        export_md = os.path.join(run_dir, "delivery.md")
+        with open(export_md, "w", encoding="utf-8") as handle:
+            handle.write("ok")
+        os.makedirs(os.path.join(run_dir, ".cache", "export"), exist_ok=True)
+        _write(os.path.join(run_dir, ".cache", "export", "result.json"), {
+            "pass": True, "markdown_path": export_md, "markdown_sha256": _sha256(export_md),
+            "package_sha256": _sha256(package_path),
+        })
+        state = load_state(run_dir)
+        state["current_phase"] = "export"
+        state["phases"]["export"]["status"] = "done"
+        save_state(run_dir, state)
+        assert pipeline_runner_run(run_dir)["action"] == "completed"
+        performance_path, performance = performance_report(run_dir)
+        assert os.path.exists(performance_path)
+        assert "dispatch_summary" in performance
+        assert "local_compute_seconds" in performance["time_breakdown"]
+        assert "worker_wait_wall_seconds" in performance["time_breakdown"]
+        assert "manifest_superseded_packet_count" in performance["dispatch_summary"]
+        assert "stale_or_superseded_packet_count" in performance["dispatch_summary"]
+        benchmark_root = os.path.join(run_dir, "synthetic_benchmark")
+        benchmark_runs = create_benchmark_fixtures(benchmark_root)
+        benchmark = evaluate_benchmark(benchmark_runs)
+        assert benchmark["pass"] is True
+        assert benchmark["real_slo_pass"] is False
+        assert benchmark["synthetic_fixture_count"] == 6
+        assert benchmark["normal_scenarios"] == ["action", "dialogue", "mixed"]
+        assert benchmark["fault_injection_scenarios"] == ["action", "dialogue", "mixed"]
+        gate_result, _gate_path = pre_editor_gate(run_dir)
+        assert "validator_sha256" in gate_result
+        merged_fixture = os.path.join(run_dir, "merged_contract_version.prompt_package.json")
+        merged_report = os.path.join(run_dir, "merged_contract_version.report.json")
+        _write(merged_fixture, {"contract_version": "jimeng-t2v-v1", "shots": []})
+        # An empty package still fails downstream completeness, but must not
+        # fail solely because merge_agent_outputs adds the version envelope.
+        assert validate_composer_output(merged_fixture, report_path=merged_report) == 1
+        assert not any("batch顶层" in issue for issue in _read(merged_report)["issues"])
         light_items = [_master_item("E%02d" % index, "环境", non_character=True) for index in range(1, 11)]
         light_risk = dispatch_risk(light_items[0])
         assert light_risk["tier"] == "light" and light_risk["batch_capacity"] == 10
@@ -293,8 +491,42 @@ def run():
         assert [len(batch) for batch in _dynamic_master_chunks(high_items)] == [2, 2, 1]
         low_hint = _composer_execution_hints({"subshot_id": "L1", "visible_characters": ["甲"], "duration": 2, "editorial_mode": "continuous_take"})
         assert low_hint["risk_gated_contracts"] == {"ai_model_readiness_score": False, "pressure_release_design": False}
+        light_profile = validation_profile({
+            "subshot_id": "ENV-01", "shot_type": "environment", "non_character_confirmed": True,
+            "visual_intent": "雨夜空走廊", "base_action": "", "characters": [],
+        })
+        assert light_profile["profile"] == "environment"
+        assert not any(light_profile[key] for key in (
+            "performance_causality", "performance_contract", "story_punch_contract",
+            "ai_model_readiness_score", "pressure_release_design", "listener_reaction_plan",
+        ))
+        dialogue_profile = validation_profile({
+            "subshot_id": "D-01", "characters": ["甲", "乙"], "visible_characters": ["甲", "乙"],
+            "dialogue_refs": ["D1"], "dialogue_events": [{"speaker": "甲", "text": "别再骗我。"}],
+            "base_action": "甲盯住乙说话", "duration": 4,
+        })
+        assert dialogue_profile["performance_contract"] and dialogue_profile["story_punch_contract"]
+        assert dialogue_profile["listener_reaction_plan"]
+        peak_profile = validation_profile(
+            {"subshot_id": "P-01", "characters": ["甲"], "visible_characters": ["甲"], "base_action": "甲伸手拿起药瓶"},
+            {"emotion_driver": {"tension_intent": "peak"}}, ["甲"],
+        )
+        assert peak_profile["pressure_release_design"]
+        high_profile = validation_profile({
+            "subshot_id": "H-01", "characters": ["甲", "乙"], "visible_characters": ["甲", "乙"],
+            "base_action": "甲将手机递给乙", "duration": 5,
+        })
+        assert high_profile["ai_model_readiness_score"]
         high_hint = _composer_execution_hints({"subshot_id": "H1", "visible_characters": ["甲", "乙"], "duration": 5, "editorial_mode": "shot_group", "emotion_driver": {"tension_intent": "rising"}})
         assert high_hint["risk_gated_contracts"] == {"ai_model_readiness_score": True, "pressure_release_design": True}
+        scaffold_packets = prepare_dispatch_packets(run_dir, "master_production", 1, ["S1"])
+        scaffold_packet = _read(scaffold_packets[0])
+        scaffold = _read(scaffold_packet["composer_scaffold_path"])
+        scaffold_metadata = scaffold["shots"][0]["qa_metadata"]
+        assert "source_constraint_basemap" in scaffold_metadata
+        assert "scene_tone_palette" in scaffold_metadata
+        assert "screen_text_policy" in scaffold_metadata
+        assert "tension_curve_role" in scaffold_metadata
         dialogue_items = [_master_item("D%02d" % index, "角色A说了一段很长的解释台词，角色B保持倾听") for index in range(1, 7)]
         for item in dialogue_items:
             item["source_subshots"][0]["dialogue_refs"] = ["DIALOGUE"]
@@ -334,6 +566,9 @@ def run():
         _materialize("editor_pass2", editor_output, [editor_batch])
         review = _read(editor_output)
         assert review["pass"] is False and review["blocking"] == ["连续性断裂"] and review["repair_targets"] == ["S1"]
+        assert _review_target_shot_ids(review) == ["S1"]
+        dict_target_review = {"repair_targets": [{"shot_id": "S2", "field": "full_prompt"}, {"subshot_id": "S1"}]}
+        assert _review_target_shot_ids(dict_target_review) == ["S1", "S2"]
     return "current pipeline contract regression passed"
 
 

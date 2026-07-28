@@ -22,7 +22,11 @@ def register(packet_path, agent_id):
         raise SystemExit("packet run_dir/phase/dispatch_id and agent_id are required")
     normalized_agent_id = str(agent_id).strip()
     receipt, receipt_path = issue(packet_path, packet, normalized_agent_id)
-    set_agent_id(run_dir, phase, normalized_agent_id, dispatch_id=dispatch_id)
+    # Re-registering after an interrupted state write must preserve the
+    # immutable receipt time, otherwise a valid worker output could appear to
+    # predate its registration.
+    set_agent_id(run_dir, phase, normalized_agent_id, dispatch_id=dispatch_id,
+                 spawn_time=receipt.get("issued_at"))
     print("[DISPATCH AGENT] %s %s %s" % (phase, dispatch_id, normalized_agent_id))
     print("[DISPATCH RECEIPT] %s" % receipt_path)
 

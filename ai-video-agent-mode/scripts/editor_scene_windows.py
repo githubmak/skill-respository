@@ -5,13 +5,17 @@ import os
 from shot_semantics import dispatch_risk
 
 
-def build(run_dir):
+def build(run_dir, shot_ids=None):
     package = _load(os.path.join(run_dir, ".cache", "composer", "merged.prompt_package.json"))
     plan = _load(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"))
     tasks = {str(item.get("shot_id", "")): item for item in package.get("shots", []) if isinstance(item, dict)}
     planned = [shot for shot in plan.get("shots", []) if isinstance(shot, dict)]
+    wanted = {str(shot_id).strip() for shot_id in (shot_ids or []) if str(shot_id).strip()}
     windows = []
     for index, shot in enumerate(planned):
+        shot_id = str(shot.get("shot_id", "") or "")
+        if wanted and shot_id not in wanted:
+            continue
         current = tasks.get(str(shot.get("shot_id", "")))
         if not current:
             continue
