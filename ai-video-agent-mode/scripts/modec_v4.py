@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import re
 
+from dialogue_timing import analyze_dialogue_timing
+
 
 # 即梦正文只使用可见、可执行的描述。子镜头置于同一个生成任务内，
 # 用明确的时间窗、左右关系和前景肩膀描述正反打，绝不泄漏内部轴线术语。
@@ -41,6 +43,8 @@ FORBIDDEN_MODEL_TERMS = [
     "管线级",
     "QA通过",
     "校验通过",
+    "轴线",
+    "同侧轴线",
     "180度轴线",
     "越轴",
     "正轴机位",
@@ -51,6 +55,11 @@ FORBIDDEN_MODEL_TERMS = [
 DIRECT_FEED_META_TERMS = (
     "延续上一镜", "上一镜", "尾帧", "位置不变", "剪辑", "切到", "反打到",
     "后期插入", "脑海浮现", "当前主角", "当前对话者", "继承",
+    "line_function", "subtext", "turn_relation", "inner_emotion", "display_intent",
+    "mask_leak", "start_intensity", "end_intensity", "emotion_delta",
+    "composition_priority", "camera_motivation",
+    "台词功能：", "潜台词：", "轮次关系：", "内在情绪：", "对外展示：",
+    "面具泄露：", "情绪变化量：", "构图优先级：", "运镜动机：",
 )
 
 TIME_RANGE_RE = re.compile(r"(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)秒")
@@ -136,8 +145,18 @@ STORY_PUNCH_FIELDS = (
     "visible_pressure_object",
     "dramatic_turn",
     "picture_punctuation",
+    "composition_priority",
+    "camera_motivation",
     "end_residue",
 )
+DIALOGUE_LINE_FUNCTIONS = {
+    "probe", "pressure", "deny", "verify", "interrupt", "farewell",
+    "conceal", "reveal", "plead", "deflect", "reconcile", "narrate",
+    "warn", "challenge", "answer", "confess",
+}
+DIALOGUE_TURN_RELATIONS = {
+    "initiate", "respond", "deflect", "interrupt", "withdraw", "bridge", "continue",
+}
 STORY_PUNCH_GENERIC_RE = re.compile(
     r"气氛|氛围|情绪变化|表情变化|表情复杂|微表情|很紧张|更紧张|有戏|戏剧性|压迫感|张力感|"
     r"保持状态|自然反应|若有所思|意味深长|沉默不语|看着对方|对视|凝视"
@@ -158,17 +177,60 @@ ABSTRACT_VISUAL_TERMS = (
 )
 LIGHT_SOURCE_RE = re.compile(
     r"顶光|侧光|窗光|背光|逆光|补光|自然光|店铺光|灯箱|路灯|顶灯|"
-    r"光源|主光|轮廓光|冷白光|暖光|中性光|\d{4}K|受光"
+    r"冷白灯|暖灯|面光|灯光|光源|主光|轮廓光|冷白光|暖光|中性光|\d{4}K|受光"
 )
 VISIBLE_TEXTURE_ANCHOR_RE = re.compile(
     r"脸侧|脸部|手背|手指|指尖|手腕|道具|卡面|屏幕|手机|银行卡|纸面|衣料|"
     r"玻璃|金属|桌面|墙面|地面|门框|柜台|反光|高光|阴影|浅阴影|虚化|背景"
 )
+CINEMATIC_IMAGE_CONTRACT_FIELDS = (
+    "composition_anchor",
+    "lens_depth",
+    "exposure_contrast",
+    "color_separation",
+    "atmosphere_layer",
+    "material_detail",
+    "imperfection_map",
+    "realism_risk",
+    "signature_frame",
+)
+VIDEO_TEXTURE_CONTRACT_FIELDS = (
+    "look_profile",
+    "exposure_policy",
+    "material_motion_policy",
+    "atmosphere_motion_policy",
+    "camera_stability_policy",
+    "continuity_carryover",
+    "risk_controls",
+)
+CINEMATIC_COMPOSITION_RE = re.compile(r"前景|遮挡|门框|窗框|框景|引导线|留白|低机位|高机位|俯拍|仰拍|非对称|纵深")
+CINEMATIC_DEPTH_RE = re.compile(r"焦平面|景深|焦外|虚化|远端|背景压缩|空气透视|雾化|前景虚|后景虚|浅景深")
+CINEMATIC_EXPOSURE_RE = re.compile(r"暗部|黑位|不过曝|高光|低照度|曝光|主光|辅光|阴影|受光面|反差")
+CINEMATIC_COLOR_RE = re.compile(r"冷暖|冷白|暖黄|红光|蓝黑|青灰|低饱和|局部强调色|色彩分离|主体.*背景.*分离")
+CINEMATIC_ATMOSPHERE_RE = re.compile(r"雨|雾|尘|水汽|烟|颗粒|空气|逆光|飘浮|湿气|霾")
+CINEMATIC_MATERIAL_RE = re.compile(r"墙皮|墙面|地面|瓷砖|水泥|玻璃|金属|纸面|衣料|木纹|水渍|污渍|划痕|裂纹|起皮|磨损|灰尘|粗糙")
+CINEMATIC_IMPERFECTION_RE = re.compile(r"不均匀|不规则|断续|细碎|污渍|划痕|磨损|起皮|裂纹|水渍|灰尘|颗粒|粗糙|残缺|暗斑|旧痕")
+AI_REALISM_RISK_RE = re.compile(
+    r"镜面水面|水面像镜子|镜子般反射|塑料质感|塑料墙|过度干净|过于干净|无瑕|"
+    r"过度霓虹|霓虹堆叠|赛博炫光|CG感|渲染感|3D渲染|游戏场景|虚拟摄影棚|"
+    r"雨线均匀|均匀雨线|灯光过曝|过曝灯管"
+)
+REALISM_POSITIVE_STYLE_RE = re.compile(r"写实|实拍|电影剧照|实拍短片|纪实|胶片|摄影机|镜头")
+CG_STYLE_DRIFT_RE = re.compile(r"动态漫|漫画|二次元|赛博|超现实|概念图")
+VIDEO_TEXTURE_LOOK_RE = re.compile(r"写实|实拍|电影剧照|影视级|高端3D|PBR|物理|低饱和|胶片|摄影机|统一")
+VIDEO_TEXTURE_EXPOSURE_RE = re.compile(r"不过曝|黑位|暗部|高光|曝光|反差|受光|灯罩|轮廓光|低照度")
+VIDEO_TEXTURE_MATERIAL_MOTION_RE = re.compile(r"材质|墙皮|墙面|地面|水面|积水|玻璃|金属|衣料|皮肤|反光|高光|涟漪|划痕|磨损|粗糙|断续|不均匀")
+VIDEO_TEXTURE_ATMOSPHERE_MOTION_RE = re.compile(r"雨|雾|尘|水汽|烟|空气|颗粒|飘|扩散|流动|贴地|断续|不均匀")
+VIDEO_TEXTURE_CAMERA_STABILITY_RE = re.compile(r"固定|低幅|缓慢|稳定|不摇晃|不推拉|不变焦|单向|运动预算|镜头")
+VIDEO_TEXTURE_CONTINUITY_RE = re.compile(r"跨镜|同一|统一|保持|继承|连续|不跳变|不重置|不换光|不换色")
 PHYSICAL_CHAIN_GROUPS = (
     re.compile(r"伸向|靠近|接近|抬手|递出|前移|半转|头部轻转|肩线|重心|脚步"),
     re.compile(r"指尖|接触|触碰|握住|抓住|攥住|接住|扶住|支撑|贴住"),
     re.compile(r"松手|放下|收回|落定|稳定|停在|仍在|落幅|继承|保持"),
 )
+VISIBLE_GATE_RE = re.compile(r"可见人数|画面内可见人数|本镜画面内可见|本镜只出现|不入画|画外")
+VISIBLE_LAYER_RE = re.compile(r"清晰|实焦|肩线|背影|倒影|虚化|画外|不入画")
+OFFSCREEN_SOURCE_RE = re.compile(r"画外声源|画外.{0,6}声|门口方向|右侧声源|左侧声源|固定锚点|空间锚点")
 AI_SCREEN_TEXT_RE = re.compile(r"聊天消息|绿色气泡|通知弹窗|字幕浮层|UI文字|屏幕文字|来电名称")
 AI_SCREEN_TEXT_SAFE_RE = re.compile(r"二维浮层|安全区|不属于手机屏幕|不贴手机背面|不跟随手机透视")
 
@@ -219,15 +281,35 @@ def jimeng_feed_prompt(full_prompt):
 def direct_feed_prompt_issues(full_prompt, max_chars=None):
     """Validate the user-copyable Jimeng feed view, not the canonical contract text."""
     feed = jimeng_feed_prompt(full_prompt)
+    return direct_copy_prompt_issues(feed, max_chars=max_chars, require_visual_texture=False)
+
+
+def direct_copy_prompt_issues(feed_prompt, max_chars=700, require_visual_texture=True):
+    """Validate the final Markdown block users copy directly into Jimeng.
+
+    This check is intentionally stricter than ``direct_feed_prompt_issues``:
+    the canonical five-section prompt may be long and verification-friendly,
+    while the exported direct-copy block should be compact, current-visible,
+    and grounded in concrete light/material anchors.
+    """
+    feed = str(feed_prompt or "").strip()
     issues = []
+    if not feed:
+        return ["画面描述｜直接复制不能为空"]
     if any(label + "：" in feed or label + ":" in feed for label in PROMPT_LABELS):
         issues.append("即梦直接投喂提示词不得保留五段栏目名")
     leaked = [term for term in DIRECT_FEED_META_TERMS if term in feed]
     if leaked:
-        issues.append("即梦直接投喂提示词含元叙述/剪辑占位词：" + "、".join(leaked[:6]))
+        issues.append("即梦直接投喂提示词含元叙述/内部分析/剪辑占位词：" + "、".join(leaked[:6]))
     if isinstance(max_chars, (int, float)) and not isinstance(max_chars, bool) and max_chars > 0:
         if len(feed) > int(max_chars):
             issues.append(f"即梦直接投喂提示词{len(feed)}字，超过导出硬上限{int(max_chars)}字")
+    if require_visual_texture:
+        if not LIGHT_SOURCE_RE.search(feed):
+            issues.append("画面描述｜直接复制缺少光源方向/色温/受光关系")
+        if not VISIBLE_TEXTURE_ANCHOR_RE.search(feed):
+            issues.append("画面描述｜直接复制缺少脸/手/道具受光、阴影/反光、背景虚化或剧情相关材质")
+    issues.extend(screen_text_policy_issues(feed))
     return issues
 
 
@@ -610,6 +692,9 @@ def performance_contract_issues(metadata, full_prompt="", visible_characters=Non
         "tension_intent",
         "trigger_event",
         "trigger_time",
+        "inner_emotion",
+        "display_intent",
+        "mask_leak",
         "primary_expression",
         "primary_body_action",
         "eye_focus",
@@ -628,10 +713,25 @@ def performance_contract_issues(metadata, full_prompt="", visible_characters=Non
             issues.append(f"performance_contract.{field}不能为空")
     if contract.get("tension_intent") not in TENSION_INTENTS:
         issues.append("performance_contract.tension_intent只允许neutral/latent/rising/peak/release")
+    intensities = {}
+    for field in ("start_intensity", "end_intensity"):
+        value = contract.get(field)
+        if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 5:
+            issues.append(f"performance_contract.{field}必须是0-5整数")
+        else:
+            intensities[field] = value
+    delta = contract.get("emotion_delta")
+    if not isinstance(delta, int) or isinstance(delta, bool) or not -5 <= delta <= 5:
+        issues.append("performance_contract.emotion_delta必须是-5到5整数")
+    elif len(intensities) == 2 and delta != intensities["end_intensity"] - intensities["start_intensity"]:
+        issues.append("performance_contract.emotion_delta必须等于end_intensity-start_intensity")
     trigger_time = str(contract.get("trigger_time", "") or "")
     if trigger_time and not re.search(r"\d+(?:\.\d+)?秒|无明确时点|N/A", trigger_time):
         issues.append("performance_contract.trigger_time必须写秒点，或明确无明确时点/N/A")
     for field in (
+        "inner_emotion",
+        "display_intent",
+        "mask_leak",
         "primary_expression",
         "primary_body_action",
         "eye_focus",
@@ -654,6 +754,7 @@ def performance_contract_issues(metadata, full_prompt="", visible_characters=Non
     camera_text = sections.get("主镜头连续规则", "") + "\n" + timeline
     scene_text = sections.get("主体与空间锁定", "") + "\n" + sections.get("光照、声音与稳定约束", "")
     for field in (
+        "mask_leak",
         "primary_expression",
         "primary_body_action",
         "eye_focus",
@@ -851,6 +952,7 @@ def story_punch_issues(metadata, full_prompt="", visible_characters=None):
             or value in GENERIC_PERFORMANCE_TERMS
             or value in READINESS_GENERIC_TERMS
             or STORY_PUNCH_GENERIC_RE.search(value)
+            or any(term in value for term in ABSTRACT_VISUAL_TERMS)
         ):
             issues.append(f"story_punch_contract.{field}必须写当前镜头的具体戏眼，不能写空泛情绪词")
 
@@ -860,10 +962,22 @@ def story_punch_issues(metadata, full_prompt="", visible_characters=None):
 
     sections = split_sections(full_prompt, PROMPT_LABELS)
     prompt_text = "\n".join(sections.values())
-    for field in ("visible_pressure_object", "dramatic_turn", "picture_punctuation", "end_residue"):
+    for field in (
+        "visible_pressure_object", "dramatic_turn", "picture_punctuation",
+        "composition_priority", "camera_motivation", "end_residue",
+    ):
         value = str(contract.get(field, "") or "").strip()
         if value and value not in ("none", "无", "N/A") and not _fragment_grounded(value, prompt_text):
             issues.append(f"story_punch_contract.{field}必须落实到full_prompt的可见动作、道具、构图或落幅残留")
+
+    composition = str(contract.get("composition_priority", "") or "")
+    if composition and not re.search(r"画面|前景|中景|后景|三分|中心|中央|留白|遮挡|距离|占比|实焦|虚焦", composition):
+        issues.append("story_punch_contract.composition_priority必须写主体与前中后景、画面位置、留白、遮挡、距离或焦点关系")
+    camera = str(contract.get("camera_motivation", "") or "")
+    if camera and not re.search(r"固定|推近|拉远|横移|跟拍|拉焦|重构图|机位|摄影机", camera):
+        issues.append("story_punch_contract.camera_motivation必须写唯一运镜或固定机位策略")
+    if camera and not re.search(r"响应|因为|跟随|服务|守住|等待|对应|触发|落点|保持", camera):
+        issues.append("story_punch_contract.camera_motivation必须说明镜头为何响应表演、台词、道具或空间关系")
 
     timeline = sections.get("子镜头组", "")
     has_visible_spike = bool(STORY_PUNCH_SPIKE_RE.search(timeline))
@@ -1313,6 +1427,11 @@ def dialogue_event_issues(
         delivery = str(event.get("delivery", "") or "").strip()
         breath_pause_plan = str(event.get("breath_pause_plan", "") or "").strip()
         lip_sync = event.get("lip_sync")
+        line_function = str(event.get("line_function", "") or "").strip()
+        subtext = str(event.get("subtext", "") or "").strip()
+        stress_words = event.get("stress_words")
+        subtext_evidence = str(event.get("subtext_visible_evidence", "") or "").strip()
+        turn_relation = str(event.get("turn_relation", "") or "").strip()
 
         if not ref:
             issues.append(f"{prefix}.ref不能为空")
@@ -1338,6 +1457,25 @@ def dialogue_event_issues(
             issues.append(f"{prefix}.breath_pause_plan缺少带秒数的句末收气")
         elif len(re.findall(r"[，、；：！？…]", line)) >= 2 and not re.search(r"(?:中段|分句|转折|[，、；：！？…]后).{0,18}\d+(?:\.\d+)?秒|无中段气口", breath_pause_plan):
             issues.append(f"{prefix}.breath_pause_plan缺少分句/转折气口，或未明确无中段气口")
+        if line_function not in DIALOGUE_LINE_FUNCTIONS:
+            issues.append(f"{prefix}.line_function无效")
+        if len(subtext) < 4 or subtext in GENERIC_PERFORMANCE_TERMS:
+            issues.append(f"{prefix}.subtext必须写本句未明说的具体意图或防御")
+        elif _signature_text(subtext) == _signature_text(line):
+            issues.append(f"{prefix}.subtext不能复述原台词")
+        if not isinstance(stress_words, list) or not 1 <= len(stress_words) <= 3:
+            issues.append(f"{prefix}.stress_words必须包含1-3个原文词组")
+        else:
+            for word in stress_words:
+                word = str(word or "").strip()
+                if not word or word not in line:
+                    issues.append(f"{prefix}.stress_words必须逐字来自原台词")
+                elif word not in delivery:
+                    issues.append(f"{prefix}.delivery必须说明重音词“{word}”的说法")
+        if turn_relation not in DIALOGUE_TURN_RELATIONS:
+            issues.append(f"{prefix}.turn_relation无效")
+        if len(subtext_evidence) < 4:
+            issues.append(f"{prefix}.subtext_visible_evidence必须写可见潜台词证据")
 
         match = re.fullmatch(r"(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)秒", str(event.get("time_range", "") or "").strip())
         if not match:
@@ -1357,6 +1495,10 @@ def dialogue_event_issues(
         elif visibility in ("offscreen", "nonphysical"):
             if not facial.startswith("N/A") or not body.startswith("N/A"):
                 issues.append(f"{prefix}不可见说话者的facial_state/body_state必须明确写N/A及原因")
+        if subtext_evidence and not subtext_evidence.startswith("N/A") and not _fragment_grounded(subtext_evidence, timeline):
+            issues.append(f"{prefix}.subtext_visible_evidence未落实到子镜头组")
+        if subtext_evidence.startswith("N/A") and visible:
+            issues.append(f"{prefix}存在可见承接人物时subtext_visible_evidence不得写N/A")
 
         expected_lip_sync = kind == "台词" and visibility == "visible"
         if lip_sync is not expected_lip_sync:
@@ -1381,7 +1523,15 @@ def dialogue_event_issues(
                 issues.append(f"{prefix}的OS/OV缺少无口型同步说明")
         elif audio_enabled is False and line and line in full_prompt:
             issues.append(f"{prefix}.text在原生音频关闭时不得进入full_prompt")
+        if expected_lip_sync and timeline and not any(token in timeline for token in ("句末闭口", "口型闭合", "收口")):
+            issues.append(f"{prefix}可见对白缺少句末闭口/口型闭合落幅")
+    _timing_records, timing_issues = analyze_dialogue_timing(events, duration)
+    issues.extend(timing_issues)
     return issues
+
+
+def _signature_text(value):
+    return re.sub(r"[\s，,。！？；;：:‘’'\"“”]", "", str(value or "")).lower()
 
 
 def attention_handoff_issues(metadata, full_prompt):
@@ -1585,6 +1735,63 @@ def role_partition_issues(metadata, visible_characters):
     return issues
 
 
+def visible_people_gate_issues(metadata, full_prompt="", visible_characters=None):
+    """Validate the visible-person gate for multi-person/offscreen-risk shots.
+
+    The gate is intentionally risk-triggered rather than universal: ordinary
+    stable one-person shots do not need extra boilerplate, while multi-person,
+    shoulder-line/blurred-person, or offscreen-voice shots must declare what is
+    actually visible so T2V does not hallucinate extra people.
+    """
+    metadata = metadata if isinstance(metadata, dict) else {}
+    visible = _string_list(visible_characters or [])
+    full_prompt = str(full_prompt or "")
+    events = metadata.get("dialogue_events", []) if isinstance(metadata.get("dialogue_events"), list) else []
+    offscreen_speakers = [
+        str(event.get("speaker", "") or "").strip()
+        for event in events if isinstance(event, dict)
+        and str(event.get("speaker_visibility", "") or "").strip() in {"offscreen", "nonphysical"}
+    ]
+    text_requests_gate = bool(re.search(r"画外|不入画|肩线|背影|倒影|虚化", full_prompt))
+    required = len(visible) >= 2 or bool(offscreen_speakers) or text_requests_gate
+    if not required:
+        return []
+
+    issues = []
+    basemap = metadata.get("source_constraint_basemap", {})
+    gate = basemap.get("visible_people_gate") if isinstance(basemap, dict) else None
+    if gate in (None, "", {}):
+        issues.append("多人/画外声/肩线虚化镜必须在source_constraint_basemap.visible_people_gate写本镜可见人数闸门")
+    elif isinstance(gate, dict):
+        visible_count = gate.get("visible_count")
+        if isinstance(visible_count, int) and visible_count != len(visible):
+            issues.append("visible_people_gate.visible_count必须等于本镜visible_characters数量")
+        gate_text = " ".join(str(value) for value in gate.values())
+        if not VISIBLE_LAYER_RE.search(gate_text):
+            issues.append("visible_people_gate必须区分清晰、肩线/背影/倒影/虚化或画外")
+    elif isinstance(gate, str):
+        if not VISIBLE_LAYER_RE.search(gate):
+            issues.append("visible_people_gate必须区分清晰、肩线/背影/倒影/虚化或画外")
+    else:
+        issues.append("visible_people_gate必须是扁平字符串或对象")
+
+    prompt_gate_text = split_sections(full_prompt, PROMPT_LABELS).get("主体与空间锁定", "") + "\n" + full_prompt
+    if not VISIBLE_GATE_RE.search(prompt_gate_text):
+        issues.append("full_prompt必须写清本镜画面内实际可见人物/画外声音，不能只依赖角色列表")
+    for speaker in offscreen_speakers:
+        if not speaker:
+            continue
+        target_re = re.compile(
+            r"(?:看向|望向|面向|朝向|对着|盯着|凝视|压向).{0,12}" + re.escape(speaker)
+            + r"|" + re.escape(speaker) + r".{0,12}(?:看向|望向|面向|朝向|对着|盯着|凝视|压向)"
+        )
+        target_match = target_re.search(full_prompt)
+        target_phrase = target_match.group(0) if target_match else ""
+        if target_match and not (OFFSCREEN_SOURCE_RE.search(target_phrase) or re.search(r"声源|空间锚点|固定锚点|门口方向", target_phrase)):
+            issues.append(f"画外/非实体人物{speaker}不得作为看向/面向/对着的视觉目标；改写为画外声源或固定空间锚点")
+    return issues
+
+
 def visibility_issues(full_prompt, shot_size):
     sections = split_sections(full_prompt, PROMPT_LABELS)
     performance = sections.get("子镜头组", "")
@@ -1617,6 +1824,137 @@ def visual_texture_issues(full_prompt):
     if not has_texture_anchor:
         missing.append("脸/手/道具受光、阴影/反光、背景虚化或剧情相关材质")
     return ["抽象画面质感词必须落成可见执行锚点：" + "、".join(missing)]
+
+
+def cinematic_realism_prompt_issues(prompt, require_live_action_style=False):
+    """Validate film-realism cues beyond generic light/material anchors.
+
+    This is a prompt-level guard for the user's "AI感" complaint.  A prompt can
+    be visually stylish yet still look synthetic when it asks for perfect
+    reflections, clean procedural surfaces, uniform particles, or unbounded
+    neon.  The guard is intentionally concrete: it looks for physically
+    inspectable image evidence rather than words like "cinematic".
+    """
+    text = str(prompt or "").strip()
+    if not text:
+        return ["写实影像提示词不能为空"]
+    issues = []
+    evidence = (
+        ("构图锚点", CINEMATIC_COMPOSITION_RE),
+        ("镜头景深/焦平面", CINEMATIC_DEPTH_RE),
+        ("曝光反差/黑位控制", CINEMATIC_EXPOSURE_RE),
+        ("色彩分离", CINEMATIC_COLOR_RE),
+        ("空气层/环境颗粒", CINEMATIC_ATMOSPHERE_RE),
+        ("真实材质细节", CINEMATIC_MATERIAL_RE),
+        ("非完美瑕疵/随机性", CINEMATIC_IMPERFECTION_RE),
+    )
+    for label, pattern in evidence:
+        if not pattern.search(text):
+            issues.append(f"缺少{label}的可见证据")
+    risk_hits = AI_REALISM_RISK_RE.findall(text)
+    if risk_hits:
+        issues.append("提示词含容易放大AI感/CG感的正向描述：" + "、".join(sorted(set(risk_hits))[:6]))
+    if require_live_action_style and not REALISM_POSITIVE_STYLE_RE.search(text):
+        issues.append("写实目标应在开头声明写实/实拍/电影剧照/实拍短片，而不是只写风格化电影感")
+    if require_live_action_style and CG_STYLE_DRIFT_RE.search(text) and not REALISM_POSITIVE_STYLE_RE.search(text[:80]):
+        issues.append("写实目标不应以动态漫/漫画/二次元/赛博等风格词开头；会把模型推向插画或CG质感")
+    return issues
+
+
+def cinematic_image_contract_issues(metadata, full_prompt=""):
+    """Validate optional cinematic_image_contract metadata and prompt grounding."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    contract = metadata.get("cinematic_image_contract")
+    if contract in (None, {}, ""):
+        return []
+    if not isinstance(contract, dict):
+        return ["qa_metadata.cinematic_image_contract必须是对象"]
+    issues = []
+    for field in CINEMATIC_IMAGE_CONTRACT_FIELDS:
+        value = contract.get(field)
+        if not isinstance(value, str) or len(value.strip()) < 3:
+            issues.append(f"cinematic_image_contract.{field}必须是非空扁平字符串")
+        elif len(value) > 180:
+            issues.append(f"cinematic_image_contract.{field}过长，应压缩为单句可见证据")
+    for field, value in contract.items():
+        if isinstance(value, (dict, list)):
+            issues.append(f"cinematic_image_contract.{field}必须保持扁平，不能嵌套对象或数组")
+    prompt_text = str(full_prompt or "")
+    combined = "；".join(
+        str(contract.get(field, "") or "")
+        for field in CINEMATIC_IMAGE_CONTRACT_FIELDS
+        if field != "realism_risk"
+    ) + "\n" + prompt_text
+    issues.extend(cinematic_realism_prompt_issues(combined, require_live_action_style=False))
+    if prompt_text:
+        grounding = (
+            ("composition_anchor", CINEMATIC_COMPOSITION_RE, "full_prompt缺少构图锚点落地"),
+            ("lens_depth", CINEMATIC_DEPTH_RE, "full_prompt缺少景深/焦平面落地"),
+            ("exposure_contrast", CINEMATIC_EXPOSURE_RE, "full_prompt缺少曝光/反差落地"),
+            ("color_separation", CINEMATIC_COLOR_RE, "full_prompt缺少色彩分离落地"),
+            ("atmosphere_layer", CINEMATIC_ATMOSPHERE_RE, "full_prompt缺少空气层/环境颗粒落地"),
+            ("material_detail", CINEMATIC_MATERIAL_RE, "full_prompt缺少真实材质落地"),
+            ("imperfection_map", CINEMATIC_IMPERFECTION_RE, "full_prompt缺少非完美瑕疵/随机性落地"),
+        )
+        for _field, pattern, message in grounding:
+            if not pattern.search(prompt_text):
+                issues.append(message)
+    return issues
+
+
+def video_texture_contract_issues(metadata, full_prompt=""):
+    """Validate a moving-image texture contract when supplied.
+
+    ``cinematic_image_contract`` protects a strong frame. This contract protects
+    exposure, material response, atmosphere motion, camera restraint, and
+    cross-shot carryover across a moving shot or sequence.
+    """
+    metadata = metadata if isinstance(metadata, dict) else {}
+    contract = metadata.get("video_texture_contract")
+    if contract in (None, {}, ""):
+        return []
+    if not isinstance(contract, dict):
+        return ["qa_metadata.video_texture_contract必须是对象"]
+    issues = []
+    for field in VIDEO_TEXTURE_CONTRACT_FIELDS:
+        value = contract.get(field)
+        if not isinstance(value, str) or len(value.strip()) < 3:
+            issues.append(f"video_texture_contract.{field}必须是非空扁平字符串")
+        elif len(value) > 180:
+            issues.append(f"video_texture_contract.{field}过长，应压缩为单句视频质感规则")
+    for field, value in contract.items():
+        if isinstance(value, (dict, list)):
+            issues.append(f"video_texture_contract.{field}必须保持扁平，不能嵌套对象或数组")
+
+    combined = "；".join(
+        str(contract.get(field, "") or "")
+        for field in VIDEO_TEXTURE_CONTRACT_FIELDS
+        if field != "risk_controls"
+    )
+    checks = (
+        (VIDEO_TEXTURE_LOOK_RE, "缺少全片影像质感/渲染基调"),
+        (VIDEO_TEXTURE_EXPOSURE_RE, "缺少视频曝光/黑位/高光持续规则"),
+        (VIDEO_TEXTURE_MATERIAL_MOTION_RE, "缺少材质在运动中的可见响应规则"),
+        (VIDEO_TEXTURE_ATMOSPHERE_MOTION_RE, "缺少雨雾尘/空气层随时间运动规则"),
+        (VIDEO_TEXTURE_CAMERA_STABILITY_RE, "缺少镜头稳定或运动预算规则"),
+        (VIDEO_TEXTURE_CONTINUITY_RE, "缺少跨镜质感继承/不跳变规则"),
+    )
+    for pattern, message in checks:
+        if not pattern.search(combined):
+            issues.append(message)
+
+    prompt_text = str(full_prompt or "")
+    if prompt_text:
+        if not VIDEO_TEXTURE_EXPOSURE_RE.search(prompt_text):
+            issues.append("full_prompt缺少视频曝光/黑位/高光规则落地")
+        if not VIDEO_TEXTURE_MATERIAL_MOTION_RE.search(prompt_text):
+            issues.append("full_prompt缺少材质运动/反光响应落地")
+        if not VIDEO_TEXTURE_CAMERA_STABILITY_RE.search(prompt_text):
+            issues.append("full_prompt缺少镜头稳定或运动预算落地")
+        risk_hits = AI_REALISM_RISK_RE.findall(prompt_text)
+        if risk_hits:
+            issues.append("full_prompt含容易放大AI感/CG感的正向描述：" + "、".join(sorted(set(risk_hits))[:6]))
+    return issues
 
 
 def physical_transition_chain_issues(metadata, full_prompt=""):
@@ -1694,15 +2032,37 @@ def source_constraint_basemap_issues(metadata):
         value = basemap.get(field)
         if not isinstance(value, str) or len(value.strip()) < 2:
             issues.append(f"source_constraint_basemap.{field}必须是非空扁平字符串")
+    shallow_object_fields = {"visible_people_gate"}
+    known_optional_fields = {
+        "visible_people_gate",
+        "performance_baseline_lock",
+        "emotion_micro_chain",
+        "dialogue_performance_kernel",
+        "emotion_residue_contract",
+        "physical_structure_chain",
+        "shot_component_choice",
+        "viewpoint_motion_lock",
+        "premium_director_polish",
+        "creative_profile",
+    }
     for field, value in basemap.items():
+        if field in shallow_object_fields and isinstance(value, dict):
+            if any(isinstance(nested, (dict, list)) for nested in value.values()):
+                issues.append(f"source_constraint_basemap.{field}必须是浅层对象，不能嵌套对象或数组")
+            continue
         if isinstance(value, (dict, list)):
             issues.append(f"source_constraint_basemap.{field}必须保持扁平，不能嵌套对象或数组")
+        if field in known_optional_fields and isinstance(value, str) and len(value.strip()) > 180:
+            issues.append(f"source_constraint_basemap.{field}应压缩为单句执行底图")
     role = str(basemap.get("tension_curve_role", "") or "").strip()
     if role and role not in TENSION_CURVE_ROLES:
         issues.append("source_constraint_basemap.tension_curve_role只允许铺垫/升压/峰值/释放/缓冲")
     shot_role = str(metadata.get("tension_curve_role", "") or "").strip()
     if role and shot_role and _canonical_tension_curve_role(role) != _canonical_tension_curve_role(shot_role):
         issues.append("source_constraint_basemap.tension_curve_role必须与qa_metadata.tension_curve_role一致")
+    creative_profile = str(basemap.get("creative_profile", "") or "").strip()
+    if creative_profile and creative_profile not in {"safe", "balanced", "expressive"}:
+        issues.append("source_constraint_basemap.creative_profile只能为safe/balanced/expressive")
     return issues
 
 

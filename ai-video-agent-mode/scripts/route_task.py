@@ -9,7 +9,7 @@ from resolve_run_mode import DEFAULT_INTENTS, resolve
 
 ROUTES = {
     "full": {
-        "description": "Run the complete Phase 0-10 pipeline for new or materially changed source content.",
+        "description": "Run the complete current eight-stage pipeline for new or materially changed source content.",
         "requires": [],
         "agents": True,
     },

@@ -32,6 +32,7 @@ def main():
 
     steps = []
     steps.append(_run("structure", [sys.executable, _script("test_current_pipeline.py")]))
+    steps.append(_run("quality_upgrades", [sys.executable, _script("test_quality_upgrades.py")]))
     steps.append(_run("golden_jimeng", [sys.executable, _script("golden_jimeng_check.py")]))
     if args.source:
         steps.append(_run("source_smoke", [

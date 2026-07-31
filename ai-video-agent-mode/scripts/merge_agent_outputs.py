@@ -113,9 +113,33 @@ def _patch_fields_for_batch(batch_path, manifest):
             return {}
         with open(context_path, encoding='utf-8-sig') as handle:
             context = json.load(handle)
-        return context.get('fields_by_main_shot', {}) if context.get('mode') == 'field_patch' else {}
+        if context.get('mode') != 'field_patch':
+            return {}
+        return {
+            shot_id: _normalize_retry_patch_fields(fields)
+            for shot_id, fields in (context.get('fields_by_main_shot', {}) or {}).items()
+        }
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def _normalize_retry_patch_fields(fields):
+    """Map reviewer section paths to Composer JSON fields and dependent evidence."""
+    normalized = []
+    for field in fields or []:
+        text = str(field or "").strip()
+        if not text:
+            continue
+        if text.startswith("full_prompt."):
+            text = "full_prompt"
+        if text not in normalized:
+            normalized.append(text)
+    if "full_prompt" in normalized and "qa_metadata.quality_evidence" not in normalized:
+        # quality_evidence fragments are derived from full_prompt sections.  If
+        # a retry replaces prompt wording, keeping stale fragments can make the
+        # deterministic validator fail even though the visible prompt is fixed.
+        normalized.append("qa_metadata.quality_evidence")
+    return normalized
 
 
 def _sha256(path):
@@ -127,7 +151,7 @@ def _sha256(path):
 
 
 def _build_prompt_package(items):
-    """Build the merged Phase 6/7 package with one canonical shots array."""
+    """Build the merged Master Production package with one canonical shots array."""
     normalized = []
     for item in items:
         copied = dict(item)

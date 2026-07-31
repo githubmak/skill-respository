@@ -1,63 +1,64 @@
-# Integrated Fight Workflow
+# 完整打斗制作协作流程
 
-Use this route for a full fight design. The fight director is the source of truth. Pass concise, locked facts downstream and merge only the fields assigned below.
+需要完整打斗视频包时使用本流程。`fight-scene-video` 是事实源，只向下游传递简洁且已锁定的信息；专家模块只能细化分配给它的字段。
 
-## State Packet
+## 状态包
 
-Before calling a specialist, prepare this packet for the current coverage unit:
+调用专家模块前，为当前覆盖单元准备：
 
 ```text
-scene_lock: fixed anchors, surfaces, light source, legal routes, danger zones
-fight_beat: dramatic goal, attacker intent, defender response, changed spatial state
-action_vector: start posture -> action path -> contact/near-miss -> force direction -> end posture
-ability_lock: declared ability source, effect path, tactical consequence, residue
-state_in: character position/body/facing/prop/emotion/screen side; prior camera axis
-coverage_role: establish/threat/commitment/reversal/contact/consequence/aftermath
-timing: duration, in-cut trigger, out-cut trigger
+scene_lock: 固定地标、表面材质、光源、合法路线、危险区
+fight_beat: 戏剧目标、攻击者意图、防守者回应、改变后的空间状态
+action_vector: 起始姿态 -> 动作路径 -> 接触/擦过 -> 受力方向 -> 结束姿态
+ability_lock: 已声明技能来源、特效路径、战术后果、残留
+state_in: 人物位置/身体/朝向/道具/情绪/屏幕侧；前镜摄影机轴线
+coverage_role: 建立空间/威胁/承诺/反转/接触/后果/余波
+timing: 时长、入镜触发、出镜触发
 ```
 
-## Specialist Handoffs
+## 专家模块交接
 
 ### Natural Emotion Performance
 
-Request only visible combat performance: focus, breath, eye line, muscle preparation, hesitation, pain suppression, panic, recovery, or control. Feed back `performance_anchor`. Do not ask it to add dialogue or a separate emotional subplot.
+只请求可见打斗表演：注意力、呼吸、视线、肌肉预备、迟疑、忍痛、恐慌、恢复或控制。回收为 `performance_anchor`，不让它新增对白或独立情绪支线。
 
 ### Frames Analysis
 
-Request the foreground/midground/background arrangement, material response, fixed lighting, character blocking, and action vector. Feed back `frame_lock`: light direction, material terms, spatial layers, position anchors, and end-frame vector. For 3D CG, keep the confirmed 3D CG look; do not inherit its genre-specific default styling.
+请求前中后景、材质反应、固定光线、人物调度和动作向量。回收为 `frame_lock`：光线方向、材质、空间层级、位置锚点和落幅向量。3D CG只继承已确认的CG质感，不继承模块默认类型风格。
 
 ### Camera Analysis
 
-Request a single shot only. Feed `coverage_role`, `frame_lock`, action vector, axis side, 16:9 format, entry and exit cut triggers. Feed back `camera_lock`: size, angle, lens intent, main move, start/end composition, axis relation, and cut requirement. One camera move per generated clip; rhythm emerges from the sequence of clips.
+每次只请求一个镜头。传入 `coverage_role`、`frame_lock`、动作向量、轴线侧、画幅、入点和切点。回收 `camera_lock`：景别、角度、镜头意图、一个主运镜、起终构图、轴线关系和剪辑要求。
 
 ### Overhead Trajectory Map
 
-Give it only the approved positions, routes, prop lifecycle, camera rail, and fixed anchors. Its result is a staging reference, never a license to change the fight.
+只传已批准的位置、路线、道具生命周期、摄影机轨道和固定地标。返回结果是调度参考，不能改变打斗事实。
 
 ### Continuity Ledger
 
-Initialize it once using the fight contract's anchors and initial character states. After every coverage unit, send the actual end state. Copy its `COMPACT_STATE` into the next packet. Treat position jump, silent prop change, unexplained axis cross, and unmotivated emotional jump as blocking issues.
+用打斗合同的地标和初始人物状态初始化一次。每个覆盖单元完成后发送真实落幅，将 `COMPACT_STATE` 复制到下一状态包。位置跳变、道具无因改变、无解释越轴和情绪跳变均为阻断问题。
 
 ### Audio Design
 
-Run after edit timing locks. Pass visual impact points, materials, power effects, cut points, and silence needs. Use sound to reinforce cause and effect: anticipation breath/charge, attack path, contact, material consequence, and aftermath. Do not use music or camera-whooshes to fake missing action clarity.
+剪辑时间锁定后运行。传入可见冲击点、材质、技能、切点和静音需求。声音强化预备、攻击路径、接触、材质后果和余波，不能用音乐或镜头呼啸掩盖动作不清。
 
-### Overhead Map and Jimeng Pair
+### 轨迹图与即梦配对
 
-Keep two prompt outputs for each generated coverage shot:
+每个生成镜头保留两套提示词：
 
-1. Send the approved movement facts to `overhead-trajectory-map`; preserve its complete image positive prompt and negative prompt under `轨迹图生图提示词`.
-2. Render or otherwise approve that map, then let `fight-scene-video` directly assemble the locked shot packet into a Jimeng dynamic positive prompt and a separated, shot-specific negative prompt. Preserve both under `即梦视频生成包`. Do not call `ai-prompt-builder`.
+1. 把批准的移动事实交给 `overhead-trajectory-map`，将完整正向和负面生图提示词放入 `轨迹图生图提示词`。
+2. 轨迹图生成或确认后，由本技能把锁定镜头包直接组装成即梦动态正向提示词和独立负面提示词，放入 `即梦视频生成包`；不调用 `ai-prompt-builder`。
 
-Supply character reference, scene reference, and the matching overhead map to the video-generation workflow when the platform supports reference assets. Do not mention the map's colored routes, labels, circles, or legend in the Jimeng prompt. Translate only their semantic facts: positions, direction, distance, movement, camera path, and end state.
+平台支持参考素材时，提供角色图、场景图和对应双视图轨迹图。即梦提示词不得出现彩色路线、标签、圆圈或图例，只翻译位置、方向、距离、运动、摄影机路径和落幅事实。
 
-## Merge Gate
+## 合并质量门
 
-Before writing the final video prompt, confirm:
+写最终视频提示词前确认：
 
-1. `performance_anchor` agrees with body state and force direction.
-2. `frame_lock` and `camera_lock` use the same screen positions, axis, light, and key material.
-3. The overhead route begins at the continuity state and ends at the ledger's end state.
-4. Sound cues land on visible causes and preserve the cut's action match or silence.
-5. The overhead-map end state, continuity state, and Jimeng prompt end frame match.
-6. The final Jimeng prompt retains the fight beat exactly; it contains no analysis labels, colored-map annotations, or specialist-only metadata.
+1. `performance_anchor` 与身体状态和受力方向一致。
+2. `frame_lock` 与 `camera_lock` 使用相同屏幕位置、轴线、光线和关键材质。
+3. 双视图路线从连续性状态起步，并在台账落幅结束。
+4. 声音落在可见原因上，并保持动作匹配或静音意图。
+5. 轨迹图落幅、连续性状态和即梦提示词落幅一致。
+6. 最终提示词准确保留打斗节拍，不含分析标签、地图标注或专家内部元数据。
+7. 成片复盘时只修改主根因对应字段，并保护已经通过的事实锁。

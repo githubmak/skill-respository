@@ -1,51 +1,9 @@
 """Current-contract pipeline gate declarations."""
 
-GATES = {
-    "user_confirm": {
-        "input": [],
-        "output": ["project_config.json"],
-        "validator": None
-    },
-    "orchestrator": {
-        "input": [],
-        "output": [
-            ".cache/orchestrator/shot_plan.json",
-            ".cache/orchestrator/source_ledger.json",
-            ".cache/orchestrator/dramatic_beat_ledger.json",
-        ],
-        "validator": None
-    },
-    "scene_lock": {
-        "input": [".cache/orchestrator/shot_plan.json"],
-        "output": [".cache/analysis/scene_locks.json"],
-        "validator": "scene_lock"
-    },
-    "master_production": {
-        "input": [".cache/orchestrator/shot_plan.json", ".cache/analysis/scene_locks.json"],
-        "output": [".cache/composer/merged.prompt_package.json"],
-        "validator": "prompt"
-    },
-    "editor_pass1": {
-        "input": [".cache/composer/merged.prompt_package.json"],
-        "output": [".cache/review/pre_editor_gate.json"],
-        "validator": None
-    },
-    "editor_pass2": {
-        "input": [".cache/composer/merged.prompt_package.json"],
-        "output": [".cache/review/llm_gate_result.json"],
-        "validator": None
-    },
-    "validate": {
-        "input": [".cache/composer/merged.prompt_package.json", "project_config.json"],
-        "output": [".cache/validate/result.json"],
-        "validator": None
-    },
-    "export": {
-        "input": [".cache/composer/merged.prompt_package.json", ".cache/orchestrator/shot_plan.json"],
-        "output": [".cache/export/result.json"],
-        "validator": None
-    }
-}
+from contract_registry import pipeline_gates
+
+
+GATES = pipeline_gates()
 
 
 def get_retry_decision(result, max_retries=None):

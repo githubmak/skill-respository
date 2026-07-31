@@ -27,14 +27,24 @@ def evaluate(run_dirs):
     valid = [item for item in records if not item["issues"]]
     elapsed = sorted(item["elapsed_seconds"] for item in valid if isinstance(item["elapsed_seconds"], (int, float)))
     p95 = _percentile(elapsed, 0.95) if elapsed else None
+    dispatch_counts = sorted(item["total_dispatch_count"] for item in valid if isinstance(item.get("total_dispatch_count"), int))
+    retry_counts = sorted(item["retry_count"] for item in valid if isinstance(item.get("retry_count"), int))
     scenarios = {item["scenario"] for item in valid if item["scenario"]}
     missing_scenarios = sorted(REQUIRED_SCENARIOS - scenarios)
     normal_scenarios = {item["scenario"] for item in valid if item["injected_failure_rate"] == 0}
     fault_scenarios = {item["scenario"] for item in valid if item["injected_failure_rate"] == 0.10}
+    matrix = _coverage_matrix(valid)
+    missing_cells = sorted(
+        "%s@%s" % (scenario, "fail10" if failure_rate else "normal")
+        for scenario in REQUIRED_SCENARIOS
+        for failure_rate in (0, 0.10)
+        if not matrix.get(scenario, {}).get(str(failure_rate), {}).get("count")
+    )
     synthetic_count = sum(1 for item in valid if item.get("evidence_kind") != "real_pipeline")
     pass_basic = bool(
         len(valid) >= 6
         and not missing_scenarios
+        and not missing_cells
         and REQUIRED_SCENARIOS <= normal_scenarios
         and REQUIRED_SCENARIOS <= fault_scenarios
         and p95 is not None
@@ -48,8 +58,12 @@ def evaluate(run_dirs):
         "p95_seconds": p95,
         "scenarios": sorted(scenarios),
         "missing_scenarios": missing_scenarios,
+        "missing_matrix_cells": missing_cells,
         "normal_scenarios": sorted(normal_scenarios),
         "fault_injection_scenarios": sorted(fault_scenarios),
+        "coverage_matrix": matrix,
+        "dispatch_p95": _percentile(dispatch_counts, 0.95) if dispatch_counts else None,
+        "retry_p95": _percentile(retry_counts, 0.95) if retry_counts else None,
         "pass": pass_basic,
         "real_slo_pass": pass_basic and synthetic_count == 0,
         "evidence_note": (
@@ -68,6 +82,10 @@ def _record(run_dir):
     config = _load(os.path.join(run_dir, "project_config.json"), issues)
     if not isinstance(report, dict) or not report.get("completed"):
         issues.append("core pipeline is not completed")
+    dispatch = report.get("dispatch_summary", {}) if isinstance(report, dict) else {}
+    if not isinstance(dispatch, dict):
+        issues.append("performance.dispatch_summary must be an object")
+        dispatch = {}
     shot_count = len(plan.get("shots", [])) if isinstance(plan, dict) else 0
     if shot_count != 50:
         issues.append("expected exactly 50 main shots, got %s" % shot_count)
@@ -90,6 +108,9 @@ def _record(run_dir):
         "injected_failure_rate": failure_rate,
         "evidence_kind": evidence_kind,
         "elapsed_seconds": report.get("elapsed_seconds") if isinstance(report, dict) else None,
+        "total_dispatch_count": dispatch.get("total_dispatch_count"),
+        "retry_count": dispatch.get("retry_count"),
+        "stale_or_superseded_packet_count": dispatch.get("stale_or_superseded_packet_count"),
         "shot_count": shot_count,
         "issues": issues,
     }
@@ -115,6 +136,31 @@ def _percentile(values, q):
     if lower == upper:
         return round(values[lower], 3)
     return round(values[lower] + (values[upper] - values[lower]) * (index - lower), 3)
+
+
+def _coverage_matrix(records):
+    matrix = {
+        scenario: {
+            "0": {"count": 0, "elapsed_seconds": []},
+            "0.1": {"count": 0, "elapsed_seconds": []},
+        }
+        for scenario in sorted(REQUIRED_SCENARIOS)
+    }
+    for record in records:
+        scenario = record.get("scenario")
+        rate = str(record.get("injected_failure_rate"))
+        if scenario not in matrix or rate not in matrix[scenario]:
+            continue
+        cell = matrix[scenario][rate]
+        cell["count"] += 1
+        elapsed = record.get("elapsed_seconds")
+        if isinstance(elapsed, (int, float)):
+            cell["elapsed_seconds"].append(elapsed)
+    for scenario in matrix:
+        for rate in matrix[scenario]:
+            values = matrix[scenario][rate]["elapsed_seconds"]
+            matrix[scenario][rate]["p95_seconds"] = _percentile(sorted(values), 0.95) if values else None
+    return matrix
 
 
 def _write(path, data):

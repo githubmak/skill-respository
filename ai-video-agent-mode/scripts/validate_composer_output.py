@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Phase 6 Composer batches against the current contract."""
+"""Validate Master Production batches against the current contract."""
 
 import json
 import hashlib
@@ -49,7 +49,9 @@ from modec_v4 import (
     timeline_issues,
     temporal_transition_contract_issues,
     visibility_issues,
+    visible_people_gate_issues,
     visual_texture_issues,
+    video_texture_contract_issues,
 )
 from negative_prompts import PLACEHOLDER, is_fight_context
 from shot_semantics import quality_contract as derive_quality_contract, validation_profile as derive_validation_profile
@@ -83,6 +85,7 @@ def validate_composer_output(path, run_dir=None, report_path=None):
     plan_map, director_map = _load_context(run_dir)
     main_plan = _load_main_plan(run_dir)
     project_config = _load_project_config(run_dir)
+    expected_canvas = _expected_canvas(project_config)
     hard_max_chars = (project_config.get("prompt_limits", {}) or {}).get("hard_max_chars")
     scaffold_map = _load_scaffold_for_batch(path, run_dir)
     seen = set()
@@ -124,6 +127,10 @@ def validate_composer_output(path, run_dir=None, report_path=None):
             issues.append(prefix + "负面词必须位于negative_prompt字段，不能进入full_prompt")
         if shot.get("negative_prompt") != PLACEHOLDER:
             issues.append(prefix + f"Composer阶段negative_prompt必须精确等于{PLACEHOLDER}")
+        for problem in _canvas_issues(full_prompt, expected_canvas):
+            issues.append(prefix + problem)
+        for problem in _metadata_model_safety_issues(metadata, expected_canvas):
+            issues.append(prefix + problem)
 
         duration = shot.get("duration", 0)
         for problem in prompt_length_issues(full_prompt, duration, hard_max_chars):
@@ -151,6 +158,8 @@ def validate_composer_output(path, run_dir=None, report_path=None):
             issues.append(prefix + problem)
         for problem in scene_tone_palette_issues(metadata):
             issues.append(prefix + problem)
+        for problem in video_texture_contract_issues(metadata, full_prompt):
+            issues.append(prefix + problem)
         for problem in screen_text_policy_metadata_issues(metadata, full_prompt):
             issues.append(prefix + problem)
         for problem in tension_curve_role_issues(metadata):
@@ -160,7 +169,7 @@ def validate_composer_output(path, run_dir=None, report_path=None):
         if isinstance(source_ids, list) and source_ids:
             plan_item = _aggregate_context(plan_map, source_ids)
             director_item = _aggregate_context(director_map, source_ids)
-            # The current pipeline has no separate Director artifact. Phase 1
+            # The current pipeline has no separate Director artifact. Orchestrator
             # carries the authoritative dialogue ledger and subshot facts.
             if not director_item:
                 director_item = plan_item
@@ -181,6 +190,8 @@ def validate_composer_output(path, run_dir=None, report_path=None):
         _validate_quality_contract(prefix, metadata, plan_item, director_item, full_prompt, issues)
         _validate_scene_light_authority(prefix, director_item, full_prompt, issues)
         for problem in role_partition_issues(metadata, visible):
+            issues.append(prefix + problem)
+        for problem in visible_people_gate_issues(metadata, full_prompt, visible):
             issues.append(prefix + problem)
         if validation_profile["performance_contract"]:
             for problem in emotion_driver_issues(metadata, full_prompt, visible):
@@ -203,7 +214,7 @@ def validate_composer_output(path, run_dir=None, report_path=None):
         if validation_profile["listener_reaction_plan"]:
             for problem in listener_reaction_issues(metadata, full_prompt):
                 issues.append(prefix + problem)
-        if validation_profile["expectation_anchor"]:
+        if "expectation_anchor" in metadata or validation_profile["expectation_anchor"]:
             for problem in expectation_anchor_issues(metadata, full_prompt):
                 issues.append(prefix + problem)
         for problem in insert_shot_issues(metadata, full_prompt, duration, visible):
@@ -439,9 +450,9 @@ def _validate_metadata(prefix, metadata, director_item, full_prompt, audio_enabl
             if narrative_beat_id and narrative_beat_id not in dramatic_beat_ids:
                 issues.append(prefix + "dramatic_design.narrative_beat_id必须属于dramatic_beat_ids")
             if expected_narrative_beat_id and not narrative_beat_id:
-                issues.append(prefix + "dramatic_design.narrative_beat_id必须从Phase 1继承")
+                issues.append(prefix + "dramatic_design.narrative_beat_id必须从Orchestrator继承")
             elif expected_narrative_beat_id and narrative_beat_id != expected_narrative_beat_id:
-                issues.append(prefix + "dramatic_design.narrative_beat_id必须与Phase 1一致")
+                issues.append(prefix + "dramatic_design.narrative_beat_id必须与Orchestrator一致")
         punctuation = dramatic.get("visual_punctuation")
         if not isinstance(punctuation, list):
             issues.append(prefix + "dramatic_design.visual_punctuation必须是数组")
@@ -611,6 +622,72 @@ def _load_project_config(run_dir):
     with open(path, "r", encoding="utf-8-sig") as handle:
         value = json.load(handle)
     return value if isinstance(value, dict) else {}
+
+
+def _expected_canvas(project_config):
+    raw = str((project_config or {}).get("canvas", "") or "").strip()
+    match = re.search(r"\d+\s*:\s*\d+", raw)
+    return re.sub(r"\s+", "", match.group(0)) if match else ""
+
+
+def _canvas_issues(full_prompt, expected_canvas):
+    if not expected_canvas:
+        return []
+    text = str(full_prompt or "")
+    compact = re.sub(r"\s+", "", text)
+    issues = []
+    if expected_canvas not in compact:
+        issues.append(f"full_prompt必须明确使用项目画幅{expected_canvas}")
+    seen_canvases = sorted(set(re.sub(r"\s+", "", item) for item in re.findall(r"\d+\s*:\s*\d+", text)))
+    conflicts = [canvas for canvas in seen_canvases if canvas != expected_canvas]
+    if conflicts:
+        issues.append("full_prompt出现与项目画幅冲突的比例：" + "、".join(conflicts))
+    if expected_canvas == "9:16" and "横屏" in text:
+        issues.append("9:16项目不得在full_prompt写横屏")
+    if expected_canvas == "16:9" and "竖屏" in text:
+        issues.append("16:9项目不得在full_prompt写竖屏")
+    return issues
+
+
+def _metadata_model_safety_issues(metadata, expected_canvas):
+    if not isinstance(metadata, dict):
+        return []
+    issues = []
+    palette = metadata.get("scene_tone_palette", {})
+    if isinstance(palette, dict):
+        prefix = str(palette.get("visual_scene_prefix", "") or "")
+        if expected_canvas:
+            compact = re.sub(r"\s+", "", prefix)
+            if prefix and expected_canvas not in compact:
+                issues.append(f"qa_metadata.scene_tone_palette.visual_scene_prefix必须使用项目画幅{expected_canvas}")
+            conflicts = sorted(set(re.sub(r"\s+", "", item) for item in re.findall(r"\d+\s*:\s*\d+", prefix) if re.sub(r"\s+", "", item) != expected_canvas))
+            if conflicts:
+                issues.append("qa_metadata.scene_tone_palette.visual_scene_prefix出现冲突画幅：" + "、".join(conflicts))
+            if expected_canvas == "9:16" and "横屏" in prefix:
+                issues.append("9:16项目的visual_scene_prefix不得写横屏")
+            if expected_canvas == "16:9" and "竖屏" in prefix:
+                issues.append("16:9项目的visual_scene_prefix不得写竖屏")
+    checked_paths = {
+        "qa_metadata.source_constraint_basemap.single_shot_risk": _deep_get(metadata, ["source_constraint_basemap", "single_shot_risk"]),
+        "qa_metadata.performance_causality.hold_strategy": _deep_get(metadata, ["performance_causality", "hold_strategy"]),
+        "qa_metadata.reroll_control.camera_anchor": _deep_get(metadata, ["reroll_control", "camera_anchor"]),
+    }
+    forbidden = ("同侧轴线", "轴线", "越轴", "OTS", "反打")
+    for path, value in checked_paths.items():
+        text = str(value or "")
+        leaked = [term for term in forbidden if term in text]
+        if leaked:
+            issues.append(f"{path}含不可投喂/交付的镜头术语：" + "、".join(leaked))
+    return issues
+
+
+def _deep_get(value, path):
+    current = value
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
 
 
 def _as_char_list(value):

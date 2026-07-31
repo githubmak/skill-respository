@@ -4,8 +4,8 @@ import json
 MAX_PACKET_CHARS = 12000
 # Reserve the remainder of MAX_PACKET_CHARS for dispatch provenance, paths,
 # instructions, and phase metadata.
-MAX_EDITOR_ITEMS_CHARS = 7000
-MAX_COMPOSER_ITEMS_CHARS = 9000
+MAX_EDITOR_ITEMS_CHARS = 8000
+MAX_COMPOSER_ITEMS_CHARS = 9500
 
 def check(packet):
     size = len(json.dumps(packet, ensure_ascii=False))

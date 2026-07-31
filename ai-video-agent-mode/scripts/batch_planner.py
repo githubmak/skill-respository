@@ -78,7 +78,7 @@ def dynamic_master_chunks(items, compact_item, force_single=False):
         if not current and not composer_items_fit([compact_item(item) for item in group]):
             raise ValueError(
                 "single Master Production task exceeds the packet context budget; "
-                "split that main shot during Phase 1 instead of truncating its source facts"
+                "split that main shot during Orchestrator instead of truncating its source facts"
             )
         current.extend(group)
         capacity = next_capacity
@@ -91,7 +91,7 @@ def dynamic_master_chunks(items, compact_item, force_single=False):
 
 
 def editor_review_chunks(windows, batch_size=None):
-    tiers = {"light": 10, "standard": 6, "high": 4}
+    tiers = {"light": 10, "standard": 8, "high": 6}
     requested = max(int(batch_size), 1) if batch_size is not None else None
     chunks, current, capacity = [], [], 10
     for window in windows:

@@ -1,44 +1,52 @@
-# Style Action Language
+# 类型风格动作语言
 
-Use this reference to turn genre words into visible action decisions. Select one primary language; borrow from another only when the source supports it.
+把类型词转换成可见动作决策时读取本参考。选择一个主动作语言，只有原始设定支持时才借用其他类型。
 
-## Realistic Hand-to-Hand and Street Brawl
+## 写实近身与街头搏斗
 
-- Build impact from planted feet, hip/shoulder rotation, a clear target line, interruption of balance, and a recovery beat. The character receiving force must brace, redirect, stumble, collide with a surface, or lose a route.
-- Use short exchanges: a feint or pressure step, one committed hit or block, a reaction, and a reset. Breathing, distance management, reach, fatigue, and damaged footing create tension.
-- Let material answer the contact: dust jumps from concrete, a metal panel dents or rings, loose items shift, or a wall arrests motion. Do not make every hit a large explosion.
-- Keep the camera long enough to read the body line before and after impact. Avoid constant shake, repeated cutaways, and frictionless backward slides.
+- 用脚掌扎地、髋肩传力、明确目标线、重心中断和恢复节拍建立打击感。
+- 采用短交换：假动作/压迫步、一次承诺攻击或格挡、一次反应、重置距离。
+- 让材质回应接触：混凝土扬尘、金属凹陷或震响、松动物品位移、墙面阻止身体滑动。
+- 摄影机停留到命中前后身体线可读，避免持续晃动、重复切走和无摩擦后滑。
 
-## Wuxia and Classical Martial Arts
+## 武侠与古典兵器
 
-- Prioritize rhythm, stance, weapon line, redirection, and space between bodies. Violence can be elegant, but every flourish must change range, angle, weapon control, or access to terrain.
-- Use bamboo, rooflines, bridges, hanging cloth, water, stone paths, and door frames as movement grammar: step, pivot, vault, glide, or pin a route.
-- Keep effects restrained unless the source grants inner force. A blade's air trail, fabric response, or water ripple may emphasize a committed line but must not replace the action.
+- 优先表现节奏、架势、兵器线、卸力和身体间距；每次花式动作都必须改变距离、角度、武器控制或地形权限。
+- 把竹林、屋脊、桥、垂布、水面、石路、门框转为步法、转身、借力、滑行或封路工具。
+- 原作未赋予内力时克制特效；剑刃短暂气流、布料反馈和水纹只能强调既有动作。
 
-## Xianxia, Cultivation, and Fantasy Techniques
+## 仙侠、修炼与玄幻术法
 
-- Define each technique by `source -> path -> defensive/offensive interaction -> spatial consequence -> residue`. A talisman, sword light, formation, or barrier is a tactical object, not decoration.
-- Use verticality and elegant trajectories: curved flight paths, circular seals, suspended fragments, sword arcs, or terrain lifted by force. Preserve calm intention before explosive release.
-- Make power scale legible: small technique affects a body or route; medium technique breaks cover or creates a barrier; large technique changes the battlefield. Do not escalate scale without a cost or a visible response.
-- At least one beat must exploit the location's spiritual or physical geometry, such as a cliff edge, hanging bridge, shrine, floating debris, or broken formation pillar.
+- 用 `来源 -> 路径 -> 攻防交互 -> 空间后果 -> 残留` 定义术法。符箓、剑光、阵法和结界都是战术物体。
+- 利用垂直空间和优雅轨迹：弧线飞行、圆形法印、悬浮碎片、剑弧、地形抬升；爆发前保留冷静意图。
+- 小术影响身体或一步路线，中术破坏掩体或建立屏障，大术改变整个战场；升级必须有代价和可见回应。
+- 至少一个节拍利用场景的物理或灵性几何，如悬崖、吊桥、神龛、浮石或残破阵柱。
 
-## Superhero, Sci-Fi, and 3D CG Spectacle
+## 超级英雄、科幻与3D CG奇观
 
-- Use clean silhouette, anticipation, acceleration, impact hold, and material aftermath. Exaggerate pose and arc, but retain one clear force direction and a readable final position.
-- Reserve the strongest visual event for a turning point. Energy, debris, sparks, shockwaves, or time distortion must reveal a capability or reshape the available routes.
-- In 3D CG, let camera moves reveal scale or force: track a run-up, hold during the hit, then settle on destruction or changed spacing. Do not spin the camera merely because the action is large.
+- 使用清楚剪影、预备、加速、冲击停留和材质余波。姿态可以夸张，但只保留一个主受力方向和可读落幅。
+- 最强视觉事件只用于权力转折；能量、碎屑、火花、冲击波或时间扭曲必须揭示能力或改变路线。
+- 让摄影机揭示尺度和力量：跟随助跑、命中时停稳、最后落在破坏或新距离。不能因为场面大就无目的旋转。
 
-## Anime and Dynamic Manga
+## 动画与动态漫画
 
-- Alternate held intent, a decisive readable line, a single impact image, and a reaction or aftermath image. Use speed lines, aura, impact flashes, or frame holds only at a named action beat.
-- Keep character poses iconic and effects layered behind the silhouette. Avoid stacking several named attacks in one clip.
+- 在静止意图、决定性动作线、单一冲击画面、反应/余波之间交替。
+- 速度线、气场、冲击闪白和定格只用于明确命名的动作节点。
+- 保持角色姿态清楚，特效尽量位于剪影之后；单镜不堆多个大招。
 
-## Style Gate
+## 恐怖追逃与生存动作
 
-Reject and rewrite a sequence when any condition holds:
+- 限制观众知情范围，用视线盲区、门框、手电、反光和声音对应的转头建立威胁。
+- 主角优先自保、寻找出口和利用障碍，极少主动进行长交换。
+- 受伤、喘息、湿滑地面和狭窄通道持续影响速度与选择，不能在下一镜自动恢复。
 
-- Removing the location leaves the fight unchanged.
-- Removing all effects leaves an xianxia or fantasy tactic unexplained.
-- Removing physical reactions leaves a realistic fight unchanged.
-- Every hit has the same response, scale, and camera treatment.
-- The intended power difference is stated but never visible in timing, control, damage, or route access.
+## 风格质量门
+
+出现以下情况必须重写：
+
+- 删除场景后打斗仍完全成立。
+- 删除特效后仙侠/玄幻战术无法解释。
+- 删除身体反应后写实打斗没有变化。
+- 每次命中拥有相同反应、尺度和镜头处理。
+- 战力差只写在文字里，没有体现在时机、控制、损伤或路线权限上。
+- 风格词很多，但没有转译成距离、发力、镜头、特效或环境规则。

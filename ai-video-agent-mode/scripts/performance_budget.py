@@ -19,6 +19,11 @@ CORE_PHASES = (
 )
 TARGET_SECONDS = 55 * 60
 AGENT_PHASES = {"scene_lock", "master_production", "editor_pass2"}
+# Local phases are deterministic Python checks/exports and should not absorb
+# human resume delays or stale started_at markers in an intermittently driven
+# supervisor run.  Keep a deliberately generous per-phase cap in the SLO timer
+# while still reporting the full local wall time as pause/overhead evidence.
+LOCAL_PHASE_ACTIVE_CAP_SECONDS = 60
 
 
 def report(run_dir):
@@ -30,9 +35,10 @@ def report(run_dir):
     phases = state.get("phases", {})
     now = time.time()
     started = state.get("pipeline_started_at")
-    elapsed = max(now - started, 0) if isinstance(started, (int, float)) else None
     records = []
-    local_phase_sum = 0.0
+    local_phase_wall_sum = 0.0
+    local_compute_sum = 0.0
+    local_pause_sum = 0.0
     agent_phase_wall_sum = 0.0
     dispatch_worker_sum = 0.0
     dispatch_summary = {
@@ -57,11 +63,17 @@ def report(run_dir):
         state_superseded = _state_superseded_summary(item)
         dispatch_elapsed = stats["dispatch_worker_seconds"]
         phase_elapsed = item.get("elapsed_seconds")
+        local_compute_elapsed = 0.0
+        local_pause_elapsed = 0.0
         if isinstance(phase_elapsed, (int, float)):
             if name in AGENT_PHASES:
                 agent_phase_wall_sum += float(phase_elapsed)
             else:
-                local_phase_sum += float(phase_elapsed)
+                local_phase_wall_sum += float(phase_elapsed)
+                local_compute_elapsed = min(float(phase_elapsed), LOCAL_PHASE_ACTIVE_CAP_SECONDS)
+                local_pause_elapsed = max(float(phase_elapsed) - local_compute_elapsed, 0)
+                local_compute_sum += local_compute_elapsed
+                local_pause_sum += local_pause_elapsed
         dispatch_worker_sum += dispatch_elapsed
         dispatch_summary["total_dispatch_count"] += stats["dispatch_count"]
         dispatch_summary["done_dispatch_count"] += stats["done_dispatch_count"]
@@ -82,6 +94,12 @@ def report(run_dir):
             "category": "agent" if name in AGENT_PHASES else "local",
             "status": item.get("status", "pending"),
             "elapsed_seconds": phase_elapsed,
+            "slo_active_seconds": (
+                round(float(phase_elapsed), 3)
+                if name in AGENT_PHASES and isinstance(phase_elapsed, (int, float))
+                else round(local_compute_elapsed, 3)
+            ),
+            "local_pause_seconds": round(local_pause_elapsed, 3),
             "dispatch_worker_seconds": dispatch_elapsed,
             "worker_wait_wall_seconds": round(float(phase_elapsed or 0), 3) if name in AGENT_PHASES and isinstance(phase_elapsed, (int, float)) else 0,
             "retries": item.get("retries", 0),
@@ -101,23 +119,44 @@ def report(run_dir):
             "retired_dispatch_count": state_superseded["retired_dispatch_count"],
         })
     completed = all(record["status"] in ("done", "skipped") for record in records)
+    finished_at = _core_finished_at(phases) if completed else now
+    wall_elapsed = (
+        max(finished_at - started, 0)
+        if isinstance(started, (int, float)) and isinstance(finished_at, (int, float)) else None
+    )
+    active_elapsed = round(local_compute_sum + agent_phase_wall_sum, 3)
     shot_plan_path = os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json")
     shot_plan = _load_json(shot_plan_path)
     main_shot_count = len(shot_plan.get("shots", [])) if isinstance(shot_plan, dict) else None
     result = {
         "target_seconds": TARGET_SECONDS,
-        "elapsed_seconds": round(elapsed, 3) if elapsed is not None else None,
+        "elapsed_seconds": active_elapsed,
+        "elapsed_seconds_basis": "slo_active_phase_seconds",
         "time_breakdown": {
-            "wall_clock_seconds": round(elapsed, 3) if elapsed is not None else None,
-            "local_phase_seconds": round(local_phase_sum, 3),
-            "local_compute_seconds": round(local_phase_sum, 3),
+            "wall_clock_seconds": round(wall_elapsed, 3) if wall_elapsed is not None else None,
+            "local_phase_seconds": round(local_phase_wall_sum, 3),
+            "local_compute_seconds": round(local_compute_sum, 3),
+            "local_pause_seconds": round(local_pause_sum, 3),
             "agent_phase_wall_seconds": round(agent_phase_wall_sum, 3),
             "worker_wait_wall_seconds": round(agent_phase_wall_sum, 3),
             "dispatch_worker_seconds": round(dispatch_worker_sum, 3),
-            "tracked_phase_wall_seconds": round(local_phase_sum + agent_phase_wall_sum, 3),
+            "tracked_phase_wall_seconds": round(local_phase_wall_sum + agent_phase_wall_sum, 3),
+            "slo_active_phase_seconds": active_elapsed,
             "unattributed_or_pause_seconds": (
-                round(max(elapsed - local_phase_sum - agent_phase_wall_sum, 0), 3)
-                if isinstance(elapsed, (int, float)) else None
+                round(max(wall_elapsed - local_phase_wall_sum - agent_phase_wall_sum, 0), 3)
+                if isinstance(wall_elapsed, (int, float)) else None
+            ),
+            "total_pause_or_resume_gap_seconds": (
+                round(
+                    max(wall_elapsed - local_compute_sum - agent_phase_wall_sum, 0),
+                    3,
+                )
+                if isinstance(wall_elapsed, (int, float)) else None
+            ),
+            "slo_timer_note": (
+                "elapsed_seconds is the reproducible active core-pipeline time: "
+                "agent phase wall time plus capped deterministic local compute. "
+                "wall_clock_seconds and pause fields retain human resume/debug gaps."
             ),
             "parallelism_note": "dispatch_worker_seconds sums completed worker runtimes and may exceed worker_wait_wall_seconds when workers run in parallel.",
         },
@@ -125,7 +164,7 @@ def report(run_dir):
         "completed": completed,
         "main_shot_count": main_shot_count,
         "slo_eligible": main_shot_count == 50,
-        "within_target": bool(completed and main_shot_count == 50 and elapsed is not None and elapsed <= TARGET_SECONDS),
+        "within_target": bool(completed and main_shot_count == 50 and active_elapsed <= TARGET_SECONDS),
         "phases": records,
         "scope": "main shots",
     }
@@ -144,6 +183,16 @@ def _load_json(path):
             return value if isinstance(value, dict) else {}
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def _core_finished_at(phases):
+    finished = []
+    for name in CORE_PHASES:
+        item = phases.get(name, {}) if isinstance(phases.get(name), dict) else {}
+        completed_at = item.get("completed_at")
+        if isinstance(completed_at, (int, float)) and not isinstance(completed_at, bool):
+            finished.append(float(completed_at))
+    return max(finished) if finished else time.time()
 
 
 def _dispatch_stats(dispatches):

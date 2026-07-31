@@ -1,50 +1,65 @@
-# Action Budget and Stability Rules
+# 动作预算与生成稳定性
 
-Use this reference after the fight contract is locked and before writing the shot list.
+锁定打斗合同后、写镜头表前读取本参考。
 
-## Clip Budget
+## 时长预算
 
-| Clip length | Reliable content | Avoid |
+| 片段时长 | 稳定内容上限 | 避免 |
 |---:|---|---|
-| 2-3 seconds | one advance or retreat, one dodge, one attack preparation, one clear reaction | a complete exchange or a major position swap |
-| 4-6 seconds | setup, one decisive attack or environmental move, one response, a settled end frame | repeated impacts, a weapon transfer, two camera moves |
-| 7-8 seconds | a simple three-part chain: close distance, commit, resolve; one continuous camera path | multiple reversals, cross-axis coverage, separate subplots |
+| 2-3秒 | 一次前进/后退、一次闪避、一次攻击预备或一次明确反应 | 完整攻防交换、大幅换位 |
+| 4-6秒 | 起势、一次决定性攻击或环境动作、一次回应、稳定落幅 | 连续多次命中、移动中换武器、两个主运镜 |
+| 7-8秒 | 简单三段链：接近、承诺、解决；一条连续镜头路径 | 多次反转、越轴覆盖、独立支线 |
 
-Treat these as maximum action density. Slow the action by extending intention and recovery, not by stacking more choreography.
+把它们视为动作密度上限。需要延长时优先增加意图、预备、受力和恢复，不增加更多招式。
 
-## Action Grammar
+## 复杂度计分
 
-Design each beat with four components:
+给单个生成片段累计分值：
 
-1. `Intent`: close distance, protect a route, take an object, force a retreat, or create an exit.
-2. `Commit`: one clearly readable attack, shove, block, evade, displacement, or environmental interaction.
-3. `Response`: parry, evade, absorb, counter-position, break contact, or use cover.
-4. `Result`: distance, facing, balance, prop state, obstacle state, or power relation changes.
+| 元素 | 分值 |
+|---|---:|
+| 一个主要人物动作或一次明确反应 | 1 |
+| 双人身体/武器接触 | 2 |
+| 摔倒、腾空、翻滚或复杂手部动作 | 2 |
+| 武器/道具换手、落地再拾取 | 2 |
+| 主VFX或可破坏环境 | 2 |
+| 移动摄影机 | 1 |
+| 环绕、越轴、强遮挡或焦点交接 | 2 |
+| 每增加一名活跃角色 | 2 |
 
-Use the result as the next beat's opening. A strike that does not change the scene is usually decorative and should be removed or converted into a reaction.
+`0-5分`通常稳定；`6-7分`必须简化；`8分以上`拆镜。分值只用于风险判断，不写进即梦提示词。
 
-## Spatial Principles
+## 动作语法
 
-- Begin each fight with a stable reference: a central landmark, clear entrance direction, and line of action.
-- Let each character have a route preference: direct pressure, circular avoidance, cover-seeking, retreat to exit, or vertical use of terrain. Do not change the preference without a visible cause.
-- Use obstacles as decisions: go around, vault, collide, take cover, or become trapped. Do not treat them as background decoration.
-- Preserve the 180-degree relationship unless a deliberate reposition is shown. When crossing the line, show the turn or reset with a clear neutral perspective.
-- Track state transitions explicitly: standing -> braced -> off-balance -> grounded -> recovering; weapon raised -> blocked -> lowered -> dropped -> recovered.
+每个节拍包含四部分：
 
-## Generation Simplification
+1. `意图`：接近、护路、夺物、逼退、救人或制造出口。
+2. `承诺`：一次清楚攻击、推撞、格挡、闪避、位移或环境互动。
+3. `回应`：招架、躲避、吸收、反向占位、脱离或利用掩体。
+4. `结果`：距离、朝向、平衡、道具、障碍或权力关系改变。
 
-Split or simplify when a shot has any two of the following: close physical contact, both characters moving quickly in different directions, a small weapon near bodies, a fall, an object transfer, strong occlusion, changing camera angle, or a breakable environmental prop.
+把结果作为下一节拍起点。没有改变局面的攻击通常是装饰，删除或改成有后果的反应。
 
-Favor these substitutes:
+## 空间原则
 
-| High-risk request | More stable screen solution |
+- 用中心地标、入口方向和动作轴线建立稳定参照。
+- 给每个角色一个路线偏好：直线压迫、弧线绕侧、寻找掩体、向出口撤退或利用垂直地形。只有可见原因才能改变偏好。
+- 把障碍变成选择：绕行、翻越、撞击、掩护或困住，不当作纯背景。
+- 保持180度关系；越轴时展示人物转身、摄影机弧线或中性全景重置。
+- 显式跟踪状态：站立 -> 扎稳 -> 失衡 -> 倒地 -> 恢复；武器抬起 -> 被挡 -> 下压 -> 脱手 -> 重新取得。
+
+## 稳定降级
+
+以下元素任意两项同镜出现时拆分或简化：贴身接触、双方反向高速移动、小武器靠近身体、跌落、道具转移、强遮挡、镜头角度变化、可破坏物。
+
+| 高风险需求 | 更稳定的画面方案 |
 |---|---|
-| dense five-hit exchange | one committed attack, one evade, one visible counter-position |
-| complex lock or throw | contact begins, cut on body turn, next clip starts with grounded end state |
-| weapon handoff during movement | show ownership before the cut and after the cut; make transfer a dedicated shot |
-| several characters attacking together | establish threat in a wide shot, then isolate one opponent per clip |
-| fast camera spin plus impact | choose either a motivated orbit or the impact; use a static end frame |
+| 密集五连击 | 一次承诺攻击、一次闪避、一次可见反占位 |
+| 复杂锁技或摔投 | 先拍入锁，身体转动处切镜，下一镜从落地状态开始 |
+| 移动中换武器 | 切前和切后分别确认归属，把交接做成独立镜头 |
+| 多人同时攻击 | 全景建立威胁，再每镜隔离一个对手 |
+| 高速旋转镜头加冲击 | 环绕和命中二选一，落幅保持稳定 |
 
-## Safety and Tone
+## 安全与语气
 
-Keep the output fictional and cinematic. For live-action execution, state that choreography, contact, weapons, falls, and breakaway props require a qualified stunt team, rehearsal, and production-specific safety controls.
+保持虚构和电影化。涉及真人执行时，明确动作接触、武器、跌落和可破坏道具需要合格动作团队、排练及制作现场安全控制。

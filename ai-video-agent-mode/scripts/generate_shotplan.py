@@ -1,4 +1,4 @@
-"""generate_shotplan.py - Phase 1 shot plan generation from source script.
+"""generate_shotplan.py - Orchestrator shot-plan generation from source script.
 Usage: python3 generate_shotplan.py <source.txt> <output_dir> [--config config.json] [--max-dur N]
 
 Reads project-specific rules (characters, action keywords) from project_config.json.
@@ -146,6 +146,7 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
             for ref, seg in entries.items():
                 beats.append({
                     "type": "narration" if is_narr else "dialogue",
+                    "kind": speech_kind,
                     "speaker": speaker,
                     "text": seg,
                     "tone": tone,
@@ -156,7 +157,16 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
                 })
             dialogue_counter += len(entries)
             continue
-        source_unit["type"] = "source_fact"
+        # Plain screenplay prose is production content, not disposable context.
+        # Preserve it as an action/state/sound beat so every source fact can be
+        # traced into a planned shot even when the script omits a △ prefix.
+        source_unit["type"] = "action"
+        beats.append({
+            "type": "action",
+            "text": line,
+            "scene": current_scene["name"] if current_scene else "",
+            "source_ids": [source_id],
+        })
 
     if current_scene:
         scenes.append(current_scene)
@@ -166,7 +176,16 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
     # reaction ownership, or action chain into the same master shot.
     # Narration/OV/OS remains separate because it has a different lip-sync
     # boundary.
-    merged = _pack_interaction_beats(beats, max_shot_duration)
+    force_single_dialogue = bool(
+        cfg.get("benchmark", {}).get("force_single_dialogue_shots")
+        or source_rules.get("pack_dialogue_turns") is False
+    )
+    merged = _pack_interaction_beats(
+        beats,
+        max_shot_duration,
+        force_single_dialogue=force_single_dialogue,
+    )
+    merged = _pack_source_actions_with_interactions(merged, max_shot_duration)
     merged = _pack_action_beats(merged, max_shot_duration, characters_list)
 
     # Generate shots with character detection
@@ -179,19 +198,27 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
         speaker = beat.get("speaker", "")
         scene_name = beat.get("scene", "")
 
-        if beat["type"] in ("dialogue", "narration", "dialogue_group"):
+        if beat["type"] in ("dialogue", "narration", "dialogue_group", "mixed_interaction"):
             for turn in beat.get("turns", [beat]):
+                if turn.get("type") == "action":
+                    turn_text = str(turn.get("text", "") or "")
+                    for c in _characters_in_source_order(turn_text, characters_list):
+                        if c not in beat_chars and not _offscreen_character_mention(c, turn_text):
+                            beat_chars.append(c)
+                    continue
                 turn_speaker = turn.get("speaker", "")
                 turn_tone = turn.get("tone", "")
-                if turn_speaker and turn_speaker not in beat_chars:
+                # OV is a sound source, never a visible-character lock. OS may
+                # still use its on-screen speaker with closed lips.
+                if turn.get("kind") != "OV" and turn_speaker and turn_speaker not in beat_chars:
                     beat_chars.append(turn_speaker)
                 if turn_tone:
                     for c in characters_list:
                         if c in turn_tone and c not in beat_chars:
                             beat_chars.append(c)
         else:
-            for c in characters_list:
-                if c in full_text and c not in beat_chars:
+            for c in _characters_in_source_order(full_text, characters_list):
+                if c not in beat_chars and not _offscreen_character_mention(c, full_text):
                     beat_chars.append(c)
             if _has_group_reaction(full_text):
                 group_name = _group_character_name(characters_list)
@@ -205,7 +232,7 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
 
         if beat["type"] in ("action", "action_group"):
             # Use the same lower-bound model as preflight.  The former
-            # character-count heuristic made Phase 1 knowingly under-budget
+            # character-count heuristic made Orchestrator knowingly under-budget
             # compound actions, then required repeated repair cycles.
             dur = max(2.0, min(max_shot_duration, _estimate_action_seconds(full_text) + 0.5))
             subshot_id = f"S1-{shot_num:02d}-01"
@@ -321,6 +348,26 @@ def _visible_beat_texts(text):
     return parts[:3] or [str(text or "").strip()]
 
 
+def _offscreen_character_mention(character, text):
+    """Return True when a named character is present only as a sound source."""
+    character = str(character or "").strip()
+    text = str(text or "")
+    if not character or character not in text:
+        return False
+    sound_patterns = (
+        rf"(?:门外|画外|窗外|电话里|听筒里)[^。；]{{0,20}}{re.escape(character)}[^。；]{{0,12}}(?:声音|说话声|喊声|哭声|笑声)",
+        rf"{re.escape(character)}的(?:声音|说话声|喊声|哭声|笑声)[^。；]{{0,16}}(?:传来|响起|出现)",
+    )
+    return any(re.search(pattern, text) for pattern in sound_patterns)
+
+
+def _characters_in_source_order(text, characters):
+    """Return mentioned characters ordered by first appearance in this beat."""
+    text = str(text or "")
+    found = [str(character) for character in characters or [] if str(character) and str(character) in text]
+    return sorted(found, key=lambda character: (text.find(character), len(character)))
+
+
 def _register_dramatic_beats(records, beat, owner_subshot_id, texts):
     beat_ids = []
     source_ids = list(dict.fromkeys(beat.get("source_ids", []) or []))
@@ -356,7 +403,7 @@ def _dramatic_design(beat, text, characters, beat_ids):
         function = "entrance"
     elif any(token in content for token in ("揭开", "显露", "发现", "看清")):
         function = "reveal"
-    elif beat.get("type") in ("dialogue", "dialogue_group", "narration"):
+    elif beat.get("type") in ("dialogue", "dialogue_group", "narration", "mixed_interaction"):
         function = "dialogue"
     elif any(token in content for token in ("反应", "回望", "转头")):
         function = "reaction"
@@ -466,10 +513,15 @@ def _group_character_name(characters):
 def _interaction_duration(turns, reserve_seconds=0.5):
     turns = list(turns or [])
     speech = sum(float(turn.get("speech_duration", 0) or 0) for turn in turns)
-    return round(max(2.5, speech + reserve_seconds), 1)
+    from validate_durations import _estimate_action_seconds
+    action = sum(
+        max(0.0, float(_estimate_action_seconds(turn.get("text", ""))) - 2.0)
+        for turn in turns if turn.get("type") == "action"
+    )
+    return round(max(2.5, speech + action + reserve_seconds), 1)
 
 
-def _pack_interaction_beats(beats, max_shot_duration):
+def _pack_interaction_beats(beats, max_shot_duration, force_single_dialogue=False):
     packed = []
     group = []
 
@@ -480,6 +532,7 @@ def _pack_interaction_beats(beats, max_shot_duration):
         refs = [ref for turn in group for ref in turn.get("refs", [])]
         packed.append({
             "type": "dialogue_group" if len(group) > 1 else group[0].get("type", "dialogue"),
+            "kind": group[0].get("kind", "台词"),
             "scene": group[0].get("scene", ""),
             "speaker": group[0].get("speaker", ""),
             "tone": group[0].get("tone", ""),
@@ -496,6 +549,16 @@ def _pack_interaction_beats(beats, max_shot_duration):
         if beat.get("type") != "dialogue":
             flush()
             packed.append(beat)
+            continue
+        if force_single_dialogue:
+            flush()
+            if _interaction_duration([beat]) > max_shot_duration + 1e-6:
+                raise ValueError(
+                    "single dialogue semantic unit exceeds user-confirmed max_shot_duration: %s"
+                    % beat.get("text", "")
+                )
+            group = [beat]
+            flush()
             continue
         if group and beat.get("scene", "") != group[0].get("scene", ""):
             flush()
@@ -516,6 +579,105 @@ def _pack_interaction_beats(beats, max_shot_duration):
         group = candidate
     flush()
     return packed
+
+
+def _pack_source_actions_with_interactions(beats, max_shot_duration):
+    """Attach only low-risk adjacent source actions to their speech beat.
+
+    This preserves unprefixed screenplay action lines without turning every
+    setup, sound cue, listener reaction, or unfinished prop move into a new
+    main shot. Strong motion and force remain independent action shots.
+    """
+    speech_types = {"dialogue", "dialogue_group", "narration", "mixed_interaction"}
+    result = []
+    index = 0
+    while index < len(beats):
+        current = beats[index]
+        group = []
+        if (
+            current.get("type") == "action"
+            and _action_attachable_to_speech(current)
+            and index + 1 < len(beats)
+            and beats[index + 1].get("type") in speech_types
+            and current.get("scene", "") == beats[index + 1].get("scene", "")
+        ):
+            group = [current, beats[index + 1]]
+            index += 2
+        elif current.get("type") in speech_types:
+            group = [current]
+            index += 1
+        else:
+            result.append(current)
+            index += 1
+            continue
+
+        if (
+            index < len(beats)
+            and beats[index].get("type") == "action"
+            and _action_attachable_to_speech(beats[index])
+            and group[-1].get("scene", "") == beats[index].get("scene", "")
+            and not _action_cues_following_speech(
+                beats[index], beats[index + 1] if index + 1 < len(beats) else None
+            )
+        ):
+            candidate = group + [beats[index]]
+            if _mixed_turn_duration(candidate) <= max_shot_duration + 1e-6:
+                group = candidate
+                index += 1
+
+        if len(group) == 1:
+            result.append(group[0])
+            continue
+        if _mixed_turn_duration(group) > max_shot_duration + 1e-6:
+            result.extend(group)
+            continue
+        turns = []
+        for item in group:
+            turns.extend(item.get("turns", [item]))
+        refs = [ref for turn in turns for ref in turn.get("refs", [])]
+        result.append({
+            "type": "mixed_interaction",
+            "kind": next((turn.get("kind") for turn in turns if turn.get("kind")), "台词"),
+            "scene": group[0].get("scene", ""),
+            "speaker": next((turn.get("speaker") for turn in turns if turn.get("speaker")), ""),
+            "tone": next((turn.get("tone") for turn in turns if turn.get("tone")), ""),
+            "text": "；".join(str(turn.get("text", "") or "") for turn in turns),
+            "refs": refs,
+            "turns": turns,
+            "source_ids": list(dict.fromkeys(
+                source_id for turn in turns for source_id in turn.get("source_ids", [])
+            )),
+        })
+    return result
+
+
+def _mixed_turn_duration(items):
+    turns = []
+    for item in items:
+        turns.extend(item.get("turns", [item]))
+    return _interaction_duration(turns)
+
+
+def _action_attachable_to_speech(action):
+    text = str(action.get("text", "") or "")
+    strong_motion = (
+        "打", "踢", "撞", "摔", "扑", "冲", "追", "奔", "跳", "翻越",
+        "扭打", "拉扯", "拖拽", "制服", "抢夺", "爆炸", "坍塌",
+    )
+    if any(term in text for term in strong_motion):
+        return False
+    from validate_durations import _estimate_action_seconds
+    return _estimate_action_seconds(text) <= 4.5 and len(_visible_beat_texts(text)) <= 3
+
+
+def _action_cues_following_speech(action, following):
+    """Keep an offscreen/sound cue with the line it introduces."""
+    if not isinstance(following, dict) or following.get("type") not in {"narration", "mixed_interaction"}:
+        return False
+    text = str(action.get("text", "") or "")
+    speaker = str(following.get("speaker", "") or "")
+    is_sound_cue = any(term in text for term in ("门外", "画外", "窗外", "电话里", "声音", "脚步声", "敲门声", "传来", "响起"))
+    return is_sound_cue and (not speaker or speaker in text or following.get("kind") == "OV")
 
 
 def _pack_action_beats(beats, max_shot_duration, characters):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run deterministic Phase 0/1 checks for an external production script.
+"""Run deterministic configuration and Orchestrator checks for an external production script.
 
 This test deliberately stops before Agent work. It proves that a real source
 can be configured, parsed, ledgered, duration-validated, and packetized
@@ -62,10 +62,42 @@ def run(source_path, min_shots=1):
         shot_count = len(plan.get("shots", []))
         if shot_count < min_shots:
             raise ValueError("expected at least %s shots, got %s" % (min_shots, shot_count))
+        ov_event_count = 0
+        for shot in plan.get("shots", []):
+            for subshot in shot.get("subshots", []):
+                visible = set(str(name) for name in subshot.get("characters", []) or [])
+                for ref in subshot.get("dialogue_refs", []) or []:
+                    event = (plan.get("dialogue_events", {}) or {}).get(ref, {})
+                    if isinstance(event, dict) and event.get("kind") == "OV":
+                        ov_event_count += 1
+                        if str(event.get("speaker", "") or "") in visible:
+                            raise ValueError("OV speaker was locked as visible: %s" % ref)
+        with open(os.path.join(run_dir, ".cache", "orchestrator", "source_ledger.json"), encoding="utf-8-sig") as handle:
+            source_ledger = json.load(handle)
+        with open(os.path.join(run_dir, ".cache", "orchestrator", "dramatic_beat_ledger.json"), encoding="utf-8-sig") as handle:
+            beat_ledger = json.load(handle)
+        required_source_ids = {
+            str(unit.get("source_id", "") or "")
+            for unit in source_ledger.get("units", [])
+            if isinstance(unit, dict) and unit.get("type") in {"action", "dialogue"}
+        }
+        assigned_source_ids = {
+            str(source_id)
+            for beat in beat_ledger.get("beats", []) if isinstance(beat, dict)
+            for source_id in beat.get("source_ids", []) or []
+        }
+        if required_source_ids - assigned_source_ids:
+            raise ValueError("unassigned source units: %s" % sorted(required_source_ids - assigned_source_ids))
         packets = prepare_dispatch_packets(run_dir, "scene_lock")
         if not packets:
             raise ValueError("scene-lock packet generation returned no packets")
-        return {"pass": True, "shot_count": shot_count, "scene_lock_packets": len(packets)}
+        return {
+            "pass": True,
+            "shot_count": shot_count,
+            "scene_lock_packets": len(packets),
+            "assigned_source_unit_count": len(required_source_ids),
+            "ov_event_count": ov_event_count,
+        }
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

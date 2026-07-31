@@ -183,8 +183,15 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             }
             packet["instruction"] += (
                 " Composer batch output top-level must be exactly {\"shots\": [...]}; "
-                "do not include contract_version in the batch file. Before final response, run local_validation_command. "
-                "If validation fails, patch only the reported fields and rerun until PASS."
+                "do not include contract_version in the batch file. Hard validation notes: "
+                "qa_metadata.performance_priority must partition exactly the packet item visible_characters for that shot "
+                "(one visible primary, visible-only supporting/background, no offscreen character, no scene roster, no overlap); "
+                "negative words, negative headings, and negative instructions must stay only in negative_prompt and never appear in full_prompt; "
+                "relationship_blocking or movement_transition coverage cannot use a default fixed mid/mid-close setup unless full_prompt also gives a concrete screen-side, foreground-shoulder, or scene-anchor reason and a responsive camera behavior; "
+                "pressure_release_design.release_trigger and story_punch_contract audience question must be visible in full_prompt as a concrete object, action, sound, distance, or end-frame state; "
+                "insert shots are allowed only inside shot_group segments with an explicit insert function, never mixed into continuous_take. "
+                "Before final response, run the exact local_validation_command from this packet, including --run-dir. "
+                "If validation fails, patch only the reported fields and rerun until PASS; do not claim PASS from a partial or different command."
             )
         if retry_context_path:
             packet["retry_context_path"] = retry_context_path
@@ -258,6 +265,8 @@ def active_packet_paths(run_dir, phase):
         return []
     paths = []
     for entry in manifest.get("packets", []):
+        if isinstance(entry, dict) and entry.get("effective") is False:
+            continue
         path = entry.get("packet_path") if isinstance(entry, dict) else ""
         if path and os.path.exists(path):
             paths.append(path)
@@ -271,8 +280,14 @@ def _active_manifest_path(run_dir, phase):
 
 def _write_active_manifest(run_dir, phase, source_path, dispatch_group_id, packet_paths, is_retry=False, target_ids=None):
     target_ids = set(target_ids or [])
+    packet_path_set = {os.path.abspath(path) for path in packet_paths or []}
     current = _load_optional_json(_active_manifest_path(run_dir, phase))
     entries = current.get("packets", []) if isinstance(current.get("packets"), list) else []
+    entries = [
+        entry for entry in entries
+        if isinstance(entry, dict) and os.path.exists(str(entry.get("packet_path", "") or ""))
+        and os.path.abspath(str(entry.get("packet_path", "") or "")) not in packet_path_set
+    ]
     superseded = current.get("superseded_packets", []) if isinstance(current.get("superseded_packets"), list) else []
     attempt = int(current.get("attempt", 0) or 0) + 1
     if is_retry and target_ids:
@@ -280,11 +295,13 @@ def _write_active_manifest(run_dir, phase, source_path, dispatch_group_id, packe
         # but drop older retry packets that are fully covered by this newer
         # retry target set.  New retry packets are appended so merge order lets
         # them override original fields.
+        new_retry_fields = _retry_fields_for_paths(packet_paths)
         filtered = []
         for entry in entries:
             ids = set(entry.get("shot_ids", [])) if isinstance(entry, dict) else set()
             previous_retry = bool(entry.get("is_retry")) if isinstance(entry, dict) else False
-            if previous_retry and ids and ids <= target_ids:
+            previous_fields = _retry_fields_for_entry(entry) if previous_retry else {}
+            if previous_retry and ids and ids <= target_ids and _retry_fields_covered(previous_fields, new_retry_fields, ids):
                 superseded.append(_superseded_manifest_entry(entry, attempt, "retry_replaced_by_newer_target"))
                 continue
             filtered.append(entry)
@@ -303,9 +320,11 @@ def _write_active_manifest(run_dir, phase, source_path, dispatch_group_id, packe
             "dispatch_group_id": packet.get("dispatch_group_id", dispatch_group_id),
             "created_at": packet.get("created_at"),
             "is_retry": bool(packet.get("is_retry") or packet.get("retry_context_path")),
+            "retry_fields_by_shot": _json_retry_fields(_retry_fields_for_packet(packet)),
             "shot_ids": _packet_shot_ids(packet),
             "source_sha256": packet.get("source_sha256", source_sha256),
             "attempt": attempt,
+            "effective": True,
         })
     active_shot_ids = sorted({
         shot_id
@@ -332,10 +351,78 @@ def _write_active_manifest(run_dir, phase, source_path, dispatch_group_id, packe
 
 def _superseded_manifest_entry(entry, attempt, reason):
     copied = dict(entry)
+    copied["effective"] = False
     copied["superseded_at"] = time.time()
     copied["superseded_by_attempt"] = attempt
     copied["superseded_reason"] = reason
     return copied
+
+
+def _retry_fields_for_paths(packet_paths):
+    result = {}
+    for path in packet_paths or []:
+        try:
+            packet = _load_json(path)
+        except (OSError, json.JSONDecodeError):
+            continue
+        for shot_id, fields in _retry_fields_for_packet(packet).items():
+            bucket = result.setdefault(shot_id, set())
+            bucket.update(fields)
+    return result
+
+
+def _retry_fields_for_entry(entry):
+    if not isinstance(entry, dict):
+        return {}
+    scoped = entry.get("retry_fields_by_shot")
+    if isinstance(scoped, dict) and scoped:
+        return {
+            str(shot_id): set(str(field) for field in fields if str(field).strip())
+            for shot_id, fields in scoped.items() if isinstance(fields, list)
+        }
+    path = str(entry.get("packet_path", "") or "")
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        return _retry_fields_for_packet(_load_json(path))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _retry_fields_for_packet(packet):
+    context_path = packet.get("retry_context_path") if isinstance(packet, dict) else ""
+    if not context_path or not os.path.exists(context_path):
+        return {}
+    try:
+        context = _load_json(context_path)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    fields_by_shot = context.get("fields_by_main_shot", {}) if context.get("mode") == "field_patch" else {}
+    result = {}
+    for shot_id, fields in fields_by_shot.items() if isinstance(fields_by_shot, dict) else []:
+        result[str(shot_id)] = set(str(field) for field in fields if str(field).strip()) if isinstance(fields, list) else set()
+    return result
+
+
+def _json_retry_fields(fields_by_shot):
+    return {
+        shot_id: sorted(fields)
+        for shot_id, fields in (fields_by_shot or {}).items()
+    }
+
+
+def _retry_fields_covered(previous_fields, new_fields, shot_ids):
+    """Only replace an older retry when the newer retry covers its field scope."""
+    if not previous_fields:
+        return True
+    for shot_id in shot_ids:
+        previous = set(previous_fields.get(str(shot_id), set()))
+        if not previous:
+            continue
+        current = set(new_fields.get(str(shot_id), set()))
+        if not previous <= current:
+            return False
+    return True
 
 
 def _packet_shot_ids(packet):
@@ -444,39 +531,39 @@ def _load_json(path):
         return json.load(f)
 
 
+def _read_text_if_exists(path):
+    try:
+        with open(path, "r", encoding="utf-8-sig") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def _phase_note_text(skill_dir, phase):
+    """Load dispatch role notes from references/dispatch.
+
+    The Python fallback below keeps older installs recoverable, but maintained
+    phase instructions live in Markdown so quality rules are reviewable without
+    editing dispatcher code.
+    """
+    note_files = {
+        "scene_lock": "scene_lock_note.md",
+        "master_production": "master_production_note.md",
+        "editor_pass2": "editor_pass2_note.md",
+    }
+    filename = note_files.get(phase)
+    if not filename:
+        return ""
+    return _read_text_if_exists(os.path.join(skill_dir, "references", "dispatch", filename))
+
+
 def _write_constraints_sidecar(run_dir, phase, dispatch_dir, dispatch_tag):
     skill_dir = os.path.dirname(os.path.dirname(__file__))
     source = os.path.join(skill_dir, "references", "format_constraints.md")
     out_path = os.path.join(dispatch_dir, "%s_%s_constraints.md" % (phase, dispatch_tag))
-    phase_note = {
-        "scene_lock": (
-            "专业角色：场景锁定 Agent。请返回 {\"scenes\":[{\"scene\":\"...\",\"space_anchor\":\"...\",\"screen_positions\":\"...\",\"wardrobe_lock\":\"...\",\"prop_state\":\"...\",\"light_source\":\"...\",\"light_direction\":\"...\",\"light_temperature\":\"...\",\"audio_policy\":\"...\"}]}，每个 packet item 对应一条不可变场景锁定。所有必填值都必须是非空的扁平字符串；不要嵌套 lighting、wardrobe、props、positions 或 audio 对象。可按同样扁平字符串补充 space_id、space_master_sentence、entrance_exit、prop_activity_zone、tone_palette、light_texture_purpose，用于全集空间索引和影调索引；不得重排同一地点的左右、入口或道具活动区。禁止写子镜分析、运镜设计、人物表演、台词或提示词正文。"
-        ),
-        "master_production": (
-            "专业角色：你是 AI 短剧导演与提示词监督。"
-            "每个 packet item 只生成一个主镜头任务，只服务一个 narrative_beat_id；从 packet.composer_scaffold_path 开始写，保留锁定字段，并只从 scene_lock_cache_path 读取共享场景事实。"
-            "禁止虚构剧情、改写台词、重设服装、添加未确认道具、使用 I2V/R2V/参考素材，或把 QA/工程字段写进 full_prompt。"
-            "仅当 packet.items[].execution_hints.required_contracts 包含 story_punch_contract 时，先填观众问题、人物压力、可见压力物、剧情转折、画面标点和尾帧残留；人物/对白/道具变化镜缺少戏眼时必须先补戏眼，不得只机械填字段。"
-            "按 risk_tier 控制复杂度：light 镜只写适用的硬门槛与一个落幅残留；standard 镜落实适用的质量合同；high 镜再补 ai_model_readiness_score、pressure_release_design 和必要拆镜建议。"
-            "先满足不穿帮硬门槛，再追求创作表现：人物位置、身体面向、道具归属、口型、尾帧继承、单镜动作预算和状态变化中间态不稳时，必须降低运镜、补定位镜头或拆镜。"
-            "写镜前先在 qa_metadata.source_constraint_basemap 中压缩锁定本镜源头底图：空间/状态道具/人物朝向/张弛功能/声音口型/UI文字策略/单镜风险；它是防返工底图，不得投喂到 full_prompt。"
-            "同一地点必须复用 Scene Lock 的 space_id、space_master_sentence、入口出口和道具活动区；同一场景的影调只从 tone_palette/light_texture_purpose 消费，单镜只选本镜需要的一个光影或构图锚点。"
-            "写作目标不是堆形容词，而是让 AI 视频大模型能稳定执行且有戏：空间坐标、道具生命周期、情绪触发、运镜响应、戏剧尖刺和落幅继承必须逐项可见。"
-            "画面质感必须可见，不得只写电影感/高级感/质感；按本镜任务选择1-2个锚点，写清光源方向或色温、脸/手/道具受光面、浅阴影/反光、背景虚化或剧情相关材质。"
-            "直接投喂即梦的文本不得保留上一镜/继承/尾帧/剪辑/切到/反打到等元叙述；canonical full_prompt 可用于验证落幅，但导出 feed 会转成当前可见事实，因此 Composer 必须优先写可见起幅和落幅。"
-            "手机聊天、来电名称、通知弹窗等 UI 文字若交给 AI 生成，必须写成独立二维浮层、安全区、不属于手机屏幕、不贴手机背面、不跟随手机透视；否则把具体文字留到后期文字表。"
-            "多人清晰入画时，非说话重要人物必须分配受击反应、观察反应或降为肩线/边缘虚化；OS/OV/系统音/内心声必须绑定可见闭口反应，不生成口型。"
-            "每镜标记 tension_curve_role：铺垫、升压、峰值、释放或缓冲；不要连续强推近、强表情、强停顿，关键台词后优先给被击中者余波或关系定格。"
-            "道具交接、转身、起身、开门、离场、手腕控制等物理变化必须写起始状态、接近/接触、移动/受力、释放或稳定终态；若动作强，运镜只能固定或低幅推近。"
-            "rising/peak 镜必须设计压力链：压力来源、一个压力物或压力机制、1-2个可见升级点、释放触发、释放结果和拆镜阈值；释放可以是动作完成、被打断、注意力转移、代价逼近或落幅悬置，不能只写气氛变紧。"
-            "字段接力固定为 emotion_driver → camera_beat_map → full_prompt；Camera 只响应可见表演重音、道具状态、视线或台词落点，Composer 只能翻译已声明的镜头设计。"
-            "必须填写 packet.items[].execution_hints.required_contracts 中列出的质量合同；continuity_contract、reroll_control、quality_contract、quality_evidence、dialogue_events 与状态变化记录仍按适用的硬门槛执行。未列出的增强合同保持空对象，不要为了凑字段写长自评。"
-            "full_prompt 只能包含五段：生成规格/主体与空间锁定/主镜头连续规则/子镜头组/光照、声音与稳定约束。子镜头组按状态机写，台词/OS/OV 在原生音频开启时必须写成 {人物}（台词/OS/OV）: \"逐字原文\"。"
-            "需要 ai_model_readiness_score 时，按场景空间、穿帮风险、情绪可读、张力压迫、运镜服务、道具连续、画面美感七项逐项打 1-10 分，并写一句弱点或人工首轮检查点；不得全写空泛好评。"
-            "temporal_transition_contract 不是装饰命令；启用时只使用合同内唯一源文效果，未启用时正常切换。"
-            "只使用本 sidecar 中选出的契约段落；首轮不要读取示例。重试时若 packet.example_paths 存在，只读取这些文件且只修复指定失败字段。"
-            "示例只迁移结构，不继承示例题材、场景、光线、服装、人物关系或具体道具事件，除非当前源文或配置明确提供。"
-        ),
+    phase_note = _phase_note_text(skill_dir, phase) or {
+        "scene_lock": "专业角色：场景锁定 Agent。请返回扁平 scene lock JSON；不得写提示词正文、运镜或人物表演。",
+        "master_production": "专业角色：AI 短剧导演与提示词监督。遵守本 sidecar 的 T2V-only、source basemap、质量合同、直投密度和 provenance 规则。",
         "editor_pass2": "使用 §B/§C 作为审查上下文。不要改写纯格式问题；只返回语义审查 JSON。",
     }.get(phase, "遵守所引用阶段的契约。")
     with open(source, "r", encoding="utf-8-sig") as f:
@@ -590,6 +677,8 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
                     "visible_pressure_object": "",
                     "dramatic_turn": "",
                     "picture_punctuation": "",
+                    "composition_priority": "",
+                    "camera_motivation": "",
                     "end_residue": "",
                 },
                 "duration_design": dict(item.get("duration_design", {}) or {}),
@@ -600,6 +689,13 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
                     "tension_curve_role": "",
                     "sound_lip_sync_basis": "",
                     "screen_text_policy": "",
+                    "performance_baseline_lock": "none",
+                    "emotion_micro_chain": "",
+                    "dialogue_performance_kernel": "none",
+                    "emotion_residue_contract": "none",
+                    "viewpoint_motion_lock": "none",
+                    "premium_director_polish": "",
+                    "creative_profile": "balanced",
                     "single_shot_risk": "",
                 },
                 "scene_tone_palette": {
@@ -680,6 +776,12 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
                     "tension_intent": "",
                     "trigger_event": "",
                     "trigger_time": "",
+                    "inner_emotion": "",
+                    "display_intent": "",
+                    "mask_leak": "",
+                    "start_intensity": 0,
+                    "end_intensity": 0,
+                    "emotion_delta": 0,
                     "primary_expression": "",
                     "primary_body_action": "",
                     "eye_focus": "",
@@ -741,6 +843,11 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
                         "delivery": "",
                         "breath_pause_plan": "",
                         "lip_sync": None,
+                        "line_function": "",
+                        "subtext": "",
+                        "stress_words": [],
+                        "subtext_visible_evidence": "",
+                        "turn_relation": "",
                     }
                     for event in item.get("dialogue_events", [])
                     if isinstance(event, dict)
@@ -887,23 +994,115 @@ def _write_scene_lock_cache(run_dir, items, dispatch_dir, group_tag):
 
 
 def _compact_composer_item(item):
-    copied = dict(item)
-    # The scene lock carries immutable facts once per scene.  The compact item
-    # carries only per-subshot changes, preventing every Composer worker from
-    # rediscovering or rephrasing the same environment and lighting setup.
-    copied["scene_delta"] = {
+    # The Composer scaffold carries locked structural fields and Phase-1
+    # ledgers.  The packet item should be a compact execution index plus the
+    # source facts the worker must visibly realize.  Keeping the full master
+    # dict here duplicated scaffold data and pushed stable 50-shot dialogue
+    # runs from 10-shot light batches down to 2-shot packets.
+    sources = [
+        source for source in item.get("source_subshots", [item])
+        if isinstance(source, dict)
+    ]
+    compact_sources = (
+        [_compact_source_subshot(source) for source in sources]
+        if len(sources) > 1
+        else []
+    )
+    scene_delta = {
         "lighting": str(item.get("lighting", "") or ""),
         "spatial": str(item.get("axis_space", item.get("spatial_map", "")) or ""),
         "continuity": dict(item.get("scene_continuity", {}) or {}) if isinstance(item.get("scene_continuity"), dict) else {},
     }
-    copied.pop("full_prompt", None)
-    copied.pop("lighting", None)
-    copied.pop("axis_space", None)
-    copied.pop("generation_control", None)
-    copied["scene_lock_ref"] = str(item.get("scene", "") or "__default__")
-    copied["composer_scaffold_ref"] = str(item.get("subshot_id", ""))
-    copied["execution_hints"] = _composer_execution_hints(item)
+    visible_characters = list(item.get("visible_characters", item.get("characters", [])) or [])
+    characters = list(item.get("characters", []) or [])
+    copied = {
+        "shot_id": item.get("shot_id", ""),
+        "subshot_id": item.get("subshot_id", ""),
+        "scene": item.get("scene", ""),
+        "duration": item.get("duration", 0),
+        "base_action": item.get("base_action", ""),
+        "visible_characters": visible_characters,
+        "dialogue_refs": list(item.get("dialogue_refs", []) or []),
+        "dialogue_events": [
+            dict(event)
+            for event in item.get("dialogue_events", []) or []
+            if isinstance(event, dict)
+        ],
+        "source_subshot_ids": list(item.get("source_subshot_ids", [item.get("subshot_id", "")]) or []),
+        "editorial_mode": item.get("editorial_mode", "continuous_take"),
+        "source_subshots": compact_sources,
+        "scene_lock_ref": str(item.get("scene", "") or "__default__"),
+        "composer_scaffold_ref": str(item.get("subshot_id", "")),
+        "execution_hints": _compact_execution_hints(_composer_execution_hints(item)),
+    }
+    if characters and characters != visible_characters:
+        copied["characters"] = characters
+    if not copied["source_subshots"]:
+        copied.pop("source_subshots", None)
+    if not any(scene_delta.values()):
+        copied.pop("scene_delta", None)
+    else:
+        copied["scene_delta"] = scene_delta
+    if not copied["dialogue_refs"]:
+        copied.pop("dialogue_refs", None)
+    if not copied["source_subshot_ids"]:
+        copied.pop("source_subshot_ids", None)
     return copied
+
+
+def _compact_execution_hints(hints):
+    compacted = {
+        "template": hints.get("template", ""),
+        "risk": hints.get("risk", "standard"),
+        "reasons": list(hints.get("reasons", []) or []),
+        "visible": list(hints.get("visible", []) or []),
+        "required_contracts": list(hints.get("required_contracts", []) or []),
+    }
+    risk_gated = {
+        key: value for key, value in dict(hints.get("risk_gated_contracts", {}) or {}).items()
+        if value
+    }
+    if risk_gated:
+        compacted["risk_gated_contracts"] = risk_gated
+    return compacted
+
+
+def _compact_source_subshot(source):
+    """Keep child-shot facts needed for timeline assembly without duplicating
+    the full master item inside every packet item.
+
+    The Composer scaffold carries locked output fields, while packet.items
+    carries source facts.  A one-child master previously embedded an almost
+    identical child dict, doubling every light task and forcing 10-shot
+    capacity batches down to 2-shot packets.  Preserve source identity,
+    dialogue, visible cast, duration and dramatic/duration ledgers; omit
+    repeated top-level mirrors such as quality_contract and execution hints.
+    """
+    keep = (
+        "shot_id",
+        "subshot_id",
+        "scene",
+        "duration",
+        "base_action",
+        "characters",
+        "visible_characters",
+        "dialogue_refs",
+        "dialogue_events",
+        "emotion_tone",
+        "editorial_mode",
+        "source_ids",
+    )
+    compacted = {key: source.get(key) for key in keep if key in source}
+    compacted["scene_delta"] = {
+        "lighting": str(source.get("lighting", "") or ""),
+        "spatial": str(source.get("axis_space", source.get("spatial_map", "")) or ""),
+        "continuity": (
+            dict(source.get("scene_continuity", {}) or {})
+            if isinstance(source.get("scene_continuity"), dict)
+            else {}
+        ),
+    }
+    return compacted
 
 
 def _composer_execution_hints(item):
@@ -978,12 +1177,18 @@ def _composer_template(reasons, visible, dialogue_events, item):
     if dialogue_events and len(visible) > 1:
         return {
             "name": "dialogue_relationship_lock",
-            "fill_order": ["speaker", "listener", "one_listener_reaction", "screen_lr", "mouth_boundary", "residue"],
+            "fill_order": [
+                "line_function", "turn_relation", "subtext", "stress_words", "speaker", "listener",
+                "subtext_visible_evidence", "delayed_listener_reaction", "screen_lr", "mouth_boundary", "residue",
+            ],
         }
     if dialogue_events:
         return {
             "name": "single_speaker_performance",
-            "fill_order": ["speaker", "face", "body", "breath", "voice", "residue"],
+            "fill_order": [
+                "line_function", "turn_relation", "subtext", "stress_words", "speaker", "face",
+                "body", "subtext_visible_evidence", "breath", "voice", "mouth_boundary", "residue",
+            ],
         }
     if len(visible) > 1:
         return {
@@ -1018,7 +1223,7 @@ def _composer_preflight_checks(editorial_mode, visible, dialogue_events, reasons
     else:
         checks.append("shot_group=2-3_ranges_one_narrative_beat")
     if dialogue_events:
-        checks.append("dialogue_exact+breath")
+        checks.append("dialogue_exact+subtext+stress+breath+mouth_close")
     if dialogue_text_length >= 32:
         checks.append("long_dialogue=no_extra_plot")
     if "fight_or_force" in reasons:

@@ -1,6 +1,14 @@
 """Pipeline state machine - phase progress, retries, agent ID tracking."""
 import json, os, time
 
+from contract_registry import (
+    AGENT_PHASE_NAMES,
+    LOCAL_PHASE_NAMES,
+    PHASE_BATCH_SIZE as CONTRACT_PHASE_BATCH_SIZE,
+    PHASE_TIMEOUT_SECONDS as CONTRACT_PHASE_TIMEOUT_SECONDS,
+    PIPELINE_CONTRACT_VERSION,
+    PIPELINE_PHASES,
+)
 from pipeline_runtime import atomic_json, json_lock
 
 # ========== Constants ==========
@@ -12,37 +20,11 @@ AGENT_STALE_GRACE_SECONDS = 300
 BATCH_SIZE = 12          # Safe default; phase-specific sizes are below.
 CORE_PIPELINE_TARGET_SECONDS = 55 * 60  # 50 main shots
 
-PHASE_TIMEOUT_SECONDS = {
-    "scene_lock": 480,
-    "master_production": 720,
-    "editor_pass2": 480,
-}
-
-PHASE_BATCH_SIZE = {
-    "scene_lock": 1,
-    "master_production": 6,
-    "editor_pass2": 10,
-}  # Preserve continuity groups; reduce oversized analysis tasks and Composer setup overhead.
-
-AGENT_PHASES = {
-    "scene_lock",
-    "master_production",
-    "editor_pass2",
-}
-
-LOCAL_PHASES = {
-    "user_confirm",
-    "orchestrator",
-    "editor_pass1",
-    "validate",
-    "export",
-}
-
-PHASE_ORDER = [
-    "user_confirm", "orchestrator",
-    "scene_lock", "master_production",
-    "editor_pass1", "editor_pass2", "validate", "export"
-]
+PHASE_TIMEOUT_SECONDS = dict(CONTRACT_PHASE_TIMEOUT_SECONDS)
+PHASE_BATCH_SIZE = dict(CONTRACT_PHASE_BATCH_SIZE)
+AGENT_PHASES = set(AGENT_PHASE_NAMES)
+LOCAL_PHASES = set(LOCAL_PHASE_NAMES)
+PHASE_ORDER = list(PIPELINE_PHASES)
 
 # Phases that can be spawned in parallel (group name -> member phases)
 PARALLEL_GROUPS = {}
@@ -57,6 +39,7 @@ def init_state(run_dir):
     if os.path.exists(path):
         return
     state = {
+        "pipeline_contract_version": PIPELINE_CONTRACT_VERSION,
         "pipeline_started_at": time.time(),
         "core_pipeline_target_seconds": CORE_PIPELINE_TARGET_SECONDS,
         "current_phase": PHASE_ORDER[0],
@@ -76,6 +59,15 @@ def load_state(run_dir):
     with open(path, "r", encoding="utf-8-sig") as f:
         state = json.load(f)
     changed = False
+    state_contract_version = state.get("pipeline_contract_version")
+    if not state_contract_version:
+        state["pipeline_contract_version"] = PIPELINE_CONTRACT_VERSION
+        changed = True
+    elif state_contract_version != PIPELINE_CONTRACT_VERSION:
+        raise ValueError(
+            "pipeline state contract mismatch: %s != %s"
+            % (state_contract_version, PIPELINE_CONTRACT_VERSION)
+        )
     for phase in PHASE_ORDER:
         if phase not in state.get("phases", {}):
             state.setdefault("phases", {})[phase] = {
@@ -195,9 +187,8 @@ def is_timed_out(run_dir, phase):
 def is_agent_stale(run_dir, phase):
     """Check only after the phase timeout plus a recovery grace period.
 
-    The state format has no heartbeat timestamp yet, so using ``spawn_time``
-    before the phase timeout would create a duplicate worker.  A genuine stale
-    recovery is therefore deliberately later than normal timeout handling.
+    Prefer the latest heartbeat and fall back to ``spawn_time`` for migrated
+    runs. A genuine stale recovery stays later than normal timeout handling.
     """
     state = load_state(run_dir)
     info = state["phases"].get(phase, {})

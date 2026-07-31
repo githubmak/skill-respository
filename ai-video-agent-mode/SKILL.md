@@ -14,7 +14,11 @@ description: >
 
 ## 权威契约
 
+- 当前阶段顺序、执行者、输入输出、超时、批次和 validator 的机器唯一来源：`scripts/contract_registry.py`；其它脚本只能派生消费，不得复制维护第二套阶段表。
 - 详细字段、五段提示词、动作预算和验证规则：`references/format_constraints.md`。
+- 按需合同索引与低耗读取切片：`references/contracts/contract_index.md`。
+- 制作质量知识储备、人物一致性、空间/物理连续和画面质感：`references/production_quality_knowledge.md`。
+- Agent 派发角色说明维护在 `references/dispatch/*.md`，`scripts/dispatch_cache.py` 只负责读取、拼装和 fallback。
 - 路由和按需读取规则：先读 `references/ROUTES.md`。
 - 当前运行时阶段、输出和门禁：`scripts/pipeline_templates.py` 与 `scripts/pipeline_state.py`。
 - 历史 Emotion / Camera / Director 分阶段文档不是当前可派发阶段；当前实现不兼容旧 pipeline。
@@ -31,7 +35,7 @@ description: >
 | 3 | Master Production | Agent | 每主镜一条 T2V 任务与完整合同 |
 | 4 | Editor Pass 1 | 本地脚本 | `pre_editor_gate.py` |
 | 5 | Editor Pass 2 | Agent | 仅修语义穿帮与执行竞争 |
-| 6 | Validate | 本地脚本 | `emotion_camera_audit.py`、`validate_modec.py`、`check_export.py` |
+| 6 | Validate | 本地脚本 | `episode_state_graph.py`、`episode_director_audit.py`、`emotion_camera_audit.py`、`validate_modec.py`、`check_export.py` |
 | 7 | Export | 本地脚本 | 已确认路径下 Markdown 与 XLSX |
 
 不得跳过、重命名或假设存在其它运行时阶段。`master_production` 内部仍须遵守
@@ -47,33 +51,47 @@ description: >
 5. 公共合并使用 `merge_agent_outputs.py --require-provenance`；失败只修 validator 指定字段，第二次重试为单主镜批次。
 6. 每个主镜仅服务一个 `narrative_beat_id`。`shot_group` 仅描述该节拍内的连续变化，最多一次单向注意力交接；需回切、第二目标或第二独立动作链时拆为下一主镜。
 7. 台词、OS、OV 按 `ref/kind/speaker/text` 锁定，逐字保留。OS/OV 无口型；无源文不得新增人声。
-8. `full_prompt` 只包含可执行画面指令。QA、负面词、工程数据、风险结论和迁移说明必须位于 JSON 独立字段。
-9. Scene Lock 是光源、色温、服装与空间不可变事实的唯一来源。后续阶段只能消费这些事实。
-10. 高风险镜指多人走位、受力/打斗、道具交接、长台词、`shot_group` 或高抽卡风险。高风险 Master Production 批次上限为 **2**，standard 为 6，light 为 10；具体值以 `dispatch_risk()` 为唯一实现来源。
-11. 同一地点跨镜必须复用 Scene Lock 的空间ID、空间主锁定、入口出口、人物槽位和道具活动区；同一场景影调从场景色卡消费，不得逐镜重新解释空间或乱换光色。
-12. 直接投喂即梦的导出文本不得保留“上一镜、继承、尾帧、剪辑、切到、反打到”等元叙述；规范正文可用于验证落幅，导出 feed 必须转成当前可见事实。
+8. Orchestrator 必须把带 `△/动作：` 前缀和无前缀的普通剧本动作行都登记为源文制作单元；每个动作/对白 source ID 必须进入一个剧情节拍。相邻低风险起幅状态、声音触发和台词后反应可在同一叙事目标与时长上限内合并，强动作、第二动作链或超时必须拆镜。OV 说话者只锁为声音来源，不得进入可见人物列表；OS 可按源文锁定闭口可见人物。
+9. `full_prompt` 只包含可执行画面指令。QA、负面词、工程数据、风险结论和迁移说明必须位于 JSON 独立字段。
+10. Scene Lock 是光源、色温、服装与空间不可变事实的唯一来源。后续阶段只能消费这些事实。
+11. 高风险镜指多人走位、受力/打斗、道具交接、长台词、`shot_group` 或高抽卡风险。高风险 Master Production 批次上限为 **2**，standard 为 6，light 为 10；具体值以 `dispatch_risk()` 为唯一实现来源。
+12. 同一地点跨镜必须复用 Scene Lock 的空间ID、空间主锁定、入口出口、人物槽位和道具活动区；同一场景影调从场景色卡消费，不得逐镜重新解释空间或乱换光色。
+13. 直接投喂即梦的导出文本统一写入 `【画面描述｜直接复制】`，不得保留“上一镜、继承、尾帧、剪辑、切到、反打到”等元叙述；规范正文可用于验证落幅，导出 feed 必须转成当前可见事实，并保留压缩视觉场景前缀、画幅、影调、色卡、画面主体、运镜、光影、1–2 个具体材质锚点，以及可选 `video_texture_contract` 的短视频质感继承句。
+14. 新运行或 Compose 派发前必须将 `production_quality_knowledge.md` 的知识储备转成项目内事实：制作级影调色卡、空间锁定索引、角色声音锁定表、角色表演基线、人物可见人数闸门、情绪微表演链、物理结构链、特殊视角运动语法和单镜 1–2 个质感锚点；不得把该参考中的示例场景、左右站位、光线或人物关系原样套入项目。
+15. 前台导演精修层只优化可见表达，不改变源文事实、字段合同或验证门禁。`creative_profile` 仅允许 `safe/balanced/expressive` 三档：safe 稳定直投，balanced 默认增强表演与质感，expressive 只在低风险或用户明确要风格化时扩大镜头语法；任何档位都不准牺牲 direct-copy 质量、T2V-only、provenance、validator、golden 与规则一致性。
+16. Export 只通过 `direct_prompt_compiler.py` 按视觉前缀→空间→连续性→表演→光影→视频质感→电影质感编译直投正文；跨段精确去重，只整句压缩，台词与硬事实受保护，不能满足 700 字上限时阻断回修，禁止静默截断。
+17. Validate 必须生成全集状态图和语义谱系，并审计张力曲线、景别曲线、运镜能量、微表演重复、对白自然时长和可见口型窗；明确事实冲突、容量不足、口型窗重叠及连续机械重复阻断，低置信度创作节奏问题保留为警告供 Editor 复核。
 
 ## 质量规则
 
 - 先满足站位、朝向、道具归属、口型、动作预算和落幅继承，再追求风格化镜头。
 - 每个子镜只有一个实焦主体、一个主要动作或状态变化、一个景别可见的表演证据和一个可继承落幅。
-- 表演按“触发 → 可见泄露 → 身体承接 → 声音/呼吸 → 残留”组织；运镜只能响应已确认的可见重音。
+- 表演按“角色表演基线 → 触发 → 内在情绪/对外展示差 → 可见泄露 → 身体承接 → 声音/呼吸 → 残留”组织；角色基线仍须锁定常态控制、优先泄露部位、默认动作幅度、爆发阈值和禁用习惯。`inner_emotion/display_intent` 只用于推导，`mask_leak` 才落成眉眼、嘴角、下颌、肩颈、手指、袖口/道具、视线或呼吸中的 3–5 个微动作。每镜记录 0–5 起止强度与变化量，但这些分析词和数字不得进入直投正文；运镜只能响应已确认的可见泄露或台词重音。
 - Master Production 写镜前先建立 `source_constraint_basemap`：空间、人物朝向、状态/道具、物理反推、张弛功能、情绪钩子、多人体反应、影调、声音/口型和屏幕文字策略；后期校验只兜底，不承担主要创作修复。
-- 画面质感必须落成可执行视觉锚点：光源方向/色温、脸/手/道具受光面、浅阴影/反光、背景虚化或剧情相关材质；不得只写电影感、高级感、质感。
+- 前台导演精修层把合规提示词润成可直接投喂的即梦导演卡，但不得新增第二套事实。`【画面描述｜直接复制】` 推荐顺序为：画幅/风格 → 场景色卡/影调 → 主体位置与可见人数 → 表演/台词/听者反应 → 运镜路径或稳定状态 → 光影材质 → 落幅。对白镜以 `dialogue_performance_kernel` 先判断本句功能、潜台词和轮次关系，再只把 1–3 个原文重音词、说法、潜台词可见证据、说话者口型、听者低幅反应、句末闭口与余波落幅写进正文；不得把 `subtext/line_function/turn_relation` 标签直接投喂即梦。
+- Scene Lock 需沉淀项目级知识，而不是只写单镜位置：每个地点必须有 `space_id`、`space_master_sentence`、入口出口、人物槽位基准、道具活动区、完整影调色卡压缩版与光源事实；每个有台词/OS/OV的人物应有稳定声音锁定，单镜只写情绪造成的声音微调。
+- 画面质感必须落成可执行视觉锚点：光源方向/色温、脸/手/道具受光面、浅阴影/反光、背景虚化或剧情相关材质；不得只写电影感、高级感、质感。写实/实拍/电影剧照目标必须使用 `cinematic_image_contract` 或等价正文，明确构图锚点、焦平面/景深、曝光黑位、色彩分离、空气层、真实材质、非完美瑕疵和记忆帧，并主动规避镜面水面、塑料墙、均匀雨线、过曝灯管、过度霓虹和虚拟摄影棚感。
+- 特殊视角不是标签。使用穿越、ACT、FPV、POV、水平横移或鸟瞰时，必须锁定摄影机与主体关系、相对高度/距离、唯一主路径与速度曲线、至多一次焦点交接和稳定落幅；若需要多层级穿越、两次以上方向变化、第二个动作链或回切，优先拆镜，不得靠堆叠“高速、环绕、甩镜、慢动作”冒险。
+- 整条视频的质感提升优先使用 `video_texture_contract`：统一全片影像基调、曝光黑位、高光不过曝、材质运动响应、雨雾尘空气层运动、镜头稳定/运动预算和跨镜质感继承。单镜 direct-copy 可提高到 700 个中文字符以内，但仍只选择 1–2 个核心视觉增强点，不把图片级细节密度复制到每条视频提示词里。
+- 复杂度分档只减内部合同和可选字段，不准牺牲 `【画面描述｜直接复制】` 的核心质量。轻量镜也必须含视觉场景前缀、景别/机位、人物位置与面向、台词或声音文本、说话者表演、听者/环境反应、镜头状态、光影/材质落点和画面结束状态；普通剧情镜低于 180 中文字符视为密度不足，应重写或升级为 standard。
+- 情绪跨镜一致性使用 `emotion_residue_contract`：触发前状态 → 泄露部位 → 压抑/释放方式 → 尾帧残留。它只记录可见尾韵和下一镜可继承表演，不把“尾帧/继承”写进 direct-copy 正文。
 - 构图、焦段、运镜和材质只服务本镜唯一任务；复杂对白、多人反应、道具转移或复杂运镜镜头优先保稳定，只保留一个光影/构图锚点。
+- 多人、画外声或同场人物多于本镜入画人物时，必须先建立“可见人数闸门”：清楚区分清晰人物、肩线/背影/倒影/虚化人物和纯画外声音；不入画人物不得作为“看向/面对”的视觉目标。
 - 多人戏中清晰入画的具名非主表演者不能只是闭口站着；必须分配受击反应、观察反应、背景弱化，或降为肩线/边缘虚化/画外。
 - 每镜标记张弛功能：铺垫、升压、峰值、释放或缓冲；不要连续强推近、强表情、强停顿，强张力后必须给短余波、关系缓冲或明确悬置理由。
-- 道具交接、转身、起身、开门、离场、手腕控制等状态变化必须写“起始 → 接近/接触 → 移动/受力 → 释放/稳定终态”；动作强时运镜降为固定或低幅推近。
+- 道具交接、转身、起身、开门、离场、手腕控制、躺/靠/伏/抱/扶/摔倒/坐起/披衣/下车/屏幕显示等状态变化必须写“起始 → 支撑/接触/方向 → 可见转换 → 释放/稳定终态 → 下一镜继承”；动作强时运镜降为固定或低幅推近。
+- 镜头语言使用组件化知识储备：听者被击中、关系拉开、手部泄露、正反打保轴、手机消息浮层、口型交接、物件缓冲、行走转对白等组件每个子镜最多选一个，并改写成当前人物、空间、道具和台词。
 - 手机聊天、来电名称、通知弹窗等 UI 文字若由 AI 生成，必须声明独立二维浮层、安全区和透视隔离；否则把具体文字留到后期文字表。
-- 人物、对白、道具变化、重要叙事或高风险镜必须有 `story_punch_contract`、`performance_contract`、`continuity_contract` 与 `reroll_control`。`rising/peak` 另需 `pressure_release_design`。
+- 人物、对白、道具变化、重要叙事或高风险镜必须有 `story_punch_contract`、`performance_contract`、`continuity_contract` 与 `reroll_control`。戏眼合同必须额外锁定唯一构图优先级与运镜动机：构图说明主体、前中后景/留白/遮挡/距离或焦点关系，运镜说明唯一策略及它响应的表演、台词、道具或空间触发；不得以“电影感、聚焦人物、缓慢推近”代替。`rising/peak` 另需 `pressure_release_design`。
 - 复杂互动优先拆镜或降运镜，不能靠更多修辞、更多表情或更长静止来掩盖模型负担。
 - 原生音频开启时，台词必须以 `{人物}（台词/OS/OV）: "原文"` 在子镜头组逐字出现一次；关闭时原文仅保留在元数据与导出表。
+- 每条台词时间窗必须容纳按人物本镜语速、原文标点、句前/中段气口和句末收气估算的自然表演时长；两个 `visible + lip_sync=true` 事件不得重叠，可见对白必须写口型同步和句末闭口落幅。
 
 ## 性能与测试
 
 - 性能目标是 50 主镜 P95 不超过 55 分钟，不是当前声明。只有三类场景（对白、动作、混合）各一组正常与 10% 失败注入的真实运行通过 `benchmark_core_pipeline.py` 后，才能声称达标。
 - `performance_budget.py` 从 pipeline state 输出总耗时、local/worker/暂停估算拆分、每阶段耗时、dispatch 数、重试数和达标状态。
-- 结构回归：`python3 scripts/test_current_pipeline.py` 与 `python3 scripts/golden_jimeng_check.py`。
+- 结构回归：`python3 scripts/test_current_pipeline.py`、`python3 scripts/test_quality_upgrades.py` 与 `python3 scripts/golden_jimeng_check.py`；golden 检查同时覆盖 12 个以上中性直投质量样本、写实电影质感样本和视频质感继承样本，防止对白、动作、道具、UI、多人物、环境镜退化为空泛提示词、明显 CG/AI 质感或跨镜质感跳变。
 - 真实源文 smoke test：`python3 scripts/test_source_smoke.py --source <source.txt> --min-shots <n>`。该测试只验证确定性配置、拆镜、台账、时长、preflight 与 packet 化，不伪造 Agent 输出或成片验收。
 - 已完成真实 E2E 回归：`python3 scripts/test_completed_e2e_run.py --run-dir <completed_run_dir> --source <source.txt> --expected-shots <n>`。该测试只验收真实 supervisor/worker/provenance 产物，不生成或伪造 Agent 输出。
 - 构造 50 镜 benchmark fixture：`python3 scripts/create_benchmark_fixtures.py --out-dir <fixture_dir>`，再用 `benchmark_core_pipeline.py` 验证六组结构。fixture 报告只证明 benchmark 机制可复跑；只有 `evidence_kind=real_pipeline` 的六组真实 Agent 运行才可声明真实 SLO。
@@ -84,6 +102,7 @@ description: >
 python3 scripts/route_task.py full --run-dir <run_dir> --intent new
 python3 scripts/workflow_supervisor.py --run-dir <run_dir> --source <source.txt>
 python3 scripts/test_current_pipeline.py
+python3 scripts/test_quality_upgrades.py
 python3 scripts/golden_jimeng_check.py
 python3 scripts/test_source_smoke.py --source <source.txt> --min-shots 1
 python3 scripts/test_completed_e2e_run.py --run-dir <completed_run_dir> --source <source.txt> --expected-shots <n>

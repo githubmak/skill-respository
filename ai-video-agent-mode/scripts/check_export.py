@@ -15,8 +15,10 @@ from modec_v4 import (
     ai_model_readiness_issues,
     attention_handoff_issues,
     camera_competition_issues,
+    cinematic_image_contract_issues,
     coverage_role_issues,
     continuity_contract_issues,
+    direct_copy_prompt_issues,
     direct_feed_prompt_issues,
     dialogue_event_issues,
     expectation_anchor_issues,
@@ -43,6 +45,7 @@ from modec_v4 import (
     timeline_ranges,
     visibility_issues,
     visual_texture_issues,
+    video_texture_contract_issues,
 )
 from negative_prompts import PLACEHOLDER, is_fight_context
 from contract_registry import QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
@@ -174,6 +177,8 @@ def check_export(md_path, run_dir, quality_mode=False):
             + scene_tone_palette_issues(metadata)
             + screen_text_policy_metadata_issues(metadata, full_prompt)
             + tension_curve_role_issues(metadata)
+            + cinematic_image_contract_issues(metadata, full_prompt)
+            + video_texture_contract_issues(metadata, full_prompt)
         )
         if metadata_semantic_issues:
             metadata_missing += 1
@@ -367,13 +372,53 @@ def _export_check(md_path, quality_mode, expected_ids):
     with open(md_path, "r", encoding="utf-8-sig") as handle:
         text = handle.read()
     ids_ok = all(subshot_id in text for subshot_id in expected_ids)
-    required_sections = ("模型提示词", "负面提示词", "下一镜转场提示词", "台词/OS/OV表演")
+    required_sections = (
+        "## 使用说明",
+        "## 全局锁定",
+        "## 通用负面提示词｜直接复制",
+        "## 场景状态表",
+        "## 分镜投喂卡",
+        "【画面参数】",
+        "【画面描述｜直接复制】",
+        "【运镜描述】",
+        "【光影描述】",
+        "【负面提示词｜直接复制】",
+        "【表演与声音】",
+        "【状态继承】",
+    )
     forbidden_sections = ("QA元数据", "qa_metadata", "生成控制", "generation_control")
-    separated = all(label in text for label in required_sections) and not any(label in text for label in forbidden_sections)
+    direct_blocks = _direct_export_blocks(text)
+    direct_issues = [
+        issue
+        for block in direct_blocks
+        for issue in direct_copy_prompt_issues(block, max_chars=700, require_visual_texture=True)
+    ]
+    separated = (
+        all(label in text for label in required_sections)
+        and direct_blocks
+        and not direct_issues
+        and not any(label in text for label in forbidden_sections)
+    )
     title_ok = not bool(INTERNAL_TITLE_LEAK.search(text))
     no_grid_section = "自动九宫格剧情包" not in text
     xlsx_path = os.path.splitext(md_path)[0] + ".xlsx"
-    return ids_ok and separated and title_ok and no_grid_section and os.path.exists(xlsx_path), f"ids={ids_ok}, separated={separated}, title={title_ok}, no_grid={no_grid_section}, xlsx={os.path.exists(xlsx_path)}"
+    direct_detail = "direct_blocks=%d%s" % (len(direct_blocks), (", direct_issues=" + str(len(direct_issues))) if direct_issues else "")
+    return ids_ok and separated and title_ok and no_grid_section and os.path.exists(xlsx_path), f"ids={ids_ok}, separated={separated}, {direct_detail}, title={title_ok}, no_grid={no_grid_section}, xlsx={os.path.exists(xlsx_path)}"
+
+
+def _direct_export_blocks(markdown_text):
+    fenced_pattern = re.compile(
+        r"\*\*画面描述｜直接复制(?:（模型提示词）)?\*\*\s*\n+\s*```text\s*\n(.*?)\n```",
+        re.S,
+    )
+    text = str(markdown_text or "")
+    blocks = [match.group(1).strip() for match in fenced_pattern.finditer(text)]
+    card_pattern = re.compile(
+        r"【画面描述｜直接复制】\s*\n+(.*?)(?=\n+【(?:画面参数|运镜描述|光影描述|负面提示词｜直接复制|表演与声音|状态继承|剪辑衔接|本镜必要约束｜直接复制|本镜补充负面提示词｜直接复制|内部溯源|关键帧生图提示|空间与道具锁定)[^】]*】|\n+#### |\n+---|\Z)",
+        re.S,
+    )
+    blocks.extend(match.group(1).strip() for match in card_pattern.finditer(text))
+    return [block for block in blocks if block]
 
 
 def _load(path):

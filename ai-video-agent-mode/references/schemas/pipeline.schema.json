@@ -156,8 +156,98 @@
         "source_constraint_basemap": {"$ref": "#/definitions/source_constraint_basemap"},
         "scene_tone_palette": {"$ref": "#/definitions/scene_tone_palette"},
         "screen_text_policy": {"$ref": "#/definitions/screen_text_policy"},
-        "tension_curve_role": {"$ref": "#/definitions/tension_curve_role"}
+        "tension_curve_role": {"$ref": "#/definitions/tension_curve_role"},
+        "story_punch_contract": {"$ref": "#/definitions/story_punch_contract"},
+        "performance_contract": {"$ref": "#/definitions/performance_contract"},
+        "dialogue_events": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/dialogue_event"}
+        },
+        "cinematic_image_contract": {"$ref": "#/definitions/cinematic_image_contract"},
+        "video_texture_contract": {"$ref": "#/definitions/video_texture_contract"}
       },
+      "additionalProperties": true
+    },
+    "story_punch_contract": {
+      "type": "object",
+      "properties": {
+        "audience_question": {"type": "string", "minLength": 4},
+        "character_pressure": {"type": "string", "minLength": 4},
+        "visible_pressure_object": {"type": "string", "minLength": 4},
+        "dramatic_turn": {"type": "string", "minLength": 4},
+        "picture_punctuation": {"type": "string", "minLength": 4},
+        "composition_priority": {"type": "string", "minLength": 4},
+        "camera_motivation": {"type": "string", "minLength": 4},
+        "end_residue": {"type": "string", "minLength": 4}
+      },
+      "required": [
+        "audience_question", "character_pressure", "visible_pressure_object", "dramatic_turn",
+        "picture_punctuation", "composition_priority", "camera_motivation", "end_residue"
+      ],
+      "additionalProperties": false
+    },
+    "performance_contract": {
+      "type": "object",
+      "properties": {
+        "tension_intent": {"type": "string", "enum": ["neutral", "latent", "rising", "peak", "release"]},
+        "trigger_event": {"type": "string", "minLength": 2},
+        "trigger_time": {"type": "string", "minLength": 2},
+        "inner_emotion": {"type": "string", "minLength": 4},
+        "display_intent": {"type": "string", "minLength": 4},
+        "mask_leak": {"type": "string", "minLength": 4},
+        "start_intensity": {"type": "integer", "minimum": 0, "maximum": 5},
+        "end_intensity": {"type": "integer", "minimum": 0, "maximum": 5},
+        "emotion_delta": {"type": "integer", "minimum": -5, "maximum": 5},
+        "primary_expression": {"type": "string", "minLength": 4},
+        "primary_body_action": {"type": "string", "minLength": 4},
+        "eye_focus": {"type": "string", "minLength": 4},
+        "reaction_delay": {"type": "string", "minLength": 4},
+        "voice_or_breath_control": {"type": "string", "minLength": 4},
+        "viewer_empathy_anchor": {"type": "string", "minLength": 4},
+        "readable_image_moment": {"type": "string", "minLength": 4},
+        "visual_progression": {"type": "string", "minLength": 4},
+        "suppression_or_release": {"type": "string", "minLength": 4},
+        "camera_pressure": {"type": "string", "minLength": 4},
+        "scene_pressure": {"type": "string", "minLength": 4},
+        "end_residue": {"type": "string", "minLength": 4}
+      },
+      "required": [
+        "tension_intent", "trigger_event", "trigger_time", "inner_emotion", "display_intent", "mask_leak",
+        "start_intensity", "end_intensity", "emotion_delta", "primary_expression", "primary_body_action",
+        "eye_focus", "reaction_delay", "voice_or_breath_control", "viewer_empathy_anchor",
+        "readable_image_moment", "visual_progression", "suppression_or_release", "camera_pressure",
+        "scene_pressure", "end_residue"
+      ],
+      "additionalProperties": true
+    },
+    "dialogue_event": {
+      "type": "object",
+      "properties": {
+        "ref": {"type": "string", "minLength": 1},
+        "kind": {"type": "string", "enum": ["台词", "OS", "OV"]},
+        "speaker": {"type": "string", "minLength": 1},
+        "text": {"type": "string", "minLength": 1},
+        "time_range": {"type": "string", "pattern": "^\\d+(?:\\.\\d+)?-\\d+(?:\\.\\d+)?秒$"},
+        "speaker_visibility": {"type": "string", "enum": ["visible", "offscreen", "nonphysical"]},
+        "facial_state": {"type": "string", "minLength": 2},
+        "body_state": {"type": "string", "minLength": 2},
+        "delivery": {"type": "string", "minLength": 2},
+        "breath_pause_plan": {"type": "string", "minLength": 6},
+        "line_function": {
+          "type": "string",
+          "enum": ["probe", "pressure", "deny", "verify", "interrupt", "farewell", "conceal", "reveal", "plead", "deflect", "reconcile", "narrate", "warn", "challenge", "answer", "confess"]
+        },
+        "subtext": {"type": "string", "minLength": 4},
+        "stress_words": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"type": "string", "minLength": 1}},
+        "subtext_visible_evidence": {"type": "string", "minLength": 4},
+        "turn_relation": {"type": "string", "enum": ["initiate", "respond", "deflect", "interrupt", "withdraw", "bridge", "continue"]},
+        "lip_sync": {"type": "boolean"}
+      },
+      "required": [
+        "ref", "kind", "speaker", "text", "time_range", "speaker_visibility", "facial_state", "body_state",
+        "delivery", "breath_pause_plan", "line_function", "subtext", "stress_words",
+        "subtext_visible_evidence", "turn_relation", "lip_sync"
+      ],
       "additionalProperties": true
     },
     "source_constraint_basemap": {
@@ -169,7 +259,17 @@
         "tension_curve_role": {"$ref": "#/definitions/tension_curve_role"},
         "sound_lip_sync_basis": {"type": "string", "minLength": 1},
         "screen_text_policy": {"type": "string", "minLength": 1},
-        "single_shot_risk": {"type": "string", "minLength": 1}
+        "single_shot_risk": {"type": "string", "minLength": 1},
+        "visible_people_gate": {"type": ["string", "object"]},
+        "performance_baseline_lock": {"type": "string"},
+        "emotion_micro_chain": {"type": "string"},
+        "dialogue_performance_kernel": {"type": "string"},
+        "emotion_residue_contract": {"type": "string"},
+        "physical_structure_chain": {"type": "string"},
+        "shot_component_choice": {"type": "string"},
+        "viewpoint_motion_lock": {"type": "string"},
+        "premium_director_polish": {"type": "string"},
+        "creative_profile": {"type": "string", "enum": ["safe", "balanced", "expressive"]}
       },
       "required": ["space_basis", "state_prop_basis", "character_orientation_basis", "tension_curve_role", "sound_lip_sync_basis", "screen_text_policy", "single_shot_risk"],
       "additionalProperties": false
@@ -196,6 +296,54 @@
         "perspective_rule": {"type": "string"}
       },
       "required": ["mode", "text_refs", "render_rule", "safe_area", "perspective_rule"],
+      "additionalProperties": false
+    },
+    "cinematic_image_contract": {
+      "type": "object",
+      "properties": {
+        "composition_anchor": {"type": "string", "minLength": 1},
+        "lens_depth": {"type": "string", "minLength": 1},
+        "exposure_contrast": {"type": "string", "minLength": 1},
+        "color_separation": {"type": "string", "minLength": 1},
+        "atmosphere_layer": {"type": "string", "minLength": 1},
+        "material_detail": {"type": "string", "minLength": 1},
+        "imperfection_map": {"type": "string", "minLength": 1},
+        "realism_risk": {"type": "string", "minLength": 1},
+        "signature_frame": {"type": "string", "minLength": 1}
+      },
+      "required": [
+        "composition_anchor",
+        "lens_depth",
+        "exposure_contrast",
+        "color_separation",
+        "atmosphere_layer",
+        "material_detail",
+        "imperfection_map",
+        "realism_risk",
+        "signature_frame"
+      ],
+      "additionalProperties": false
+    },
+    "video_texture_contract": {
+      "type": "object",
+      "properties": {
+        "look_profile": {"type": "string", "minLength": 1},
+        "exposure_policy": {"type": "string", "minLength": 1},
+        "material_motion_policy": {"type": "string", "minLength": 1},
+        "atmosphere_motion_policy": {"type": "string", "minLength": 1},
+        "camera_stability_policy": {"type": "string", "minLength": 1},
+        "continuity_carryover": {"type": "string", "minLength": 1},
+        "risk_controls": {"type": "string", "minLength": 1}
+      },
+      "required": [
+        "look_profile",
+        "exposure_policy",
+        "material_motion_policy",
+        "atmosphere_motion_policy",
+        "camera_stability_policy",
+        "continuity_carryover",
+        "risk_controls"
+      ],
       "additionalProperties": false
     },
     "tension_curve_role": {

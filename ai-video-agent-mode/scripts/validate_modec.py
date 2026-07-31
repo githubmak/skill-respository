@@ -40,6 +40,7 @@ from modec_v4 import (
     timeline_issues,
     visibility_issues,
     visual_texture_issues,
+    video_texture_contract_issues,
 )
 from negative_prompts import PLACEHOLDER, is_fight_context
 from contract_registry import QA_REQUIRED_FIELDS
@@ -136,6 +137,8 @@ def main(run_dir):
             errors.append(prefix + issue)
         for issue in scene_tone_palette_issues(metadata):
             errors.append(prefix + issue)
+        for issue in video_texture_contract_issues(metadata, full_prompt):
+            errors.append(prefix + issue)
         for issue in screen_text_policy_metadata_issues(metadata, full_prompt):
             errors.append(prefix + issue)
         for issue in tension_curve_role_issues(metadata):
@@ -152,9 +155,9 @@ def main(run_dir):
                 errors.append(prefix + "dramatic_design.narrative_beat_id必须属于dramatic_beat_ids")
             expected_narrative = str((plan_item.get("dramatic_design", {}) or {}).get("narrative_beat_id", "") or "").strip()
             if expected_narrative and not narrative_beat_id:
-                errors.append(prefix + "dramatic_design.narrative_beat_id必须从Phase 1继承")
+                errors.append(prefix + "dramatic_design.narrative_beat_id必须从Orchestrator继承")
             elif expected_narrative and narrative_beat_id != expected_narrative:
-                errors.append(prefix + "dramatic_design.narrative_beat_id必须与Phase 1一致")
+                errors.append(prefix + "dramatic_design.narrative_beat_id必须与Orchestrator一致")
 
         visible = _as_list(plan_item.get("visible_characters", plan_item.get("characters", [])))
         validation_profile = derive_validation_profile(plan_item, metadata, visible)

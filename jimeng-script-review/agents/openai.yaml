@@ -1,0 +1,4 @@
+interface:
+  display_name: "剧本审核"
+  short_description: "逐场审核剧本是否符合即梦社区公约与短剧专项制作要求"
+  default_prompt: "使用 $jimeng-script-review 审核这份剧本，列出不合规位置、对照改写和修改建议。"

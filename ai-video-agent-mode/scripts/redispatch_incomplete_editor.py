@@ -29,6 +29,7 @@ def redispatch(run_dir, reason):
     os.makedirs(archive_dir, exist_ok=True)
     state = load_state(run_dir)
     verified_windows = set()
+    verified_packets = []
     retired = []
 
     for path in _active_packets(dispatch_dir):
@@ -37,6 +38,7 @@ def redispatch(run_dir, reason):
         valid, _reason, _manifest = verify_provenance(output) if output else (False, "missing output", None)
         if valid:
             verified_windows.update(_window_ids(packet))
+            verified_packets.append(path)
             continue
         dispatch_id = str(packet.get("dispatch_id", "") or "")
         shutil.move(path, os.path.join(archive_dir, os.path.basename(path)))
@@ -55,6 +57,7 @@ def redispatch(run_dir, reason):
             shutil.move(path, os.path.join(archive_dir, os.path.basename(path)))
             continue
         retained.append(path)
+    _preserve_verified_manifest_entries(run_dir, verified_packets)
 
     phase_state = state["phases"][PHASE]
     phase_state["status"] = "pending"
@@ -86,6 +89,41 @@ def _window_ids(packet):
 def _load(path):
     with open(path, encoding="utf-8-sig") as handle:
         return json.load(handle)
+
+
+def _preserve_verified_manifest_entries(run_dir, verified_packets):
+    manifest_path = os.path.join(run_dir, ".cache", "dispatch", "active_%s_manifest.json" % PHASE)
+    try:
+        manifest = _load(manifest_path)
+    except (OSError, json.JSONDecodeError):
+        return
+    entries = manifest.get("packets", []) if isinstance(manifest.get("packets"), list) else []
+    known = {os.path.abspath(str(entry.get("packet_path", "") or "")) for entry in entries if isinstance(entry, dict)}
+    prepend = []
+    for path in verified_packets:
+        path = os.path.abspath(path)
+        if path in known or not os.path.exists(path):
+            continue
+        packet = _load(path)
+        prepend.append({
+            "packet_path": path,
+            "dispatch_id": packet.get("dispatch_id", ""),
+            "dispatch_group_id": packet.get("dispatch_group_id", ""),
+            "created_at": packet.get("created_at"),
+            "is_retry": bool(packet.get("is_retry") or packet.get("retry_context_path")),
+            "shot_ids": [],
+            "source_sha256": packet.get("source_sha256", ""),
+            "attempt": manifest.get("attempt", 0),
+            "preserved_verified": True,
+            "effective": True,
+        })
+    if not prepend:
+        return
+    manifest["packets"] = prepend + entries
+    manifest["active_packet_count"] = len(manifest["packets"])
+    manifest["updated_at"] = time.time()
+    with open(manifest_path, "w", encoding="utf-8") as handle:
+        json.dump(manifest, handle, ensure_ascii=False, indent=2)
 
 
 if __name__ == "__main__":

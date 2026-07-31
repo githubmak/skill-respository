@@ -1,4 +1,4 @@
 interface:
   display_name: "打斗戏视频设计"
-  short_description: "Fight choreography, maps, and AI video prompts"
-  default_prompt: "Use $fight-scene-video to turn this fight scene into action beats, overhead blocking maps, and video prompts."
+  short_description: "动作决策、关键帧、物理VFX与成片评测修复"
+  default_prompt: "Use $fight-scene-video 将这场打斗设计成对手决策合理、多人调度错峰、K0-K4关键帧连续、VFX光照可信、运镜可量化、双视图一致，并支持即梦生成、标准评测和成片修复的提示词包。"

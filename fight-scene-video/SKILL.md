@@ -1,217 +1,450 @@
 ---
 name: fight-scene-video
-description: Design style-specific fictional fight scenes as production-ready action beats, impact choreography, shot-by-shot blocking, overhead trajectory-map inputs, and AI video prompts. Use when the user asks for fight choreography, combat scene design, martial-arts or xianxia action, realistic hand-to-hand impact, action-storyboard planning, combat blocking, a fight scene trajectory map, or an AI-video-ready duel, chase, superhero, fantasy, or animated action sequence.
+description: 为虚构打斗、武打、冷兵器、仙侠斗法、高能动作、追逐、爆破、超能力战斗设计可生成的视频分镜、武器动作节拍、对手决策、多人时间调度、五阶段关键帧、打击反馈、技能/VFX物理光照与连续性、量化运镜、特殊视角、双视图轨迹调度参考图、即梦/AI视频提示词、标准评测及成片诊断修复。Use when the user asks for fight choreography, combat scene design, martial-arts or xianxia action, realistic impact, spell duels, 法天象地, 法身降临, 巨型法相, 灵丝绞杀, 音律化形, 笔墨符咒, 祭祀召唤, 一剑开天门, 聚水成剑, 剑气开云, 五阶段关键帧, 对手博弈, 多人混战调度, 打斗评测, 穿越视角, ACT视角, FPV视角, POV视角, 横移视角, 鸟瞰视角, 成片复盘, 动作崩坏, 特效穿模, 运镜修复, high-energy action, chases, explosions, skill effects, beams, shields, energy attacks, action storyboard planning, overhead/front-view blocking maps, camera trajectory maps, AI-video-ready action prompts, generated fight-video review, benchmark evaluation, or prompt iteration.
 ---
 
-# Fight Scene Video
+# 打斗戏视频设计
 
-Turn a premise, scene, screenplay excerpt, or existing storyboard into a coherent fictional action sequence that can be generated one shot at a time. Produce a fighting design and generation package; do not claim to execute a real stunt or validate an actual generated video.
+把用户提供的剧情、剧本片段、分镜行、场景设定或粗略动作想法，设计成可逐镜生成的虚构动作戏视频包。本技能负责“打斗导演”和“视频提示词导演”：先锁定剧情目的、战力规则、空间调度、动作因果、特效规则和镜头节奏，再把每个镜头拆成可生成的视频提示词，并为 `overhead-trajectory-map` 生成同图双视图轨迹调度参考图输入。
 
-## Operating Rules
+不要声称执行真实特技或验证真实视频成片。涉及真人实拍时，只能作为创意预演简报，并提醒需要合格动作指导。
 
-- Preserve the supplied characters, outcome, weapons, powers, setting, and plot. Mark any placement or action inferred from incomplete source as `合理推断`.
-- Design for screen readability, not real-world combat instruction. Describe impact with cinematic result, reaction, and spatial consequence; do not provide real-world training, injury, or weapon-use instruction.
-- Treat every generated video clip as one visual cause-and-effect unit. Split when a new attack chain, focal character, power reversal, major prop state, or camera axis is needed.
-- Fix the scene north direction, character labels, screen sides, prop ownership, and light anchors before designing shots. Carry each shot's end state into the next shot's start state.
-- Derive the action language from the chosen style and location before writing any moves. A fight that would play unchanged in another genre or location has failed the design.
-- Design editorial rhythm separately from camera movement. A stable single generated clip may use one primary move, while the completed fight must use a purposeful sequence of shot sizes, angles, cut triggers, and aftermath holds.
-- For practical live action, require a qualified stunt coordinator and use the output only as a creative previsualization brief.
+## 核心职责
 
-## Required Input
+本技能有两项主工作：
 
-Extract these fields from the request. Ask only for a missing field that materially changes the scene; otherwise use a conservative `合理推断`.
+1. 设计打斗镜头提示词：包括动作目的、起幅、人物状态、招式路径、打击反馈、技能/VFX、运镜、落幅和负面提示词。
+2. 设计运镜和走位事实，交给 `overhead-trajectory-map` 生成一张组合式调度参考图：同一画布内包含俯视轨迹和正视轨迹，包括平面锚点、高度锚点、人物起终点、路径、关键道具、摄像机轨道和特效占用空间。
 
-| Field | Need |
+`fight-scene-video` 决定动作事实；`overhead-trajectory-map` 只把已锁定的平面与高度空间事实翻译成双视图参考图，不新增角色、招式、剧情结果、特效或镜头。
+
+## 输入提取
+
+从用户请求中提取下列字段。缺失但不影响方向时，用保守 `合理推断` 补齐；缺失会改变剧情结果、战力规则或视觉风格时再询问。
+
+| 字段 | 需要锁定 |
 |---|---|
-| Dramatic goal | Why this fight happens and the required outcome or interruption |
-| Characters | Labels, fighting style, capability gap, weapons/powers, injury limits |
-| Location | Fixed anchors, entrances, obstacles, breakable or forbidden areas |
-| Duration | Total target duration and target clip length |
-| Visual target | Platform/model, style, aspect ratio, reference-image availability |
+| 戏剧目标 | 为什么打、谁想要什么、必须达成或中断的结果 |
+| 打斗类型 | 写实武打/冷兵器、仙侠/玄幻斗法、高能动作，或明确混合类型 |
+| 角色 | 标签、战斗风格、战力差、武器/能力、伤害上限、习惯招、可利用破绽 |
+| 技能/VFX | 技能来源、附着点、触发方式、颜色/形态、路径、范围、材质交互、残留、冷却/代价 |
+| 场景 | 北向、入口、出口、墙体、障碍、可破坏物、禁入区、可通行动线 |
+| 时长 | 总时长、单镜目标时长、是否需要连续长镜或分镜剪辑 |
+| 视觉目标 | 平台/模型、画幅、画面风格、参考打斗影片/动作类型、渲染质感、物理细节、角色图/场景图/轨迹图参考素材 |
+| 视角与运镜 | 叙事任务、视角绑定对象、主体占比、相对距离/高度、主运镜、速度曲线、焦点交接、稳定落幅 |
+| 生成反馈 | 已生成视频/关键帧、原提示词、参考图、轨迹图、失败时间点、必须保留项和允许修改项 |
 
-## Workflow
+## 工作流
 
-## Integrated Production Route
+### 0. 完整制作路线
 
-Use the following route when the user needs a complete fight package. Skip only the specialist whose output the user explicitly does not need. Read [references/integrated-workflow.md](references/integrated-workflow.md) before dispatching other skills.
+用户需要完整打斗视频包时，按下列顺序组织。只在用户明确不需要时跳过对应专家技能。使用完整流水线前，先读 [references/integrated-workflow.md](references/integrated-workflow.md)。
 
-`fight-scene-video` owns story facts, action beats, ability limits, impact logic, and the final decision on every shot. Specialist skills may refine only their assigned fields; they must not invent a new attack, effect, character, prop, power, or outcome.
-
-| Order | Specialist | Receives | Returns to this skill |
+| 顺序 | 模块 | 输入给它 | 返回给本技能 |
 |---:|---|---|---|
-| 1 | `natural-emotion-performance` | beat trigger, power relation, body state, dialogue if any | visible intent, fear/control leakage, breath, posture, reaction amplitude |
-| 2 | `frames-analysis` | scene lock, character positions, action beat, previous visual state | foreground/midground/background, material, light lock, composition, action vectors |
-| 3 | `camera-analysis` | coverage role, action vector, frame lock, axis, prior/end state, 16:9 requirement | shot size, angle, lens intent, one primary move, cut and axis plan |
-| 4 | `overhead-trajectory-map` | approved movement and camera facts only | top-down map brief and map-generation prompt |
-| 5 | `continuity-ledger` | every shot's actual end state and camera state | compact carryover state and continuity warnings |
-| 6 | `audio-design` | locked picture, impact timing, scene material, cut points | foley, silence, music pulse, transition sound, and sound bridges |
+| 1 | `natural-emotion-performance` | 节拍触发、强弱关系、身体状态、对白 | 可见意图、恐惧/控制泄露、呼吸、姿态、反应幅度 |
+| 2 | `frames-analysis` | 场景锁、角色位置、动作节拍、活跃VFX卡、前镜状态 | 前中后景、材质、光源、构图、动作向量、特效遮挡 |
+| 3 | `camera-analysis` | 覆盖职责、动作向量、画面锁、轴线、前后状态 | 景别、角度、镜头意图、一个主运镜、切点和轴线方案 |
+| 4 | `overhead-trajectory-map` | 只给已批准的平面走位、高度关系、道具、摄像机和空间事实 | 双视图调度方案、组合参考图正向/负面生图提示词 |
+| 5 | `continuity-ledger` | 每镜落幅、摄像机状态、活跃VFX状态 | 跨镜继承状态和连续性警告 |
+| 6 | `audio-design` | 锁定画面、冲击时间、材质、切点 | 拟音、停顿、音乐脉冲、转场声、声音桥 |
+| 7 | 本技能成片复盘 | 已生成视频/关键帧、原提示词、参考素材、轨迹图和连续性台账 | 根因诊断、保留项、删除项、单变量增量修复提示词 |
 
-Run Steps 1-3 per coverage unit, Step 4 for every moving or multi-character shot, Step 5 after every shot, and Step 6 after picture timing locks. This skill itself assembles the final Jimeng prompt from the approved locks. Do not generate final video prompts until any continuity warning is resolved or explicitly accepted as a deliberate break.
+本技能拥有最终事实裁决权。专家技能只能细化已锁定字段，不能发明新攻击、新角色、新道具、新能力或新结局。
 
-### 1. Lock the Fight Contract
+### 1. 锁定打斗合同
 
-Write a compact contract before choreography:
+写动作前，先输出简洁合同：
 
 ```text
-Conflict: [who wants what; what prevents it]
-Outcome: [win / escape / interruption / unresolved]
-Capability rule: [one concise advantage and limitation per side]
-Space lock: [north-up anchors, routes, prohibited zones]
-Continuity lock: [starting sides, props, damage, light, wet/dry or debris state]
+冲突：谁要什么，什么阻止他。
+结局：胜利 / 逃生 / 拖延 / 抢夺 / 救人 / 暴露弱点 / 被中断 / 未决。
+打斗类型：写实武打 / 仙侠斗法 / 高能动作 / 混合。
+胜负条件：击杀、生擒、撤离、拖够时间、拿到物品、保护某人、逼出破绽。
+战力规则：双方各一个优势、限制、克制关系。
+代价规则：强招会消耗或暴露什么，如体力、平衡、武器位置、冷却、灵力、神魂、掩体、时间、路线。
+空间锁：北向、入口、出口、障碍、禁入区、可通行动线。
+连续性锁：起始站位、朝向、武器归属、伤势、光源、地面/碎屑/烟尘状态。
+技能/VFX锁：技能来源、附着点、触发、路径、战术用途、材质反应、残留、范围上限。
+参考影片风格锁：[参考影片/动作类型；只借鉴动作设计语言，不照搬角色、场景、服装、镜头段落；翻译成即梦可见规则]
+视角锁：[普通电影机位 / 穿越尺度 / ACT第三人称 / FPV贴身 / POV第一人称 / 水平横移 / 鸟瞰；说明为何使用、摄影机与谁绑定、一个主运镜、焦点和落幅]
 ```
 
-Do not solve the scene through unexplained skill, a new weapon, a new power, or an offscreen helper.
+不得用未解释的新能力、新武器、场外救援或突然爆种解决战斗。
 
-### 2. Lock the Style and Impact Language
+### 2. 高级动作规则
 
-Before action beats, write a `style action diagnosis` with these five fields:
+每个有效动作必须通过 `动机 -> 代价 -> 目的 -> 局面变化` 检查。如果一个砍击、法术、闪避、爆炸或剪辑只是在“看起来很燃”，但没有改变局面，就替换成服务战术的动作。
 
-| Field | Decide |
+| 规则 | 执行要求 |
 |---|---|
-| Movement engine | Weighty pressure, elegant flow, explosive bursts, aerial control, or an unstable hybrid |
-| Contact grammar | Heavy collision, redirection, evasive near-miss, weapon clash, or effect-to-effect impact |
-| Energy/effect grammar | None, restrained residue, visible technique path, or large-scale spatial consequence |
-| Scene participation | Which anchors provide cover, footing, verticality, breakage, danger, or a forced route |
-| Camera rhythm | Establish threat, isolate commitment, reveal reversal, hold impact, then retain consequence |
+| 动机 | 自保、牵制、击杀、生擒、救人、逃生、拖延、缴械、破甲、逼路、打断施法、暴露弱点 |
+| 代价 | 重击有硬直，腾空有落地风险，格挡有震伤，大法术有冷却/反噬/失明/神魂损耗，爆破会摧毁掩体或误伤队友 |
+| 目的闭环 | 每个节拍必须改变距离、平衡、路线、掩体、武器归属、技能状态、团队优势或情绪控制 |
+| 战力完整 | 弱者取胜必须靠环境、战术、牺牲、法器弱点、团队铺垫或强者可见失误；强者压制靠封走位、断资源、锁反击空间 |
+| 人设绑定 | 每个角色至少有一个习惯招、一个偏好距离、一个防御反射、一个可利用破绽 |
+| 后果继承 | 疼痛、跛行、握力下降、灵力空虚、护盾裂纹、烟尘、破碎地面、冷却状态要进入下一镜 |
 
-Read [references/style-action-language.md](references/style-action-language.md) for the matching genre rules and [references/camera-rhythm.md](references/camera-rhythm.md) for coverage design. Never use generic phrases such as `打斗激烈` or `拳拳到肉` without writing the visible mechanism that creates the feeling.
+### 3. 选择动作类型
 
-### 3. Design Cause-and-Effect Action Beats
+在节拍设计前，选择主类型。混合动作只能有一个主逻辑，其他元素服务主逻辑。
 
-Build the scene as 3 to 6 action beats: `pressure -> response -> changed spatial state`. Every beat must visibly change distance, balance, cover, weapon ownership, route access, or power balance.
+| 类型 | 设计核心 | 必须看见 | 禁止倾向 |
+|---|---|---|---|
+| 写实武打/冷兵器 | 空间、重心、距离、握把、步伐、武器回收、痛感 | 接触面 -> 身体/护具变形或震动 -> 失衡 -> 僵直/回收 -> 疼痛反应 | 空地乱打、无痛硬吃、角色打法同质化、武器命中不改变姿态 |
+| 仙侠/玄幻斗法 | 法术、法器、神魂、阵法、幻术、诅咒之间的规则博弈 | 技能来源、触发、路径、克制、材质/神魂反应、冷却、反噬、幻术双层现实提示 | 全屏光污染、无限大招、万能法器、无视射线/视线/冷却/神魂代价 |
+| 高能动作 | 路线、速度、危险物、时机、掩体、爆点、追逐或救援目标 | 目标移动、危险地理、爆破/车辆/武器时机、队友风险、碎屑状态、逃脱或拦截窗口 | 随机爆炸、地理混乱、晃镜遮掩因果、场面不改变目标 |
 
-Use the budget and stability rules in [references/action-budget.md](references/action-budget.md). Prefer a distinctive reaction or environment consequence over adding another strike. Keep simultaneous multi-person contact, complex grappling, rapid weapon handoffs, and repeated impacts out of one AI-video clip.
+#### 3.1 专业知识库路由
 
-For a contact or effect impact, explicitly write: `anticipation -> committed path -> contact/near-miss -> force transfer -> recovery or displacement`. The reaction must differ by character and location: a heavy fighter braces, a light fighter redirects, loose rubble scatters, a steel surface rings, and an xianxia barrier ripples or fractures. Do not let the target merely slide backward without a cause.
+| 任务 | 必须读取 | 用途 |
+|---|---|---|
+| 拳脚或冷兵器动作 | [references/weapon-combat-grammar.md](references/weapon-combat-grammar.md) | 锁距离带、发力链、攻防线、武器回收、克制和生成降级 |
+| 类型风格翻译 | [references/style-action-language.md](references/style-action-language.md) | 把写实、武侠、仙侠、科幻、动画风格转成可见动作规则 |
+| 东方术法/法器/召唤 | [references/eastern-technique-patterns.md](references/eastern-technique-patterns.md) | 选择术法母题、递进链、空间层级和必锁风险 |
+| 光束、护盾、爆炸、阵法、召唤VFX | [references/vfx-physics-compositing.md](references/vfx-physics-compositing.md) | 锁特效层级、曝光、投影、遮挡、材质反应和复杂度 |
+| 镜头覆盖与量化运动 | [references/camera-rhythm.md](references/camera-rhythm.md) 与 [references/quantified-camera-staging.md](references/quantified-camera-staging.md) | 锁覆盖职责、距离/高度、轨道幅度、速度曲线和切点 |
+| ACT/FPV/POV/横移/鸟瞰/穿越 | [references/viewpoint-motion-grammar.md](references/viewpoint-motion-grammar.md) | 锁摄影机与主体关系、知情范围和双视图表达 |
+| 高手博弈或多人混战 | [references/combat-decision-scheduling.md](references/combat-decision-scheduling.md) | 锁信息、诱导、承诺窗口、团队分区和时间错峰 |
+| 姿态与运动阶段控制 | [references/keyframe-motion-control.md](references/keyframe-motion-control.md) | 输出K0-K4关键帧，统一姿态、武器、VFX、摄影机和落幅 |
+| 能力评测或回归测试 | [references/evaluation-benchmark.md](references/evaluation-benchmark.md) | 使用标准案例、权重、阻断上限和样本记录计算实测分数 |
+| 已生成视频失败复盘 | [references/generation-feedback-loop.md](references/generation-feedback-loop.md) | 区分症状与根因，生成最小增量修复提示词 |
 
-### 4. Convert Beats into Generateable Shots
+### 3.5 锁定参考打斗影片风格
 
-First turn every action beat into a coverage rhythm: `spatial setup -> commitment -> reversal or contact -> impact evidence -> aftermath`. Use 4-7 coverage units for a 12-20 second fight; combine units only when a continuous camera path makes the causal relation clearer.
+为整场打斗选择一个“参考影片风格”或“动作类型参考”。这不是让AI照搬原片，而是给即梦一个动作设计方向。必须把参考翻译成可见、可生成的画面规则。
 
-Give each generated shot one dramatic purpose and one primary camera response. State `start lock`, `action chain`, `end lock`, and `next-shot carryover`.
-
-For each shot, include:
-
-| Field | Requirement |
+| 字段 | 写法 |
 |---|---|
-| Duration | Usually 3-6 seconds; use 7-8 seconds only for a clearly readable continuous move |
-| Focus | One primary subject or a stable two-person composition |
-| Action chain | Setup, one decisive action, visible response, settled end state |
-| Screen/axis lock | Screen left/right, facing direction, and camera-side constraint |
-| Prop state | Owner, orientation, contact state, and final position |
-| Camera | Static, one push/pull, one track, one lateral move, or one orbit; state the trigger |
-| Coverage role | Establish space, threat, action commitment, reversal, contact, impact consequence, or aftermath |
-| Cut logic | The visible action, eyeline, obstruction, sound, or impact frame that motivates entry and exit |
-| Shot design | Shot size, angle, lens intent, axis side, and focal subject |
-| Impact or effect | Anticipation, path, contact/near-miss, force transfer, reaction, and scene residue |
-| Risk | Identity, limb, contact, occlusion, environment, or motion risk and simplification |
+| 参考来源 | 可写一个代表影片名、剧集名、动画动作类型或动作设计流派；用户未给时按打斗类型合理选择 |
+| 借鉴内容 | 只借鉴动作节奏、镜头距离、接触反馈、群战调度、特效克制、环境利用等抽象设计语言 |
+| 禁止内容 | 不照搬原片角色、服装、场景、标志性构图、完整招式段落、台词、logo或可识别剧情 |
+| 即梦翻译句 | 把参考写成一句具体规则，如“稳定中近景展示连续近身拆招，命中瞬间短暂停留，少晃镜，保留肢体接触和受力方向” |
 
-If the source requires an extended exchange, split at a reaction, an obstacle, a contact break, or an action match point. Do not hide a discontinuity behind an arbitrary fast cut.
+常用参考翻译：
 
-For AI video, select one delivery mode before writing prompts:
+| 参考类型 | 即梦可理解的动作语言 |
+|---|---|
+| 写实近身格斗片 | 稳定中近景，短促攻击，明确接触点，打中后有半拍停顿、踉跄、护具震动和呼吸恢复 |
+| 硬派枪拳/近战动作片 | 路线清楚，近身压迫，镜头少切，人物用墙、桌、门框改变距离，打击后立刻出现缴械或位移结果 |
+| 港式武打/冷兵器 | 全身中景看步伐和兵器路线，连续拆招但每次碰撞都有金属震动、退步和姿态变化 |
+| 仙侠斗法电影感 | 法术从手、剑、符或法器发出，光效贴着动作线，人物轮廓清楚，命中点有材质反应和残留，不全屏爆白 |
+| 高能追逐/爆破动作 | 空间路线先清楚，爆点服务拦截或逃生，镜头跟随目标移动，碎屑和烟尘改变下一步路线 |
 
-- `editorial sequence` (default for a fight): generate 2-4 second coverage shots separately, then cut them in editing. This is the preferred mode for strong rhythm and reliable impacts.
-- `continuous take`: keep one camera path and one action chain in a 4-8 second clip. Use only when the uninterrupted route itself is the attraction.
-- `shot group`: allow at most two internally connected views in one clip, joined by a named action or obstruction match. Do not use it for repeated reversals or rapid coverage.
+即梦提示词中可以出现“参考某类影片的动作设计”，但后面必须紧跟可见规则。不要只写“像某某电影一样打”。
 
-### 5. Produce an Overhead Map Brief Per Shot
+### 4. 锁定技能与自适应VFX
 
-For every moving-camera or multi-character shot, invoke `overhead-trajectory-map` with the exact movement facts below. A sequence-level map is optional and never replaces individual shot maps.
+每个可见技能先写一张 `技能/VFX卡`。特效是绑定演员、武器和空间的战术物体，不是后期装饰层。所谓“自动适配”，必须在提示词中明确它如何根据动作、镜头、遮挡和材质变化；不要假设视频模型会自己推理。
+
+| 字段 | 锁定内容 |
+|---|---|
+| ID与来源 | 技能名；发出位置是关节、武器部位、符箓、法器或场景物 |
+| 触发与蓄力 | 站姿、眼神、呼吸、握法、手势、接触、蓄力或反击时机 |
+| 视觉语法 | 一个主色系、形状、质感、频率、透明度范围 |
+| 动作绑定 | 跟随发出肢体/武器的方向和速度，不脱离、不抢先、不穿过拥有者 |
+| 路径与尺度 | 起点、方向、距离、宽度、加速度、碰撞区、最大场景后果 |
+| 交互 | 阻挡、切割、位移、加热、破裂、照亮、显形，必须有材质差异 |
+| 镜头适配 | 近景保护脸和手/武器；远景保留完整起点到命中路径；被遮挡时只显示合理可见段 |
+| 残留与落态 | 火花、电弧、雾、焦痕、护盾裂纹、尘土或无残留；写清消失条件和下一镜状态 |
+| 代价与限制 | 冷却、后坐、蓄力耗尽、暴露破绽、视线要求、距离限制、地形依赖 |
+
+硬规则：
+
+- 每个特效必须遵守 `来源 -> 触发 -> 路径 -> 交互 -> 残留`。
+- 蓄力收束在附着点，释放沿已承诺的动作线延展，命中只沿受力方向扩散。
+- 单镜只放一个主特效和一个次级残留。光束、护盾破裂、反击同时发生时，除非空间关系就是本镜重点，否则拆镜。
+- 同一技能的颜色、几何、附着点、尺度要跨镜一致。只有升级、过载、干扰或耗尽才允许变化。
+- 特效必须显露动作，不遮脸、不遮手、不遮武器接触、不遮对手反应、不遮最终位置。
+
+#### 4.5 法天象地 / 巨型法相类大招规则
+
+读取 [references/eastern-technique-patterns.md](references/eastern-technique-patterns.md) 的法天象地专用模板，锁定肉身代价、触发、显化轴线、结构、尺度参照、环境压迫和反噬。近景保护本体脸/手势/法器，远景再展示完整巨物。
+
+#### 4.6 东方术法动作母题库
+
+读取 [references/eastern-technique-patterns.md](references/eastern-technique-patterns.md) 选择母题并组合：`法器/身体触发 -> 第一可见异变 -> 主体身法或代价 -> VFX路径与空间层级 -> 环境材质反应 -> 召唤/绞杀/破阵结果 -> 回收或残留`。母题不能替代打斗合同；人物复杂身法、大范围召唤、环境破坏同时出现时必须拆镜。
+
+### 5. 设计动作节拍
+
+把整场打斗设计为 3 到 6 个节拍：`压力 -> 回应 -> 空间或权力变化`。每个节拍都要改变距离、平衡、掩体、武器归属、路线、能力状态、冷却、伤势或团队优势。
+
+使用 [references/action-budget.md](references/action-budget.md) 的动作预算与稳定性规则。优先写独特反应和环境后果，不堆更多攻击。AI视频单镜里避免多人同时接触、复杂缠斗、快速换手、连续多次命中。
+
+出现拳脚、刀剑或长短兵器时，按 [references/weapon-combat-grammar.md](references/weapon-combat-grammar.md) 先锁 `距离带 -> 发力链 -> 攻击线 -> 防御反应 -> 武器回收 -> 新距离`，不得只写招式名称。
+
+高手博弈或三人以上混战时，读取 [references/combat-decision-scheduling.md](references/combat-decision-scheduling.md)，先锁可见信息和承诺窗口，再安排反制；多人动作按区域和时间错峰，单镜只允许一个主要接触组。
+
+每个节拍写一句战术理由：
+
+```text
+因为 [威胁/目标]，[角色] 选择 [动作]，承担 [代价]，造成 [新局面]。
+```
+
+接触或特效命中必须写：
+
+```text
+预备 -> 承诺路径 -> 接触/擦过 -> 受力方向 -> 角色差异化反应 -> 恢复/位移 -> 环境或特效残留
+```
+
+多人混战必须分区。每组承担一个功能：前排牵制、中距压制、侧翼突袭、辅助布阵、救援、夺取目标。大范围技能要写清友军误伤风险、撤离时机或施法者接受误伤的理由。
+
+### 6. 转成可生成镜头
+
+每个镜头只允许一个戏剧目的、一个主动作链、一个主运镜、一个落幅状态。先把节拍转为覆盖节奏：`空间建立 -> 承诺攻击 -> 反转/接触 -> 冲击证据 -> 后果停留`。
+
+需要精确运镜或轨迹图时，读取 [references/quantified-camera-staging.md](references/quantified-camera-staging.md)，用相对身体尺度和场景锚点量化摄影机起终点；数字只用于锁定空间，不得堆进即梦提示词造成噪声。
+
+需要姿态控制、起止帧或复杂动作时，读取 [references/keyframe-motion-control.md](references/keyframe-motion-control.md)，输出 `K0起幅 -> K1预备 -> K2承诺 -> K3接触/反转 -> K4落幅`；关键帧只锁状态，不增加动作。
+
+| 镜头字段 | 要求 |
+|---|---|
+| 时长 | 通常 3 到 6 秒；连续路线特别清晰时可 7 到 8 秒 |
+| 焦点 | 一个主对象，或稳定双人构图 |
+| 动作链 | 起势、一个决定性动作、可见反应、稳定落幅 |
+| 轴线 | 屏幕左右、朝向、摄影机所在轴线侧 |
+| 道具 | 归属、方向、接触状态、最终位置 |
+| 摄像机 | 固定、推、拉、横移、跟拍、环绕、升降之一；说明触发点 |
+| 覆盖职责 | 建立空间、威胁、承诺、反转、接触、冲击后果、余波 |
+| 切点 | 动作、眼神、遮挡、声音、冲击帧或落幅状态 |
+| 打击/特效 | VFX ID、附着点、触发、路径、接触/擦过、受力、反应、材质、残留、下一镜状态 |
+| 风险 | 身份、肢体、接触、遮挡、环境、运动风险和降级方式 |
+
+AI视频生成模式：
+
+- `分镜剪辑`：默认模式。每镜 2 到 4 秒，后期剪辑，适合强节奏和稳定冲击。
+- `连续长镜`：4 到 8 秒，一个镜头路径和一个动作链，只有路线本身是看点时使用。
+- `镜头组`：一个视频片段最多两个内部视角，用动作或遮挡匹配连接，不能承载多次反转。
+
+#### 6.1 特殊视角与运动语法
+
+用户指定特殊视角，或镜头依赖高速追逐、尺度突变、主观压迫、多人横向揭示、战场阵型时，读取 [references/viewpoint-motion-grammar.md](references/viewpoint-motion-grammar.md)，先选择视角承担的叙事任务，再设计摄像机路径。
+
+| 视角 | 最适合的打斗任务 | 必须锁定 |
+|---|---|---|
+| 穿越尺度 | 天外降临、坠落追击、剑气/召唤物跨尺度飞行、从全局锁定局部战场 | 始终可追踪的目标锚点、穿越层级、加速与制动点、贴近后的落幅关系 |
+| ACT第三人称 | 双人近战、追逐、连续拆招、玩家式空间可读性 | 摄影机相对主角的后侧偏移、双人同框窗口、攻击线、接触时稳定度 |
+| FPV贴身 | 小型高速主体、飞剑/灵虫/弹体穿梭、危险障碍追逐 | 摄影机绑定对象、避障路线、最多一次焦点交接、微震来源、恢复稳定点 |
+| POV第一人称 | 伏击、逃生、负伤/失明、主观恐惧、持械格挡 | 可见手/武器/身体边缘、视线权限、呼吸与姿态、不能看见的盲区 |
+| 水平横移 | 对峙列阵、多组战线、逐人揭示、侧面接触证明 | 横向轴线、人物次序和纵深层级、焦点交接触发、停止对象 |
+| 鸟瞰实拍视角 | 战场建立、阵法范围、队形变化、追逃路线、巨型VFX占地 | 高度、俯角、地标、阵型和路线；不得混入轨迹图的虚线、圆圈或图例 |
+
+硬规则：`视角` 是摄影机与主体的关系，不等于 `运镜`；每个生成片段仍只保留一个主运镜。不得只写“ACT/FPV/POV感”，必须翻译成相对位置、镜头高度、主体占比、路径、速度变化和焦点。跨越宇宙、大气、山河、道路等多层空间时默认拆成可衔接镜头；只有目标锚点始终清楚、路径单一且转场面连续时才使用一镜到底。鸟瞰视频画面与双视图轨迹参考图必须严格区分。
+
+### 7. 与 overhead-trajectory-map 的配合
+
+本技能先设计动作和运镜，再为每个需要空间确认的镜头生成 `overhead-trajectory-map` 输入。它现在默认生成一张合成参考图：左/上为俯视轨迹，右/下为正视轨迹。以下情况必须交给它：
+
+- 双人或多人存在明显走位、追逐、绕侧、压迫、撤离、分区混战。
+- 摄像机出现推、拉、横移、跟拍、环绕、升降、手持移动。
+- 技能/VFX有明确发射路径、碰撞区、封路、护盾范围、爆破危险区、上下倾角或腾空高度。
+- 人物存在跳跃、坠落、腾空、跪倒、倒地、上下台阶、屋檐/墙顶/平台移动、遮挡高度变化。
+- 前后镜空间连续性容易错乱，需要用轨迹图锁定起终点和摄像机轨道。
+
+#### 7.1 输入给 overhead-trajectory-map 的事实
+
+只传“已批准的空间事实”，不要传审美形容词。必须包含：
+
+| 字段 | 传给轨迹图的内容 |
+|---|---|
+| 镜号与标题 | 镜头ID和一句功能标题 |
+| 地点与固定锚点 | 北向平面、入口/出口、墙、柱、桌、车辆、摊位、门、禁入区、可通行动线 |
+| 高度/正视锚点 | 地面线、台阶/平台/墙顶/楼层高度、腾空最高点、落点、倒地/跪倒高度、遮挡高度 |
+| 移动对象 | 每个角色/车辆/群体的稳定标签、俯视起点/终点/路径、正视高度变化/前后关系、调度目的 |
+| 关键道具 | 起始归属/位置 -> 结束归属/位置 |
+| 活跃特效 | VFX ID、来源/附着点、俯视可见路径/碰撞区、正视高度/上下倾角/遮挡关系、空间限制、落幅状态；只标示空间约束，不要求轨迹图渲染特效光效 |
+| 摄像机 | CAM S -> CAM E，一个授权运镜，俯视轨道、正视高度变化、方向、焦点、与人物的相对距离 |
+| 视角绑定 | ACT/FPV/POV等相对绑定对象、侧后偏移、是否同轨、主体占比、焦点交接和稳定落幅 |
+| 前镜继承 | 屏幕左右、朝向、光源、伤势、碎屑、烟尘、特效残留 |
+
+#### 7.2 轨迹图输入模板
 
 ```text
 /俯视轨迹图
+/正视轨迹图
+/双视图轨迹调度参考图
 
-镜号：[ID]｜[short title]
-地点与固定锚点：[north-up layout, entrances, obstacles, prohibited zones]
-人物1 [label]：蓝色虚线；S1=[start]；路径=[only this shot's route]；E1=[end]。
-人物2 [label]：黄色虚线；S2=[start]；路径=[only this shot's route]；E2=[end]。
-关键道具：[start owner/location -> end owner/location]。
-摄像机：[CAM S -> CAM E, one authorized movement, focus and direction]。
-请保持前镜继承状态：[screen sides, facing, light, damage/debris state]。
-输出真实完整场景底图、垂直正交纯上帝俯视图、角色起终点圆圈、彩色虚线路径、白色实线摄影机轨道、侧边图例；不得新增角色或动作。
+镜号：[ID]｜[短标题]
+地点与固定锚点：[北向平面；入口/出口；墙体/柱子/桌椅/车辆/地形；禁入区；可通行动线]
+高度/正视锚点：[地面线；台阶/平台/墙顶/楼层高度；腾空最高点；落点；遮挡物高度]
+人物1 [角色名]：蓝色虚线；俯视 S1=[平面起点]；俯视路径=[只写本镜平面移动路线]；俯视 E1=[平面终点]；正视=[起始高度/前后层级 -> 高度变化/腾空弧线/落点 -> 结束高度/姿态]；调度目的=[压迫/绕侧/撤离/救援/夺取/阻断]。
+人物2 [角色名]：黄色虚线；俯视 S2=[平面起点]；俯视路径=[只写本镜平面移动路线]；俯视 E2=[平面终点]；正视=[起始高度/前后层级 -> 高度变化/受击位移/落点 -> 结束高度/姿态]；调度目的=[回应/闪避/反击/被逼退/追击]。
+人物3/群体：[如有，用红色虚线或灰色点线；写清俯视起点、路径、终点；正视高度/前后关系；功能]。
+关键道具：[道具名：起始归属/位置 -> 结束归属/位置]。
+活跃特效：[VFX ID；来源/附着点 -> 俯视可见路径/碰撞区/封锁区；正视高度/上下倾角/遮挡关系 -> 落幅状态；仅标示走位所需空间约束，不在图中渲染光效]。
+摄像机：[CAM S -> CAM E；推/拉/横移/跟拍/环绕/升降/手持叠加之一；俯视轨道；正视镜头高度变化；焦点；方向；与主体距离]。
+视角绑定：[普通电影机位 / 穿越尺度 / ACT第三人称 / FPV贴身 / POV第一人称 / 水平横移 / 鸟瞰实拍；绑定对象；侧后偏移或是否同轨；主体占比；视线权限；焦点交接；稳定落幅]。
+请保持前镜继承状态：[屏幕左右、朝向、光源、伤势、碎屑、烟尘、特效残留]。
+输出一张组合式调度参考图：同一画布左侧为真实完整场景底图的垂直正交纯上帝俯视图，右侧为正视正交立面轨迹图；两栏共享角色起终点圆圈、彩色虚线路径、白色实线摄影机轨道、箭头、侧边图例；不得新增角色、动作、道具、剧情或镜头。
 ```
 
-When any push, pull, lateral move, follow, orbit, crane, or handheld movement exists, require a white camera rail. Use a fixed camera point and field-of-view wedge only for a fully static shot or a pure pan/tilt.
+#### 7.3 摄像机轨迹硬规则
 
-### 6. Write the Video Prompt
+`overhead-trajectory-map` 的铁律必须继承到本技能：
 
-Each generated coverage shot has two mandatory, paired prompts:
+| 视频运镜 | 双视图轨迹图表示 |
+|---|---|
+| 推镜 | 俯视栏画白色直线轨道，箭头指向主体；正视栏标镜头高度是否不变 |
+| 拉镜 | 俯视栏画白色直线轨道，箭头远离主体；正视栏标主体距离变化 |
+| 横移 | 两栏都画白色水平/侧向轨道 |
+| 跟拍 | 俯视栏轨道跟随人物路线；正视栏同步人物高度/地面移动 |
+| 环绕 | 俯视栏画白色弧线；正视栏标镜头高度、主体距离和“环绕参考” |
+| 升降 | 俯视栏画平面轨道；正视栏必须画白色竖向或斜向高度轨道 |
+| 手持微震 | 两栏都先画主轨道，再叠加微震标注 |
+| 摇镜/俯仰 | 俯视栏固定机位点+视锥；正视栏固定机位点+视线角度线 |
+| 纯固定 | 两栏固定机位点+视锥/视线角度线 |
 
-1. `轨迹图生图提示词`: copy the complete positive and negative prompt produced by `overhead-trajectory-map` to generate the top-down reference map.
-2. `即梦动态视频提示词`: after the map is approved, assemble the locked scene, character, movement, camera, performance, continuity, and sound facts using the protocol below. Deliver its final positive prompt and its separated video negative prompt.
+只要视频运镜出现推、拉、横移、跟拍、环绕、升降或手持移动，组合图两栏都要交代白色实线摄影机轨道或其正视高度对应关系。只有纯摇镜、纯俯仰或纯固定，才允许固定机位加视锥/视线角度线。
 
-Use the approved map as a staging reference asset together with the character and scene reference assets. Write the video prompt for the actual on-screen view, never as a description of colored map lines, `S/E` markers, `CAM` rails, or legends. The map constrains positions, routes, and camera path; it must not appear inside the final video.
+#### 7.4 轨迹图返回后的使用方式
 
-#### Jimeng Action Prompt Assembly Protocol
+`overhead-trajectory-map` 返回后，本技能必须：
 
-This skill writes the prompt directly. Do **not** call `ai-prompt-builder`, inherit its defaults, or use its `动态漫` / `国漫古风` / `60帧` language unless the user explicitly requested those properties.
+1. 把它的 `双视图AI生图提示词` 和 `负面提示词` 放入交付包的 `轨迹图生图提示词`。
+2. 用组合轨迹图锁定人物平面起终点、路线、高度变化、摄像机轨道、障碍、遮挡高度和禁入区。
+3. 写即梦视频提示词时，只把地图事实翻译成屏幕画面事实。
+4. 不得把蓝色虚线、黄色虚线、S/E圆圈、CAM轨道、图例、俯视图、正视图、上帝视角、立面图这些地图标注语言写进最终视频提示词。
 
-Write concise Chinese prose in this exact semantic order. Keep only details that are visible in this shot; default target is 180-420 Chinese characters, and split the shot rather than exceed 550.
+### 8. 写即梦动态视频提示词
+
+每个生成镜头必须成对输出：
+
+1. `轨迹图生图提示词`：复制 `overhead-trajectory-map` 返回的组合双视图正向和负面提示词。
+2. `即梦动态视频提示词`：基于已批准的组合轨迹图、角色图、场景图和动作锁，写真实画面视角的动态提示词。
+
+即梦提示词使用中文短 prose，默认 180 到 420 个汉字，超过 550 字必须拆镜。语义顺序固定：
 
 ```text
-[format + duration + declared visual style].
-[immutable character identities, wardrobe, body condition, and start positions].
-[location anchors, light direction, and current material/debris condition].
-[shot size, camera angle/lens intent, axis side, one primary camera move, and its trigger].
-[one complete action chain: intent -> anticipation -> committed path -> contact or near-miss -> force transfer -> distinct reaction -> environmental/effect residue -> settled end frame].
-[visible performance control: gaze, breath, posture, face, recovery; only what the framing can show].
-Maintain [screen direction, prop ownership, effect rule, and end state]; no extra characters, powers, weapons, actions, cuts, or camera moves.
+[格式 + 时长 + 已声明视觉风格]。
+[参考打斗影片风格：参考来源 + 可见动作规则；不照搬原片角色、场景、服装或标志性镜头]。
+[角色身份、服装、身体状态、本镜起点]。
+[场景锚点、光源方向、材质/碎屑/烟尘状态]。
+[视角关系：摄影机与主体的相对位置/高度/距离、主体占比和视线权限；普通视角可并入下一句]。
+[景别、角度、镜头意图、轴线侧、一个主运镜、速度曲线、焦点交接和触发点]。
+[活跃技能/VFX：ID、来源附着点、触发、可见路径、镜头适配、材质交互、残留；无特效则省略]。
+[完整动作链：战术意图 -> 预备 -> 承诺路径 -> 接触/擦过 -> 受力方向 -> 差异化反应 -> 环境/特效残留 -> 可见代价 -> 稳定落幅]。
+[可见表演控制：眼神、呼吸、姿态、面部、恢复；只写本景别能看见的内容]。
+保持 [屏幕方向、道具归属、特效规则、落幅状态]；不要新增角色、能力、武器、动作、剪辑或运镜。
 ```
 
-Assembly rules:
+如果用户给了类似“画面主体 / 运镜时序 / 环境光影 / 画质参数 / 音效备注 / 负面约束”的示例提示词，先提取成下列生产字段，再重写为本技能的即梦动态提示词，不要原样照抄：
 
-- State the visual style from the fight contract, never a genre default. For 3D CG, name rendering/material/light qualities appropriate to this fight; for xianxia, specify declared technique paths and controlled residue; for realistic hand-to-hand, prioritize balance break, contact surface, recoil, and weight transfer.
-- One prompt contains one primary camera move and one decisive action chain. A pan/tilt may accompany a locked camera only when it follows the same subject and does not create a second move.
-- Translate maps into screen facts only: start/end positions, route, facing, distance, and camera path. Never include map colors, line types, labels, markers, arrows, rails, legends, or "top-down map" language.
-- Do not ask the model to render dialogue, subtitles, captions, sound effects, frame rate, resolution, or invisible analysis terms. Keep spoken dialogue and final audio notes outside the visual prompt.
-- Include a power only as `declared source -> visible path -> tactical consequence -> residue`. Invisibility and time control need a visible reveal cue or environmental consequence that makes the reversal readable.
-- The positive prompt must end with the exact, settled visual state that is handed to the next shot. It is the authoritative prompt-level continuity record.
+| 示例字段 | 转换到本技能 |
+|---|---|
+| 画面主体 | 角色身份、身体状态、动作触发、关键特效、本镜落幅 |
+| 运镜时序 | 起始景别、主运镜、触发点、结束景别；只保留一个主运镜 |
+| 环境光影 | 场景锚点、光源色温、烟尘/碎石/粒子、风压、材质状态 |
+| 画质参数 | 只保留可见生成要求：布料/发丝/饰品物理、血迹、表情稳定、法相结构完整、粒子层次 |
+| 音效备注 | 放入声音桥或音频设计，不写进纯视觉提示词 |
+| 负面约束 | 转成即梦负面提示词：肢体崩坏、面部变形、手指畸形、光效漂移、法相/召唤物残缺、符文乱码、丝线穿身、乐器/法器漂移、水体物理错乱、比例错乱、闪烁、无规律抖动 |
 
-Write a separate negative prompt with 6-12 shot-specific failure constraints. Start with the most damaging risks: identity drift, mirrored positions, extra limbs, limb intersection, unreadable contact, duplicated/missing prop, ability misuse, unintended teleporting, extra people, unintended cuts, camera drift, flicker, and scene/lighting changes. Do not put positive instructions in this field.
+写作规则：
 
-Keep the action sequence ordered and physical: position -> intent -> anticipation -> decisive action -> contact/near-miss -> force transfer -> reaction -> environment residue -> end frame -> camera response.
+- 风格来自打斗合同，不套默认国漫、动态漫、60帧等词，除非用户明确要求。
+- 参考影片风格必须被翻译成即梦可见的动作规则：景别距离、镜头稳定度、攻击节奏、接触停顿、受力方向、环境利用、特效克制。不要只写片名或导演名。
+- 可引用一个参考影片/类型作为索引，但不得要求复刻原片角色、服装、场景、logo、完整招式段落或标志性镜头。
+- 一个提示词只含一个主运镜和一个决定性动作链。
+- ACT、FPV、POV、横移、鸟瞰、穿越尺度必须写成可见的摄影机关系和路径，不把视角缩写当成画面描述。
+- 删除或改写不可见、矛盾或仅营销化的参数：气味改成烟雾/热浪/人物反应；“f/12超大光圈、极浅景深”改成焦点对象清晰、前后景自然虚化；4K/8K/120fps只在平台确实支持且用户要求时保留。
+- 组合轨迹图只约束位置、路线、朝向、距离、高度、腾空/落点、遮挡和摄像机路径；最终视频提示词不能描述地图标注。
+- 对白、字幕、音效字、帧率、分辨率和不可见分析术语不要写进视觉提示词。
+- 力量或特效必须写成 `来源 -> 可见路径 -> 战术后果 -> 残留`。
+- 隐身、时间控制、神魂攻击必须有可见揭示线索或环境后果。
+- 暴力或高能动作若影响连续性，必须写可见代价：踉跄、手抖、喘不上气、手臂麻木、蓄力耗尽、护盾裂纹、短暂失明、神魂震荡、路线被碎屑封住、队友被迫撤离。
+- 法天象地/法身/召唤/化形/巨型剑气镜头必须写清本体动作、能量来源、显化轴线、尺度、环境压迫和落幅状态；近景优先稳定本体脸/手势/法器，远景再展示完整巨物或环境结果。
 
-```text
-[format, duration, style]. [immutable character and wardrobe anchors].
-[location anchors and light]. [opening positions and eyelines].
-[one readable action chain with a visible response and settled final state].
-[style-specific force, effect, or material response].
-[one camera movement and its trigger].
-Maintain [screen sides, prop state, scene condition]; no extra characters, actions, weapons, or camera movements.
-```
+负面提示词单独写 6 到 12 条，优先针对本镜真实风险：身份漂移、左右镜像、额外肢体、肢体穿插、接触不可读、武器重复/缺失、技能脱离来源、特效遮脸/遮接触、特效穿人穿墙、无故瞬移、额外人物、意外剪辑、镜头漂移、闪烁、光源变化、场景变化、法相肢体残缺、召唤物/灵龙/神鸟/巨龙形体崩坏、巨物比例错乱、结印手指畸形、符文结构错乱、丝线杂乱穿身、乐器/法器/古籍漂移、雨滴静止错位、水剑断裂、云层裂缝跳变、光球形状漂移、照搬参考影片角色/服装/场景/logo。
 
-Add a short negative prompt that targets the shot's actual failures, for example: mirrored screen positions, extra limbs, weapon duplication, unmotivated camera drift, implausible teleporting, new props, unreadable contact, or unplanned cuts.
+### 9. 连续性与质量门
 
-### 7. Run the Continuity and Impact Gate
+交付前逐镜检查：
 
-Before delivering, verify every adjacent pair:
+1. 前镜落幅必须准确供应下一镜起幅。
+2. 人物位置、朝向、动作线、武器归属、伤势、碎屑、光源一致。
+3. 下一镜开头要有可见继承：动作匹配、眼神、路线、道具、声音桥或情绪余波。
+4. 每个视频片段遵守动作预算，只使用一个主运镜。
+5. 每次打击有原因、接触/擦过、受力方向、角色差异化反应和材质/特效后果。
+6. 特效遵守VFX卡：ID、来源、附着点、触发、路径、尺度、颜色/几何、交互、镜头适配、残留一致。
+7. 场景锚点必须改变战术选择。如果一个节拍放在空房间也成立，就重写。
+8. 每个剪辑都改变观众获得的信息：空间、攻击线、承诺、反转、接触或后果。
+9. 镜头景别和角度要有梯度，不连续重复同一种中景侧拍。
+10. 组合轨迹图落点/高度、即梦提示词落幅、连续性台账必须在位置、朝向、身体状态、道具、VFX状态、轴线和高度关系上一致。
+11. 每个活跃特效只有一个权威落态：附着、飞行中、命中、耗尽、消散、嵌入、残留中。
+12. 每个动作节拍都有动机、代价、目的、局面变化。缺失则替换成贴合胜负目标的战术动作。
+13. 战力克制不崩。弱胜强必须有环境、时机、牺牲、法器弱点、团队铺垫或强者失误。
+14. 打斗类型清晰：写实见重量和痛感；斗法见规则和代价；高能动作见路线、危险时机和目标压力。
+15. 即梦提示词包含参考影片风格时，必须同时包含可见动作规则，并排除照搬原片身份、服装、场景、logo和标志性镜头。
+16. 法天象地/法身/召唤/化形/巨型剑气镜头必须能回答：本体如何触发，能量或召唤物从哪里显化，尺度如何读出，环境受什么压迫，下一镜继承什么残留、冷却或反噬。
+17. 东方术法母题必须能回答关键可读性：灵丝有来源/张力/目标材质，乐器/古籍/经筒/毛笔有归属和开合状态，符文不是乱码铺屏，召唤物结构完整，时间凝滞或雨水聚合有范围、例外和落幅继承。
+18. 发现问题不能只备注，必须修复：拆少动作、把VFX挪回来源/接触点、加反应停顿、恢复轴线、分开混战区域、补代价或残留。
+19. 特殊视角必须服务信息或情绪：穿越尺度见目标锚点与制动，ACT见攻防关系，FPV见避障路径，POV遵守视线权限，横移见人物次序与焦点交接，鸟瞰见阵型与地标；否则改用普通电影机位。
+20. 武器动作必须符合距离、惯性、攻击线和回收时间；VFX必须对人物、地面、空气和遮挡产生一致光照/材质反馈；摄影机量化轨迹必须与双视图一致。
+21. K0-K4必须共享身份、屏幕方向、武器归属、地标和VFX规则；K4必须等于连续性台账及下一镜K0。
+22. 多人镜头必须能指出唯一主要接触组、其他人的调度状态和范围技能撤离窗口；不能让所有人同时进入复杂攻击。
 
-1. Previous `end lock` exactly supplies the next `start lock`.
-2. Character position, facing direction, line of action, weapon/prop owner, damage, debris, and light state agree.
-3. The next shot begins with a visible carryover: action match, eyeline, spatial route, prop state, sound bridge, or emotional residue.
-4. Each video clip stays within its action budget and uses no more than one primary camera move.
-5. Each impact has a readable cause, contact/near-miss, force direction, character-specific reaction, and material or effect consequence.
-6. Effects obey the selected style: they originate from a declared ability or object, follow a visible path, alter a route/defense/space, and leave a matching residue. Decorative effects fail this gate.
-7. The scene anchor changes the tactical choice. If a beat works identically in an empty room, replace or remove it.
-8. Every cut changes the viewer's access to information: space, attack line, commitment, reversal, contact, or consequence. Cuts made only to create speed fail this gate.
-9. The camera plan has an intentional size and angle gradient. Do not repeat the same medium side view for three coverage units without a narrative reason.
-10. The overhead-map end state, the Jimeng prompt's end frame, and the continuity-ledger end state agree on each character's position, facing, body state, prop state, and camera axis. Any mismatch blocks delivery.
+### 10. 生成成片复盘与增量修复
 
-## Required Delivery Format
+用户提供已生成视频、关键帧或失败描述时，读取 [references/generation-feedback-loop.md](references/generation-feedback-loop.md)。先对照原动作锁、VFX卡、轨迹图和落幅台账定位最早错误帧，再区分症状与根因。修复顺序固定为：`身份/肢体 -> 空间/轴线 -> 动作因果/接触 -> VFX来源与遮挡 -> 摄影机 -> 画面质感`。
+
+用户提供按时间命名的关键帧图片时，可运行 `scripts/build_review_sheet.py` 生成带序号、文件名和尺寸清单的联系表；先调用工作区依赖发现获得带Pillow的Python运行时。
+
+每轮只修一个主根因，输出 `必须保留 + 必须删除 + 单一改动 + 新负面约束 + 新落幅`。不要用全量重写掩盖局部失败；若一个片段同时有两个阻断级问题，先拆镜再生成。
+
+## 交付格式
 
 ```markdown
-## 打斗戏视频设计｜[scene name]
+## 打斗戏视频设计｜[场景名]
 
 ### 打斗合同
-[conflict, outcome, capability, space, continuity]
+[冲突、结局、胜负条件、战力规则、代价规则、空间锁、连续性锁]
+
+### 高级动作规则锁
+| 类型 | 胜负目标 | 战力/克制 | 招式代价 | 人设习惯/破绽 | 战后后遗症 |
+|---|---|---|---|---|---|
+
+### 武器与身体机制锁
+| 角色/武器 | 主距离带 | 发力链 | 攻击线与防御线 | 回收窗口 | 克制/风险 |
+|---|---|---|---|---|---|
+
+### 战术决策与多人时间调度
+| 时间窗 | 可见信息/诱导 | 主要接触组 | 其他角色状态 | 阵区/误伤窗口 | 局面变化 |
+|---|---|---|---|---|---|
 
 ### 风格动作诊断
 | 运动引擎 | 接触语法 | 特效语法 | 场景参与 | 镜头节奏 |
 |---|---|---|---|---|
 
-### 动作节拍
-| 节拍 | 压力/动作 | 对方回应 | 空间或权力变化 |
+### 参考打斗影片风格锁
+| 参考来源 | 借鉴动作语言 | 即梦可见规则 | 禁止照搬 |
 |---|---|---|---|
+
+### 视角与运镜锁
+| 镜号 | 视角任务 | 摄影机绑定/相对位置 | 主运镜与速度曲线 | 焦点交接 | 稳定落幅 |
+|---|---|---|---|---|---|
+
+### 量化摄影机锁
+| 镜号 | 景别/镜头意图 | CAM起点 | CAM终点 | 轨道幅度/高度 | 轴线侧 | 切点 |
+|---|---|---|---|---|---|---|
+
+### 五阶段动作关键帧控制包
+| 关键帧 | 时间/职责 | 人物姿态与位置 | 武器/道具 | VFX状态 | 摄影机/构图 | 连续性锚点 |
+|---|---|---|---|---|---|---|
+
+### 技能与自适应特效合同
+| 特效ID | 来源/附着点 | 触发与蓄力 | 形态与色彩 | 路径/范围 | 材质交互 | 镜头适配 | 残留/限制 |
+|---|---|---|---|---|---|---|---|
+
+### VFX光照与合成锁
+| 特效ID | 发光层级 | 人物/环境染色 | 投影/反射/体积遮挡 | 曝光保护 | 残留层 |
+|---|---|---|---|---|---|
+
+### 大招/化形显化节奏锁
+| 阶段 | 本体动作/法器动作 | 能量/召唤物状态 | 环境压迫 | 镜头目的 | 落幅继承 |
+|---|---|---|---|---|---|
+
+### 动作节拍
+| 节拍 | 战术理由 | 压力/动作 | 对方回应 | 空间或权力变化 |
+|---|---|---|---|---|
 
 ### 镜头节奏表
 | 时间 | 覆盖职责 | 景别/角度/焦点 | 运镜 | 入点与切点 |
@@ -221,28 +454,39 @@ Before delivering, verify every adjacent pair:
 | 镜号 | 时长 | 覆盖职责 | 起幅锁定 | 动作链与受力 | 摄影机设计 | 落幅锁定 |
 |---|---:|---|---|---|---|---|
 
-### 轨迹图制作包
-#### [镜号]
-[complete overhead-trajectory-map input]
+### 特效状态台账
+| 镜号 | 特效ID | 起始状态 | 附着点/路径 | 交互与镜头适配 | 落幅状态/残留 |
+|---|---|---|---|---|---|
 
-### 轨迹图生图提示词
+### 双视图轨迹图调度输入包
 #### [镜号]
-**正向提示词：** [complete prompt returned by overhead-trajectory-map]
-**负面提示词：** [complete negative prompt returned by overhead-trajectory-map]
+[完整 overhead-trajectory-map 输入]
+
+### 双视图轨迹图生图提示词
+#### [镜号]
+**正向提示词：** [overhead-trajectory-map 返回的一张组合参考图完整正向提示词]
+**负面提示词：** [overhead-trajectory-map 返回的完整负面提示词]
 
 ### 即梦视频生成包
-#### [镜号]｜[duration]
-**参考素材：** [角色设定图 / 场景图 / 本镜轨迹图；轨迹图仅作走位和运镜参考]
-**即梦动态视频提示词：** [prompt directly assembled by this skill from the approved locks]
-**即梦负面提示词：** [shot-specific separated negative prompt]
-**生成风险与降级：** [one concise fallback]
+#### [镜号]｜[时长]
+**参考素材：** [角色设定图 / 场景图 / 本镜双视图轨迹调度参考图；轨迹图仅作走位、高度和运镜参考]
+**参考打斗影片风格：** [参考来源 + 本镜可见动作规则，不照搬原片角色/场景/服装/标志性镜头]
+**即梦动态视频提示词：** [本技能按锁定事实直接组装]
+**即梦负面提示词：** [本镜风险约束]
+**生成风险与降级：** [一个简洁降级方案]
 
 ### 跨技能制作交接
-| 镜号 | 表演锚点 | 画面/材质锚点 | 摄影机锚点 | 轨迹图 | 连续性状态 | 声音桥 |
-|---|---|---|---|---|---|---|
+| 镜号 | 表演锚点 | 画面/材质锚点 | 摄影机锚点 | 双视图轨迹图输入状态 | 特效状态 | 连续性状态 | 声音桥 |
+|---|---|---|---|---|---|---|---|
 
 ### 连续性检查
-[pass/fix list]
+[通过项 / 已修复项 / 用户需确认项]
+
+### 生成复盘与增量修复（仅在提供成片时）
+[最早错误帧、阻断级根因、必须保留、必须删除、单一改动、增量提示词、新负面约束、验收条件]
+
+### 标准评测（仅在测试或回归时）
+[案例ID、样本数、单次通过率、三次择优通过率、七维评分、阻断上限、失败根因、规则更新证据]
 ```
 
-Use `ai-video-agent-mode` only when the user needs a broader project pipeline, batch QA, or export. Use this skill first when the core task is designing the fight itself, then hand the resulting shot package to the broader pipeline if needed.
+`ai-video-agent-mode` 只在用户需要更大项目流水线、批量QA或导出时使用。核心任务是打斗本身时，先用本技能完成动作、镜头、双视图轨迹图输入和视频提示词，再交给更大的视频流水线。

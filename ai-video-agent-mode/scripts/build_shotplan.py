@@ -190,7 +190,7 @@ def split_dialogue(text, max_chars_per_segment=None, max_seconds=None, reserve_s
 
 
 def _estimate_dialogue_seconds(text):
-    # Phase 1 splitting must use the exact lower-bound model that preflight
+    # Orchestrator splitting must use the exact lower-bound model that preflight
     # validates.  A local approximation here previously under-budgeted long
     # dialogue and made fresh runs fail their own duration gate.
     from validate_durations import _estimate_dialogue_seconds as estimate

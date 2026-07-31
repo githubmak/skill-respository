@@ -24,6 +24,7 @@ def normalize_package(input_path, output_path=None):
             raise ValueError("duration_sec is obsolete; use duration")
         original = str(item.get("full_prompt", ""))
         item["full_prompt"] = normalize_prompt(original)
+        _normalize_expectation_anchor(item)
 
         current_negative = str(item.get("negative_prompt", "") or "").strip()
         if current_negative in ("", PLACEHOLDER) or PLACEHOLDER in current_negative:
@@ -53,6 +54,21 @@ def normalize_prompt(prompt):
     text = re.sub(r"(\d+(?:\.\d+)?)\s+m/s\b", r"\1m/s", text)
     text = text.replace(PLACEHOLDER, "").strip()
     return text
+
+
+def _normalize_expectation_anchor(item):
+    metadata = item.get("qa_metadata")
+    if not isinstance(metadata, dict) or "expectation_anchor" not in metadata:
+        return
+    anchor = metadata.get("expectation_anchor")
+    if anchor in ({}, None):
+        metadata.pop("expectation_anchor", None)
+        return
+    if isinstance(anchor, dict) and "applicable" not in anchor:
+        # Missing applicability means the optional expectation anchor was not
+        # actually declared.  Normalize it away instead of letting the final
+        # audit fail after Editor has already accepted the shot.
+        metadata.pop("expectation_anchor", None)
 
 
 if __name__ == "__main__":

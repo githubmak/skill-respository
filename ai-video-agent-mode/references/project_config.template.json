@@ -19,7 +19,7 @@
   "_performance_direction_desc": "用户可按项目改写表演方向卡。它是创作输入而非模型负面词；不得填入示例专属人物、剧情、道具、场景或画风。",
   "max_shot_duration": null,
   "max_static_shot_duration": 6,
-  "_max_static_shot_duration_desc": "单一微表情、一次视线变化、静态压场或群体凝视的默认上限。超过该值的 Phase 1 子镜必须填写 duration_rationale（continuous_dialogue/continuous_interaction/continuous_action/sustained_reveal）与有序 dramatic_beats；氛围、余韵、压迫或停顿本身不能作为延长理由。",
+  "_max_static_shot_duration_desc": "单一微表情、一次视线变化、静态压场或群体凝视的默认上限。超过该值的 Orchestrator 子镜必须填写 duration_rationale（continuous_dialogue/continuous_interaction/continuous_action/sustained_reveal）与有序 dramatic_beats；氛围、余韵、压迫或停顿本身不能作为延长理由。",
   "output_type": "动态视频",
   "target_platform": "",
   "_target_platform_desc": "当前契约仅支持即梦。提示词使用即梦可执行的可见构图、时间窗和稳定性控制；不得把示例题材或画风写成默认。",
@@ -65,5 +65,5 @@
     "scene_header_pattern": "^\\d+-\\d+",
     "dialogue_pattern": "角色名（语气）：台词"
   },
-  "_source_rules_desc": "剧本解析规则。Phase 0 时由 detect_source_rules.py 自动从源文提取填充。characters=角色列表，action_keywords=动作行关键词（用于区分动作行和对话行），scene_header_pattern=场景头正则，dialogue_pattern=对话行格式描述。generate_shotplan.py 从 project_config.json 读取此字段，不再硬编码项目特定规则。"
+  "_source_rules_desc": "剧本解析规则。配置确认时由 detect_source_rules.py 自动从源文提取填充。characters=角色列表，action_keywords=动作行关键词（用于区分动作行和对话行），scene_header_pattern=场景头正则，dialogue_pattern=对话行格式描述。generate_shotplan.py 从 project_config.json 读取此字段，不再硬编码项目特定规则。"
 }

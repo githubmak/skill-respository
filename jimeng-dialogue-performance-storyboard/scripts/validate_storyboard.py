@@ -33,12 +33,31 @@ BANNED_DIRECT = [
     "当前主角", "当前对话者", "视情况", "出场人物", "所有人物", "全部人物", "所有出场人物",
 ]
 NEGATIVE_NEEDLE = "人物僵硬、全身静止、无眨眼"
+INTERNAL_PRESET_TERMS = ("套用模板", "预设库", "候选池", "场景预设", "预设分支", "参数化场景")
+COLOR_CARD_TITLE = "本集影调色卡索引"
+VOICE_LOCK_TITLE = "本集角色声音锁定表"
+COLOR_CARD_REQUIRED_TERMS = (
+    "剧情情绪功能", "主色", "辅助色", "点缀色", "色温", "主光", "阴影",
+    "对比度", "饱和度", "肤色保护", "材质反光", "禁止偏色",
+)
+VOICE_LOCK_REQUIRED_TERMS = (
+    "声音年龄感", "音色", "音调", "语速", "音量", "吐字", "呼吸", "尾音", "情绪上限", "禁止变化",
+)
+ASPECT_TERMS = ("16:9", "9:16", "1:1", "4:3", "21:9", "画幅")
+STYLE_TERMS = ("3D", "韩漫", "CG", "漫画", "动画", "写实", "视觉风格")
+SCENE_TONE_PREFIX_TERMS = (
+    "主色", "影调", "色温", "顶光", "侧光", "逆光", "窗光", "暖光", "冷光",
+    "冷白", "暖黄", "蓝灰", "暖米", "奶油", "低饱和", "阴影", "肤色",
+)
 CUTAWAY_NEEDLES = ("镜头不拍人物", "空镜", "空椅", "门缝", "水纹", "走廊灯光")
 SHOT_SIZE_TERMS = ("特写", "近景", "中近景", "中景", "中远景", "全景", "远景")
 CAMERA_TERMS = ("镜头", "相机", "机位", "平视", "俯视", "仰视", "侧后方", "斜前方")
 CAMERA_STATE_TERMS = ("固定", "保持", "静止", "推", "拉", "摇", "移", "跟", "转焦", "拉焦", "上摇", "下摇")
 RELATION_TERMS = ("面对", "相对", "身侧", "身后", "前方", "后方", "之间", "隔着", "挽着", "肩线", "右手", "左手", "朝向", "背对", "侧身")
 FACING_TERMS = ("面向", "背向", "身体朝向", "身体仍朝", "上身朝向", "头部转向", "头部偏向")
+VISUAL_TARGET_VERBS = ("面向", "看向", "朝向", "对着", "望向", "盯着", "凝视", "锁住")
+OFFSCREEN_MARKERS = ("不入画", "不出镜", "画外", "不出现身体", "不出现肩线", "不出现倒影", "不出现虚化人影")
+VISIBLE_COUNT_RE = re.compile(r"(?:本镜)?(?:画面内|视线内|镜头内)?可见人数[：:]\s*[一二三四五六七八九十\d]+人|入画人数[：:]\s*[一二三四五六七八九十\d]+人")
 POST_AUDIO_TERMS = ("OS", "OV", "系统音", "内心独白", "画外", "后期", "配音", "旁白")
 POST_AUDIO_LABEL_TERMS = ("OS", "OV", "系统音", "内心独白", "旁白")
 VISIBLE_SPEECH_TERMS = ("可见口型", "可见说话者", "开口", "说：", "说:", "说“", "问：", "问:", "喊：", "喊:", "低语", "回应", "反问")
@@ -100,6 +119,16 @@ SIDE_OVERLAY_NECESSARY_TERMS = ("不属于手机", "不贴")
 SIDE_OVERLAY_NEGATIVE_TERMS = ("聊天气泡贴手机", "文字贴手机壳", "手机背面文字", "UI错位")
 CROWD_RISK_TERMS = ("人群", "围观", "混混", "路人", "宾客", "群众")
 CROWD_STRUCTURE_TERMS = ("后方", "背景", "虚化", "不靠近", "不抢焦", "不产生可见口型", "远处")
+KEYFRAME_POSTURE_CHANGE_TERMS = ("翻身", "坐起", "起身", "摔倒", "倒向", "倒到", "扶住", "抱住", "搂住", "抱起", "背起", "亲密接触")
+KEYFRAME_PROP_TERMS = ("银行卡", "卡片", "手机", "签字笔", "外套", "包", "杯子", "证件")
+KEYFRAME_PROP_ACTION_TERMS = ("递", "递到", "交给", "接过", "接住", "塞给", "签字", "刷卡", "付款", "披", "穿上", "收起")
+KEYFRAME_UI_TERMS = ("绿色微信消息气泡", "绿色聊天气泡", "消息气泡", "来电", "转账", "聊天记录", "付款码", "屏幕显示")
+KEYFRAME_SPACE_TERMS = ("开门", "关门", "推门", "拉门", "开车门", "关车门", "下车", "上车", "电梯门")
+KEYFRAME_CAMERA_TERMS = (
+    "环绕", "半弧环绕", "半弧移动", "希区柯克变焦", "多莉变焦",
+    "闯入式镜头", "冲入画面", "时间断裂",
+    "快速推", "快速拉", "快速横移", "手持抖动", "强运镜",
+)
 
 
 def compact_len(text: str) -> int:
@@ -144,6 +173,11 @@ def extract_optional_field(block: str, field: str) -> str:
     return m.group(1).strip() if m else ""
 
 
+def extract_top_section(text: str, heading: str) -> str:
+    m = re.search(re.escape(heading) + r"\n([\s\S]*?)(?=\n##\s|\Z)", text)
+    return m.group(1).strip() if m else ""
+
+
 def direct_sentence(state_change: str, label: str) -> str:
     m = re.search(re.escape(label) + r"[：:]\s*([^\n；;]+)", state_change)
     return m.group(1).strip() if m else ""
@@ -151,6 +185,37 @@ def direct_sentence(state_change: str, label: str) -> str:
 
 def quoted_lines(text: str) -> list[str]:
     return [line.strip() for line in re.findall(r"“([^”]+)”", text) if line.strip()]
+
+
+def split_names(text: str) -> list[str]:
+    names: list[str] = []
+    cleaned = re.sub(r"(?:本镜|只|均|都|在|位于|右侧|左侧|画面|画外|不入画|不出镜|不出现|身体|肩线|倒影|虚化人影|和|与|及)", "、", text)
+    for part in re.split(r"[、，,；;\s]+", cleaned):
+        part = part.strip()
+        if 1 <= len(part) <= 6 and re.fullmatch(r"[\u4e00-\u9fffA-Za-z0-9_·]+", part):
+            names.append(part)
+    return names
+
+
+def offscreen_names(text: str) -> set[str]:
+    names: set[str] = set()
+    for marker in OFFSCREEN_MARKERS:
+        for match in re.finditer(r"([^\n。；;]{1,36})" + re.escape(marker), text):
+            clause = re.split(r"[，,]", match.group(1))[-1]
+            names.update(split_names(clause))
+    for match in re.finditer(r"([\u4e00-\u9fffA-Za-z0-9_·]{1,6})在画外", text):
+        names.add(match.group(1))
+    return {name for name in names if name not in {"本镜", "画面", "身体", "肩线", "倒影"}}
+
+
+def offscreen_visual_target_issues(direct: str, block: str) -> list[str]:
+    issues: list[str] = []
+    names = offscreen_names(direct + "\n" + extract_optional_field(block, "【本镜必要约束｜直接复制】"))
+    for name in sorted(names, key=len, reverse=True):
+        for verb in VISUAL_TARGET_VERBS:
+            if re.search(re.escape(verb) + r"[^，。；;\n]{0,8}" + re.escape(name), direct):
+                issues.append(f"{name}:{verb}")
+    return issues
 
 
 def visible_dialogue_quotes(text: str) -> list[str]:
@@ -163,6 +228,12 @@ def visible_dialogue_quotes(text: str) -> list[str]:
         if any(term in raw_line for term in VISIBLE_SPEECH_TERMS):
             lines.extend(quoted_lines(raw_line))
     return lines
+
+
+def has_sound_text(text: str) -> bool:
+    if any(label in text for label in POST_AUDIO_LABEL_TERMS):
+        return True
+    return bool(re.search(r"(?:说|问|喊|低语|回应|反问)[：:：]?[“\"][^”\"]+[”\"]", text))
 
 
 def post_audio_format_issues(text: str) -> list[str]:
@@ -215,6 +286,28 @@ def bubble_quotes(text: str) -> list[str]:
     ]
 
 
+def keyframe_trigger_reasons(direct: str, header: str) -> list[str]:
+    reasons: list[str] = []
+    has_support_change = (
+        any(surface in direct for surface in SUPPORT_SURFACE_TERMS)
+        and any(body in direct for body in SUPPORT_BODY_TERMS)
+        and any(change in direct for change in SUPPORT_CHANGE_TERMS + KEYFRAME_POSTURE_CHANGE_TERMS)
+    )
+    if has_support_change:
+        reasons.append("人体支撑/姿态变化")
+    if any(prop in direct for prop in KEYFRAME_PROP_TERMS) and any(action in direct for action in KEYFRAME_PROP_ACTION_TERMS):
+        reasons.append("道具/衣物转移或签字付款")
+    if any(term in direct for term in KEYFRAME_UI_TERMS):
+        reasons.append("UI/屏幕/绿色气泡")
+    if any(term in direct for term in KEYFRAME_SPACE_TERMS):
+        reasons.append("门车门/电梯空间穿越")
+    if "肩后" in direct and "复杂" in header:
+        reasons.append("复杂正反打")
+    if any(term in direct for term in KEYFRAME_CAMERA_TERMS):
+        reasons.append("强运镜")
+    return reasons
+
+
 def validate_child(group_id: str, number: int, header: str, block: str, issues: list[str]) -> None:
     sid = f"{group_id}-{number}"
     if not re.match(rf"^{number}\s*，\s*\d+(?:\.\d+)?s\s*，\s*(普通|复杂)。?$", header):
@@ -241,6 +334,11 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
         issues.append(f"{sid}: {KEYFRAME_IMAGE_FIELD} should include static frame labels such as 首帧/尾帧")
     if any(term in keyframe_image + keyframe_video for term in ("T2V", "I2V")):
         issues.append(f"{sid}: 关键帧字段不要使用 T2V/I2V 旧标签")
+    keyframe_reasons = keyframe_trigger_reasons(direct, header)
+    if keyframe_reasons and not (keyframe_image and keyframe_video):
+        issues.append(
+            f"{sid}: 高风险镜头建议添加成对关键帧字段 -> {','.join(keyframe_reasons)}；若不加关键帧，请拆成更简单的准备/转换/终态镜头"
+        )
     if compact_len(direct) > 500:
         issues.append(f"{sid}: direct prompt over 500 chars -> {compact_len(direct)}")
     if (
@@ -248,6 +346,13 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
         and not any(term in direct for term in ("手部特写", "特写", "空镜", "只拍", "镜头不拍人物"))
     ):
         issues.append(f"{sid}: ordinary dialogue/drama direct prompt looks too thin -> {compact_len(direct)} chars")
+    prefix = direct[:120]
+    if not any(term in prefix for term in ASPECT_TERMS):
+        issues.append(f"{sid}: direct prompt prefix missing aspect ratio/画幅")
+    if not any(term in prefix for term in STYLE_TERMS):
+        issues.append(f"{sid}: direct prompt prefix missing visual style")
+    if not any(term in prefix for term in SCENE_TONE_PREFIX_TERMS):
+        issues.append(f"{sid}: direct prompt prefix missing compressed scene tone/color/light card")
     if not any(term in direct for term in SHOT_SIZE_TERMS):
         issues.append(f"{sid}: direct prompt missing shot size")
     if not any(term in direct for term in CAMERA_TERMS):
@@ -260,6 +365,19 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
         issues.append(f"{sid}: direct prompt missing body-facing anchor")
     if re.search(r"(?:身体|上身)朝(?:左|右)(?!侧)", direct):
         issues.append(f"{sid}: body direction must name a person or fixed anchor, not only left/right")
+    offscreen_target_hits = offscreen_visual_target_issues(direct, block)
+    if offscreen_target_hits:
+        issues.append(
+            f"{sid}: 画外/不入画人物不能作为面向/视线目标 -> {','.join(offscreen_target_hits)}；改写为画外方向、声源或固定空间锚点"
+        )
+    needs_visible_count = (
+        any(term in direct for term in OFFSCREEN_MARKERS)
+        or "画外" in direct
+        or any(term in direct for term in ("肩线", "背影", "倒影", "虚化人影"))
+        or re.search(r"三人|四人|五人|众人|混混|人群", direct)
+    )
+    if needs_visible_count and not VISIBLE_COUNT_RE.search(direct + "\n" + extract_optional_field(block, "【本镜必要约束｜直接复制】")):
+        issues.append(f"{sid}: 多人/画外/肩线/倒影/虚化人物镜头需要声明本镜画面内可见人数；纯画外声音不计入")
     if ("只拍" in direct or "只保留" in direct) and re.search(r"中景|中近景|中远景|全景|远景", direct):
         issues.append(f"{sid}: hand/object-only frame conflicts with medium or wide shot size")
     if "肩后" in direct and "肩线" not in direct:
@@ -394,7 +512,7 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
     if high_risk_count >= 4:
         issues.append(f"{sid}: possible single-shot overload; split or simplify high-risk tasks")
     action_chain_hits = [term for term in ACTION_CHAIN_TERMS if term in direct]
-    if len(action_chain_hits) >= 5:
+    if len(action_chain_hits) >= 5 and not (keyframe_image and keyframe_video):
         issues.append(
             f"{sid}: long action chain may be simplified by AI; split into prepare/contact/final-state shots -> {','.join(action_chain_hits[:8])}"
         )
@@ -509,6 +627,28 @@ def validate(path: Path) -> list[str]:
         issues.append("deprecated headings not allowed -> " + ",".join(hits))
     if NEGATIVE_NEEDLE not in text:
         issues.append("missing anti-stiffness negative prompt")
+    internal_hits = [term for term in INTERNAL_PRESET_TERMS if term in text]
+    if internal_hits:
+        issues.append("final output should not expose internal scene-preset terms -> " + ",".join(internal_hits))
+    global_section = extract_top_section(text, "## 全局锁定")
+    scene_state_section = extract_top_section(text, "## 场景状态表")
+    if COLOR_CARD_TITLE not in global_section:
+        issues.append(f"## 全局锁定 missing {COLOR_CARD_TITLE}")
+    else:
+        missing_color_terms = [term for term in COLOR_CARD_REQUIRED_TERMS if term not in global_section]
+        if missing_color_terms:
+            issues.append(f"{COLOR_CARD_TITLE} lacks production-level fields -> {','.join(missing_color_terms)}")
+    if "影调色卡句" not in scene_state_section:
+        issues.append("## 场景状态表 missing per-scene 影调色卡句")
+    if has_sound_text(text):
+        if VOICE_LOCK_TITLE not in global_section:
+            issues.append(f"dialogue/OS/OV present but ## 全局锁定 missing {VOICE_LOCK_TITLE}")
+        else:
+            missing_voice_terms = [term for term in VOICE_LOCK_REQUIRED_TERMS if term not in global_section]
+            if missing_voice_terms:
+                issues.append(f"{VOICE_LOCK_TITLE} lacks voice identity fields -> {','.join(missing_voice_terms)}")
+        if "角色声音使用" not in scene_state_section:
+            issues.append("## 场景状态表 missing 角色声音使用 for this scene")
 
     group_count = child_count = 0
     for match in iter_groups(text):

@@ -22,12 +22,15 @@ from build_shotplan import normalize
 from preflight_check import run as preflight_check
 from pre_editor_gate import run as pre_editor_gate
 from emotion_camera_audit import audit as emotion_camera_audit
+from episode_state_graph import build_episode_state_graph
+from episode_director_audit import audit as episode_director_audit
 from validate_modec import main as validate_modec
 from check_export import check_export
 from export_with_validation import export_with_validation, _record_normalization_provenance
 from normalize_prompt_package import normalize_package
 from pipeline_runner import run as pipeline_run
 from pipeline_runtime import atomic_json
+from pipeline_state import load_state, save_state
 
 
 CONTROL_RELATIVE_PATH = ".cache/control/supervisor.json"
@@ -87,6 +90,9 @@ def execute_local_phase(run_dir, phase, source_path=None):
     if phase == "editor_pass1":
         result, path = pre_editor_gate(run_dir)
         if not result.get("pass"):
+            retry = _prepare_pre_editor_retry(run_dir, result)
+            if retry.get("dispatch_packets"):
+                return retry
             raise ValueError("pre-editor deterministic gate failed: " + path)
         return {"gate_path": path}
     if phase == "validate":
@@ -94,6 +100,12 @@ def execute_local_phase(run_dir, phase, source_path=None):
         source_sha256 = _sha256(package_path)
         normalize_package(package_path, package_path)
         _record_normalization_provenance(package_path, source_sha256)
+        episode_graph, episode_graph_path = build_episode_state_graph(run_dir)
+        if not episode_graph.get("pass"):
+            raise ValueError("episode state graph failed: " + episode_graph_path)
+        director_audit, director_audit_path = episode_director_audit(run_dir)
+        if not director_audit.get("pass"):
+            raise ValueError("episode director audit failed: " + director_audit_path)
         audit, audit_path = emotion_camera_audit(run_dir)
         if not audit.get("pass"):
             raise ValueError("emotion/camera audit failed: " + audit_path)
@@ -104,6 +116,8 @@ def execute_local_phase(run_dir, phase, source_path=None):
             raise ValueError("quality gate failed")
         path = os.path.join(run_dir, ".cache", "validate", "result.json")
         atomic_json(path, {"pass": True, "validated_at": time.time(), "emotion_camera_audit": audit_path,
+                           "episode_state_graph": episode_graph_path,
+                           "episode_director_audit": director_audit_path,
                            "package_sha256": _sha256(package_path)})
         return {"result_path": path}
     if phase == "export":
@@ -129,6 +143,70 @@ def execute_local_phase(run_dir, phase, source_path=None):
         _write_delivery_status(run_dir, destination, "approved")
         return {"result_path": path, "markdown_path": os.path.abspath(destination)}
     raise ValueError("no local executor for phase: " + phase)
+
+
+def _prepare_pre_editor_retry(run_dir, gate_result):
+    if gate_result.get("composer_pass") is not False:
+        return {}
+    report_path = gate_result.get("composer_validation_path", "")
+    if not report_path or not os.path.exists(report_path):
+        return {}
+    report = _load_json(report_path)
+    failed = [str(item) for item in report.get("failed_subshot_ids", []) if str(item)]
+    issues = [str(item) for item in report.get("issues", []) if str(item)]
+    if not failed or not issues:
+        return {}
+    windows = []
+    for shot_id in failed:
+        shot_issues = [issue for issue in issues if issue.startswith(shot_id + ":")]
+        targets = _repair_targets_from_pre_editor_issues(shot_id, shot_issues)
+        windows.append({
+            "window_id": "PRE_" + shot_id,
+            "pass": False,
+            "blocking": shot_issues,
+            "repair_targets": targets or [{"shot_id": shot_id, "field_path": "validator_reported_field"}],
+        })
+    review_path = os.path.join(run_dir, ".cache", "review", "pre_editor_retry_review.json")
+    atomic_json(review_path, {
+        "contract_version": "jimeng-t2v-v1",
+        "source": "pre_editor_composer_validation",
+        "windows": windows,
+    })
+    from prepare_master_retry import prepare
+    packets = prepare(run_dir, review_path)
+    state = load_state(run_dir)
+    state["current_phase"] = "master_production"
+    state["phases"]["master_production"].update({"status": "pending", "agent_id": None, "target_shot_ids": failed})
+    state["phases"]["editor_pass1"].update({"status": "pending", "agent_id": None, "target_shot_ids": failed})
+    state["phases"]["editor_pass2"].update({"status": "pending", "agent_id": None, "target_shot_ids": failed})
+    save_state(run_dir, state)
+    return {
+        "gate_path": os.path.join(run_dir, ".cache", "review", "pre_editor_gate.json"),
+        "retry_review_path": review_path,
+        "dispatch_packets": packets,
+        "target_shot_ids": failed,
+        "reason": "pre_editor_composer_validation",
+    }
+
+
+def _repair_targets_from_pre_editor_issues(shot_id, issues):
+    targets = []
+    mapping = (
+        ("scene_tone_palette.visual_scene_prefix", "qa_metadata.scene_tone_palette.visual_scene_prefix"),
+        ("source_constraint_basemap.single_shot_risk", "qa_metadata.source_constraint_basemap.single_shot_risk"),
+        ("performance_causality.hold_strategy", "qa_metadata.performance_causality.hold_strategy"),
+        ("performance_contract.", "qa_metadata.performance_contract"),
+        ("story_punch_contract.", "qa_metadata.story_punch_contract"),
+        ("reroll_control.camera_anchor", "qa_metadata.reroll_control.camera_anchor"),
+        ("pressure_release_design", "qa_metadata.pressure_release_design"),
+        ("必须落实到full_prompt", "full_prompt"),
+        ("full_prompt", "full_prompt"),
+    )
+    for issue in issues:
+        for needle, field in mapping:
+            if needle in issue and not any(item.get("field_path") == field for item in targets):
+                targets.append({"shot_id": shot_id, "field_path": field, "reason": issue})
+    return targets
 
 
 def _record_request(run_dir, source_path):

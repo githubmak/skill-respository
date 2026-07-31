@@ -2,6 +2,7 @@
 """Record and verify the provenance of one completed Agent batch."""
 
 import hashlib
+import fcntl
 import json
 import os
 import sys
@@ -130,24 +131,31 @@ def record(packet_path, allow_partial=False):
 
 
 def _mark_dispatch_recorded(run_dir, phase, dispatch_id, validation_mode):
-    state = load_state(run_dir)
-    phase_state = state.get("phases", {}).get(phase, {})
-    dispatch = phase_state.get("dispatches", {}).get(dispatch_id)
-    if isinstance(dispatch, dict):
-        dispatch["status"] = "done" if validation_mode == "full" else "partial"
-        dispatch["recorded_at"] = time.time()
-        if isinstance(dispatch.get("spawn_time"), (int, float)):
-            dispatch["elapsed_seconds"] = round(max(dispatch["recorded_at"] - dispatch["spawn_time"], 0), 3)
-    dispatches = phase_state.get("dispatches", {})
-    statuses = [entry.get("status") for entry in dispatches.values() if isinstance(entry, dict)]
-    if statuses and all(status == "done" for status in statuses):
-        # Provenance proves every worker batch, not the phase output. The
-        # runner must still merge/materialize and apply the phase gate before
-        # it alone marks this phase done.
-        phase_state["status"] = "waiting"
-    elif validation_mode == "partial":
-        phase_state["status"] = "waiting"
-    save_state(run_dir, state)
+    lock_path = os.path.join(run_dir, ".cache", "pipeline_state.lock")
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    with open(lock_path, "w", encoding="utf-8") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            state = load_state(run_dir)
+            phase_state = state.get("phases", {}).get(phase, {})
+            dispatch = phase_state.get("dispatches", {}).get(dispatch_id)
+            if isinstance(dispatch, dict):
+                dispatch["status"] = "done" if validation_mode == "full" else "partial"
+                dispatch["recorded_at"] = time.time()
+                if isinstance(dispatch.get("spawn_time"), (int, float)):
+                    dispatch["elapsed_seconds"] = round(max(dispatch["recorded_at"] - dispatch["spawn_time"], 0), 3)
+            dispatches = phase_state.get("dispatches", {})
+            statuses = [entry.get("status") for entry in dispatches.values() if isinstance(entry, dict)]
+            if statuses and all(status == "done" for status in statuses):
+                # Provenance proves every worker batch, not the phase output.
+                # The runner must still merge/materialize and apply the phase
+                # gate before it alone marks this phase done.
+                phase_state["status"] = "waiting"
+            elif validation_mode == "partial":
+                phase_state["status"] = "waiting"
+            save_state(run_dir, state)
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 def verify(batch_path):

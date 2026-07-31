@@ -7,11 +7,12 @@ from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_pr
 
 block_source_pycache_until_run_dir()
 from shot_semantics import is_true_non_action_subshot
+from dialogue_timing import (
+    DIALOGUE_CHARS_PER_SEC, EMOTION_SPEED, PAUSE_PER_PUNCTUATION,
+    PAUSE_PER_SENTENCE_END, PUNCTUATION_CHARS, SENTENCE_ENDS,
+    estimate_dialogue_seconds,
+)
 
-# Chinese dialogue delivery speed: chars/sec
-DIALOGUE_CHARS_PER_SEC = 4.5
-PAUSE_PER_PUNCTUATION = 0.3     # seconds per ,/、/；
-PAUSE_PER_SENTENCE_END = 0.5     # seconds per 。/！/？/……
 ACTION_TIME_BASE = 2.0           # default action time per subshot (seconds)
 DEFAULT_MAX_STATIC_SECONDS = 6.0
 LONG_DURATION_RATIONALES = {
@@ -20,22 +21,6 @@ LONG_DURATION_RATIONALES = {
     "continuous_action",
     "sustained_reveal",
 }
-
-# Emotion-based speed adjustment (multiplier on base 4.5 chars/sec)
-EMOTION_SPEED = {
-    "激动": 1.2, "兴奋": 1.2, "慌乱": 1.1, "炸裂": 1.2,
-    "崩溃": 1.1, "热情": 1.1, "愉快": 1.1, "急切": 1.2,
-    "催促": 1.2,
-    "迟疑": 0.85, "压抑": 0.85, "阴沉": 0.85, "低落": 0.8,
-    "委屈": 0.85, "嘲讽": 0.8, "威胁": 0.8, "冷淡": 0.85,
-    "忰忐": 0.85, "隐忍": 0.85, "暗沉": 0.85, "失落": 0.85,
-    "无奈": 0.9, "无语": 0.9, "吐槽": 0.95,
-}
-DEFAULT_SPEED_FACTOR = 1.0
-
-
-PUNCTUATION_CHARS = set(",，、；")
-SENTENCE_ENDS = set("。！？…\u2026")
 
 # Keep this table ordered from the most specific verb phrase to the least
 # specific one.  The planner and validator share this estimator, so a plan is
@@ -54,33 +39,14 @@ ACTION_ESTIMATES = (
 
 
 def _estimate_dialogue_seconds(dialogue_text, emotion_tone=""):
-    """Calculate minimum time needed to deliver a line of dialogue naturally.
-    Accounts for: character count at speaking rate + punctuation pauses + sentence-end dwell."""
-    if not dialogue_text:
-        return 0.0
-    # Strip speaker prefix like "角色A：" to count only spoken content
-    text = re.sub(r"^[^：]+[：]\s*", "", dialogue_text)
-    if not text:
-        text = dialogue_text
-    chars = len(text)
-    punct_pauses = sum(1 for c in text if c in PUNCTUATION_CHARS)
-    sent_pauses = sum(1 for c in text if c in SENTENCE_ENDS)
-    speed_factor = DEFAULT_SPEED_FACTOR
-    if emotion_tone:
-        for keyword in EMOTION_SPEED:
-            if keyword in emotion_tone:
-                speed_factor = EMOTION_SPEED[keyword]
-                break
-    effective_speed = DIALOGUE_CHARS_PER_SEC * speed_factor
-    duration = chars / effective_speed + punct_pauses * PAUSE_PER_PUNCTUATION + sent_pauses * PAUSE_PER_SENTENCE_END
-    return max(round(duration, 1), 0.5)
+    return estimate_dialogue_seconds(dialogue_text, emotion_tone)
 
 
 def _estimate_action_seconds(base_action, subshot=None):
     """Estimate minimum time for action performance based on keywords."""
     if subshot is not None and is_true_non_action_subshot(subshot):
         return 0.0
-    # Phase 1 stores spoken text in base_action for dialogue shots.  Treating
+    # Orchestrator stores spoken text in base_action for dialogue shots. Treating
     # incidental verbs in a line as an additional physical-action budget was
     # the source of repeated false duration repairs.
     if subshot is not None and subshot.get("dialogue_refs"):
@@ -101,7 +67,7 @@ def _estimate_action_seconds(base_action, subshot=None):
 def _long_duration_issues(subshot, duration, dialogue_secs, action_secs, max_static_seconds):
     """Reject long clips whose duration is supported only by atmosphere or a hold.
 
-    A long take remains available, but the Phase 1 plan must state the causal
+    A long take remains available, but the Orchestrator plan must state the causal
     reason and the visible beats that consume its time. This catches the common
     case where a single glance or a group freeze is stretched to 10-15 seconds.
     """
@@ -239,7 +205,7 @@ def validate(sp_path, max_per_shot=15, max_total=600, project_config_path=None):
             for ref in dialogue_refs:
                 dia_text = dialogue_map.get(ref, "")
                 if dia_text:
-                    # Phase 1 estimates each source line with its own locked
+                    # Orchestrator estimates each source line with its own locked
                     # tone. Reuse that value here so a mixed-speaker exchange
                     # cannot be rejected by a different timing model.
                     event = dialogue_events.get(ref, {})

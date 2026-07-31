@@ -8,6 +8,7 @@ import os
 import sys
 import hashlib
 import time
+import re
 
 sys.path.insert(0, os.path.dirname(__file__))
 from pipeline_state import AGENT_PHASES, LOCAL_PHASES, PHASE_BATCH_SIZE, PHASE_TIMEOUT_SECONDS, advance, load_state, save_state, mark_done, mark_started, mark_waiting
@@ -105,14 +106,17 @@ def run(run_dir):
             targets = _review_target_shot_ids(review)
             packets = prepare(run_dir, output)
             state = load_state(run_dir)
-            state["phases"]["master_production"].update({"status": "pending", "agent_id": None})
+            master_state = state["phases"]["master_production"]
+            master_state.update({"status": "pending", "agent_id": None})
             editor_state = state["phases"]["editor_pass2"]
             editor_state.update({"status": "pending", "agent_id": None})
             if targets:
                 editor_state["target_shot_ids"] = targets
+                master_state["target_shot_ids"] = targets
                 editor_state["targeted_retry_rounds"] = int(editor_state.get("targeted_retry_rounds", 0) or 0) + 1
             else:
                 editor_state.pop("target_shot_ids", None)
+                master_state.pop("target_shot_ids", None)
             state["current_phase"] = "master_production"
             save_state(run_dir, state)
             return {"action": "field_patch_retry", "phase": "editor_pass2", "next": "master_production",
@@ -209,14 +213,11 @@ def _phase_target_ids(state, phase):
 
 def _review_target_shot_ids(review):
     targets = []
-    for target in review.get("repair_targets", []) if isinstance(review, dict) else []:
-        shot_id = ""
-        if isinstance(target, dict):
-            shot_id = str(target.get("shot_id", "") or target.get("subshot_id", "") or "")
-        else:
-            shot_id = str(target or "")
-        if shot_id and shot_id not in targets:
-            targets.append(shot_id)
+    for target in _review_target_fragments(review):
+        candidates = _target_fragment_shot_ids(target)
+        for shot_id in candidates:
+            if shot_id and shot_id not in targets:
+                targets.append(shot_id)
     if targets:
         return sorted(targets)
     for window in review.get("windows", []) if isinstance(review, dict) else []:
@@ -227,6 +228,35 @@ def _review_target_shot_ids(review):
         if shot_id and shot_id not in targets:
             targets.append(shot_id)
     return sorted(targets)
+
+
+def _extract_primary_shot_ids(text):
+    matches = re.findall(r"S\d+(?:-\d+)?", text or "")
+    return matches[:1]
+
+
+def _target_fragment_shot_ids(target):
+    if isinstance(target, dict):
+        return [str(target.get("shot_id", "") or target.get("subshot_id", "") or "")]
+    return _extract_primary_shot_ids(str(target or ""))
+
+
+def _review_target_fragments(review):
+    if not isinstance(review, dict):
+        return []
+    fragments = []
+    for key in ("repair_targets", "blocking"):
+        values = review.get(key, [])
+        if isinstance(values, list):
+            fragments.extend(values)
+    for window in review.get("windows", []) if isinstance(review.get("windows"), list) else []:
+        if not isinstance(window, dict) or window.get("pass"):
+            continue
+        for key in ("repair_targets", "blocking"):
+            values = window.get(key, [])
+            if isinstance(values, list):
+                fragments.extend(values)
+    return fragments
 
 
 def _materialize(phase, output, batches):

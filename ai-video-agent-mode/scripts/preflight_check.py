@@ -101,14 +101,20 @@ def run(run_dir):
             if not base_action and requires_base_action(ss):
                 issues.append(_issue(ssid, "BASE_ACTION_MISSING", "base_action required for character/action/dialogue shots; use visual_intent/shot_type for true non-action shots"))
             if not characters and requires_characters(base_action, dialogue_refs, shot_size, shot_type):
-                issues.append(_issue(ssid, "CHARACTERS_MISSING", "characters required for dialogue/action/performance shots; use shot_type=empty/background/object/establishing for true non-character shots"))
+                ov_only = bool(dialogue_refs) and all(
+                    isinstance(dialogue_events.get(ref), dict)
+                    and dialogue_events[ref].get("kind") == "OV"
+                    for ref in dialogue_refs
+                )
+                if not ov_only:
+                    issues.append(_issue(ssid, "CHARACTERS_MISSING", "characters required for dialogue/action/performance shots; OV-only shots may keep an empty visible-character list"))
             for ref in dialogue_refs:
                 if ref not in dialogue_map:
                     issues.append(_issue(ssid, "DIALOGUE_REF_MISSING", "%s not found in dialogue_map" % ref))
                     continue
                 event = dialogue_events.get(ref)
                 if not isinstance(event, dict):
-                    issues.append(_issue(ssid, "DIALOGUE_EVENT_MISSING", "%s not found in dialogue_events; regenerate Phase 1" % ref))
+                    issues.append(_issue(ssid, "DIALOGUE_EVENT_MISSING", "%s not found in dialogue_events; regenerate Orchestrator" % ref))
                     continue
                 for field in ("ref", "kind", "speaker", "text"):
                     if not str(event.get(field, "") or "").strip():
@@ -117,12 +123,24 @@ def run(run_dir):
                     issues.append(_issue(ssid, "DIALOGUE_EVENT_REF", "%s ref mismatch" % ref))
                 if event.get("kind") not in ("台词", "OS", "OV"):
                     issues.append(_issue(ssid, "DIALOGUE_EVENT_KIND", "%s kind must be 台词/OS/OV" % ref))
+                if event.get("kind") == "OV" and str(event.get("speaker", "") or "").strip() in characters:
+                    issues.append(_issue(ssid, "OV_SPEAKER_VISIBLE_LOCK", "%s is OV and must not be locked as a visible character" % ref))
 
     source_ledger_path = os.path.join(run_dir, ".cache", "orchestrator", "source_ledger.json")
     beat_ledger_path = os.path.join(run_dir, ".cache", "orchestrator", "dramatic_beat_ledger.json")
-    source_ids = _ledger_ids(source_ledger_path, "units", "source_id", issues, "SOURCE_LEDGER")
+    source_records = _ledger_records(source_ledger_path, "units", issues, "SOURCE_LEDGER")
+    source_values = [str(record.get("source_id", "") or "") for record in source_records]
+    if any(not value for value in source_values) or len(source_values) != len(set(source_values)):
+        issues.append(_issue("GLOBAL", "SOURCE_LEDGER_ID", "source_id values must be non-empty and unique"))
+    source_ids = set(source_values)
+    required_source_ids = {
+        str(record.get("source_id", "") or "")
+        for record in source_records
+        if record.get("type") in {"action", "dialogue"}
+    }
     beat_records = _ledger_records(beat_ledger_path, "beats", issues, "DRAMATIC_BEAT_LEDGER")
     ledger_beat_ids = set()
+    assigned_source_ids = set()
     for record in beat_records:
         beat_id = str(record.get("beat_id", "") or "")
         owner = str(record.get("owner_subshot_id", "") or "")
@@ -137,6 +155,10 @@ def run(run_dir):
         for source_id in record.get("source_ids", []) or []:
             if source_id not in source_ids:
                 issues.append(_issue(owner or "GLOBAL", "DRAMATIC_BEAT_SOURCE", "%s references unknown %s" % (beat_id, source_id)))
+            else:
+                assigned_source_ids.add(source_id)
+    for source_id in sorted(required_source_ids - assigned_source_ids):
+        issues.append(_issue("GLOBAL", "SOURCE_UNIT_UNASSIGNED", "%s action/dialogue source unit is not assigned to any planned dramatic beat" % source_id))
     for beat_id in sorted(set(declared_beats) - ledger_beat_ids):
         issues.append(_issue(declared_beats[beat_id], "DRAMATIC_BEAT_LEDGER_MISSING", beat_id))
 

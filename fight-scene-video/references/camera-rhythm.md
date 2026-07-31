@@ -1,51 +1,57 @@
-# Fight Camera Rhythm
+# 打斗摄影机节奏
 
-Treat camera rhythm as the sequence of what the audience is allowed to know, not as nonstop movement. Read this reference after the action beats and before the trajectory-map briefs.
+把摄影机节奏理解为“观众按什么顺序获得信息”，而不是持续运动。动作节拍完成后、轨迹图输入前读取本参考。
 
-## Coverage Roles
+## 覆盖职责
 
-Use only the roles that serve the beat. Each role must reveal new information.
+只使用服务当前节拍的职责，每个镜头必须提供新信息。
 
-| Role | Audience receives | Typical design |
+| 职责 | 观众获得 | 常用设计 |
 |---|---|---|
-| Establish space | routes, anchors, distance, danger | wide or medium-wide, low or neutral angle |
-| Threat | attack source and direction | medium or close, attacker-facing or over-shoulder |
-| Commitment | body line, weapon/ability path, point of no return | side medium, tracked path, or held composition |
-| Reversal | the defender's new position or changed rule | contrast angle, obstruction reveal, or scale shift |
-| Contact | the actual collision or effect interaction | readable side or three-quarter angle, not an obscured close-up |
-| Consequence | force transfer, damage, lost balance, changed route | wider hold or low angle toward material response |
-| Aftermath | who owns the space now | stable medium or wide, leave time for the new state to read |
+| 建立空间 | 路线、地标、距离、危险区 | 全景/中远景，低位或平视 |
+| 揭示威胁 | 攻击来源和方向 | 中景/近景，面向攻击者或过肩 |
+| 展示承诺 | 身体线、武器/技能路径、无法收回的节点 | 侧面中景、路径跟拍或稳定构图 |
+| 揭示反转 | 防守者新位置或规则变化 | 对比角度、遮挡揭示或尺度变化 |
+| 证明接触 | 实际碰撞或特效交互 | 可读侧面/三分之四角度，避免遮挡特写 |
+| 展示后果 | 力量传递、伤害、失衡、路线变化 | 稍宽停留或低位看材质反应 |
+| 余波归属 | 谁控制空间、谁承担代价 | 稳定中景/全景，留时间读新状态 |
 
-## 16:9 Action Pattern
+## 16:9动作节奏
 
-For a 12-20 second 16:9 fight, normally use 5-7 coverage units. An effective default pattern is:
+12-20秒的16:9打斗通常使用5-7个覆盖单元：
 
 ```text
-space -> threat -> commitment -> reversal -> contact -> consequence -> aftermath
+空间 -> 威胁 -> 承诺 -> 反转 -> 接触 -> 后果 -> 余波
 ```
 
-Vary size and angle with purpose. A useful 3D CG progression is wide low-angle space, medium tracked attack line, close detail of a decisive trigger, contrasting side or orbital reveal, low wide impact, then a stable aftermath hold. Do not mechanically use every category.
+不要机械使用全部类别。有效的3D CG梯度可以是：低机位全景建立空间、中景跟随攻击线、近景展示决定性触发、侧面/短弧揭示反转、低位宽景看冲击、稳定余波。
 
-## Cut Rules
+## 切镜规则
 
-- Cut on a source-visible event: an inhale before flame, foot plant, hand closing, blade leaving frame, ability ignition, impact flash, obstruction crossing, or a changed eyeline.
-- Match across cuts with direction, shape, motion, sound, or a fixed anchor. A fire arc can cut to a frozen fire arc; a shoulder entering frame can cut to the same shoulder's impact angle.
-- Hold the impact long enough to show force direction, then cut to the material or body result. Do not cut away before the hit is legible.
-- Preserve the 180-degree relationship. Cross the axis only through an established overhead/wide view, a character's visible rotation, or a camera arc that demonstrates the crossing.
+- 在来源可见的事件上切镜：吸气蓄火、脚掌踩实、手掌合拢、剑刃出画、技能点亮、冲击闪光、遮挡物经过或视线改变。
+- 使用方向、形状、运动、声音或固定地标进行匹配剪辑。
+- 接触镜头必须停留到受力方向清楚，再切材质或身体后果；不能在命中尚未读清时逃离。
+- 保持180度关系。只能通过已建立的高位/全景、人物可见转身或明确摄影机弧线越轴。
 
-## Movement Rules
+## 运镜规则
 
-- Assign one main camera move to one generated clip. This protects AI-video stability; it does not make the overall sequence static.
-- Use tracking for a committed route, lateral movement for two-person relationship changes, a slow push for pressure, and a short orbit only when an effect or spatial rule visibly changes.
-- Use a fixed camera at impact when motion would hide body alignment. Let the actors and environment supply the energy.
-- In 16:9, use horizontal routes and depth layers. Save close-ups for ignition, decision, contact proof, or the moment power changes hands.
+- 每个生成片段只分配一个主运镜；整体节奏来自镜头序列，不来自单镜不停变轨。
+- 跟拍用于承诺路线，横移用于双人关系变化，慢推用于压力，短弧环绕只用于规则或空间关系发生变化。
+- 如果移动会遮住身体对齐和接触点，命中时固定摄影机，让演员、VFX和环境承担能量。
+- 16:9优先利用横向路线和纵深层级。特写只用于点火、决定、接触证明或控制权转移。
 
-## Failure Checks
+## 景别梯度
 
-Rewrite the plan when it has any of these:
+- 连续两个镜头不能同时在景别、角度和运动方式上完全相同，除非重复本身承担压迫或仪式意义。
+- 从全景直接切极近特写必须有明确触发，例如眼神锁定、手势点亮或武器撞击。
+- 高潮后的镜头通常比高潮更稳、更宽或更慢，让新权力关系和代价落地。
 
-- Every clip uses the same side angle, distance, or movement.
-- The audience sees the outcome before seeing the action that causes it.
-- A cut interrupts the decisive contact instead of revealing the consequence.
-- A spinning, shaking, or drifting camera replaces force, staging, or a clear reaction.
-- The rhythm has no pause after the strongest action, leaving the new power relation unreadable.
+## 失败检查
+
+出现以下情况必须重写：
+
+- 所有片段都使用相同侧面角度、距离或运动。
+- 观众先看到结果，后看到导致结果的动作。
+- 剪辑打断决定性接触，而不是揭示后果。
+- 旋转、晃动或漂移替代力量、调度和人物反应。
+- 最强动作后没有停顿，新的空间归属无法读清。
