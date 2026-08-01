@@ -1,10 +1,16 @@
-# 当前流程门禁
+# Stage Gate Summary
 
-| Phase | Input | Output | Gate |
-|---|---|---|---|
-| Scene Lock | 镜头计划 | `scene_locks.json` | 每个场景一条不可变记录；空间、人物位置、道具、服装、光源类型/方向/色温和声音政策完整 |
-| Master Production | 镜头计划 + 场景锁定 | 主镜 `shots[]` | 每个主镜一条 T2V 任务；内部 1–3 个连续节拍；三份合同和五段即梦正文全部通过 |
-| Editor Pass 2 | 提示词包 | 场景窗口复审 | 每个窗口包含上一镜/当前镜/下一镜摘要；所有 blocking 问题都通过按字段修复的主镜补丁解决 |
-| Validate | 最终包 | 报告 | 确定性、语义、导出和 token 预算门禁全部通过 |
+阶段顺序、执行者和产物只以 `scripts/contract_registry.py` 为准。本文件只说明 supervisor
+何时继续、何时派发、何时阻断，不复制阶段表或字段合同。
 
-当前契约不再承认旧版 analysis、Director 或 Composer 独立阶段。
+| Gate | 继续条件 | 失败处理 |
+|---|---|---|
+| 配置 | `project_config.json` 已完成当前确认 | 只询问 `resolve_run_mode.py` 返回的字段 |
+| 本地准备 | shot plan、source/beat ledger、preflight 通过 | 修源文登记、拆镜或配置，不派发 Agent |
+| Scene Lock | 每场景一条通过 validator 的不可变事实记录 | 仅重派失败场景 |
+| Master Production | 每主镜一条通过 Composer validator 的 T2V 任务 | 只修点名字段；再次失败缩为单主镜 |
+| Editor | pre-editor gate 通过，所有语义 blocking 已按字段解决 | 回到最早负责字段，不整包重写 |
+| Validate | 全集状态、导演、情绪/镜头、合同与导出预检全部通过 | 按报告定位一个合同切片修复 |
+| Export | provenance、路径、直投编译和最终质检通过 | 不写临时残件，不静默截断 |
+
+`waiting_for_workers` 不是门禁也不是用户确认点。Agent 完成 provenance 后立即继续 supervisor。

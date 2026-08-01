@@ -5,11 +5,14 @@ import os
 import sys
 import time
 
+sys.path.insert(0, os.path.dirname(__file__))
+from contract_registry import PROMPT_CONTRACT_VERSION
+
 
 def write_summary(run_dir, phase, output_paths):
     artifacts = [_artifact(path) for path in output_paths if os.path.exists(path)]
     summary = {
-        "contract_version": "jimeng-t2v-v1",
+        "contract_version": PROMPT_CONTRACT_VERSION,
         "phase": phase,
         "written_at": time.time(),
         "artifacts": artifacts,

@@ -6,7 +6,7 @@ Jimeng T2V prompt and never claim to be reference assets for T2V generation.
 
 import re
 
-from modec_v4 import PROMPT_LABELS, split_sections
+from prompt_contract import PROMPT_LABELS, split_sections
 
 
 SPATIAL_ACTION_RE = re.compile(r"接近|走向|进入|离开|让开|递给|交给|接住|阻挡|擦肩|绕过|跟随|转身|落步|换位|站位")

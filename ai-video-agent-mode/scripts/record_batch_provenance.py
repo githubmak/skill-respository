@@ -13,12 +13,13 @@ from pipeline_state import load_state, save_state
 from validate_composer_output import validate_composer_output
 from pipeline_runtime import cache_artifact, record_issues
 from dispatch_receipts import complete as complete_receipt, load_and_verify as verify_receipt, sha256_file as receipt_sha256
+from contract_registry import PROMPT_CONTRACT_VERSION
 
 
 def record(packet_path, allow_partial=False):
     packet = _load(packet_path)
-    if packet.get("contract_version") != "jimeng-t2v-v1" or not packet.get("dispatch_id"):
-        raise SystemExit("Invalid or pre-v4 dispatch packet")
+    if packet.get("contract_version") != PROMPT_CONTRACT_VERSION or not packet.get("dispatch_id"):
+        raise SystemExit("Invalid or unsupported dispatch contract")
     run_dir = packet.get("run_dir", "")
     phase = packet.get("phase", "")
     batch_path = packet.get("_batch_output_path", "")
@@ -90,7 +91,7 @@ def record(packet_path, allow_partial=False):
     batch_sha256 = _sha256(batch_path)
     receipt, receipt_path = complete_receipt(packet_path, packet, agent_id, batch_sha256)
     manifest = {
-        "contract_version": "jimeng-t2v-v1",
+        "contract_version": PROMPT_CONTRACT_VERSION,
         "dispatch_id": packet["dispatch_id"],
         "phase": phase,
         "agent_id": agent_id,
@@ -163,7 +164,7 @@ def verify(batch_path):
     if not os.path.exists(sidecar):
         return False, "provenance sidecar missing", None
     manifest = _load(sidecar)
-    if manifest.get("contract_version") != "jimeng-t2v-v1" or not manifest.get("validated"):
+    if manifest.get("contract_version") != PROMPT_CONTRACT_VERSION or not manifest.get("validated"):
         return False, "invalid provenance contract or validation state", manifest
     if os.path.abspath(batch_path) != manifest.get("batch_path"):
         return False, "batch path does not match provenance", manifest

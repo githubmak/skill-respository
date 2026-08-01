@@ -1,33 +1,54 @@
-# Routes And Script Index
+# Route Context Policy
 
-Read this file first. Select one explicit route, then read only the linked contract and script entry points. Do not load unrelated Python files or the full runbook.
+`scripts/route_task.py` 是机器来源。先运行它，再遵守返回的 `context_plan`；本文件仅解释
+各路由为什么需要这些上下文。不要在路由前加载完整 runbook 或大合同。
 
-| Request | Route | Required reading | Run only |
-|---|---|---|---|
-| New script, changed story, or changed project settings | `full` | `SKILL.md`, `format_constraints.md`, `production_quality_knowledge.md`, `stage_gates.md` | `pipeline_runner.py`, validators, dispatch scripts |
-| Diagnose pacing, continuity, or prompt quality | `audit` | relevant exported prompt package, `format_constraints.md`; add `production_quality_knowledge.md` when the issue concerns人物目标/策略、关系情绪弧、序列镜头语言、剪辑切点、空间连续、风景美学或环境叙事 | `episode_state_graph.py`, `episode_director_audit.py`, `check_export.py`, `validate_modec.py` |
-| Generate files from a passed package | `export` | `export_spec.md` | `check_export.py`, `export_with_validation.py` |
-| Repair one failed subshot | `single-repair` | packet `constraints_path`, `retry_context_path`, compact handoff | `dispatch_cache.py`, phase validator, provenance scripts |
-| Generate prompts from an approved shot plan and Scene Lock | `compose` | Composer sections of `format_constraints.md`, `contracts/contract_index.md`, `production_quality_knowledge.md`, `dispatch/master_production_note.md` | `dispatch_cache.py`, `validate_composer_output.py` |
+| Route | 适用任务 | `read_first` | `read_on_demand` | `run_only` |
+|---|---|---|---|---|
+| `full` | 新源文、剧情或配置变化；明确续跑 | `stage_gates.md` | 最新 stage summary、命中的合同索引行 | `workflow_supervisor.py` |
+| `compose` | 已有 shot plan 与 Scene Lock | `agent_protocol.md` | packet 的 constraints/scaffold/scene lock cache | dispatch 与 Composer validator |
+| `single-repair` | 修一个失败主镜或字段 | packet constraints、retry context | 对应 stage summary | provenance 与 merge 脚本 |
+| `audit` | 诊断现有包，不重生成 | 无 | validator 报告、命中的合同索引行 | 全集/导演/情绪/ModeC/export audit |
+| `export` | 导出已通过验证的包 | 无 | 仅格式诊断时读 `export_spec.md` | `export_with_validation.py` |
 
-## Initialization
+## 读取纪律
 
-- 用户手动再次调用时默认选择 `full --intent new`，且必须指向新的空 `run_dir`。不要删除或读取旧缓存；新运行从配置确认阶段重新建立全部质量合同。
-- `full/new` 参数不完整时先运行 `resolve_run_mode.py`，只询问返回的 `next_fields`（首轮 1 项、后续每轮最多 2 项）。使用 `configuration_wizard.py start/answer/status` 记录每轮答案，其中 `delivery.markdown_path` 是最后一次配置项；完成确认前不得派发 Agent。
-- 高质量快速模式只用于用户在同一次命令中明确提供源文件与完整 JSON 配置：`python3 scripts/route_task.py full --run-dir <new_run_dir> --intent new --config <complete_config.json> --source <source.txt> --auto-start`。配置必须显式包含全部八个基础字段：`export_base`、`canvas`、`visual_style`、`max_shot_duration`、`target_platform`、`generation_control.mode`、`generation_control.audio_enabled`、`delivery.markdown_path`；模板默认值、旧确认元数据或部分配置不得算作确认。该入口调用同一个 `workflow_supervisor.py`，不得跳过任何阶段、provenance、validator 或导出门禁；缺字段、非法值、非空 run_dir、越界路径或源文件不存在时必须原子失败并保留已有文件。
-- 仅用户明确要求“继续/续跑”时使用 `full --intent resume`；`audit`、`compose`、`single-repair` 复用已确认配置而不重复提问。`export --intent reexport` 复用配置并使用锁定的 `delivery.markdown_path`，不得推导或询问新路径。
-- 一旦配置确认并进入 pipeline，以 `workflow_supervisor.py` 循环驱动。它自动处理本地阶段，并把 Agent 工作返回为 `host_dispatch_required` 的 packet 列表；主 Agent 完成 provenance 链后立刻再次调用 supervisor。尤其 `waiting_for_workers` 只表示等待已派发 worker 的回执、心跳或验证结果，绝不把它翻译成“是否继续执行”。只有路由结果明确 `needs_user_confirm=true`，或缺少无法从已有事实推导的用户选择时，才向用户提问。
+- 不在正常 `full`、`compose`、`audit` 中预读 `format_constraints.md`、
+  `production_quality_knowledge.md` 或完整 Python 实现。
+- Worker 只处理 `packet.items`，先读 `constraints_path`；Master Production 再读 scaffold 和
+  scene lock cache。`source_path` 仅在 packet 信息不足时作为局部回退。
+- 续跑先读 `.cache/stage_summary/<phase>.json`。只为 validator 点名的主镜或字段重开大产物。
+- 审查先运行 validator，再用 `contracts/contract_index.md` 定位一个相关切片；不要为了一个
+  口型、道具或光影问题同时读取全部质量知识。
+- 只有静态/动态美学问题命中时，按需读取
+  `contracts/aesthetic_directing_contract.md`，不把它加入正常路由的 `read_first`。
+- 脚本能确定性验证或生成的内容直接运行脚本，不把实现源码加载进模型上下文。
+- 修改技能合同才读取完整权威段落，并同步 schema、validator、Golden 和 rule consistency。
 
-## Reading Rules
+## 初始化
 
-- Run `python3 scripts/route_task.py <route> --run-dir <run_dir> --intent <new|resume|audit|reexport>` before loading a route. In Windows PowerShell, use `& .\scripts\run_skill_tool.ps1 .\scripts\route_task.py <route> --run-dir "C:\path\to\run" --intent <intent>`; pass only quoted paths and short arguments, never inline JSON, Markdown, prompts, or here-strings.
-- Use `rg -n` to find a script entry point or function, then read only the relevant region.
-- Treat packet `items`, `source_ledger.json`, `dramatic_beat_ledger.json`, scaffold, scene locks, handoff, and retry context as authoritative. `source_path` is fallback context, not default reading.
-- Read a stage summary from `.cache/stage_summary/<phase>.json` before an older full artifact when resuming. Reopen the full artifact only for the named subshot or field.
+- 手动新调用默认 `full --intent new`，必须使用新的空 `run_dir`。
+- 只有用户明确要求继续时使用 `full --intent resume`。
+- 参数不完整时按 `resolve_run_mode.py` 返回的 `next_fields` 逐轮确认。
+- 高质量快速模式要求同次提供全部八个基础字段配置和源文件，可用
+  `--config ... --source ... --auto-start`；缺字段、
+  路径越界、源文件缺失或非空 run_dir 必须原子失败。
+- `audit`、`compose`、`single-repair` 复用已确认配置；`export --intent reexport` 使用锁定的
+  `delivery.markdown_path`。
 
-## Hot Paths
+## Supervisor 循环
 
-- Must read before dispatch: `dispatch_cache.py` entry/packet fields, the selected phase constraints, `references/dispatch/<phase>_note.md`, `agent_protocol.md` provenance sequence.
-- Use `references/contracts/contract_index.md` to locate direct-copy, source basemap, visual quality, dispatch and special-viewpoint rules without rereading the full `format_constraints.md`.
-- Must run, not reread: `validate_scene_locks.py`, `validate_composer_output.py`, `pre_editor_gate.py`, `record_batch_provenance.py`, `merge_agent_outputs.py`, `episode_state_graph.py`, `episode_director_audit.py`, `check_export.py`.
-- Read only when debugging: `pipeline_runner.py`, `pipeline_state.py`, `pipeline_runtime.py`, `sources.py`.
+配置确认后持续调用 `workflow_supervisor.py`。本地阶段自动运行；
+`host_dispatch_required` 才派发 Agent；`waiting_for_workers` 只等待回执、心跳或验证结果。
+完成每个 packet 的 provenance 链后立即继续 supervisor。仅 `needs_user_confirm=true` 可以暂停提问。
+
+## Packet 热路径
+
+派发只读 packet、所列 sidecar 和 `references/agent_protocol.md`。运行而不预读：
+`validate_scene_locks.py`、`validate_composer_output.py`、`pre_editor_gate.py`、
+`record_batch_provenance.py`、`merge_agent_outputs.py`、`episode_state_graph.py`、
+`episode_director_audit.py`、`check_export.py`。仅在调试状态机实现时读取
+`pipeline_runner.py`、`pipeline_state.py`、`pipeline_runtime.py` 或 `sources.py`。
+
+`dispatch/scene_lock_note.md`、`dispatch/master_production_note.md` 与
+`dispatch/editor_pass2_note.md` 由 `dispatch_cache.py` 自动写入阶段 sidecar，宿主不重复预读。

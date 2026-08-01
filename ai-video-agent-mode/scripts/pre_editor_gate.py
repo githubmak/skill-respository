@@ -15,6 +15,7 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from emotion_camera_audit import audit as emotion_camera_audit
 from validate_composer_output import validate_composer_output
+from contract_registry import PROMPT_CONTRACT_VERSION
 
 
 PACKAGE_RELATIVE_PATH = ".cache/composer/merged.prompt_package.json"
@@ -44,7 +45,7 @@ def run(run_dir):
         run_dir, os.path.join(review_dir, "pre_editor_emotion_camera_audit.json")
     )
     result = {
-        "contract_version": "jimeng-t2v-v1",
+        "contract_version": PROMPT_CONTRACT_VERSION,
         "package_path": os.path.abspath(package_path),
         "package_sha256": package_sha256,
         "validator_sha256": validator_sha256,

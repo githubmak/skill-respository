@@ -8,11 +8,12 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from modec_v4 import (
+from prompt_contract import (
     FORBIDDEN_MODEL_TERMS,
     LEGACY_LABELS,
     PROMPT_LABELS,
     action_budget_issues,
+    aesthetic_directing_contract_issues,
     ai_model_readiness_issues,
     attention_handoff_issues,
     camera_competition_issues,
@@ -70,7 +71,7 @@ from production_intelligence import (
     visual_prior_risk_issues,
 )
 from shot_semantics import quality_contract as derive_quality_contract, validation_profile as derive_validation_profile
-from contract_registry import QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
+from contract_registry import PROMPT_CONTRACT_VERSION, QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
 
 
 FORBIDDEN_ENGINES = ["C4D", "Octane", "Blender", "Redshift", "Arnold", "Unreal Engine"]
@@ -91,8 +92,8 @@ def validate_composer_output(path, run_dir=None, report_path=None):
     allowed_top_levels = ({"shots"}, {"contract_version", "shots"})
     if set(data.keys()) not in allowed_top_levels:
         issues.append("batch顶层只能包含shots，或contract_version与shots")
-    if "contract_version" in data and data.get("contract_version") != "jimeng-t2v-v1":
-        issues.append("contract_version必须为jimeng-t2v-v1")
+    if "contract_version" in data and data.get("contract_version") != PROMPT_CONTRACT_VERSION:
+        issues.append("contract_version必须为%s" % PROMPT_CONTRACT_VERSION)
     shots = data.get("shots", [])
     if not isinstance(shots, list) or not shots:
         issues.append("shots必须是非空数组")
@@ -174,6 +175,8 @@ def validate_composer_output(path, run_dir=None, report_path=None):
         for problem in scene_tone_palette_issues(metadata, full_prompt):
             issues.append(prefix + problem)
         for problem in video_texture_contract_issues(metadata, full_prompt):
+            issues.append(prefix + problem)
+        for problem in aesthetic_directing_contract_issues(metadata, full_prompt):
             issues.append(prefix + problem)
         for problem in screen_text_policy_metadata_issues(metadata, full_prompt):
             issues.append(prefix + problem)
@@ -459,7 +462,7 @@ def _write_report(report_path, batch_path, issues):
     os.makedirs(os.path.dirname(os.path.abspath(report_path)), exist_ok=True)
     with open(report_path, "w", encoding="utf-8") as handle:
         json.dump({
-            "contract_version": "jimeng-t2v-v1",
+            "contract_version": PROMPT_CONTRACT_VERSION,
             "batch_path": os.path.abspath(batch_path),
             "batch_sha256": _sha256(batch_path),
             "pass": not issues,

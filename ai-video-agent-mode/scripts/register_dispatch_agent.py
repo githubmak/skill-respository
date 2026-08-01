@@ -8,13 +8,14 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from pipeline_state import set_agent_id
 from dispatch_receipts import issue
+from contract_registry import PROMPT_CONTRACT_VERSION
 
 
 def register(packet_path, agent_id):
     with open(packet_path, "r", encoding="utf-8-sig") as handle:
         packet = json.load(handle)
-    if packet.get("contract_version") != "jimeng-t2v-v1":
-        raise SystemExit("Invalid or pre-v4 dispatch packet")
+    if packet.get("contract_version") != PROMPT_CONTRACT_VERSION:
+        raise SystemExit("Invalid or unsupported dispatch contract")
     run_dir = str(packet.get("run_dir", "") or "")
     phase = str(packet.get("phase", "") or "")
     dispatch_id = str(packet.get("dispatch_id", "") or "")

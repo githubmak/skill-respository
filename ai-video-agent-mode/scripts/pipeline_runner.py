@@ -17,6 +17,7 @@ from dispatch_cache import active_packet_paths, prepare_dispatch_packets
 from dispatch_queue import fill_slots, pending_packet_paths
 from merge_agent_outputs import merge_agent_outputs
 from record_batch_provenance import verify
+from contract_registry import PROMPT_CONTRACT_VERSION
 
 
 def run(run_dir):
@@ -267,7 +268,7 @@ def _materialize(phase, output, batches):
             data = _load(batch)
             scenes.extend(data.get("scenes", []))
         with open(output, "w", encoding="utf-8") as handle:
-            json.dump({"contract_version": "jimeng-t2v-v1", "scenes": scenes}, handle, ensure_ascii=False, indent=2)
+            json.dump({"contract_version": PROMPT_CONTRACT_VERSION, "scenes": scenes}, handle, ensure_ascii=False, indent=2)
         return
     if phase == "editor_pass2":
         windows = []
@@ -283,7 +284,7 @@ def _materialize(phase, output, batches):
                 if target not in repair_targets:
                     repair_targets.append(target)
         with open(output, "w", encoding="utf-8") as handle:
-            json.dump({"contract_version": "jimeng-t2v-v1", "windows": windows,
+            json.dump({"contract_version": PROMPT_CONTRACT_VERSION, "windows": windows,
                        "pass": bool(windows) and all(item.get("pass") for item in windows),
                        "blocking": blocking, "repair_targets": repair_targets}, handle, ensure_ascii=False, indent=2)
         return

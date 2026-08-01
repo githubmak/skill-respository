@@ -10,6 +10,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(__file__))
 from record_batch_provenance import verify
+from contract_registry import PROMPT_CONTRACT_VERSION
 
 
 def promote(packet_path):
@@ -26,7 +27,7 @@ def promote(packet_path):
     shutil.copyfile(batch_path, temporary)
     os.replace(temporary, output_path)
     promotion = {
-        "contract_version": "jimeng-t2v-v1",
+        "contract_version": PROMPT_CONTRACT_VERSION,
         "packet_path": os.path.abspath(packet_path),
         "source_batch": os.path.abspath(batch_path),
         "source_provenance": manifest,

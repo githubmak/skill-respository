@@ -2,6 +2,7 @@
 """Regression tests for the three-state keyframe delivery pipeline."""
 
 from current_keyframe import build_current_shot_keyframe_reference, build_keyframe_sequence
+from prompt_contract import aesthetic_directing_contract_issues
 from export_with_validation import _build_direct_copy_prompt, _build_director_card
 
 
@@ -16,6 +17,15 @@ def main():
     assert all(item["pass"] for item in sequence["continuity_check"])
     assert all(item["pass"] for item in sequence["fact_consistency"])
     assert "0.0-" in sequence["video_prompt"] and "即梦执行正文" in sequence["video_prompt"]
+    assert "门框留白把视线引向抬眼瞬间" in sequence["frames"][1]["prompt"]
+    assert "低幅推近在抬眼后减速停稳" in sequence["video_prompt"]
+    assert "均匀棚拍光" in sequence["negative_prompt"]
+    assert not aesthetic_directing_contract_issues(task["qa_metadata"], task["full_prompt"])
+    incomplete = _fixture()
+    incomplete["qa_metadata"]["dynamic_aesthetic_contract"]["camera_path"] = ""
+    assert any("camera_path" in issue for issue in aesthetic_directing_contract_issues(
+        incomplete["qa_metadata"], incomplete["full_prompt"]
+    ))
     assert "手机" in sequence["frames"][0]["prompt"]
     legacy = build_current_shot_keyframe_reference(
         task, {"scene": "客厅对峙"}, "16:9", "写实电影级动态漫"
@@ -24,6 +34,8 @@ def main():
     export_plan = {"canvas": "16:9", "visual_style": "写实电影级动态漫"}
     direct_copy = _build_direct_copy_prompt(task, export_plan)
     director_card = _build_director_card(task, export_plan)
+    assert "写实影像约束（静态美术）" in direct_copy
+    assert "视频质感约束（动态美术）" in direct_copy
     assert 180 <= len(director_card) <= 500
     assert "你终于回来了。" in director_card and len(director_card) <= len(direct_copy)
 
@@ -72,6 +84,50 @@ def _fixture():
                 "motivated_source": "左前方中性面光", "face_light_layer": "照亮角色A脸侧并保持自然肤色",
             },
             "scene_tone_palette": {"visual_scene_prefix": "暖灰客厅，前中后景层次清楚"},
+            "visual_bible": {
+                "visual_thesis": "克制重逢让观众先看抬眼再看手机",
+                "palette_system": "暖灰占主体，门外冷色退后，手机边缘作低亮点缀",
+                "light_motivation": "左前方窗光为人物主光，室内暖反光只托住手部",
+                "contrast_exposure": "脸部曝光稳定，右脸浅阴影保留层次，高光不过曝",
+                "composition_grammar": "门框与桌角构成纵深骨架并保留关系空位",
+                "material_world": "棉质衣料哑光，木桌半反光，手机金属边缘压暗",
+                "atmosphere_rule": "室内空气干净，后景只保留轻微距离衰减",
+                "imperfection_policy": "桌沿细划痕和衣料自然褶皱不均匀分布",
+                "reference_policy": "none",
+                "continuity_lock": "跨镜保持暖灰基调、左前主光和门框构图家族",
+            },
+            "static_aesthetic_contract": {
+                "visual_intent": "克制重逢，观众先看角色A的眼睛再看右手手机",
+                "composition_hierarchy": "门框留白把视线引向抬眼瞬间，角色B只作后景压力",
+                "light_design": "左前方中性面光照亮角色A脸侧，右脸浅阴影保留层次",
+                "color_grade": "暖灰室内与门外低饱和冷色分离，肤色保持自然",
+                "lens_rendering": "50mm眼平中近景，焦平面覆盖双眼和手机边缘",
+                "depth_atmosphere": "桌角轻虚化，中景清楚，门口低对比退后",
+                "material_anchor": "棉质衣料自然褶皱，手机金属边缘压暗反光",
+                "signature_frame": "角色A抬眼停住而手机仍悬在胸前",
+                "aesthetic_exclusions": "均匀棚拍光, 平均构图",
+            },
+            "dynamic_aesthetic_contract": {
+                "motion_thesis": "静止被抬眼打破后重新收住",
+                "start_state": "角色A低头，固定关系构图保持半拍",
+                "trigger": "角色A看清门口人物",
+                "primary_subject_motion": "角色A抬眼并把手机从腰间抬到胸前",
+                "secondary_environment_motion": "窗帘边缘只有一次低幅摆动",
+                "camera_path": "低幅推近在抬眼后减速停稳",
+                "focus_behavior": "焦点始终留在角色A双眼，不转焦",
+                "material_motion": "棉质袖口随抬手产生轻微褶皱",
+                "atmosphere_motion": "后景空气保持稳定，不增加雾粒",
+                "tempo_easing": "起幅静止，抬眼稍快，推近平滑减速",
+                "end_state": "角色A闭口停住，手机稳定在胸前",
+                "stability_fallback": "取消推近并保持固定机位，保留抬眼和手机终态",
+            },
+            "aesthetic_priority": {
+                "visual_thesis": "静止被一次抬眼打破后重新收住",
+                "primary_eye_target": "角色A双眼",
+                "secondary_visual_layer": "角色A右手手机",
+                "must_preserve": "抬眼瞬间、左前主光和门框留白",
+                "degrade_first": "后景窗帘运动和低幅推近",
+            },
         },
     }
 

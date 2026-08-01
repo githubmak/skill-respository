@@ -1,0 +1,260 @@
+#!/usr/bin/env python3
+"""Regression tests for storyboard validation and shadow semantic profiling."""
+
+import unittest
+from pathlib import Path
+
+import validate_storyboard as validator
+
+
+class SemanticCollisionTests(unittest.TestCase):
+    def test_environment_water_ripple_is_not_cutaway(self) -> None:
+        prompt = "人物站在溪边，后景溪水泛起细小水纹，镜头固定。"
+        self.assertFalse(validator.is_standalone_cutaway(prompt))
+
+    def test_zero_person_water_ripple_is_cutaway(self) -> None:
+        prompt = "本镜画面内可见人数：0人。俯视特写，水纹掠过湿石。"
+        self.assertTrue(validator.is_standalone_cutaway(prompt))
+
+    def test_character_hiding_behind_shoulder_is_not_reverse_shot(self) -> None:
+        prompt = "满满躲在哥哥肩后，只露出半张脸。"
+        self.assertFalse(validator.has_reverse_shot(prompt))
+
+    def test_camera_behind_shoulder_is_reverse_shot(self) -> None:
+        prompt = "摄影机在沈青乔肩后，前景保留肩线。"
+        self.assertTrue(validator.has_reverse_shot(prompt))
+
+    def test_performance_motion_is_not_camera_motion(self) -> None:
+        prompt = "阿丰缓慢摇头，眼神移动到鱼篓，固定机位记录表演。"
+        self.assertFalse(validator.has_camera_move(prompt))
+        self.assertTrue(validator.has_camera_state(prompt))
+        self.assertEqual("近景:static", validator.camera_signature("近景，" + prompt))
+
+    def test_static_camera_recording_head_shake_is_not_camera_motion(self) -> None:
+        prompt = "镜头固定记录阿丰摇头和眼神移动到鱼篓。"
+        self.assertFalse(validator.has_camera_move(prompt))
+        self.assertTrue(validator.has_camera_state(prompt))
+
+    def test_camera_push_is_camera_motion(self) -> None:
+        prompt = "85mm平视近景，镜头缓慢推近0.2米。"
+        self.assertTrue(validator.has_camera_move(prompt))
+        self.assertEqual("近景:平视:move", validator.camera_signature(prompt))
+
+    def test_real_camera_move_variants_are_detected(self) -> None:
+        prompts = (
+            "摄影机平行侧跟0.3米，不超过孩子。",
+            "摄影机沿三人中线缓慢拉开0.3米。",
+            "镜头小幅右摇20度落到两个孩子。",
+            "镜头轻推0.15米停在人物眼神上。",
+        )
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                self.assertTrue(validator.has_camera_move(prompt))
+
+    def test_handheld_camera_is_a_camera_state(self) -> None:
+        self.assertTrue(validator.has_camera_state("35mm低位机位轻微手持中景。"))
+        self.assertTrue(validator.has_camera_state("镜头保持轻微手持感但主体稳定。"))
+
+    def test_camera_signature_distinguishes_angle(self) -> None:
+        overhead = validator.camera_signature("俯视近景，镜头固定。")
+        oblique = validator.camera_signature("斜俯近景，镜头固定。")
+        self.assertNotEqual(overhead, oblique)
+
+
+class OutputFormatTests(unittest.TestCase):
+    def test_field_lines_with_markdown_trailing_spaces_remain_parseable(self) -> None:
+        block = (
+            "【镜号】  \n1，2s，普通。\n\n"
+            "【画面描述｜直接复制】  \n正向提示词。\n\n"
+            "【表演与声音】  \n无台词。\n\n"
+            "【状态继承】  \n人物仍站在原位。"
+        )
+        children = list(validator.iter_children(block))
+        self.assertEqual(1, len(children))
+        self.assertEqual("正向提示词。", validator.direct_prompt(children[0].group(0)))
+        self.assertEqual("无台词。", validator.extract(children[0].group(0), "【表演与声音】", "【状态继承】"))
+
+    def test_prefixed_group_id_is_not_accepted(self) -> None:
+        text = "#### C1-S1-01｜镜头组总时长：2s\n"
+        self.assertEqual([], list(validator.iter_groups(text)))
+        issues = validator.validate(Path("dummy.md"), text)
+        self.assertTrue(any("invalid shot group heading" in issue for issue in issues))
+
+    def test_independent_file_must_start_at_s1_01(self) -> None:
+        text = "#### S2-01｜镜头组总时长：2s\n\n【出现人物】\n甲\n"
+        issues = validator.validate(Path("dummy.md"), text)
+        self.assertTrue(any("首个镜头组必须为S1-01" in issue for issue in issues))
+
+    def test_group_numbering_cannot_skip_or_repeat(self) -> None:
+        text = (
+            "#### S1-01｜镜头组总时长：2s\n\n【出现人物】\n甲\n\n"
+            "#### S1-03｜镜头组总时长：2s\n\n【出现人物】\n甲\n"
+        )
+        issues = validator.validate(Path("dummy.md"), text)
+        self.assertTrue(any("镜头组编号跳号或重复" in issue for issue in issues))
+
+
+class ShotTypeShadowTests(unittest.TestCase):
+    def test_dialogue_performance_classification(self) -> None:
+        prompt = "客厅平视近景，镜头固定。沈青乔开口说：“回来。”"
+        self.assertEqual("dialogue_performance", validator.detect_shot_type(prompt))
+
+    def test_relationship_classification(self) -> None:
+        prompt = "本镜画面内可见人数：2人。沈青乔与阿丰并肩站在溪边，身体面对溪水，镜头固定。"
+        self.assertEqual(
+            "multi_character_relationship",
+            validator.detect_shot_type(prompt, cast_names=["沈青乔", "阿丰"]),
+        )
+
+    def test_silent_causal_classification(self) -> None:
+        prompt = "她发现水管漏水，转身上前按下阀门，水流逐渐停止，镜头固定。"
+        self.assertEqual("silent_causal", validator.detect_shot_type(prompt))
+
+    def test_cutaway_classification(self) -> None:
+        prompt = "本镜画面内可见人数：0人。俯视特写，镜头固定，只拍水纹和湿石。"
+        self.assertEqual("cutaway_insert", validator.detect_shot_type(prompt))
+
+    def test_montage_classification_precedes_action_risk(self) -> None:
+        prompt = "同一工作台时间流逝蒙太奇，她反复拿起工具，半成品逐渐成形。"
+        self.assertEqual("montage_fragment", validator.detect_shot_type(prompt))
+
+    def test_montage_rhythm_without_time_change_is_not_time_compression(self) -> None:
+        prompt = "她以节制蒙太奇节奏重复捕鱼动作，三条鱼依次落到岸边。"
+        self.assertNotEqual("montage_fragment", validator.detect_shot_type(prompt))
+
+    def test_non_combat_action_classification(self) -> None:
+        prompt = "她为了寻找出口，沿走廊走到转角，改道抵达楼梯口，镜头固定。"
+        self.assertEqual("non_combat_action", validator.detect_shot_type(prompt))
+
+    def test_prop_transfer_is_high_risk_transition(self) -> None:
+        prompt = "她从右手递出卡片，对方接触后接过并握住，她再松手。"
+        self.assertEqual("high_risk_transition", validator.detect_shot_type(prompt))
+
+    def test_complete_short_silent_shot_disagrees_with_hard_minimum(self) -> None:
+        prompt = (
+            "16:9，3D精致CG，旧厨房暖黄窗光照在木纹墙面。平视中景，镜头固定。"
+            "她发现水管漏水，身体面向墙角水阀，转身上前按下阀门，水流逐渐停止，地面积水不再扩散。"
+            "她确认阀门关闭后仍站在墙边，画面停在水滴停止的新状态。"
+        )
+        report = validator.build_semantic_report(prompt)
+        self.assertEqual("silent_causal", report.shot_type)
+        self.assertTrue(report.semantically_complete, report.missing_slots)
+        self.assertTrue(report.hard_minimum_fails)
+        self.assertEqual("semantic-pass/hard180-fail", report.disagreement)
+
+    def test_long_but_incomplete_shot_disagrees_with_semantics(self) -> None:
+        prompt = "人物站在客厅。" * 30
+        report = validator.build_semantic_report(prompt)
+        self.assertFalse(report.hard_minimum_fails)
+        self.assertFalse(report.semantically_complete)
+        self.assertEqual("semantic-fail/hard180-pass", report.disagreement)
+
+    def test_cutaway_profile_uses_short_guidance_without_relaxing_hard_gate(self) -> None:
+        prompt = "本镜画面内可见人数：0人。空镜只拍水纹。"
+        report = validator.build_semantic_report(prompt)
+        self.assertEqual((90, 220), (report.recommended_min, report.recommended_max))
+        self.assertFalse(report.hard_minimum_fails)
+
+    def test_phone_semantics_require_purpose_and_orientation(self) -> None:
+        prompt = "16:9，3D CG，客厅暖光，平视中景，镜头固定。她拿着手机，画面停在她低头的姿态。"
+        report = validator.build_semantic_report(prompt)
+        self.assertIn("手机用途", report.missing_slots)
+        self.assertIn("手机屏幕朝向", report.missing_slots)
+
+    def test_phone_operation_evidence_satisfies_purpose_shadow_slot(self) -> None:
+        prompt = (
+            "16:9，3D CG，客厅暖光，平视中景，镜头固定。她双手横持手机，双拇指连续点击，"
+            "屏幕朝向本人，手机背面朝向镜头，目光停在屏幕上，手机高度和朝向保持稳定。"
+        )
+        report = validator.build_semantic_report(prompt)
+        self.assertNotIn("手机用途", report.missing_slots)
+        self.assertNotIn("手机屏幕朝向", report.missing_slots)
+        self.assertNotIn("结束稳定状态", report.missing_slots)
+
+    def test_natural_end_state_phrases_are_detected(self) -> None:
+        self.assertTrue(validator.has_end_state("她说完闭口，右手落回身侧，目光停在听者脸上。"))
+
+    def test_phone_ui_priming_in_negative_field_is_rejected(self) -> None:
+        direct = (
+            "她双手横持手机玩手机游戏，屏幕朝向本人，手机背面朝向镜头，双拇指连续点击，"
+            "结束时手机高度和朝向保持稳定。"
+        )
+        state = "手机仍在她双手胸前，屏幕朝向本人。"
+        issues = validator.phone_operation_issues(
+            direct,
+            state,
+            "",
+            "屏幕乱字、游戏界面露出、手指畸形",
+            "",
+            "",
+        )
+        self.assertTrue(any("本镜补充负面提示词" in issue and "游戏界面" in issue for issue in issues))
+
+    def test_phone_ui_priming_is_rejected_in_every_direct_feed_field(self) -> None:
+        direct = (
+            "她双手横持手机玩手机游戏，屏幕朝向本人，手机背面朝向镜头，双拇指连续点击，"
+            "结束时手机高度和朝向保持稳定。"
+        )
+        state = "手机仍在她双手胸前，屏幕朝向本人。"
+        variants = (
+            (direct + "游戏角色保持不可见。", "", "", "", "", "画面描述"),
+            (direct, "无HUD。", "", "", "", "本镜必要约束"),
+            (direct, "", "游戏界面露出", "", "", "本镜补充负面提示词"),
+            (direct, "", "", "首帧无技能栏。", "", "关键帧生图提示"),
+            (direct, "", "", "", "全程不出现小地图。", "即梦视频提示"),
+        )
+        for prompt, necessary, negative, keyframe_image, keyframe_video, field_name in variants:
+            with self.subTest(field_name=field_name):
+                issues = validator.phone_operation_issues(
+                    prompt,
+                    state,
+                    necessary,
+                    negative,
+                    keyframe_image,
+                    keyframe_video,
+                )
+                self.assertTrue(any(field_name in issue for issue in issues), issues)
+
+    def test_phone_negative_field_allows_only_non_semantic_artifacts(self) -> None:
+        direct = (
+            "她双手横持手机玩手机游戏，屏幕朝向本人，手机背面朝向镜头，双拇指连续点击，"
+            "结束时手机高度和朝向保持稳定。"
+        )
+        state = "手机仍在她双手胸前，屏幕朝向本人。"
+        issues = validator.phone_operation_issues(
+            direct,
+            state,
+            "",
+            "手机翻面、屏幕乱字、手机高度跳变、手机漂浮穿手、手指畸形、握持穿模",
+            "",
+            "",
+        )
+        self.assertEqual([], issues)
+
+    def test_keyframe_pair_counts_as_one_optional_function(self) -> None:
+        block = (
+            "【关键帧生图提示】\n首帧：人物站定。\n\n"
+            "【即梦视频提示｜配合关键帧】\n人物抬手。\n\n"
+            "【本镜必要约束｜直接复制】\n人物保持原位。"
+        )
+        self.assertEqual(2, validator.optional_function_count(block))
+
+    def test_passive_water_change_does_not_create_silent_causality(self) -> None:
+        prompt = "她用粗布擦过脸颊，水珠被带走一部分，摄影机固定记录动作。"
+        self.assertNotEqual("silent_causal", validator.detect_shot_type(prompt))
+
+    def test_high_risk_transition_reports_missing_chain(self) -> None:
+        prompt = "16:9，3D CG，客厅暖光，平视中景，镜头固定。她递出卡片，画面停在两人之间。"
+        report = validator.build_semantic_report(prompt, cast_names=["她", "对方"])
+        self.assertEqual("high_risk_transition", report.shot_type)
+        self.assertIn("起点到终态转换链", report.missing_slots)
+        self.assertIn("道具接触", report.missing_slots)
+        self.assertIn("原持有人释放", report.missing_slots)
+
+    def test_hard_minimum_behavior_is_preserved(self) -> None:
+        self.assertTrue(validator.hard_minimum_fails("客厅中人物站着。"))
+        self.assertFalse(validator.hard_minimum_fails("客厅手部特写，只拍右手。"))
+
+
+if __name__ == "__main__":
+    unittest.main()

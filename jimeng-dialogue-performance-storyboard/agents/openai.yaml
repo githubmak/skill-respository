@@ -1,4 +1,4 @@
 interface:
-  display_name: "即梦对白表演分镜"
-  short_description: "将剧本、小说与对白戏转换为连续稳定且可直接投喂的即梦表演分镜"
-  default_prompt: "使用 $jimeng-dialogue-performance-storyboard 将这段剧情转换为可直接投喂即梦的对白表演分镜。"
+  display_name: "即梦剧情表演分镜"
+  short_description: "将多类型剧情转换为节奏清晰、连续稳定且可直接投喂的即梦正式分镜"
+  default_prompt: "使用 $jimeng-dialogue-performance-storyboard 将这段剧情转换为类型节奏清晰、连续稳定且可直接投喂即梦的正式分镜。"

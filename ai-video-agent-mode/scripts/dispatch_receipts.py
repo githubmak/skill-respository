@@ -12,8 +12,9 @@ import os
 import secrets
 import time
 
+from contract_registry import PROMPT_CONTRACT_VERSION
 
-CONTRACT_VERSION = "jimeng-t2v-v1"
+CONTRACT_VERSION = PROMPT_CONTRACT_VERSION
 
 
 def issue(packet_path, packet, agent_id):

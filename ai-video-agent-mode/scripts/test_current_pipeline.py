@@ -6,7 +6,7 @@ import hashlib
 
 from context_budget import check, editor_items_fit, size as context_size
 from editor_scene_windows import build
-from modec_v4 import continuity_contract_issues, coverage_role_issues, cinematic_image_contract_issues, cinematic_realism_prompt_issues, dialogue_event_issues, direct_copy_prompt_issues, direct_feed_prompt_issues, expectation_anchor_issues, insert_shot_issues, jimeng_feed_prompt, listener_reaction_issues, physical_transition_chain_issues, prompt_state_machine_issues, scene_tone_palette_issues, screen_text_policy_issues, screen_text_policy_metadata_issues, shot_group_handoff_issues, source_constraint_basemap_issues, state_transition_replay_issues, story_punch_issues, temporal_transition_contract_issues, tension_curve_role_issues, visible_people_gate_issues, visual_texture_issues, video_texture_contract_issues
+from prompt_contract import continuity_contract_issues, coverage_role_issues, cinematic_image_contract_issues, cinematic_realism_prompt_issues, dialogue_event_issues, direct_copy_prompt_issues, direct_feed_prompt_issues, expectation_anchor_issues, insert_shot_issues, jimeng_feed_prompt, listener_reaction_issues, physical_transition_chain_issues, prompt_state_machine_issues, scene_tone_palette_issues, screen_text_policy_issues, screen_text_policy_metadata_issues, shot_group_handoff_issues, source_constraint_basemap_issues, state_transition_replay_issues, story_punch_issues, temporal_transition_contract_issues, tension_curve_role_issues, visible_people_gate_issues, visual_texture_issues, video_texture_contract_issues
 from pipeline_runtime import atomic_json, cache_artifact, patch_only, record_issues
 from emotion_camera_audit import audit as emotion_camera_audit
 from episode_state_graph import analyze_package
@@ -14,10 +14,11 @@ from spatial_storyboard import build_spatial_storyboard_reference
 from current_keyframe import build_current_shot_keyframe_reference
 from validate_scene_locks import validate
 from shot_semantics import dispatch_risk, functional_surface_risk, temporal_transition_candidate, validation_profile
-from dispatch_cache import _compact_composer_item, _composer_execution_hints, _dynamic_master_chunks, _editor_review_chunks, _retry_examples, _write_composer_scaffold, active_packet_paths, prepare_dispatch_packets
+from dispatch_cache import _compact_composer_item, _composer_execution_hints, _dynamic_master_chunks, _editor_review_chunks, _retry_examples, _write_composer_scaffold, _write_constraints_sidecar, active_packet_paths, prepare_dispatch_packets
 from contract_registry import (
     AGENT_PHASE_NAMES, LOCAL_PHASE_NAMES, PHASE_BATCH_SIZE,
     PHASE_TIMEOUT_SECONDS, PIPELINE_CONTRACT_VERSION, PIPELINE_PHASES,
+    PROMPT_CONTRACT_VERSION,
     QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS, machine_contract_issues,
     pipeline_gates,
 )
@@ -44,10 +45,22 @@ from benchmark_core_pipeline import evaluate as evaluate_benchmark
 from create_benchmark_fixtures import create as create_benchmark_fixtures
 from audit_pipeline_invariants import audit as audit_pipeline_invariants
 from check_rule_consistency import check as check_rule_consistency
+from route_task import ROUTES as TASK_ROUTES, route as task_route
 
 
 def run():
     with tempfile.TemporaryDirectory() as run_dir:
+        heavy_contracts = {
+            "references/format_constraints.md",
+            "references/production_quality_knowledge.md",
+            "references/contracts/aesthetic_directing_contract.md",
+        }
+        for route_name, route_spec in TASK_ROUTES.items():
+            assert {"read_first", "read_on_demand", "run_only"}.issubset(route_spec)
+            assert not heavy_contracts.intersection(route_spec["read_first"])
+        context_outcome = task_route("full", os.path.join(run_dir, "context-plan"), intent="new")
+        assert context_outcome["context_plan"]["preload_full_contracts"] is False
+        assert context_outcome["context_plan"]["read_first"] == ["references/stage_gates.md"]
         os.makedirs(os.path.join(run_dir, ".cache", "analysis"))
         os.makedirs(os.path.join(run_dir, ".cache", "composer"))
         os.makedirs(os.path.join(run_dir, ".cache", "orchestrator"))
@@ -153,9 +166,23 @@ def run():
         assert "情绪微表演链" in constraints_text
         assert "角色表演基线" in constraints_text
         assert "特殊视角" in constraints_text
+        assert len(constraints_text.encode("utf-8")) < 50000
+        assert "### B2. full_prompt 五段" in constraints_text
+        assert "### B1. 顶层与 shot 结构" not in constraints_text
+        assert "### B7. qa_metadata" not in constraints_text
+        assert "Included Contract Slice" in constraints_text
+        editor_constraints_path = _write_constraints_sidecar(
+            run_dir, "editor_pass2", os.path.dirname(packet["constraints_path"]), "context-budget"
+        )
+        with open(editor_constraints_path, encoding="utf-8") as handle:
+            editor_constraints_text = handle.read()
+        assert len(editor_constraints_text.encode("utf-8")) < 5000
+        assert "Editor Pass 2 Semantic Review Contract" in editor_constraints_text
+        assert "## §B" not in editor_constraints_text
+        assert "## §C" not in editor_constraints_text
         retry_review = os.path.join(run_dir, ".cache", "review", "llm_gate_result_retry_fixture.json")
         os.makedirs(os.path.dirname(retry_review), exist_ok=True)
-        _write(retry_review, {"contract_version": "jimeng-t2v-v1", "windows": [
+        _write(retry_review, {"contract_version": PROMPT_CONTRACT_VERSION, "windows": [
             {"window_id": "W001", "pass": False, "blocking": ["站位冲突"],
              "repair_targets": [{"shot_id": "S1", "field": "full_prompt"}]}
         ]})
@@ -168,7 +195,7 @@ def run():
         assert [item["shot_id"] for item in retry_packet["items"]] == ["S1"]
         retry_context = _read(retry_packet["retry_context_path"])
         assert retry_context["fields_by_main_shot"] == {"S1": ["full_prompt", "qa_metadata.quality_evidence"]}
-        _write(retry_review, {"contract_version": "jimeng-t2v-v1", "windows": [
+        _write(retry_review, {"contract_version": PROMPT_CONTRACT_VERSION, "windows": [
             {"window_id": "W002", "pass": False, "blocking": [{"shot_id": "S2", "field_path": "review_contracts.reroll_control.mitigation_steps[1]"}],
              "repair_targets": [{"shot_id": "S2", "field_path": "review_contracts.reroll_control.mitigation_steps[1]"}]}
         ]})
@@ -190,7 +217,7 @@ def run():
             and entry.get("superseded_reason") == "retry_replaced_by_newer_target"
             for entry in active_manifest.get("superseded_packets", [])
         )
-        _write(retry_review, {"contract_version": "jimeng-t2v-v1", "windows": [
+        _write(retry_review, {"contract_version": PROMPT_CONTRACT_VERSION, "windows": [
             {"window_id": "W002", "pass": False, "blocking": [{"shot_id": "S2", "field_path": "full_prompt"}],
              "repair_targets": [{"shot_id": "S2", "field_path": "full_prompt"}]}
         ]})
@@ -317,7 +344,7 @@ def run():
         record_issues(run_dir, "second", ["b"])
         assert set(_read(os.path.join(run_dir, ".cache", "issues.json"))) == {"first", "second"}
         receipt_packet = {
-            "contract_version": "jimeng-t2v-v1", "run_dir": run_dir, "phase": "master_production",
+            "contract_version": PROMPT_CONTRACT_VERSION, "run_dir": run_dir, "phase": "master_production",
             "dispatch_id": "receipt-test", "_batch_output_path": os.path.join(run_dir, "worker.json"),
         }
         receipt_packet_path = os.path.join(run_dir, "receipt_packet.json")
@@ -332,6 +359,12 @@ def run():
         assert verify_dispatch_receipt(receipt_packet_path, receipt_packet, "agent-receipt-test")[0]["heartbeat_count"] == 1
         gate_packet_path = prepare_dispatch_packets(run_dir, "scene_lock")[0]
         gate_packet = _read(gate_packet_path)
+        with open(gate_packet["constraints_path"], "r", encoding="utf-8-sig") as handle:
+            scene_lock_constraints = handle.read()
+        assert '`{"scenes":[' in scene_lock_constraints
+        assert "归档分析记录" not in scene_lock_constraints
+        assert '"items": []' not in scene_lock_constraints
+        assert "只允许 `items`" not in scene_lock_constraints
         batch_path = gate_packet["_batch_output_path"]
         gate_dispatch_id = gate_packet["dispatch_id"]
         issue_receipt(gate_packet_path, gate_packet, "agent-gate-test")
@@ -565,7 +598,7 @@ def run():
         }}
         assert not continuity_contract_issues(transfer_metadata, transfer_prompt, ["角色A"])
         assert not physical_transition_chain_issues(transfer_metadata, transfer_prompt)
-        episode_graph = analyze_package({"contract_version": "jimeng-t2v-v1", "shots": [
+        episode_graph = analyze_package({"contract_version": PROMPT_CONTRACT_VERSION, "shots": [
             {
                 "shot_id": "S1", "subshot_id": "S1", "source_subshot_ids": ["SRC-1"],
                 "qa_metadata": {
@@ -600,7 +633,7 @@ def run():
         assert episode_graph["summary"]["edge_count"] == 1
         assert episode_graph["nodes"][0]["semantic_lineage"]["source_refs"] == ["SRC-1"]
         hand_conflict = json.loads(json.dumps(episode_graph, ensure_ascii=False))
-        conflict_package = {"contract_version": "jimeng-t2v-v1", "shots": [
+        conflict_package = {"contract_version": PROMPT_CONTRACT_VERSION, "shots": [
             {
                 "shot_id": "S1", "subshot_id": "S1", "source_subshot_ids": ["SRC-1"],
                 "qa_metadata": {"scene_tone_palette": {"space_id": "SP-A", "space_master_sentence": "长桌横贯中景", "tone_palette": "冷白"},
@@ -844,7 +877,7 @@ def run():
         assert "validator_sha256" in gate_result
         merged_fixture = os.path.join(run_dir, "merged_contract_version.prompt_package.json")
         merged_report = os.path.join(run_dir, "merged_contract_version.report.json")
-        _write(merged_fixture, {"contract_version": "jimeng-t2v-v1", "shots": []})
+        _write(merged_fixture, {"contract_version": PROMPT_CONTRACT_VERSION, "shots": []})
         # An empty package still fails downstream completeness, but must not
         # fail solely because merge_agent_outputs adds the version envelope.
         assert validate_composer_output(merged_fixture, report_path=merged_report) == 1

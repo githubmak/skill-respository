@@ -5,7 +5,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from modec_v4 import cinematic_realism_prompt_issues, direct_copy_prompt_issues, video_texture_contract_issues
+from prompt_contract import cinematic_realism_prompt_issues, direct_copy_prompt_issues, video_texture_contract_issues
 
 
 REQUIRED = ("生成规格：", "主体与空间锁定：", "主镜头连续规则：", "子镜头组：", "光照、声音与稳定约束：")

@@ -31,6 +31,7 @@ from normalize_prompt_package import normalize_package
 from pipeline_runner import run as pipeline_run
 from pipeline_runtime import atomic_json
 from pipeline_state import load_state, save_state
+from contract_registry import PROMPT_CONTRACT_VERSION
 
 
 CONTROL_RELATIVE_PATH = ".cache/control/supervisor.json"
@@ -168,7 +169,7 @@ def _prepare_pre_editor_retry(run_dir, gate_result):
         })
     review_path = os.path.join(run_dir, ".cache", "review", "pre_editor_retry_review.json")
     atomic_json(review_path, {
-        "contract_version": "jimeng-t2v-v1",
+        "contract_version": PROMPT_CONTRACT_VERSION,
         "source": "pre_editor_composer_validation",
         "windows": windows,
     })

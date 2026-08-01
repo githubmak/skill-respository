@@ -8,7 +8,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from pipeline_state import AGENT_PHASES, PHASE_ORDER, get_state_path
-from contract_registry import PIPELINE_CONTRACT_VERSION
+from contract_registry import PIPELINE_CONTRACT_VERSION, PROMPT_CONTRACT_VERSION
 from record_batch_provenance import verify as verify_provenance
 
 
@@ -140,7 +140,7 @@ def _audit_active_manifest(run_dir, phase, phase_state, dispatches, issues, summ
     manifest = _load_required(path, issues, "%s active manifest" % phase)
     if not isinstance(manifest, dict):
         return
-    if manifest.get("contract_version") != "jimeng-t2v-v1":
+    if manifest.get("contract_version") != PROMPT_CONTRACT_VERSION:
         issues.append("%s active manifest contract_version无效" % phase)
     if manifest.get("phase") != phase:
         issues.append("%s active manifest phase不一致" % phase)

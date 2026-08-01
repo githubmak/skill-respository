@@ -132,7 +132,7 @@ QA_REQUIRED_FIELDS = (
     "cut_decision_contract", "prompt_information_budget", "sound_directing_plan",
 )
 
-# Heavy semantic QA fields are risk-gated by modec_v4 validators instead of
+# Heavy semantic QA fields are risk-gated by prompt_contract validators instead of
 # globally required for every shot. This keeps light/environment/simple shots
 # from paying the same context and generation cost as high-risk character shots.
 RISK_GATED_QA_FIELDS = (

@@ -9,6 +9,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(__file__))
 from pipeline_state import load_state, save_state
+from contract_registry import PROMPT_CONTRACT_VERSION
 
 
 def archive(run_dir, phase, packet_paths, reason):
@@ -33,7 +34,7 @@ def archive(run_dir, phase, packet_paths, reason):
             raise ValueError("verified packet cannot be archived")
         rejection_path = os.path.join(provenance_dir, dispatch_id + ".rejected.json")
         _write(rejection_path, {
-            "contract_version": "jimeng-t2v-v1", "dispatch_id": dispatch_id,
+            "contract_version": PROMPT_CONTRACT_VERSION, "dispatch_id": dispatch_id,
             "phase": phase, "packet_path": packet_path, "reason": reason,
             "rejected_sha256": _sha256(output) if os.path.isfile(output) else "",
             "rejected_at": time.time(),

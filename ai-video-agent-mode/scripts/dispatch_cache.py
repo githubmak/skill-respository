@@ -27,6 +27,7 @@ from context_budget import check as check_context_budget
 from batch_planner import analysis_chunks as _analysis_chunks, batch_risk as _batch_risk
 from batch_planner import dynamic_master_chunks as _plan_dynamic_master_chunks
 from batch_planner import editor_review_chunks as _editor_review_chunks
+from contract_registry import PROMPT_CONTRACT_VERSION
 
 block_source_pycache_until_run_dir()
 
@@ -128,7 +129,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             )
         batch_risk = _batch_risk(chunk)
         packet = {
-            "contract_version": "jimeng-t2v-v1",
+            "contract_version": PROMPT_CONTRACT_VERSION,
             "dispatch_id": dispatch_id,
             "dispatch_group_id": dispatch_group_id,
             "created_at": time.time(),
@@ -155,7 +156,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             "instruction": (
                 "Process only packet.items and write exactly one JSON file "
                 "to _batch_output_path. Do not write output_path; the main agent merges batch files. "
-                "Require contract_version=jimeng-t2v-v1 and read constraints_path for the full phase contract; "
+                "Require the current contract_version from contract_registry and read constraints_path for the full phase contract; "
                 "a missing or older contract version requires redispatch. For master_production, start from "
                 "composer_scaffold_path, preserve every locked field, and create exactly one Jimeng task per packet item; each task serves one narrative_beat_id only, with any shot_group used only as internal coverage of that beat; read scene_lock_cache_path once per scene; "
                 "source_path is fallback context only and must not be read in full unless packet data is insufficient. "
@@ -338,7 +339,7 @@ def _write_active_manifest(run_dir, phase, source_path, dispatch_group_id, packe
         if str(shot_id).strip()
     })
     _write_json(_active_manifest_path(run_dir, phase), {
-        "contract_version": "jimeng-t2v-v1",
+        "contract_version": PROMPT_CONTRACT_VERSION,
         "phase": phase,
         "source_path": source_path,
         "source_sha256": source_sha256,
@@ -574,11 +575,14 @@ def _write_constraints_sidecar(run_dir, phase, dispatch_dir, dispatch_tag):
     with open(source, "r", encoding="utf-8-sig") as f:
         body = f.read()
     selected_contract = _select_contract_sections(body, phase)
+    contract_slices = _phase_contract_slice_text(skill_dir, phase)
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("# Dispatch Constraints\n\n")
         f.write("phase: %s\n\n" % phase)
         f.write(phase_note + "\n\n")
         f.write(selected_contract)
+        if contract_slices:
+            f.write("\n" + contract_slices)
     return out_path
 
 
@@ -593,17 +597,38 @@ def _select_contract_sections(body, phase):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(body)
         sections[match.group(1)] = body[match.start():end].rstrip()
     wanted = {
-        "scene_lock": ("A",),
+        # Scene Lock is governed by scene_lock_note.md.  §A is an archive-only
+        # analysis format and must never be injected into a current dispatch.
+        "scene_lock": (),
         "master_production": ("B",),
-        "editor_pass2": ("B", "C"),
+        "editor_pass2": (),
     }.get(phase, tuple(sections))
     selected = [sections[key] for key in wanted if key in sections]
     # Composer needs the executable prompt contract, not B4's advisory prose or
     # unrelated specialty branches.  Keeping the sidecar narrow reduces Agent
     # context without changing any locked packet/scaffold fields.
     if phase == "master_production" and "B" in sections:
-        selected = [_select_b_subsections(sections["B"], {"B0", "B1", "B2", "B3", "B5", "B6", "B7"})]
+        selected = [_select_b_subsections(sections["B"], {"B2", "B5", "B6"})]
     return "\n\n".join([preamble] + selected) + "\n"
+
+
+def _phase_contract_slice_text(skill_dir, phase):
+    """Load compact decision slices only for phases that create prompts."""
+    slice_files = {
+        "master_production": (
+            "direct_copy_contract.md",
+            "source_basemap_contract.md",
+            "visual_quality_contract.md",
+            "aesthetic_directing_contract.md",
+        ),
+    }.get(phase, ())
+    parts = []
+    for filename in slice_files:
+        relative = os.path.join("references", "contracts", filename)
+        text = _read_text_if_exists(os.path.join(skill_dir, relative))
+        if text:
+            parts.append("# Included Contract Slice: %s\n\n%s" % (relative, text))
+    return "\n\n".join(parts).rstrip() + ("\n" if parts else "")
 
 
 def _select_b_subsections(section, wanted):
@@ -722,6 +747,50 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
                     "reveal_order": "",
                     "light_weather_progression": "",
                     "breathing_policy": "",
+                },
+                "visual_bible": {
+                    "visual_thesis": "",
+                    "palette_system": "",
+                    "light_motivation": "",
+                    "contrast_exposure": "",
+                    "composition_grammar": "",
+                    "material_world": "",
+                    "atmosphere_rule": "",
+                    "imperfection_policy": "",
+                    "reference_policy": "none",
+                    "continuity_lock": "",
+                },
+                "static_aesthetic_contract": {
+                    "visual_intent": "",
+                    "composition_hierarchy": "",
+                    "light_design": "",
+                    "color_grade": "",
+                    "lens_rendering": "",
+                    "depth_atmosphere": "",
+                    "material_anchor": "",
+                    "signature_frame": "",
+                    "aesthetic_exclusions": "",
+                },
+                "dynamic_aesthetic_contract": {
+                    "motion_thesis": "",
+                    "start_state": "",
+                    "trigger": "",
+                    "primary_subject_motion": "",
+                    "secondary_environment_motion": "",
+                    "camera_path": "",
+                    "focus_behavior": "",
+                    "material_motion": "",
+                    "atmosphere_motion": "",
+                    "tempo_easing": "",
+                    "end_state": "",
+                    "stability_fallback": "",
+                },
+                "aesthetic_priority": {
+                    "visual_thesis": "",
+                    "primary_eye_target": "",
+                    "secondary_visual_layer": "",
+                    "must_preserve": "",
+                    "degrade_first": "",
                 },
                 "character_scene_objective_contract": {
                     "focus_character": "",
@@ -995,7 +1064,7 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
                 "conflict_resolution": "",
             }
     payload = {
-        "contract_version": "jimeng-t2v-v1",
+        "contract_version": PROMPT_CONTRACT_VERSION,
         "locked_fields": [
             "shot_id", "subshot_id", "duration", "negative_prompt",
             "source_subshot_ids",
@@ -1047,7 +1116,7 @@ def _write_retry_context(run_dir, phase, items, dispatch_dir, dispatch_tag):
         })
     mode = "validator_targeted" if max_retries <= 1 else "single_subshot_field_repair"
     payload = {
-        "contract_version": "jimeng-t2v-v1",
+        "contract_version": PROMPT_CONTRACT_VERSION,
         "phase": phase,
         "retry_mode": mode,
         "repair_scope": "only listed subshots and validator fields",
@@ -1119,7 +1188,7 @@ def _write_scene_lock_cache(run_dir, items, dispatch_dir, group_tag):
         if isinstance(continuity, dict) and any(str(value or "").strip() for value in continuity.values()):
             entry["continuity_by_subshot"][sid] = continuity
     path = os.path.join(dispatch_dir, "master_production_%s_scene_locks.json" % group_tag)
-    _write_json(path, {"contract_version": "jimeng-t2v-v1", "scenes": scenes})
+    _write_json(path, {"contract_version": PROMPT_CONTRACT_VERSION, "scenes": scenes})
     return path
 
 

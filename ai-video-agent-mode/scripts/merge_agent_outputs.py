@@ -7,6 +7,7 @@ import hashlib, json, os, sys, time
 sys.path.insert(0, os.path.dirname(__file__))
 from record_batch_provenance import verify as verify_provenance
 from pipeline_runtime import patch_only
+from contract_registry import PROMPT_CONTRACT_VERSION
 
 def merge_agent_outputs(output_path, *input_paths, require_provenance=True):
     """Merge only receipt-verified worker outputs into one public artifact."""
@@ -86,7 +87,7 @@ def merge_agent_outputs(output_path, *input_paths, require_provenance=True):
 
     if require_provenance:
         merge_manifest = {
-            'contract_version': 'jimeng-t2v-v1',
+            'contract_version': PROMPT_CONTRACT_VERSION,
             'output_path': os.path.abspath(output_path),
             'output_sha256': _sha256(output_path),
             'source_batches': source_manifests,
@@ -158,7 +159,7 @@ def _build_prompt_package(items):
         normalized.append(copied)
 
     return {
-        'contract_version': 'jimeng-t2v-v1',
+        'contract_version': PROMPT_CONTRACT_VERSION,
         'shots': normalized,
     }
 

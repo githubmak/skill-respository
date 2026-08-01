@@ -8,6 +8,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from negative_prompts import PLACEHOLDER, build_negative_prompt_for_item
+from contract_registry import PROMPT_CONTRACT_VERSION
 
 
 def normalize_package(input_path, output_path=None):
@@ -34,7 +35,7 @@ def normalize_package(input_path, output_path=None):
         normalized.append(item)
 
     result = {
-        "contract_version": "jimeng-t2v-v1",
+        "contract_version": PROMPT_CONTRACT_VERSION,
         "shots": normalized,
     }
 

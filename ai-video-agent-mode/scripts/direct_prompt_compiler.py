@@ -3,7 +3,7 @@
 
 import re
 
-from modec_v4 import jimeng_feed_prompt
+from prompt_contract import jimeng_feed_prompt
 
 
 PROTECTED_KINDS = {"visual_prefix", "space", "continuity", "performance", "light"}

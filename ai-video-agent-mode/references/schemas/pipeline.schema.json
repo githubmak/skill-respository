@@ -134,7 +134,11 @@
     "prompt_package": {
       "type": "object",
       "properties": {
-        "contract_version": {"const": "jimeng-t2v-v1"},
+        "contract_version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exact current value is enforced by scripts/contract_registry.py."
+        },
         "shots": {
           "type": "array",
           "items": {"$ref": "#/definitions/prompt_item"}
@@ -188,7 +192,11 @@
           "items": {"$ref": "#/definitions/dialogue_event"}
         },
         "cinematic_image_contract": {"$ref": "#/definitions/cinematic_image_contract"},
-        "video_texture_contract": {"$ref": "#/definitions/video_texture_contract"}
+        "video_texture_contract": {"$ref": "#/definitions/video_texture_contract"},
+        "visual_bible": {"$ref": "#/definitions/visual_bible"},
+        "static_aesthetic_contract": {"$ref": "#/definitions/static_aesthetic_contract"},
+        "dynamic_aesthetic_contract": {"$ref": "#/definitions/dynamic_aesthetic_contract"},
+        "aesthetic_priority": {"$ref": "#/definitions/aesthetic_priority"}
       },
       "additionalProperties": true
     },
@@ -477,6 +485,70 @@
         "continuity_carryover",
         "risk_controls"
       ],
+      "additionalProperties": false
+    },
+    "visual_bible": {
+      "type": "object",
+      "properties": {
+        "visual_thesis": {"type": "string", "minLength": 3},
+        "palette_system": {"type": "string", "minLength": 3},
+        "light_motivation": {"type": "string", "minLength": 3},
+        "contrast_exposure": {"type": "string", "minLength": 3},
+        "composition_grammar": {"type": "string", "minLength": 3},
+        "material_world": {"type": "string", "minLength": 3},
+        "atmosphere_rule": {"type": "string", "minLength": 3},
+        "imperfection_policy": {"type": "string", "minLength": 3},
+        "reference_policy": {"type": "string", "minLength": 3},
+        "continuity_lock": {"type": "string", "minLength": 3}
+      },
+      "required": ["visual_thesis", "palette_system", "light_motivation", "contrast_exposure", "composition_grammar", "material_world", "atmosphere_rule", "imperfection_policy", "reference_policy", "continuity_lock"],
+      "additionalProperties": false
+    },
+    "static_aesthetic_contract": {
+      "type": "object",
+      "properties": {
+        "visual_intent": {"type": "string", "minLength": 3},
+        "composition_hierarchy": {"type": "string", "minLength": 3},
+        "light_design": {"type": "string", "minLength": 3},
+        "color_grade": {"type": "string", "minLength": 3},
+        "lens_rendering": {"type": "string", "minLength": 3},
+        "depth_atmosphere": {"type": "string", "minLength": 3},
+        "material_anchor": {"type": "string", "minLength": 3},
+        "signature_frame": {"type": "string", "minLength": 3},
+        "aesthetic_exclusions": {"type": "string", "minLength": 3}
+      },
+      "required": ["visual_intent", "composition_hierarchy", "light_design", "color_grade", "lens_rendering", "depth_atmosphere", "material_anchor", "signature_frame", "aesthetic_exclusions"],
+      "additionalProperties": false
+    },
+    "dynamic_aesthetic_contract": {
+      "type": "object",
+      "properties": {
+        "motion_thesis": {"type": "string", "minLength": 3},
+        "start_state": {"type": "string", "minLength": 3},
+        "trigger": {"type": "string", "minLength": 3},
+        "primary_subject_motion": {"type": "string", "minLength": 3},
+        "secondary_environment_motion": {"type": "string", "minLength": 3},
+        "camera_path": {"type": "string", "minLength": 3},
+        "focus_behavior": {"type": "string", "minLength": 3},
+        "material_motion": {"type": "string", "minLength": 3},
+        "atmosphere_motion": {"type": "string", "minLength": 3},
+        "tempo_easing": {"type": "string", "minLength": 3},
+        "end_state": {"type": "string", "minLength": 3},
+        "stability_fallback": {"type": "string", "minLength": 3}
+      },
+      "required": ["motion_thesis", "start_state", "trigger", "primary_subject_motion", "secondary_environment_motion", "camera_path", "focus_behavior", "material_motion", "atmosphere_motion", "tempo_easing", "end_state", "stability_fallback"],
+      "additionalProperties": false
+    },
+    "aesthetic_priority": {
+      "type": "object",
+      "properties": {
+        "visual_thesis": {"type": "string", "minLength": 3},
+        "primary_eye_target": {"type": "string", "minLength": 3},
+        "secondary_visual_layer": {"type": "string", "minLength": 3},
+        "must_preserve": {"type": "string", "minLength": 3},
+        "degrade_first": {"type": "string", "minLength": 3}
+      },
+      "required": ["visual_thesis", "primary_eye_target", "secondary_visual_layer", "must_preserve", "degrade_first"],
       "additionalProperties": false
     },
     "character_scene_objective_contract": {

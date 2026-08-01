@@ -6,7 +6,8 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from modec_v4 import PROMPT_LABELS, jimeng_shot_group_issues, split_sections, timeline_issues
+from prompt_contract import PROMPT_LABELS, jimeng_shot_group_issues, split_sections, timeline_issues
+from contract_registry import PROMPT_CONTRACT_VERSION
 
 
 def validate(run_dir):
@@ -17,8 +18,8 @@ def validate(run_dir):
     tasks = package.get("shots", []) if isinstance(package, dict) else []
     expected = {shot.get("shot_id", ""): [sub.get("subshot_id", "") for sub in shot.get("subshots", [])] for shot in plan.get("shots", [])}
     actual = {task.get("shot_id", ""): task for task in tasks if isinstance(task, dict)}
-    if package.get("contract_version") != "jimeng-t2v-v1":
-        errors.append("contract_version must be jimeng-t2v-v1")
+    if package.get("contract_version") != PROMPT_CONTRACT_VERSION:
+        errors.append("contract_version must be %s" % PROMPT_CONTRACT_VERSION)
     if set(actual) != set(expected):
         errors.append("main-shot coverage mismatch")
     for shot_id, source_ids in expected.items():

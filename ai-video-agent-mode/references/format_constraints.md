@@ -2,6 +2,9 @@
 
 本文件是 AI Video Agent Mode 的唯一权威数据契约。主 `SKILL.md`、Agent 指令、验证器、归一化与导出脚本必须服从本文件。
 
+正常运行不要全量加载本文件。先运行 `route_task.py`，由 dispatch sidecar 选择当前阶段段落；
+审查只按 `contracts/contract_index.md` 定位命中切片。只有修改字段、schema 或 validator 时才通读。
+
 ## §0 — Prompt-Only And Project Isolation
 
 本管线只输出提示词和结构化制作元数据，不生成、读取、观看或评价图片/视频。任何“成片效果”判断只能写成提示词层面的预期与风险，不得声称已经完成视觉验收。
@@ -671,7 +674,7 @@ Composer batch 只输出：
 
 ### B6.1 当前镜头剧情关键帧与自动空间分镜图导出
 
-Export 可从已验证的主镜和连续性合同自动派生“当前镜头剧情关键帧”提示词。它是一张静态生图提示词，只锁定当前主镜最关键的单一剧情瞬间：观众认知落点、人物关系、关键道具归属、情绪证据、镜头构图和尾帧残留。它不属于 `full_prompt`、`negative_prompt` 或 `generation_control`，不改变 T2V 契约，也不要求 T2V 使用图片参考；不得写成九宫格、P01-P09、多格分镜、首尾帧、I2V 或参考素材槽位。
+Export 可从已验证的主镜、连续性合同和 `static_aesthetic_contract` 自动派生“当前镜头剧情关键帧”提示词。它是一张静态生图提示词，只锁定当前主镜最关键的单一剧情瞬间：观众认知落点、人物关系、关键道具归属、情绪证据、镜头构图和尾帧残留。它不属于 `full_prompt`、`negative_prompt` 或 `generation_control`，不改变 T2V 契约，也不要求 T2V 使用图片参考；不得写成九宫格、P01-P09、多格分镜、首尾帧、I2V 或参考素材槽位。关键帧先消费视觉意图、构图层级、动机光、色彩分离、焦平面、空气层和记忆帧，再编译本帧人物身份、道具、功能面、支撑与透视硬事实；不得把内部校验术语直接当作画面描述。
 
 Export 也可从已验证的主镜和连续性合同自动派生“人物站位空间分镜图”提示词。只有当人物/道具状态变化、服装/道具交接、多人左右站位、可见走位、硬切/重构图/跟拍或多层景深关系提高位置穿帮风险时导出。每个被选中的主镜导出：一条垂直正交俯视空间调度图提示词、一条横向人物站位姿态参考图提示词和一条分镜图负面词。两条提示词必须复用本镜可见的场景锚点、人物、左右、朝向、道具和摄影机关系；信息缺失可标为合理空间推断，但不得新增剧情人物、道具或动作。Markdown 将它们置于对应主镜的即梦操作卡后，供用户结合场景图和人物图生成辅助图。
 
@@ -695,6 +698,10 @@ Export 也可从已验证的主镜和连续性合同自动派生“人物站位�
 - `tension_curve_role` 标记本镜在连续张弛曲线中的功能：setup/rise/peak/release/buffer 或中文等价描述。它不强制每镜高张力，只帮助防止连续镜头都强推、强表情或强停顿。
 - `cinematic_image_contract` 是写实影像/高质感镜头的正式合同，可包含 `composition_anchor/lens_depth/exposure_contrast/color_separation/atmosphere_layer/material_detail/imperfection_map/realism_risk/signature_frame`。它不是堆“电影感、高级感、真实感”，而是把画面质感拆成可见证据：前景遮挡或引导线、焦平面和焦外层、不过曝亮部与保留黑位的暗部、冷暖或局部强调色分离、雨雾尘/水汽等空气层、墙皮/皮肤/衣料/金属/玻璃/水渍等材质，以及划痕、磨损、不均匀反光、断续水痕等非完美随机性。`realism_risk` 用来列出本镜最容易生成的 AI 味，例如镜面水面、塑料墙、均匀雨线、过度霓虹、过曝灯管、虚拟摄影棚感；这些风险不得作为正向画面描述出现。
 - `video_texture_contract` 是整条视频/同一场景的运动质感合同，可包含 `look_profile/exposure_policy/material_motion_policy/atmosphere_motion_policy/camera_stability_policy/continuity_carryover/risk_controls`。它解决的不是“单帧是否好看”，而是视频播放时光色、黑位、材质反光、雨雾尘运动、镜头运动和跨镜质感是否稳定。`risk_controls` 可列出镜面水面、塑料墙、均匀雨线、过曝灯管、贴图跳变、廉价CG感等风险；这些风险不得作为 `full_prompt` 正向描述出现。启用后每镜只落地 1–2 个运动质感锚点，例如灯不过曝、积水碎反光随涟漪断续移动、雨雾贴地缓慢扩散、镜头固定或低幅缓慢运动、跨镜保持同一光色与黑位。
+- `visual_bible` 是项目/场景级审美事实源，包含 `visual_thesis/palette_system/light_motivation/contrast_exposure/composition_grammar/material_world/atmosphere_rule/imperfection_policy/reference_policy/continuity_lock`。它先于单镜构图，不替代 Scene Lock；同一场景跨镜复用视觉论点、色彩职责、动机光、曝光基准、构图家族和材质响应。单镜只消费当前任务需要的一个视觉论点、一个构图决策、一个光影决策和1–2个质感锚点，不得复制全量视觉圣经。
+- `static_aesthetic_contract` 用于每个主镜的代表性记忆帧；复杂/高风险镜再据此导出三状态关键帧。字段包含 `visual_intent/composition_hierarchy/light_design/color_grade/lens_rendering/depth_atmosphere/material_anchor/signature_frame/aesthetic_exclusions`。每句光影设计都要说明光源、方向、受光面与阴影后果；焦段、色温、景深要有可见结果；第一视觉落点只能有一个，第二视觉层最多一个。它先生成好看的静态构图，再与人物、道具、功能面、透视和支撑硬事实合并，不能用内部合同词替代具体可见关系。
+- `dynamic_aesthetic_contract` 用于 T2V 状态转换，包含 `motion_thesis/start_state/trigger/primary_subject_motion/secondary_environment_motion/camera_path/focus_behavior/material_motion/atmosphere_motion/tempo_easing/end_state/stability_fallback`。每镜最多一个主要人物动作、一个摄影机路径或固定机位、一个低幅环境响应和一次焦点交接；摄影机路径必须有剧情动机、起幅、触发、缓急、停点和不漂移锚点。失稳时先去掉摄影机运动，再去掉次要环境运动，不得删除剧情节拍或物理终态。
+- `aesthetic_priority` 每镜必填：`visual_thesis/primary_eye_target/secondary_visual_layer/must_preserve/degrade_first`。它与 `prompt_information_budget` 一起决定 direct-copy 取舍：先保硬事实、唯一视觉论点和第一视觉落点，再压缩重复技术词与次要环境层。不得因为合同完整而生成均匀照明、平均构图、多个抢焦点或没有记忆帧的安全画面。
 - `editorial_mode` 必须从 Director 逐字继承；它决定本镜执行一条连续轨迹，或一组由表演重音触发的镜头响应。
 - `camera_beat_map` 与 `sequence_context` 也必须从 Director 逐字继承。前者不得由 Composer 重新发明；后者要求连续拆分从上一段状态起演而非重置。
 - `shot_group` 的每个镜头节拍都写明 `time_range/focus_owner/focus_subject/framing/trigger/camera_response/camera_position/camera_movement/transition_type/screen_lock/axis_relation/axis_carryover/carryover/end_frame`；Composer 将这些信息落到主镜头连续规则与子镜头组，不增加未声明的切换。子镜组是同一 `narrative_beat_id` 的视觉覆盖，不能把两个可独立复述的剧情动作或动作—反应结论并成一个主镜。
@@ -902,12 +909,13 @@ Export 也可从已验证的主镜和连续性合同自动派生“人物站位�
 
 ```json
 {
-  "contract_version": "jimeng-t2v-v1",
+  "contract_version": "<PROMPT_CONTRACT_VERSION>",
   "shots": []
 }
 ```
 
 - `shots` 是提示词包唯一权威数组。禁止在同一包中复制为 `items` 或派生 `merged_full_prompts`。
+- `contract_version` 的当前精确值只从 `scripts/contract_registry.py` 读取；本示例不复制版本字面量。
 - 主镜头聚合只允许在导出时临时计算，不得持久化第二份提示词事实。
 - `normalize_prompt_package.py` 只规范当前契约，不负责旧版迁移。
 

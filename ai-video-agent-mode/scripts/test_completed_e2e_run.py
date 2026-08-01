@@ -21,6 +21,7 @@ from performance_budget import report as performance_report
 from pipeline_state import PHASE_ORDER, load_state
 from record_batch_provenance import verify as verify_batch_provenance
 from validate_modec import main as validate_modec
+from contract_registry import PROMPT_CONTRACT_VERSION
 
 
 def run(run_dir, source_path=None, expected_shots=None):
@@ -87,8 +88,8 @@ def _check_package(plan, package, expected_shots, issues):
     if not isinstance(package, dict):
         return
     shots = package.get("shots")
-    if package.get("contract_version") != "jimeng-t2v-v1":
-        issues.append("package contract_version is not jimeng-t2v-v1")
+    if package.get("contract_version") != PROMPT_CONTRACT_VERSION:
+        issues.append("package contract_version is not %s" % PROMPT_CONTRACT_VERSION)
     if not isinstance(shots, list) or not shots:
         issues.append("package shots[] missing or empty")
         return

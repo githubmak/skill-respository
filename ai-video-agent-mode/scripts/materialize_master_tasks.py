@@ -12,7 +12,8 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from modec_v4 import PROMPT_LABELS, jimeng_shot_group_issues, split_sections
+from prompt_contract import PROMPT_LABELS, jimeng_shot_group_issues, split_sections
+from contract_registry import PROMPT_CONTRACT_VERSION
 
 
 def materialize(run_dir, source_path=None, output_path=None):
@@ -23,7 +24,7 @@ def materialize(run_dir, source_path=None, output_path=None):
     plan = _load(plan_path)
     existing = package.get("shots", []) if isinstance(package, dict) else []
     if existing and all(isinstance(item, dict) and item.get("source_subshot_ids") for item in existing):
-        result = {"contract_version": "jimeng-t2v-v1", "shots": existing}
+        result = {"contract_version": PROMPT_CONTRACT_VERSION, "shots": existing}
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as handle:
             json.dump(result, handle, ensure_ascii=False, indent=2)
@@ -44,7 +45,7 @@ def materialize(run_dir, source_path=None, output_path=None):
         masters.append(master)
     if issues:
         raise ValueError("; ".join(issues))
-    result = {"contract_version": "jimeng-t2v-v1", "shots": masters}
+    result = {"contract_version": PROMPT_CONTRACT_VERSION, "shots": masters}
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as handle:
         json.dump(result, handle, ensure_ascii=False, indent=2)

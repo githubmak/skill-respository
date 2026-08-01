@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from normalize_prompt_package import normalize_package
 from materialize_master_tasks import materialize as materialize_master_tasks
 from validate_master_tasks import validate as validate_master_tasks
-from modec_v4 import jimeng_feed_prompt
+from prompt_contract import jimeng_feed_prompt
 from direct_prompt_compiler import compile_direct_prompt, compile_director_card
 from spatial_storyboard import build_spatial_storyboard_reference
 from current_keyframe import build_keyframe_sequence
@@ -33,6 +33,7 @@ from pipeline_state import AGENT_PHASES, load_state
 from record_batch_provenance import verify as verify_provenance
 from pipeline_runtime import atomic_json
 from production_intelligence import build_sentence_provenance, predict_action_failure
+from contract_registry import PROMPT_CONTRACT_VERSION
 
 
 CHECK_EXPORT = os.path.join(os.path.dirname(__file__), "check_export.py")
@@ -52,15 +53,15 @@ def export_with_validation(md_path, run_dir):
         raise SystemExit("Invalid main-shot delivery package: " + "; ".join(master_issues[:8]))
     episode_graph, episode_graph_path = build_episode_state_graph(run_dir)
     if not episode_graph.get("pass"):
-        print("[EXPORT V4] DELIVERY BLOCKED - episode state graph failed: " + episode_graph_path)
+        print("[EXPORT] DELIVERY BLOCKED - episode state graph failed: " + episode_graph_path)
         return 1
     director_audit, director_audit_path = audit_episode_director(run_dir)
     if not director_audit.get("pass"):
-        print("[EXPORT V4] DELIVERY BLOCKED - episode director audit failed: " + director_audit_path)
+        print("[EXPORT] DELIVERY BLOCKED - episode director audit failed: " + director_audit_path)
         return 1
     emotion_audit, emotion_audit_path = audit_emotion_camera(run_dir)
     if not emotion_audit.get("pass"):
-        print("[EXPORT V4] DELIVERY BLOCKED - emotion/camera audit failed: " + emotion_audit_path)
+        print("[EXPORT] DELIVERY BLOCKED - emotion/camera audit failed: " + emotion_audit_path)
         return 1
     quality = subprocess.run([sys.executable, CHECK_EXPORT, "--quality", run_dir], text=True, capture_output=True)
     if quality.stdout:
@@ -68,7 +69,7 @@ def export_with_validation(md_path, run_dir):
     if quality.stderr:
         print(quality.stderr, file=sys.stderr, end="")
     if quality.returncode:
-        print("[EXPORT V4] DELIVERY BLOCKED - quality gate failed before writing deliverables")
+        print("[EXPORT] DELIVERY BLOCKED - quality gate failed before writing deliverables")
         return quality.returncode
     package = _load(package_path)
     plan = _load(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"))
@@ -92,7 +93,7 @@ def export_with_validation(md_path, run_dir):
         if result.stderr:
             print(result.stderr, file=sys.stderr, end="")
         if result.returncode:
-            print("[EXPORT V4] DELIVERY BLOCKED - temporary deliverables discarded")
+            print("[EXPORT] DELIVERY BLOCKED - temporary deliverables discarded")
             return result.returncode
         os.replace(temporary_md, md_path)
         concise_path = os.path.splitext(md_path)[0] + ".concise.md"
@@ -105,21 +106,21 @@ def export_with_validation(md_path, run_dir):
         shutil.rmtree(temp_dir, ignore_errors=True)
     compile_report_path = os.path.join(run_dir, ".cache", "export", "direct_prompt_compile_report.json")
     atomic_json(compile_report_path, {
-        "contract_version": "jimeng-t2v-v1",
+        "contract_version": PROMPT_CONTRACT_VERSION,
         "pass": True,
         "shot_count": len(compile_reports),
         "shots": compile_reports,
     })
     _record_export_result(run_dir, md_path, compile_report_path)
-    print("[EXPORT V4] DELIVERY APPROVED")
-    print("[EXPORT V4] Markdown: " + md_path)
-    print("[EXPORT V4] Concise director cards: " + os.path.splitext(md_path)[0] + ".concise.md")
-    print("[EXPORT V4] Engineering review: " + os.path.splitext(md_path)[0] + ".engineering.md")
-    print("[EXPORT V4] Master tasks: " + master_path)
+    print("[EXPORT] DELIVERY APPROVED")
+    print("[EXPORT] Markdown: " + md_path)
+    print("[EXPORT] Concise director cards: " + os.path.splitext(md_path)[0] + ".concise.md")
+    print("[EXPORT] Engineering review: " + os.path.splitext(md_path)[0] + ".engineering.md")
+    print("[EXPORT] Master tasks: " + master_path)
     if xlsx_written:
-        print("[EXPORT V4] XLSX: " + os.path.splitext(md_path)[0] + ".xlsx")
+        print("[EXPORT] XLSX: " + os.path.splitext(md_path)[0] + ".xlsx")
     else:
-        print("[EXPORT V4] XLSX skipped: openpyxl is unavailable; Markdown delivery is complete")
+        print("[EXPORT] XLSX skipped: openpyxl is unavailable; Markdown delivery is complete")
     return 0
 
 
@@ -375,6 +376,11 @@ def _write_engineering_review(path, package, plan, compile_reports):
             "- 句级来源：" + json.dumps(report.get("sentence_provenance", []), ensure_ascii=False),
             "- 压缩省略：" + json.dumps(report.get("director_card_omitted", []), ensure_ascii=False),
             "- 活动合同：" + ", ".join(key for key, value in metadata.items() if isinstance(value, dict) and value),
+            "- 审美优先级：" + json.dumps(metadata.get("aesthetic_priority", {}), ensure_ascii=False),
+            "- 静态美学合同：" + json.dumps(metadata.get("static_aesthetic_contract", {}), ensure_ascii=False),
+            "- 动态美学合同：" + json.dumps(metadata.get("dynamic_aesthetic_contract", {}), ensure_ascii=False),
+            "- 真实候选审美评分：未执行；仅在提供真实图片/视频并明确要求复核时记录。",
+            "- 审美复核清单：构图焦点、动机光与曝光、色彩分离、材质层次、记忆帧；动态另查起始/变化/终态、运动动机、缓急、稳定性和视觉落点。",
             "",
         ])
     with open(path, "w", encoding="utf-8") as handle:
@@ -746,9 +752,17 @@ def _state_carryover(task):
 
 def _cinematic_direct_clause(metadata):
     contract = metadata.get("cinematic_image_contract", {}) if isinstance(metadata, dict) else {}
-    if not isinstance(contract, dict) or not contract:
-        return ""
+    contract = contract if isinstance(contract, dict) else {}
+    aesthetic = metadata.get("static_aesthetic_contract", {}) if isinstance(metadata, dict) else {}
+    aesthetic = aesthetic if isinstance(aesthetic, dict) else {}
     parts = []
+    for field in (
+        "visual_intent", "composition_hierarchy", "light_design", "color_grade",
+        "lens_rendering", "depth_atmosphere", "material_anchor", "signature_frame",
+    ):
+        value = _compact(aesthetic.get(field, ""))
+        if value:
+            parts.append(value)
     for field in (
         "composition_anchor",
         "lens_depth",
@@ -764,14 +778,23 @@ def _cinematic_direct_clause(metadata):
             parts.append(value)
     if not parts:
         return ""
-    return _shorten("写实影像约束：" + "；".join(parts), 180)
+    return _shorten("写实影像约束（静态美术）：" + "；".join(parts), 180)
 
 
 def _video_texture_direct_clause(metadata):
     contract = metadata.get("video_texture_contract", {}) if isinstance(metadata, dict) else {}
-    if not isinstance(contract, dict) or not contract:
-        return ""
+    contract = contract if isinstance(contract, dict) else {}
+    aesthetic = metadata.get("dynamic_aesthetic_contract", {}) if isinstance(metadata, dict) else {}
+    aesthetic = aesthetic if isinstance(aesthetic, dict) else {}
     parts = []
+    for field in (
+        "motion_thesis", "primary_subject_motion", "secondary_environment_motion",
+        "camera_path", "focus_behavior", "material_motion", "atmosphere_motion",
+        "tempo_easing", "end_state",
+    ):
+        value = _compact(aesthetic.get(field, ""))
+        if value:
+            parts.append(value)
     for field in (
         "exposure_policy",
         "material_motion_policy",
@@ -784,7 +807,7 @@ def _video_texture_direct_clause(metadata):
             parts.append(value)
     if not parts:
         return ""
-    return _shorten("视频质感约束：" + "；".join(parts), 130)
+    return _shorten("视频质感约束（动态美术）：" + "；".join(parts), 180)
 
 
 def _clean_export_direct_text(text):

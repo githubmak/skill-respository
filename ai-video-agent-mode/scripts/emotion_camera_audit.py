@@ -6,7 +6,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from modec_v4 import (
+from prompt_contract import (
     attention_handoff_issues, camera_competition_issues, continuity_contract_issues,
     coverage_role_issues,
     character_scene_objective_issues, cut_decision_contract_issues,
@@ -17,6 +17,7 @@ from modec_v4 import (
     sound_directing_plan_issues,
     state_transition_replay_issues, story_punch_issues,
 )
+from contract_registry import PROMPT_CONTRACT_VERSION
 
 
 def audit(run_dir, output_path=None):
@@ -60,7 +61,7 @@ def audit(run_dir, output_path=None):
         issues.extend(state_transition_replay_issues(previous_metadata, previous_prompt, metadata, prompt))
         results.append({"shot_id": shot.get("shot_id", ""), "subshot_id": shot.get("subshot_id", ""), "pass": not issues, "issues": issues})
         previous_metadata, previous_prompt = metadata, prompt
-    result = {"contract_version": "jimeng-t2v-v1", "pass": bool(results) and all(item["pass"] for item in results), "shots": results}
+    result = {"contract_version": PROMPT_CONTRACT_VERSION, "pass": bool(results) and all(item["pass"] for item in results), "shots": results}
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as handle:
         json.dump(result, handle, ensure_ascii=False, indent=2)

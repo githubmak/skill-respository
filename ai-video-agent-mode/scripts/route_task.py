@@ -12,30 +12,79 @@ ROUTES = {
         "description": "Run the complete current eight-stage pipeline for new or materially changed source content.",
         "requires": [],
         "agents": True,
+        "read_first": ["references/stage_gates.md"],
+        "read_on_demand": [
+            ".cache/stage_summary/<phase>.json",
+            "references/contracts/contract_index.md",
+        ],
+        "run_only": ["scripts/workflow_supervisor.py"],
     },
     "audit": {
         "description": "Review an existing prompt package without regenerating prompts or exporting.",
         "requires": [".cache/composer/merged.prompt_package.json"],
         "agents": False,
+        "read_first": [],
+        "read_on_demand": [
+            ".cache/validate/result.json",
+            "references/contracts/contract_index.md",
+        ],
+        "run_only": [
+            "scripts/episode_state_graph.py",
+            "scripts/episode_director_audit.py",
+            "scripts/emotion_camera_audit.py",
+            "scripts/validate_modec.py",
+            "scripts/check_export.py",
+        ],
     },
     "export": {
         "description": "Export an already validated package; never regenerate creative stages.",
         "requires": [".cache/composer/merged.prompt_package.json", ".cache/orchestrator/shot_plan.json"],
         "agents": False,
         "required_done_phases": ["editor_pass2", "validate"],
+        "read_first": [],
+        "read_on_demand": ["references/export_spec.md"],
+        "run_only": ["scripts/export_with_validation.py"],
     },
     "compose": {
         "description": "Generate Master Production packets from approved scene locks and shot plan.",
         "requires": ["project_config.json", ".cache/orchestrator/shot_plan.json", ".cache/analysis/scene_locks.json"],
         "agents": True,
+        "read_first": ["references/agent_protocol.md"],
+        "read_on_demand": [
+            "packet.constraints_path",
+            "packet.composer_scaffold_path",
+            "packet.scene_lock_cache_path",
+        ],
+        "run_only": [
+            "scripts/dispatch_cache.py",
+            "scripts/validate_composer_output.py",
+        ],
     },
     "single-repair": {
         "description": "Repair only one failing subshot in one agent phase.",
         "requires": ["project_config.json", ".cache/sources.json"],
         "agents": True,
         "requires_subshot_id": True,
+        "read_first": [
+            "packet.constraints_path",
+            "packet.retry_context_path",
+        ],
+        "read_on_demand": [".cache/stage_summary/<phase>.json"],
+        "run_only": [
+            "scripts/record_batch_provenance.py",
+            "scripts/merge_agent_outputs.py",
+        ],
     },
 }
+
+
+def _context_plan(spec):
+    return {
+        "read_first": list(spec.get("read_first", [])),
+        "read_on_demand": list(spec.get("read_on_demand", [])),
+        "run_only": list(spec.get("run_only", [])),
+        "preload_full_contracts": False,
+    }
 
 
 def route(mode, run_dir=None, subshot_id=None, intent=None):
@@ -49,6 +98,7 @@ def route(mode, run_dir=None, subshot_id=None, intent=None):
         "run_dir": run_dir or "",
         "missing": [],
         "blocking": [],
+        "context_plan": _context_plan(spec),
     }
     intent = intent or DEFAULT_INTENTS[mode]
     result["intent"] = intent
@@ -94,6 +144,7 @@ def high_quality_fast_start(run_dir, config_path, source_path):
     from configuration_wizard import confirm_all
     from workflow_supervisor import run_until_pause
 
+    context_plan = _context_plan(ROUTES["full"])
     configuration = confirm_all(run_dir, config_path)
     initialization = resolve("full", run_dir, "resume")
     if not initialization.get("pass"):
@@ -102,6 +153,7 @@ def high_quality_fast_start(run_dir, config_path, source_path):
             "mode": "full",
             "intent": "new",
             "setup_mode": "high_quality_fast",
+            "context_plan": context_plan,
             "configuration": configuration,
             "initialization": initialization,
             "blocking": initialization.get("blocking", ["confirmed configuration could not initialize"]),
@@ -114,6 +166,7 @@ def high_quality_fast_start(run_dir, config_path, source_path):
         "mode": "full",
         "intent": "new",
         "setup_mode": "high_quality_fast",
+        "context_plan": context_plan,
         "quality_pipeline_preserved": True,
         "skipped_phases": [],
         "configuration": configuration,

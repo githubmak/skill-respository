@@ -9,7 +9,7 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from contract_registry import PROMPT_CONTRACT_VERSION
 from dialogue_timing import analyze_dialogue_timing
-from modec_v4 import camera_move_types
+from prompt_contract import camera_move_types
 from pipeline_runtime import atomic_json
 from production_intelligence import analyze_sequence_curves, predict_action_failure
 

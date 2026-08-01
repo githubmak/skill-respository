@@ -9,7 +9,7 @@ from generate_shotplan import (
     _offscreen_character_mention,
     _pack_source_actions_with_interactions,
 )
-from modec_v4 import (
+from prompt_contract import (
     character_scene_objective_issues,
     cut_decision_contract_issues,
     dialogue_event_issues,

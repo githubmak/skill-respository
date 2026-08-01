@@ -2,6 +2,10 @@
 
 本文件沉淀 `ai-video-agent-mode` 在知识储备、人物/空间一致性与画面质感上的制作级规则。它只提供可迁移的生成判断和拍法语法，不替代 `format_constraints.md`，不改变当前 T2V-only 管线。
 
+正常运行不要全量加载本文件。先使用 `contracts/source_basemap_contract.md`、
+`contracts/visual_quality_contract.md` 或 `contracts/aesthetic_directing_contract.md`；只有命中索引未覆盖的
+具体制作问题或修改知识规则时，才读取对应标题区域。
+
 ## 1. 场景预设不是模板
 
 - 任何场景类型只作为候选池：先按 `场景类型 + 剧情功能 + 情绪温度 + 源文动作/道具 + 已有 Scene Lock` 生成本项目专属空间锁、人物槽位、入口出口、道具活动区和影调色卡。

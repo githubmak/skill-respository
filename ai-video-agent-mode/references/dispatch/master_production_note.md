@@ -1,53 +1,71 @@
-专业角色：你是 AI 短剧导演与提示词监督。
+# Master Production Execution Note
 
-每个 packet item 只生成一个主镜头任务，只服务一个 `narrative_beat_id`；从 `packet.composer_scaffold_path` 开始写，保留锁定字段，并只从 `scene_lock_cache_path` 读取共享场景事实。禁止虚构剧情、改写台词、重设服装、添加未确认道具、使用 I2V/R2V/参考素材，或把 QA/工程字段写进 `full_prompt`。
+每个 `packet.items` 只生成一条即梦 T2V 主镜任务，输出顶层只能是 `{"shots":[...]}`，并写入
+`packet._batch_output_path`。先读 scene lock cache 和 composer scaffold；保留全部 locked fields，
+再按本 sidecar 附带的 direct-copy、Master 决策、视觉质量和静态/动态美学切片填写空字段。
 
-先满足不穿帮硬门槛，再追求创作表现：人物位置、身体面向、道具归属、口型、尾帧承接、单镜动作预算和状态变化中间态不稳时，必须降低运镜、补定位镜头或拆镜。仅当 `packet.items[].execution_hints.required_contracts` 包含 `story_punch_contract` 时，先填观众问题、人物压力、可见压力物、剧情转折、画面标点、唯一构图优先级、运镜动机和尾帧残留；构图必须写前中后景/位置/留白/遮挡/距离或焦点关系，运镜必须写唯一策略及其可见触发。人物/对白/道具变化镜缺少戏眼时必须先补戏眼，不得只机械填字段或堆“电影感、推近、聚焦”。
+## 生成顺序
 
-按 `risk_tier` 控制复杂度：light 镜只写适用的硬门槛与一个落幅残留；standard 镜落实适用的质量合同；high 镜再补 `ai_model_readiness_score`、`pressure_release_design` 和必要拆镜建议。复杂度分档只减少内部合同和可选字段，不得降低 `【画面描述｜直接复制】` 质量；light 镜仍要有视觉场景前缀、景别机位、人物位置与面向、台词或声音文本、表演/反应、镜头状态、光影材质落点和结束状态，普通剧情镜低于180字应升级或重写。
+1. 锁定源文、单一 `narrative_beat_id`、时长、人物、台词和起终态。第二目标、第二动作链、回切或
+   第二次注意力交接必须拆镜，不得把两个可独立复述的事件塞入同一 `shot_group`。
+2. 建立 source basemap、`scene_tone_palette`、人物行动/关系、序列/切点、声音和信息预算。
+3. 执行 `visual_bible → aesthetic_director → continuity_compiler`，填写
+   `static_aesthetic_contract`、`dynamic_aesthetic_contract` 与 `aesthetic_priority`。
+4. 最后编写五段 `full_prompt`、独立 `negative_prompt` 和 QA 元数据；运行 packet 指定 validator，
+   只修报告字段直到 PASS。
 
-先执行视觉先验风险分类：职业/场景负向概念、背对镜头仍看未空间化人物、镜面反射缺少本体/反射面/机位关系、照片/屏幕/书页功能面错误展示、驾驶者脱离前路、肩线/倒影/遮挡误生额外人物，全部改为真实身份、固定空间目标、可见人数和正向物理关系，不把错误概念写进正向正文。
+## 源文、空间与连续性
 
-活动道具填写 `prop_lifecycle_contract`；多人纵深填写 `perspective_scale_contract`；清晰人物填写 `lighting_topology_contract`。多人镜必须把全部清晰人物恰好分到 primary/supporting/background，单镜注意力最多交接一次。动作失败评分命中手部接触、受力、遮挡/反射、并行动作、活动道具、实体运镜竞争或缺少稳定终态时，优先固定机位、补接触终态或拆掉第二动作链。
+- Scene Lock 是空间、入口、左右、道具活动区、服装、光源和影调唯一来源。同地点复用
+  `space_id/space_master_sentence`；从 `foreground_layer/midground_layer/background_layer`
+  选择至少两层具体空间细节，并保留题材气味、生活痕迹和焦平面主次。
+- 将制作级影调色卡压缩进 `scene_tone_palette`，只消费当前镜的一项光影任务。风景身份使用
+  `landscape_identity/landscape_composition`、自然运动、环境弧、揭示、光候和呼吸事实；人物镜
+  只取一项不抢戏环境事实，环境镜取两项。
+- 活动道具写完整物理结构链和生命周期；多人纵深保持共同支撑平面、近大远小和连续尺度。
+  功能面风险填写 `prop_functional_surface_contract`，写正向可见面与操作证据，
+  不得用“禁止翻转”替代空间事实。
+- 先做视觉先验风险分类：背对视线、镜面/照片、驾驶视线、功能面、遮挡/肩线/倒影误生人物。
+  高风险镜使用起始/戏眼/结束三状态关键帧并检查事实一致性。
 
-三状态关键帧只在真实高风险/复杂镜生成：起始状态锁起点，戏眼帧锁唯一信息增量，结束状态锁稳定继承；三帧逐帧重复人物位置、身体朝向、支撑/接触、道具归属与可见面、景别、光源和透视比例，并与T2V正文做事实冲突检查。
+## 人物、表演与声音
 
-写镜前先在 `qa_metadata.source_constraint_basemap` 中压缩锁定本镜源头底图：空间/状态道具/人物朝向/张弛功能/声音口型/UI文字策略/可见人数闸门/角色表演基线/情绪微表演链/对白表演核/情绪残留契约/物理结构链/镜头组件选择/特殊视角运动锁/前台导演精修目标/creative_profile/单镜风险；它是防返工底图，不得投喂到 `full_prompt`。同一地点必须复用 Scene Lock 的 `space_id`、`space_master_sentence`、入口出口和道具活动区；同一场景的影调只从 `tone_palette/light_texture_purpose` 消费。每个 `scene_tone_palette` 还必须逐字承接 Scene Lock 的 `foreground_layer/midground_layer/background_layer/genre_visual_signature/lived_in_detail/depth_focus_policy`；正文选择与本镜任务有关的至少两层具体空间细节，并落实题材视觉气味或一项生活痕迹与焦平面主次，不逐镜堆满全部场景资产。
+- 先写可见人数闸门；清晰、肩线/背影/虚化和纯画外分开。不可见人物不能作为看向目标；
+  清晰非主表演者必须有低幅观察/受击反应或降为非清晰层。
+- 人物镜填写 `character_scene_objective_contract`，对手戏填写 `relationship_emotion_arc`；目标、
+  信息差和权力判断只作推导，正文只写可见策略、距离、道具和行动落幅。
+- 角色表演基线锁定常态控制、泄露部位、动作幅度、爆发阈值和禁用习惯。情绪微表演链只选
+  当前景别可见的 3–5 个证据，禁止只写开心、伤心、生气等抽象标签。
+- 台词逐字保留。`dialogue_performance_kernel` 与逐句 `dialogue_events` 先推导功能、潜台词、
+  1–3 个原文重音词和 `subtext_visible_evidence`；`emotion_delta` 只留元数据。正文只写说法、口型、
+  听者反应、句末闭口和余波。`dialogue_events.time_range` 必须容纳自然气口，可见口型窗不得重叠。
+- `response_latency`、抢话/打断窗口和短暂声音重叠必须有源文依据，不改字、不增词。
+  OS/OV/画外声闭口。项目级声音锁定保持音色基准，`sound_directing_plan` 再写空间声、方向距离、
+  房间响应、声画先后与 ducking。
 
-`scene_tone_palette` 还要逐字承接 Scene Lock 的 `landscape_identity/landscape_composition/natural_motion_system/environment_story_arc/reveal_order/light_weather_progression/breathing_policy`。环境镜从中选择至少两项可见风景事实，人物镜选择一项不抢戏的环境事实；禁止逐镜复制全部七项。风景身份必须统一地域季节，风景运动必须遵守自然因果，构图说明视觉重心、引导关系与留白，环境弧说明状态如何被剧情触发并留下余波；不得把随机花草、雾、逆光、路人和水面反光当作通用美化包。
+## 导演、美学与信息预算
 
-人物镜在微表演前填写 `character_scene_objective_contract`：焦点人物、场景目标、代价、障碍、当前策略、可见策略证据、策略切换或维持原因、信息差、权力前后状态和行动落幅。对手戏再填写 `relationship_emotion_arc`：双方关系起点、冲突欲望、情绪错位、转折触发、权力变化、关系终态和共同余波。目标、知识差与关系分析只供导演推导；正文只写策略造成的动作、距离、道具控制、反应延迟、声音和落幅。
+- `sequence_directing_plan` 让镜头处于建立/推进/破格/释放之一；`cut_decision_contract` 只选一个
+  切点并写切后信息增量。分析词和“切到/反打/继承/尾帧”不得进入 direct-copy。
+- 每镜只保留一个构图优先级、一个有触发的运镜或固定策略、一个主要人物动作、一个低幅环境响应
+  和至多一次焦点交接。特殊视角必须锁定摄影机关系、主路径和稳定落幅；
+  穿越、ACT、FPV、POV、水平横移、鸟瞰不能只写标签。
+- `visual_bible` 锁定色彩职责、动机光、曝光、构图家族、材质与空气层。光影句必须包含光源、
+  方向、受光面和阴影结果；清晰人物填写 `skin_tone_protection_contract`，保持自然面光并把空气介质退后。
+- 静态合同先确定唯一视线路径和记忆帧；动态合同按起始→触发→稳定终态组织。材质、反射、雨雾尘
+  只响应同一物理原因。失稳时先去运镜，再去次要环境运动，不删剧情终态。
+- `prompt_information_budget` 保护源文、空间、口型、动作终态、关键道具和唯一视觉论点，只选
+  1–2 个增强点；新增导演合同不构成加长正文。镜头组件只能作为知识储备使用并改写成当前事实。
+- 前台导演精修层只优化可见表达。`creative_profile` 只能 safe/balanced/expressive；
+  `emotion_residue_contract`、分析标签、分值和风险结论不进入正文。
 
-每镜填写 `sequence_directing_plan` 与 `cut_decision_contract`。前者锁定本镜在整场视觉句子中的位置、距离/焦段阶段、构图母题状态、保持或破格、人物走位与摄影机走位的联合关系、环境节拍和交接目标；后者只选择一次 `hold/action/reaction/dialogue/sound/delayed/match/scene_transition`，写清触发、切前停留、切后信息增量、声音策略、镜头经济性和稳定备选。直投正文不得出现剪辑元词，只呈现触发切点的当前可见动作、反应或声音。
+## 直投与稳定
 
-每镜填写 `sound_directing_plan`：主声源、方向与距离、房间/环境响应、前后声部优先级、静音/骤停、声画先后和切点支持。原生音频关闭时只作为配音/后期制作元数据；开启时至少把一项空间声、房间响应、静音或声音先入/延后退出落实到声音段，并明确对白优先和必要 ducking，不能用持续铺满的音乐替代情绪。
-
-先填写 `prompt_information_budget` 再写正文：按 environment/object/action/dialogue/dramatic 选择密度，锁定唯一主渲染任务、不可删除事实、一个辅助视觉层、只留元数据的分析、1–2个视觉增强点和压缩规则。新增导演合同不构成加长正文的理由；人物/对白优先口型、表演与关系证据，动作优先物理链，环境镜才提高风景与自然运动权重。
-
-写作目标不是堆形容词，而是让 AI 视频大模型能稳定执行且有戏：空间坐标、道具生命周期、情绪触发、运镜响应、戏剧尖刺和落幅承接必须逐项可见。主要人物先写角色表演基线：常态控制方式、优先泄露部位、默认动作幅度、爆发阈值和禁用表演习惯；人物情绪再从情绪微表演链里选3-5个可见证据并改写成当前角色与道具：呼吸/停顿、眉眼/眼神、嘴角/下颌、手指/袖口/道具、肩颈/重心、视线落点和情绪残留；禁止只写开心、伤心、生气、高傲或直接照搬词库。
-
-画面质感必须可见，不得只写电影感/高级感/质感；按本镜任务选择1-2个锚点，写清光源方向或色温、脸/手/道具受光面、浅阴影/反光、背景虚化或剧情相关材质。制作级影调色卡必须从 Scene Lock/`scene_tone_palette` 压缩消费：主色、辅助色、点缀色、色温、主光方向、阴影颜色、肤色保护和材质反光只写本镜需要的部分，不能逐镜堆满色卡词。
-
-多人、画外声或同场人物多于本镜入画人物时，`full_prompt` 开头先写本镜画面内可见人数，区分清晰人物、肩线/背影/倒影/虚化人物和纯画外声；不可见人物不能作为看向/面向/对着的视觉目标。多人清晰入画时，非说话重要人物必须分配受击反应、观察反应或降为肩线/边缘虚化；OS/OV/系统音/内心声必须绑定可见闭口反应，不生成口型。
-
-躺、靠、伏、抱、扶、摔倒、坐起、披衣、开门、下车、递给、收起、离开、屏幕显示、人群围观等概括动作必须翻译成起点、支撑/接触/方向、可见转换、稳定终态和下一镜承接。道具交接、转身、起身、开门、离场、手腕控制等物理变化必须写起始状态、接近/接触、移动/受力、释放或稳定终态；若动作强，运镜只能固定或低幅推近。
-
-镜头组件只能作为知识储备使用：听者被击中、关系拉开、手部泄露、正反打保轴、手机消息浮层、口型交接、物件缓冲、行走转对白等，每个子镜最多选一个并改写成当前人物、道具、空间和台词。穿越、ACT、FPV、POV、水平横移、鸟瞰等特殊视角也只能作为组件：必须写摄影机与主体绑定、相对高度/距离、唯一主路径、速度曲线、至多一次焦点交接和稳定落幅；每镜只保留一个视角关系和一个主要运镜，出现回切、第二动作链、两次以上方向变化或多层穿越时拆镜。
-
-有台词/OS/OV人物时，优先沿用项目级声音锁定；单镜只写本镜因情绪导致的语速、音量、气口、停顿、咬字或尾音微调，不每镜重造音色。直接投喂即梦的文本不得保留上一镜/继承/尾帧/剪辑/切到/反打到等元叙述；canonical `full_prompt` 可用于验证落幅，但导出 feed 会转成当前可见事实，因此 Composer 必须优先写可见起幅和落幅。手机聊天、来电名称、通知弹窗等 UI 文字若交给 AI 生成，必须写成独立二维浮层、安全区、不属于手机屏幕、不贴手机背面、不跟随手机透视；否则把具体文字留到后期文字表。
-
-当 `required_contracts` 包含 `prop_functional_surface_contract` 时，先锁定道具功能面朝使用者、使用者视线、摄影机所在侧和实际可见面，再填写握持/接触、点按/翻页/屏幕光等操作证据与稳定终态。默认隐藏内容时用“屏幕朝本人、背壳或侧边朝摄影机”的正向位置关系；需要读清内容时使用肩后/过肩/俯拍/斜上方同侧机位，人物正面表演与内容展示竞争时拆镜。不得用“禁止翻转”替代空间事实。
-
-当 `required_contracts` 包含 `skin_tone_protection_contract` 时，先锁所有清晰人物的肤色基准、脸部主光/曝光与中性补光，再划分环境色和纹理/空气介质边界。冷青、冷绿、霓虹只留背景、衣物边缘或轮廓反光；墙痕、水渍、灰尘、雾粒、雨雾和丁达尔光束只留环境或中后景，光束优先从肩后穿过。源文明示的伤痕、妆容、泪痕、污迹和剪影必须选授权模式保留。若脸部污染，先降低环境色饱和度、把空气介质退后并增加中性补光，不得只追加“脸不要脏”。
-
-每个 `dialogue_events.time_range` 必须容纳原文按本镜 `delivery` 语速、标点、句前/中段气口和句末收气计算的自然表演时长，不得靠超常快语速硬塞。每条新会话事件填写 `conversation_mode/response_latency/overlap_or_interrupt_window/conversation_source_basis`：顺序轮次写 `clean_turn` 与 `none`，其它模式必须写具体抢话/打断窗口及源文原句或动作依据。两个 `speaker_visibility=visible` 且 `lip_sync=true` 的事件不得重叠；可见对白在子镜头组同时写口型同步与句末闭口/口型闭合落幅。源文支持时可设计抢话、被打断、半句停住、自我修正、答非所问或短暂声音重叠，但不能改字、增词或制造源文没有的对话事件；短暂声音重叠优先让非主说话者保持画外或闭口反应，避免双可见口型竞争。长台词无法在平台时长内自然说完时必须按源文分句或拆主镜，不能删词、改标点或缩短气口掩盖。
-
-前台导演精修层只优化可见表达，不新增事实。`画面描述｜直接复制` 按即梦友好导演卡顺序组织：画幅/风格 → 场景色卡/影调 → 主体位置与可见人数 → 表演/台词/听者反应 → 运镜路径或稳定状态 → 光影材质 → 落幅。对白按 `dialogue_performance_kernel` 逐句填写 `line_function/subtext/stress_words/subtext_visible_evidence/turn_relation`，但正文只落原文重音说法、潜台词可见证据、口型、听者低幅反应、句末闭口和余波；情绪转折结合 `emotion_residue_contract` 填写 `inner_emotion/display_intent/mask_leak/start_intensity/end_intensity/emotion_delta`，但正文只落面具泄露、身体/声音承接与落幅。禁止把这些字段名、枚举值和强度数字写入直投正文。`creative_profile` 只能 safe/balanced/expressive；任何档位都不准牺牲 direct-copy 密度、源文保真、T2V-only、provenance、validator、golden 或规则一致性。
-
-每镜标记 `tension_curve_role`：铺垫、升压、峰值、释放或缓冲；不要连续强推近、强表情、强停顿，关键台词后优先给被击中者余波或关系定格。rising/peak 镜必须设计压力链：压力来源、一个压力物或压力机制、1-2个可见升级点、释放触发、释放结果和拆镜阈值；释放可以是动作完成、被打断、注意力转移、代价逼近或落幅悬置，不能只写气氛变紧。
-
-字段接力固定为 `emotion_driver → camera_beat_map → full_prompt`；Camera 只响应可见表演重音、道具状态、视线或台词落点，Composer 只能翻译已声明的镜头设计。必须填写 `packet.items[].execution_hints.required_contracts` 中列出的质量合同；`continuity_contract`、`reroll_control`、`quality_contract`、`quality_evidence`、`dialogue_events` 与状态变化记录仍按适用的硬门槛执行。未列出的增强合同保持空对象，不要为了凑字段写长自评。
-
-`full_prompt` 只能包含五段：生成规格/主体与空间锁定/主镜头连续规则/子镜头组/光照、声音与稳定约束。子镜头组按状态机写，台词/OS/OV 在原生音频开启时必须写成 `{人物}（台词/OS/OV）: "逐字原文"`。需要 `ai_model_readiness_score` 时，按场景空间、穿帮风险、情绪可读、张力压迫、运镜服务、道具连续、画面美感七项逐项打 1-10 分，并写一句弱点或人工首轮检查点；不得全写空泛好评。
-
-`temporal_transition_contract` 不是装饰命令；启用时只使用合同内唯一源文效果，未启用时正常切换。只使用本 sidecar 中选出的契约段落；首轮不要读取示例。重试时若 `packet.example_paths` 存在，只读取这些文件且只修复指定失败字段。示例只迁移结构，不继承示例题材、场景、光线、服装、人物关系或具体道具事件，除非当前源文或配置明确提供。
+- `full_prompt` 只写正向、可见、可执行事实；负向概念只进入 `negative_prompt`。复杂度分档只减少内部合同，
+  不降低直投质量；普通剧情镜低于180中文字符应重写或升级。
+- direct-copy 顺序保持画幅/风格→空间影调→主体与可见人数→表演/台词→镜头→光影材质→落幅。
+  不复制整张色卡，不堆多色温、雾、光晕、反射、多运镜或多次转焦。
+- 接触、受力、交接、多人走位或长台词先保物理和口型；动作强时固定或低幅运镜。风险高时启用
+  `reroll_control` 和人工首轮检查，不得以更长修辞掩盖生成负担。
+- 不新增剧情、人物、道具、天气或声音。不要输出分析过程；完成前运行 packet 中的完整
+  `local_validation_command`，失败只修点名字段，不得用不同命令或局部检查声称 PASS。

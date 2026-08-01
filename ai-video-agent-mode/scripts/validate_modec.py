@@ -7,11 +7,12 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from modec_v4 import (
+from prompt_contract import (
     FORBIDDEN_MODEL_TERMS,
     LEGACY_LABELS,
     PROMPT_LABELS,
     action_budget_issues,
+    aesthetic_directing_contract_issues,
     ai_model_readiness_issues,
     attention_handoff_issues,
     camera_competition_issues,
@@ -50,7 +51,7 @@ from production_intelligence import (
     prop_lifecycle_contract_issues,
     visual_prior_risk_issues,
 )
-from contract_registry import QA_REQUIRED_FIELDS
+from contract_registry import PROMPT_CONTRACT_VERSION, QA_REQUIRED_FIELDS
 from shot_semantics import validation_profile as derive_validation_profile
 
 
@@ -79,8 +80,8 @@ def main(run_dir):
     warnings = []
     fight_records = []
 
-    if package.get("contract_version") != "jimeng-t2v-v1":
-        errors.append("contract_version必须是jimeng-t2v-v1")
+    if package.get("contract_version") != PROMPT_CONTRACT_VERSION:
+        errors.append("contract_version必须是%s" % PROMPT_CONTRACT_VERSION)
     if not isinstance(llm_review, dict) or not llm_review or "items" in llm_review:
         errors.append("缺少editor_pass2的llm_gate_result.json")
     else:
@@ -145,6 +146,8 @@ def main(run_dir):
         for issue in scene_tone_palette_issues(metadata):
             errors.append(prefix + issue)
         for issue in video_texture_contract_issues(metadata, full_prompt):
+            errors.append(prefix + issue)
+        for issue in aesthetic_directing_contract_issues(metadata, full_prompt):
             errors.append(prefix + issue)
         for issue in screen_text_policy_metadata_issues(metadata, full_prompt):
             errors.append(prefix + issue)

@@ -7,11 +7,12 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from modec_v4 import (
+from prompt_contract import (
     FORBIDDEN_MODEL_TERMS,
     LEGACY_LABELS,
     PROMPT_LABELS,
     action_budget_issues,
+    aesthetic_directing_contract_issues,
     ai_model_readiness_issues,
     attention_handoff_issues,
     camera_competition_issues,
@@ -55,7 +56,7 @@ from production_intelligence import (
     prop_lifecycle_contract_issues,
     visual_prior_risk_issues,
 )
-from contract_registry import QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
+from contract_registry import PROMPT_CONTRACT_VERSION, QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
 from shot_semantics import validation_profile as derive_validation_profile
 
 
@@ -99,7 +100,7 @@ def check_export(md_path, run_dir, quality_mode=False):
     expected_ids = set(plan_map)
 
     check(1, "Package exists", bool(package_path), package_path or "missing")
-    check(2, "Current contract", package.get("contract_version") == "jimeng-t2v-v1", str(package.get("contract_version")))
+    check(2, "Current contract", package.get("contract_version") == PROMPT_CONTRACT_VERSION, str(package.get("contract_version")))
     check(3, "Single shots authority", set(package) == {"contract_version", "shots"} and isinstance(shots, list), str(sorted(package)))
     check(4, "Subshot coverage", set(source_ids) == expected_source_ids, f"{len(set(source_ids))}/{len(expected_source_ids)}")
     check(5, "Unique subshots", len(ids) == len(set(ids)), f"{len(ids) - len(set(ids))} duplicate(s)")
@@ -186,6 +187,7 @@ def check_export(md_path, run_dir, quality_mode=False):
             + tension_curve_role_issues(metadata)
             + cinematic_image_contract_issues(metadata, full_prompt)
             + video_texture_contract_issues(metadata, full_prompt)
+            + aesthetic_directing_contract_issues(metadata, full_prompt)
         )
         if metadata_semantic_issues:
             metadata_missing += 1

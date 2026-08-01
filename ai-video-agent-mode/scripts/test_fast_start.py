@@ -72,6 +72,8 @@ def run():
         assert outcome["setup_mode"] == "high_quality_fast"
         assert outcome["quality_pipeline_preserved"] is True
         assert outcome["skipped_phases"] == []
+        assert outcome["context_plan"]["preload_full_contracts"] is False
+        assert outcome["context_plan"]["read_first"] == ["references/stage_gates.md"]
         assert outcome["supervisor"]["status"] == "host_dispatch_required"
         assert outcome["supervisor"]["phase"] == "scene_lock"
         assert outcome["supervisor"]["dispatch_packets"]
