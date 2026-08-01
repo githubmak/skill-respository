@@ -23,15 +23,16 @@ from normalize_prompt_package import normalize_package
 from materialize_master_tasks import materialize as materialize_master_tasks
 from validate_master_tasks import validate as validate_master_tasks
 from modec_v4 import jimeng_feed_prompt
-from direct_prompt_compiler import compile_direct_prompt
+from direct_prompt_compiler import compile_direct_prompt, compile_director_card
 from spatial_storyboard import build_spatial_storyboard_reference
-from current_keyframe import build_current_shot_keyframe_reference
+from current_keyframe import build_keyframe_sequence
 from emotion_camera_audit import audit as audit_emotion_camera
 from episode_state_graph import build_episode_state_graph
 from episode_director_audit import audit as audit_episode_director
 from pipeline_state import AGENT_PHASES, load_state
 from record_batch_provenance import verify as verify_provenance
 from pipeline_runtime import atomic_json
+from production_intelligence import build_sentence_provenance, predict_action_failure
 
 
 CHECK_EXPORT = os.path.join(os.path.dirname(__file__), "check_export.py")
@@ -75,9 +76,13 @@ def export_with_validation(md_path, run_dir):
     temp_dir = tempfile.mkdtemp(prefix=".jimeng-export-", dir=destination_dir)
     temporary_md = os.path.join(temp_dir, os.path.basename(md_path))
     temporary_xlsx = os.path.join(temp_dir, os.path.basename(os.path.splitext(md_path)[0]) + ".xlsx")
+    temporary_concise = os.path.join(temp_dir, os.path.basename(os.path.splitext(md_path)[0]) + ".concise.md")
+    temporary_engineering = os.path.join(temp_dir, os.path.basename(os.path.splitext(md_path)[0]) + ".engineering.md")
     compile_reports = []
     try:
         _write_master_markdown(temporary_md, master_package, plan, compile_reports)
+        _write_concise_markdown(temporary_concise, master_package, plan)
+        _write_engineering_review(temporary_engineering, master_package, plan, compile_reports)
         xlsx_written = _write_workbook(temporary_xlsx, package, plan, {})
         result = subprocess.run(
             [sys.executable, CHECK_EXPORT, temporary_md, run_dir], text=True, capture_output=True,
@@ -90,6 +95,10 @@ def export_with_validation(md_path, run_dir):
             print("[EXPORT V4] DELIVERY BLOCKED - temporary deliverables discarded")
             return result.returncode
         os.replace(temporary_md, md_path)
+        concise_path = os.path.splitext(md_path)[0] + ".concise.md"
+        engineering_path = os.path.splitext(md_path)[0] + ".engineering.md"
+        os.replace(temporary_concise, concise_path)
+        os.replace(temporary_engineering, engineering_path)
         if xlsx_written:
             os.replace(temporary_xlsx, os.path.splitext(md_path)[0] + ".xlsx")
     finally:
@@ -104,6 +113,8 @@ def export_with_validation(md_path, run_dir):
     _record_export_result(run_dir, md_path, compile_report_path)
     print("[EXPORT V4] DELIVERY APPROVED")
     print("[EXPORT V4] Markdown: " + md_path)
+    print("[EXPORT V4] Concise director cards: " + os.path.splitext(md_path)[0] + ".concise.md")
+    print("[EXPORT V4] Engineering review: " + os.path.splitext(md_path)[0] + ".engineering.md")
     print("[EXPORT V4] Master tasks: " + master_path)
     if xlsx_written:
         print("[EXPORT V4] XLSX: " + os.path.splitext(md_path)[0] + ".xlsx")
@@ -124,6 +135,8 @@ def _record_export_result(run_dir, md_path, compile_report_path=""):
         "markdown_sha256": _sha256(destination),
         "package_sha256": _sha256(package_path),
         "xlsx_path": os.path.splitext(destination)[0] + ".xlsx",
+        "concise_markdown_path": os.path.splitext(destination)[0] + ".concise.md",
+        "engineering_markdown_path": os.path.splitext(destination)[0] + ".engineering.md",
         "direct_prompt_compile_report": os.path.abspath(compile_report_path) if compile_report_path else "",
     })
 
@@ -231,6 +244,8 @@ def _write_master_markdown(path, master_package, plan, compile_reports=None):
             _picture_parameter_line(task, plan), "",
             "【画面描述｜直接复制】", "",
             _build_direct_copy_prompt(task, plan, compile_reports), "",
+            "【导演卡｜直接复制｜180-500字】", "",
+            _build_director_card(task, plan, compile_reports), "",
             "【运镜描述】", "",
             _camera_description(camera_beats, task), "",
             "【光影描述】", "",
@@ -242,13 +257,14 @@ def _write_master_markdown(path, master_package, plan, compile_reports=None):
         events = metadata.get("dialogue_events", []) if isinstance(metadata.get("dialogue_events"), list) else []
         if events:
             lines.extend([
-                "| 引用 | 类型 | 人物 | 逐字原文 | 时间窗 | 台词功能 | 潜台词 | 原文重音词 | 潜台词可见证据 | 轮次关系 | 神态 | 身体状态 | 语气 | 气口 | 口型同步 |",
-                "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+                "| 引用 | 类型 | 人物 | 逐字原文 | 时间窗 | 台词功能 | 潜台词 | 原文重音词 | 潜台词可见证据 | 轮次关系 | 会话模式 | 响应延迟 | 抢话/打断窗口 | 会话源文依据 | 神态 | 身体状态 | 语气 | 气口 | 口型同步 |",
+                "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
             ])
             for event in events:
                 lines.append("| " + " | ".join(_dialogue_md_cell(event, field) for field in (
                     "ref", "kind", "speaker", "text", "time_range", "line_function", "subtext",
-                    "stress_words", "subtext_visible_evidence", "turn_relation", "facial_state", "body_state",
+                    "stress_words", "subtext_visible_evidence", "turn_relation", "conversation_mode", "response_latency",
+                    "overlap_or_interrupt_window", "conversation_source_basis", "facial_state", "body_state",
                     "delivery", "breath_pause_plan", "lip_sync",
                 )) + " |")
             lines.append("")
@@ -265,14 +281,33 @@ def _write_master_markdown(path, master_package, plan, compile_reports=None):
                 "【本镜补充负面提示词｜直接复制】", "", _build_direct_negative_block(task), "",
             ])
         lines.extend(["【内部溯源】", "", "来源子镜：" + "、".join(task.get("source_subshot_ids", [])), ""])
-        keyframe_reference = build_current_shot_keyframe_reference(task, planned, plan.get("canvas", "16:9"), plan.get("visual_style", ""))
-        if keyframe_reference:
+        keyframe_sequence = build_keyframe_sequence(task, planned, plan.get("canvas", "16:9"), plan.get("visual_style", ""))
+        if keyframe_sequence:
             lines.extend([
-                f"【关键帧生图提示｜{keyframe_reference['priority']}生成】", "",
-                f"触发原因：{keyframe_reference['reason']}。", "",
-                keyframe_reference["keyframe_prompt"], "",
-                "【关键帧负面提示词｜直接复制】", "",
-                keyframe_reference["negative_prompt"], "",
+                "【关键帧生图提示】", "",
+                f"优先级：{keyframe_sequence['priority']}；触发原因：{keyframe_sequence['reason']}。", "",
+            ])
+            for frame in keyframe_sequence["frames"]:
+                lines.extend([f"{frame['label']}｜{frame['time_seconds']:g}s", "", frame["prompt"], ""])
+            lines.extend([
+                "【即梦视频提示｜配合关键帧】", "",
+                keyframe_sequence["video_prompt"], "",
+                "【人物/道具状态差异表】", "",
+                "| 对象 | 起始状态 | 戏眼状态 | 结束状态 |",
+                "|---|---|---|---|",
+            ])
+            for row in keyframe_sequence["state_diff"]:
+                lines.append("| %s | %s | %s | %s |" % tuple(
+                    _md_cell(row.get(field, "")) for field in ("subject", "start", "dramatic", "end")
+                ))
+            lines.extend(["", "【关键帧连续性与T2V事实校验】", ""])
+            for check in keyframe_sequence["continuity_check"] + keyframe_sequence["fact_consistency"]:
+                lines.append("- %s：%s（%s）" % (
+                    check["name"], "通过" if check["pass"] else "失败", check["evidence"]
+                ))
+            lines.extend([
+                "", "【关键帧负面提示词｜直接复制】", "",
+                keyframe_sequence["negative_prompt"], "",
             ])
         spatial_reference = build_spatial_storyboard_reference(task, planned, plan.get("canvas", "16:9"), plan.get("visual_style", ""))
         if spatial_reference:
@@ -284,6 +319,64 @@ def _write_master_markdown(path, master_package, plan, compile_reports=None):
                 "分镜图负面提示词：" + spatial_reference["negative_prompt"], "",
             ])
         lines.extend(["---", ""])
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines))
+
+
+def _write_concise_markdown(path, master_package, plan):
+    """Write only the 180-500 character copy cards and basic shot identity."""
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    masters = {item.get("shot_id", ""): item for item in master_package.get("shots", []) if isinstance(item, dict)}
+    lines = [
+        "# %s 即梦导演卡（简洁交付视图）" % plan.get("project_name", ""), "",
+        "> 仅含可复制导演卡；完整合同、QA和溯源见同名 engineering.md / xlsx。", "",
+    ]
+    current_scene = None
+    for planned in plan.get("shots", []):
+        scene = planned.get("scene", "场景")
+        if scene != current_scene:
+            lines.extend(["## " + str(scene), ""])
+            current_scene = scene
+        task = masters.get(planned.get("shot_id", ""))
+        if not task:
+            continue
+        card = _build_director_card(task, plan)
+        lines.extend([
+            "### %s｜%ss" % (task.get("shot_id", ""), float(task.get("duration", 0) or 0)), "",
+            "【导演卡｜直接复制｜180-500字】", "", card, "",
+            "【负面提示词｜直接复制】", "", str(task.get("negative_prompt", "") or ""), "", "---", "",
+        ])
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines))
+
+
+def _write_engineering_review(path, package, plan, compile_reports):
+    """Write an audit view with sentence provenance and repair-oriented metrics."""
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    lines = [
+        "# %s 工程审查视图" % plan.get("project_name", ""), "",
+        "> 此文件只供 QA/审计，不应投喂即梦。包含句级来源、动作失败预测、压缩省略和合同字段。", "",
+    ]
+    by_id = {item.get("subshot_id", ""): item for item in compile_reports if isinstance(item, dict)}
+    for shot in package.get("shots", []):
+        if not isinstance(shot, dict):
+            continue
+        sid = shot.get("subshot_id", "")
+        metadata = shot.get("qa_metadata", {}) if isinstance(shot.get("qa_metadata"), dict) else {}
+        report = by_id.get(sid, {})
+        lines.extend([
+            "## %s" % sid, "",
+            "- 完整直投字数：%s" % report.get("char_count", "未记录"),
+            "- 导演卡字数：%s" % report.get("director_card_char_count", "未记录"),
+            "- 动作失败预测：%s（%s）" % (
+                (report.get("action_failure_prediction", {}) or {}).get("risk_level", "未记录"),
+                "、".join((report.get("action_failure_prediction", {}) or {}).get("reasons", [])),
+            ),
+            "- 句级来源：" + json.dumps(report.get("sentence_provenance", []), ensure_ascii=False),
+            "- 压缩省略：" + json.dumps(report.get("director_card_omitted", []), ensure_ascii=False),
+            "- 活动合同：" + ", ".join(key for key, value in metadata.items() if isinstance(value, dict) and value),
+            "",
+        ])
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("\n".join(lines))
 
@@ -364,13 +457,14 @@ def _write_markdown(path, package, plan, director):
             ])
             if dialogue_events:
                 lines.extend([
-                    "| 引用 | 类型 | 人物 | 逐字原文 | 时间窗 | 台词功能 | 潜台词 | 原文重音词 | 潜台词可见证据 | 轮次关系 | 神态 | 身体状态 | 语气 | 气口 | 口型同步 |",
-                    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+                    "| 引用 | 类型 | 人物 | 逐字原文 | 时间窗 | 台词功能 | 潜台词 | 原文重音词 | 潜台词可见证据 | 轮次关系 | 会话模式 | 响应延迟 | 抢话/打断窗口 | 会话源文依据 | 神态 | 身体状态 | 语气 | 气口 | 口型同步 |",
+                    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
                 ])
                 for event in dialogue_events:
                     lines.append("| " + " | ".join(_dialogue_md_cell(event, field) for field in (
                         "ref", "kind", "speaker", "text", "time_range", "line_function", "subtext",
-                        "stress_words", "subtext_visible_evidence", "turn_relation", "facial_state", "body_state",
+                        "stress_words", "subtext_visible_evidence", "turn_relation", "conversation_mode", "response_latency",
+                        "overlap_or_interrupt_window", "conversation_source_basis", "facial_state", "body_state",
                         "delivery", "breath_pause_plan", "lip_sync",
                     )) + " |")
                 lines.append("")
@@ -383,18 +477,58 @@ def _write_markdown(path, package, plan, director):
 
 def _build_direct_copy_prompt(task, plan, compile_reports=None):
     """Build a compact Jimeng copy block from the canonical five-section prompt."""
+    segments, required_fragments, information_budget = _direct_prompt_inputs(task, plan)
+    compiled = compile_direct_prompt(
+        segments, required_fragments, max_chars=700, information_budget=information_budget
+    )
+    if compiled["issues"]:
+        raise ValueError("；".join(compiled["issues"]))
+    if isinstance(compile_reports, list):
+        compile_reports.append({
+            "shot_id": str(task.get("shot_id", "") or ""),
+            "subshot_id": str(task.get("subshot_id", "") or ""),
+            "char_count": len(compiled["text"]),
+            "segment_order": compiled["segment_order"],
+            "removed_duplicate_count": compiled["removed_duplicate_count"],
+            "omitted": compiled["omitted"],
+            "protected_dialogue_fragments": required_dialogue,
+            "protected_required_fragments": compiled["required_fragments"],
+            "budget_profile": compiled["budget_profile"],
+            "visual_enhancer_limit": compiled["visual_enhancer_limit"],
+            "active_visual_enhancers": compiled["active_visual_enhancers"],
+            "sentence_provenance": build_sentence_provenance(task, compiled["text"]),
+            "action_failure_prediction": predict_action_failure(task),
+        })
+    return _clean_export_direct_text(compiled["text"])
+
+
+def _build_director_card(task, plan, compile_reports=None):
+    segments, required_fragments, information_budget = _direct_prompt_inputs(task, plan)
+    compiled = compile_director_card(segments, required_fragments, information_budget)
+    if compiled["issues"]:
+        raise ValueError("导演卡编译失败：" + "；".join(compiled["issues"]))
+    if isinstance(compile_reports, list):
+        for report in reversed(compile_reports):
+            if report.get("shot_id") == task.get("shot_id"):
+                report["director_card_char_count"] = len(compiled["text"])
+                report["director_card_segment_order"] = compiled["segment_order"]
+                report["director_card_omitted"] = compiled["omitted"]
+                break
+    return _clean_export_direct_text(compiled["text"])
+
+
+def _direct_prompt_inputs(task, plan):
     metadata = task.get("qa_metadata", {}) if isinstance(task.get("qa_metadata"), dict) else {}
     palette = metadata.get("scene_tone_palette", {}) if isinstance(metadata.get("scene_tone_palette"), dict) else {}
     cinematic = _cinematic_direct_clause(metadata)
     video_texture = _video_texture_direct_clause(metadata)
     prefix = _compact(palette.get("visual_scene_prefix", ""))
-    if prefix:
-        style_prefix = _compact("%s画幅，%s，%s。" % (
-            plan.get("canvas", ""), plan.get("visual_style", ""), prefix,
-        ))
-    else:
-        style_prefix = _compact("%s画幅，%s。" % (plan.get("canvas", ""), plan.get("visual_style", "")))
-
+    style_parts = [
+        "%s画幅" % plan.get("canvas", "") if plan.get("canvas", "") else "",
+        str(plan.get("visual_style", "") or "").strip("，。 "),
+        prefix.strip("，。 "),
+    ]
+    style_prefix = _compact("，".join(part for part in style_parts if part) + "。")
     sections = _prompt_sections(task.get("full_prompt", ""))
     if sections:
         segments = [
@@ -413,27 +547,14 @@ def _build_direct_copy_prompt(task, plan, compile_reports=None):
             {"kind": "video_texture", "text": video_texture},
             {"kind": "cinematic", "text": cinematic},
         ]
-    metadata = task.get("qa_metadata", {}) if isinstance(task.get("qa_metadata"), dict) else {}
     control = task.get("generation_control", {}) if isinstance(task.get("generation_control"), dict) else {}
     required_dialogue = [
         str(event.get("text", "") or "").strip()
         for event in metadata.get("dialogue_events", []) if isinstance(event, dict)
         if control.get("audio_enabled") is True and str(event.get("text", "") or "").strip()
     ]
-    compiled = compile_direct_prompt(segments, required_dialogue, max_chars=700)
-    if compiled["issues"]:
-        raise ValueError("；".join(compiled["issues"]))
-    if isinstance(compile_reports, list):
-        compile_reports.append({
-            "shot_id": str(task.get("shot_id", "") or ""),
-            "subshot_id": str(task.get("subshot_id", "") or ""),
-            "char_count": len(compiled["text"]),
-            "segment_order": compiled["segment_order"],
-            "removed_duplicate_count": compiled["removed_duplicate_count"],
-            "omitted": compiled["omitted"],
-            "protected_dialogue_fragments": compiled["required_fragments"],
-        })
-    return _clean_export_direct_text(compiled["text"])
+    must_render = str(metadata.get("prompt_information_budget", {}).get("must_render", "") or "") if isinstance(metadata.get("prompt_information_budget"), dict) else ""
+    return segments, required_dialogue + ([must_render] if must_render else []), metadata.get("prompt_information_budget", {})
 
 
 def _global_lock_lines(master_package, plan):
@@ -497,18 +618,39 @@ def _scene_state_lines(master_package, plan):
             continue
         seen.add(key)
         rows.append(
-            "%s | %s | %s | %s | %s | %s" % (
+            "%s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s" % (
                 scene,
                 space_id,
                 _compact(palette.get("space_master_sentence", "")) or "空间主锁定见画面描述",
                 _compact(palette.get("tone_palette", "")) or _compact(palette.get("visual_scene_prefix", "")) or "影调按全局风格",
                 _compact(palette.get("light_texture_purpose", "")) or "光源/材质按本镜任务",
+                "；".join(filter(None, (
+                    "前景：" + _compact(palette.get("foreground_layer", "")) if _compact(palette.get("foreground_layer", "")) else "",
+                    "中景：" + _compact(palette.get("midground_layer", "")) if _compact(palette.get("midground_layer", "")) else "",
+                    "后景：" + _compact(palette.get("background_layer", "")) if _compact(palette.get("background_layer", "")) else "",
+                ))) or "场景层次见画面描述",
+                "；".join(filter(None, (
+                    _compact(palette.get("genre_visual_signature", "")),
+                    _compact(palette.get("lived_in_detail", "")),
+                ))) or "题材与生活质感见画面描述",
+                _compact(palette.get("depth_focus_policy", "")) or "主体实焦、背景退后",
+                "；".join(filter(None, (
+                    _compact(palette.get("landscape_identity", "")),
+                    _compact(palette.get("landscape_composition", "")),
+                ))) or "风景身份与构图见画面描述",
+                "；".join(filter(None, (
+                    _compact(palette.get("natural_motion_system", "")),
+                    _compact(palette.get("environment_story_arc", "")),
+                    _compact(palette.get("reveal_order", "")),
+                    _compact(palette.get("light_weather_progression", "")),
+                    _compact(palette.get("breathing_policy", "")),
+                ))) or "环境演进与镜头呼吸见画面描述",
                 _compact(continuity.get("prop_state", "")) or "无活动道具状态变化",
             )
         )
     if not rows:
-        return ["场景 | 空间ID | 空间主锁定句 | 影调色卡句 | 固定锚点和光线 | 活动道具/状态", ""]
-    return ["场景 | 空间ID | 空间主锁定句 | 影调色卡句 | 固定锚点和光线 | 活动道具/状态", *rows, ""]
+        return ["场景 | 空间ID | 空间主锁定句 | 影调色卡句 | 固定锚点和光线 | 前中后景层次 | 题材与生活质感 | 虚实主次 | 风景身份与构图 | 环境演进与呼吸 | 活动道具/状态", ""]
+    return ["场景 | 空间ID | 空间主锁定句 | 影调色卡句 | 固定锚点和光线 | 前中后景层次 | 题材与生活质感 | 虚实主次 | 风景身份与构图 | 环境演进与呼吸 | 活动道具/状态", *rows, ""]
 
 
 def _global_negative_prompt(master_package):
@@ -867,7 +1009,9 @@ def _write_workbook(path, package, plan, director):
 
     qa = workbook.create_sheet("QA与表演预算")
     qa.append([
-        "主镜头", "子镜头", "戏剧目标", "主表演者", "对手", "背景",
+        "主镜头", "子镜头", "戏剧目标", "角色场景目标/策略", "关系情绪弧",
+        "序列导演计划", "剪辑切点", "提示词信息预算", "声音导演计划", "道具功能面合同", "肤色保护合同", "主表演者", "对手", "背景",
+        "通用道具生命周期", "透视比例保护", "光源拓扑",
         "镜头功能", "叙事权重", "信息增量", "反应归属", "戏剧节拍ID",
         "时长策略", "内容所需时长", "容量利用率", "时长依据",
         "主动作数", "情绪转折数", "对手反应数", "实体运镜数", "镜头响应数", "起始状态", "终态",
@@ -881,7 +1025,18 @@ def _write_workbook(path, package, plan, director):
         duration_design = metadata.get("duration_design", {}) if isinstance(metadata.get("duration_design"), dict) else {}
         qa.append([
             shot.get("shot_id", ""), shot.get("subshot_id", ""), metadata.get("dramatic_goal", ""),
+            json.dumps(metadata.get("character_scene_objective_contract", {}), ensure_ascii=False),
+            json.dumps(metadata.get("relationship_emotion_arc", {}), ensure_ascii=False),
+            json.dumps(metadata.get("sequence_directing_plan", {}), ensure_ascii=False),
+            json.dumps(metadata.get("cut_decision_contract", {}), ensure_ascii=False),
+            json.dumps(metadata.get("prompt_information_budget", {}), ensure_ascii=False),
+            json.dumps(metadata.get("sound_directing_plan", {}), ensure_ascii=False),
+            json.dumps(metadata.get("prop_functional_surface_contract", {}), ensure_ascii=False),
+            json.dumps(metadata.get("skin_tone_protection_contract", {}), ensure_ascii=False),
             roles.get("primary", ""), "；".join(roles.get("supporting", [])), "；".join(roles.get("background", [])),
+            json.dumps(metadata.get("prop_lifecycle_contract", {}), ensure_ascii=False),
+            json.dumps(metadata.get("perspective_scale_contract", {}), ensure_ascii=False),
+            json.dumps(metadata.get("lighting_topology_contract", {}), ensure_ascii=False),
             dramatic.get("shot_function", ""), dramatic.get("narrative_weight", ""),
             dramatic.get("information_gain", ""), dramatic.get("reaction_ownership", ""),
             "；".join(dramatic.get("dramatic_beat_ids", [])),
@@ -904,6 +1059,7 @@ def _write_workbook(path, package, plan, director):
     dialogue_sheet.append([
         "主镜头", "子镜头", "引用", "类型", "人物", "逐字原文", "时间窗",
         "人物可见性", "台词功能", "潜台词", "原文重音词", "潜台词可见证据", "轮次关系",
+        "会话模式", "响应延迟", "抢话/打断窗口", "会话源文依据",
         "发声时神态", "发声时身体状态", "语气与停顿", "气口计划", "口型同步", "原生音频",
     ])
     for shot in shots:
@@ -917,6 +1073,8 @@ def _write_workbook(path, package, plan, director):
                 event.get("line_function", ""), event.get("subtext", ""),
                 "；".join(str(word) for word in event.get("stress_words", []) if str(word).strip()),
                 event.get("subtext_visible_evidence", ""), event.get("turn_relation", ""),
+                event.get("conversation_mode", ""), event.get("response_latency", ""),
+                event.get("overlap_or_interrupt_window", ""), event.get("conversation_source_basis", ""),
                 event.get("facial_state", ""), event.get("body_state", ""), event.get("delivery", ""), event.get("breath_pause_plan", ""),
                 event.get("lip_sync", False), control.get("audio_enabled", False),
             ])
@@ -943,21 +1101,27 @@ def _write_workbook(path, package, plan, director):
         ])
 
     plan_by_shot = {item.get("shot_id", ""): item for item in plan.get("shots", []) if isinstance(item, dict)}
-    keyframe_sheet = workbook.create_sheet("当前镜头剧情关键帧")
-    keyframe_sheet.append(["主镜头", "子镜头", "优先级", "触发原因", "剧情关键帧生图提示词", "负面提示词"])
+    keyframe_sheet = workbook.create_sheet("关键帧流水线")
+    keyframe_sheet.append([
+        "主镜头", "子镜头", "优先级", "触发原因", "帧类型", "时间(s)",
+        "关键帧生图提示词", "即梦视频提示｜配合关键帧", "人物/道具状态差异",
+        "关键帧连续性检查", "关键帧-T2V事实一致性", "负面提示词",
+    ])
     for shot in shots:
         planned = plan_by_shot.get(shot.get("shot_id", ""), {})
-        keyframe = build_current_shot_keyframe_reference(shot, planned, plan.get("canvas", "16:9"), plan.get("visual_style", ""))
-        if not keyframe:
+        sequence = build_keyframe_sequence(shot, planned, plan.get("canvas", "16:9"), plan.get("visual_style", ""))
+        if not sequence:
             continue
-        keyframe_sheet.append([
-            shot.get("shot_id", ""),
-            shot.get("subshot_id", ""),
-            keyframe.get("priority", ""),
-            keyframe.get("reason", ""),
-            keyframe.get("keyframe_prompt", ""),
-            keyframe.get("negative_prompt", ""),
-        ])
+        state_diff = json.dumps(sequence.get("state_diff", []), ensure_ascii=False)
+        continuity_check = json.dumps(sequence.get("continuity_check", []), ensure_ascii=False)
+        fact_consistency = json.dumps(sequence.get("fact_consistency", []), ensure_ascii=False)
+        for frame in sequence["frames"]:
+            keyframe_sheet.append([
+                shot.get("shot_id", ""), shot.get("subshot_id", ""), sequence.get("priority", ""),
+                sequence.get("reason", ""), frame.get("label", ""), frame.get("time_seconds", 0),
+                frame.get("prompt", ""), sequence.get("video_prompt", ""), state_diff,
+                continuity_check, fact_consistency, sequence.get("negative_prompt", ""),
+            ])
 
     header_fill = PatternFill("solid", fgColor="1F4E79")
     for sheet in workbook.worksheets:

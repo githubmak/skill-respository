@@ -51,7 +51,7 @@
     "confirmed_values": {},
     "confirmed_values_sha256": ""
   },
-  "_confirmation_desc": "模板值不等于用户确认。仅在用户明确确认本次基础配置后，写入 confirmed_at，并在 confirmed_fields 中列出 export_base、canvas、visual_style、max_shot_duration、target_platform、generation_control.mode、generation_control.audio_enabled、delivery.markdown_path；同时写入 confirmed_values 及其哈希。任一确认值变更时必须回到对应逐项确认轮次。没有此记录不得续跑、合成、修复或导出。",
+  "_confirmation_desc": "模板值不等于用户确认。逐项 Wizard 完成，或用户通过高质量快速模式一次明确提交全部八个基础字段后，才写入 confirmed_at，并在 confirmed_fields 中列出 export_base、canvas、visual_style、max_shot_duration、target_platform、generation_control.mode、generation_control.audio_enabled、delivery.markdown_path；同时写入 confirmed_values 及其哈希。快速模式必须丢弃输入文件中的旧 confirmation 元数据。任一确认值变更时必须回到对应确认流程。没有此记录不得续跑、合成、修复或导出。",
   "run_timestamp": "",
   "character_list": [],
   "global_negative_prompt": "",

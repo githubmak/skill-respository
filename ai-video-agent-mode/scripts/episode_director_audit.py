@@ -11,6 +11,7 @@ from contract_registry import PROMPT_CONTRACT_VERSION
 from dialogue_timing import analyze_dialogue_timing
 from modec_v4 import camera_move_types
 from pipeline_runtime import atomic_json
+from production_intelligence import analyze_sequence_curves, predict_action_failure
 
 
 TENSION_MAP = {
@@ -60,6 +61,14 @@ def analyze_package(package):
         dramatic = dramatic if isinstance(dramatic, dict) else {}
         story_punch = metadata.get("story_punch_contract", {})
         story_punch = story_punch if isinstance(story_punch, dict) else {}
+        objective = metadata.get("character_scene_objective_contract", {})
+        objective = objective if isinstance(objective, dict) else {}
+        relationship = metadata.get("relationship_emotion_arc", {})
+        relationship = relationship if isinstance(relationship, dict) else {}
+        sequence = metadata.get("sequence_directing_plan", {})
+        sequence = sequence if isinstance(sequence, dict) else {}
+        cut = metadata.get("cut_decision_contract", {})
+        cut = cut if isinstance(cut, dict) else {}
         tension_raw = basemap.get("tension_curve_role") or performance.get("tension_intent") or ""
         tension = TENSION_MAP.get(str(tension_raw).strip(), "unknown")
         active_camera_text = _without_disabled_camera_moves(prompt)
@@ -85,7 +94,21 @@ def analyze_package(package):
             "performance_core_fingerprint": _performance_core_fingerprint(performance),
             "emotion_delta": performance.get("emotion_delta") if isinstance(performance.get("emotion_delta"), int) else None,
             "memory_frame": str(story_punch.get("picture_punctuation", "") or ""),
+            "scene_objective": str(objective.get("scene_objective", "") or ""),
+            "active_tactic": str(objective.get("active_tactic", "") or ""),
+            "tactic_shift": str(objective.get("tactic_shift", "") or ""),
+            "power_state_change": str(objective.get("power_state_change", "") or ""),
+            "relationship_end_state": str(relationship.get("end_relation_state", "") or ""),
+            "relationship_power_shift": str(relationship.get("power_shift", "") or ""),
+            "sequence_position": str(sequence.get("sequence_position", "") or ""),
+            "composition_motif_state": str(sequence.get("composition_motif_state", "") or ""),
+            "environment_beat": str(sequence.get("environment_beat", "") or ""),
+            "cut_mode": str(cut.get("cut_mode", "") or ""),
+            "cut_information_gain": str(cut.get("information_gain", "") or ""),
+            "landscape_composition": str(palette.get("landscape_composition", "") or ""),
+            "natural_motion_system": str(palette.get("natural_motion_system", "") or ""),
             "dialogue_timing": dialogue_records,
+            "action_failure_prediction": predict_action_failure(shot),
         })
 
     if not records:
@@ -94,6 +117,19 @@ def analyze_package(package):
     _audit_camera_and_shot_size(records, issues, warnings)
     _audit_performance_repetition(records, issues, warnings)
     _audit_emotion_and_memory_curve(records, issues, warnings)
+    _audit_character_and_relationship_arcs(records, warnings)
+    _audit_sequence_cut_and_environment(records, warnings)
+    for item in records:
+        prediction = item["action_failure_prediction"]
+        if prediction["risk_level"] == "high":
+            warnings.append("%s动作生成失败风险%d：%s；%s" % (
+                item["subshot_id"], prediction["score"], "、".join(prediction["reasons"]),
+                prediction["split_recommendation"],
+            ))
+    joint_curve_audit = analyze_sequence_curves(shots)
+    warnings.extend(
+        warning for warning in joint_curve_audit["warnings"] if warning not in warnings
+    )
     return {
         "contract_version": PROMPT_CONTRACT_VERSION,
         "audit_version": "episode-director-audit-v1",
@@ -106,8 +142,11 @@ def analyze_package(package):
             "peak_count": sum(item["tension"] == "peak" for item in records),
             "release_or_buffer_count": sum(item["tension"] in {"release", "buffer"} for item in records),
             "nonzero_emotion_delta_count": sum(item["emotion_delta"] not in (None, 0) for item in records),
+            "tactic_shift_count": sum(bool(item["tactic_shift"] and not re.search(r"无切换|继续|维持", item["tactic_shift"])) for item in records),
+            "active_cut_count": sum(item["cut_mode"] not in ("", "hold") for item in records),
             "warning_count": len(warnings),
         },
+        "joint_curve_audit": joint_curve_audit,
         "shots": records,
     }
 
@@ -173,6 +212,52 @@ def _audit_emotion_and_memory_curve(records, issues, warnings):
         frames = [_memory_signature(item["memory_frame"]) for item in window]
         if same_scene and frames[0] and len(set(frames)) == 1:
             warnings.append("%s连续四镜使用同一记忆帧戏眼，建议改变压力物、构图关系或落幅" % _window_label(window))
+
+
+def _audit_character_and_relationship_arcs(records, warnings):
+    for window in _windows(records, 4):
+        if len({item["scene_id"] for item in window}) != 1:
+            continue
+        tactics = [_semantic_signature(item["active_tactic"]) for item in window]
+        changing_emotion = sum(item["emotion_delta"] not in (None, 0) for item in window) >= 2
+        if changing_emotion and tactics[0] and len(set(tactics)) == 1:
+            warnings.append("%s连续四镜情绪在变化但角色策略不变，需确认是执意维持还是缺少策略切换" % _window_label(window))
+        powers = [_semantic_signature(item["power_state_change"]) for item in window]
+        if any(item["sequence_position"] in {"escalate", "break"} for item in window) and powers[0] and len(set(powers)) == 1:
+            warnings.append("%s包含推进/破格镜但权力变化描述完全相同，需复核关系是否真正前进" % _window_label(window))
+        relation_states = [_semantic_signature(item["relationship_end_state"]) for item in window]
+        if relation_states[0] and len(set(relation_states)) == 1 and changing_emotion:
+            warnings.append("%s连续四镜个人情绪变化但关系终态不变，需确认是否有意僵持" % _window_label(window))
+
+
+def _audit_sequence_cut_and_environment(records, warnings):
+    for window in _windows(records, 4):
+        if len({item["scene_id"] for item in window}) != 1:
+            continue
+        positions = [item["sequence_position"] for item in window]
+        if positions[0] and len(set(positions)) == 1:
+            warnings.append("%s连续四镜处于同一sequence_position=%s，镜头段落可能停滞" % (_window_label(window), positions[0]))
+        motifs = [_semantic_signature(item["composition_motif_state"]) for item in window]
+        if motifs[0] and len(set(motifs)) == 1:
+            warnings.append("%s连续四镜构图母题未发生建立、偏移、破坏或回收" % _window_label(window))
+        environment_beats = [_semantic_signature(item["environment_beat"]) for item in window]
+        if environment_beats[0] and len(set(environment_beats)) == 1:
+            warnings.append("%s连续四镜环境节拍相同，场景可能退化为静态背景" % _window_label(window))
+        cut_modes = [item["cut_mode"] for item in window]
+        if cut_modes[0] and cut_modes[0] != "hold" and len(set(cut_modes)) == 1:
+            warnings.append("%s连续四镜使用同一切点模式%s，需复核剪辑节奏是否机械" % (_window_label(window), cut_modes[0]))
+        information = [_semantic_signature(item["cut_information_gain"]) for item in window]
+        if information[0] and len(set(information)) == 1:
+            warnings.append("%s连续四镜切后信息增量相同，可能存在冗余覆盖" % _window_label(window))
+        landscape = [_semantic_signature(item["landscape_composition"]) for item in window]
+        natural_motion = [_semantic_signature(item["natural_motion_system"]) for item in window]
+        if landscape[0] and natural_motion[0] and len(set(landscape)) == 1 and len(set(natural_motion)) == 1:
+            warnings.append("%s连续四镜复用同一风景构图与自然运动，需按镜头呼吸选择性变化" % _window_label(window))
+
+
+def _semantic_signature(value):
+    text = re.sub(r"(?:轻轻|缓慢|短促|一下|一次|略微|微微)", "", str(value or ""))
+    return re.sub(r"[\s，,。！？；;：:→\-]", "", text).lower()
 
 
 def _camera_energy(prompt, moves, metadata):

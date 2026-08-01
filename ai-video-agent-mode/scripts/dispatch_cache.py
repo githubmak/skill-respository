@@ -16,7 +16,13 @@ if not os.environ.get("PYTHONPYCACHEPREFIX") and not getattr(sys, "pycache_prefi
     sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(__file__))
 from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_prefix
-from shot_semantics import dispatch_risk, quality_contract, temporal_transition_candidate, validation_profile
+from shot_semantics import (
+    dispatch_risk,
+    functional_surface_risk,
+    quality_contract,
+    temporal_transition_candidate,
+    validation_profile,
+)
 from context_budget import check as check_context_budget
 from batch_planner import analysis_chunks as _analysis_chunks, batch_risk as _batch_risk
 from batch_planner import dynamic_master_chunks as _plan_dynamic_master_chunks
@@ -195,7 +201,6 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             )
         if retry_context_path:
             packet["retry_context_path"] = retry_context_path
-            packet["retry_mode"] = retry_mode
             packet["is_retry"] = True
             packet["instruction"] += (
                 " This is a targeted retry: read retry_context_path, repair only its failing fields, "
@@ -704,6 +709,78 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
                     "tone_palette": "",
                     "light_texture_purpose": "",
                     "visual_scene_prefix": "",
+                    "foreground_layer": "",
+                    "midground_layer": "",
+                    "background_layer": "",
+                    "genre_visual_signature": "",
+                    "lived_in_detail": "",
+                    "depth_focus_policy": "",
+                    "landscape_identity": "",
+                    "landscape_composition": "",
+                    "natural_motion_system": "",
+                    "environment_story_arc": "",
+                    "reveal_order": "",
+                    "light_weather_progression": "",
+                    "breathing_policy": "",
+                },
+                "character_scene_objective_contract": {
+                    "focus_character": "",
+                    "scene_objective": "",
+                    "stakes": "",
+                    "obstacle": "",
+                    "active_tactic": "",
+                    "visible_tactic_evidence": "",
+                    "tactic_shift": "",
+                    "knowledge_gap": "",
+                    "power_state_change": "",
+                    "end_action_state": "",
+                },
+                "relationship_emotion_arc": {
+                    "participants": "",
+                    "start_relation_state": "",
+                    "conflicting_wants": "",
+                    "emotional_misalignment": "",
+                    "turn_trigger": "",
+                    "power_shift": "",
+                    "end_relation_state": "",
+                    "shared_residue": "",
+                },
+                "sequence_directing_plan": {
+                    "scene_visual_argument": "",
+                    "sequence_position": "",
+                    "distance_lens_stage": "",
+                    "composition_motif_state": "",
+                    "rule_break_or_hold": "",
+                    "blocking_camera_coordination": "",
+                    "environment_beat": "",
+                    "handoff": "",
+                },
+                "cut_decision_contract": {
+                    "cut_mode": "",
+                    "trigger": "",
+                    "pre_cut_hold": "",
+                    "information_gain": "",
+                    "sound_strategy": "",
+                    "economy_reason": "",
+                    "fallback": "",
+                },
+                "prompt_information_budget": {
+                    "profile": str((item.get("quality_contract", {}) or {}).get("profile", "") or ""),
+                    "primary_render_task": "",
+                    "must_render": "",
+                    "supporting_visual": "",
+                    "metadata_only": "",
+                    "visual_enhancer_limit": 1,
+                    "compression_rule": "",
+                },
+                "sound_directing_plan": {
+                    "primary_source": "",
+                    "source_direction_distance": "",
+                    "room_environment_response": "",
+                    "foreground_background_priority": "",
+                    "silence_or_drop": "",
+                    "lead_lag_strategy": "",
+                    "cut_support": "",
                 },
                 "screen_text_policy": {
                     "mode": "none",
@@ -848,6 +925,10 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
                         "stress_words": [],
                         "subtext_visible_evidence": "",
                         "turn_relation": "",
+                        "conversation_mode": "clean_turn",
+                        "response_latency": "",
+                        "overlap_or_interrupt_window": "none",
+                        "conversation_source_basis": "",
                     }
                     for event in item.get("dialogue_events", [])
                     if isinstance(event, dict)
@@ -864,6 +945,55 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
                 for child in item.get("source_subshots", [item])
             ],
         })
+        if functional_surface_risk(item):
+            shots[-1]["qa_metadata"]["prop_functional_surface_contract"] = {
+                "applicable": True,
+                "prop": "",
+                "functional_surface": "",
+                "user": "",
+                "user_view_relation": "",
+                "camera_half_space": "",
+                "camera_visible_surface": "",
+                "grip_contact": "",
+                "interaction_evidence": "",
+                "content_visibility": "hidden",
+                "orientation_lock": "",
+                "fallback_shot": "",
+            }
+        if validation_profile(item)["skin_tone_protection_contract"]:
+            shots[-1]["qa_metadata"]["skin_tone_protection_contract"] = {
+                "applicable": True,
+                "subjects": "",
+                "protection_mode": "natural_protected",
+                "source_allowed_skin_marks": "none",
+                "skin_tone_baseline": "",
+                "face_light_and_exposure": "",
+                "face_fill_shadow_policy": "",
+                "environment_color_boundary": "",
+                "texture_atmosphere_boundary": "",
+                "continuity_lock": "",
+                "fallback": "",
+            }
+        profile = validation_profile(item)
+        if profile["prop_lifecycle_contract"]:
+            shots[-1]["qa_metadata"]["prop_lifecycle_contract"] = {
+                "prop": "", "purpose": "", "visible_surface": "", "start_location": "",
+                "contact_owner": "", "contact_mode": "", "motion_path": "",
+                "end_location": "", "end_orientation": "", "next_shot_state": "",
+            }
+        if profile["perspective_scale_contract"]:
+            shots[-1]["qa_metadata"]["perspective_scale_contract"] = {
+                "subjects_depth": "", "support_plane": "", "projection_scale_rule": "",
+                "body_ratio_lock": "", "motion_scaling": "", "prop_scale_lock": "",
+                "grounding_evidence": "", "fallback": "",
+            }
+        if profile["lighting_topology_contract"]:
+            shots[-1]["qa_metadata"]["lighting_topology_contract"] = {
+                "motivated_source": "", "source_direction": "", "temperature_range": "",
+                "face_light_layer": "", "environment_light_layer": "",
+                "shadow_exposure_policy": "", "volume_light_boundary": "",
+                "conflict_resolution": "",
+            }
     payload = {
         "contract_version": "jimeng-t2v-v1",
         "locked_fields": [
@@ -932,7 +1062,7 @@ def _repair_fields(issues):
     fields = []
     for issue in issues if isinstance(issues, list) else []:
         text = str(issue)
-        for token in ("full_prompt", "negative_prompt", "generation_control", "qa_metadata", "dialogue_events", "performance_contract", "continuity_contract", "reroll_control", "camera_beat_map"):
+        for token in ("full_prompt", "negative_prompt", "generation_control", "qa_metadata", "dialogue_events", "performance_contract", "character_scene_objective_contract", "relationship_emotion_arc", "sequence_directing_plan", "cut_decision_contract", "prompt_information_budget", "sound_directing_plan", "prop_functional_surface_contract", "skin_tone_protection_contract", "continuity_contract", "reroll_control", "camera_beat_map"):
             if token in text and token not in fields:
                 fields.append(token)
     return fields or ["validator_reported_field"]
@@ -1051,12 +1181,21 @@ def _compact_composer_item(item):
 
 
 def _compact_execution_hints(hints):
+    required_contracts = [
+        value for value in list(hints.get("required_contracts", []) or [])
+        if value not in {
+            "skin_tone_protection_contract", "prop_lifecycle_contract",
+            "perspective_scale_contract", "lighting_topology_contract",
+        }
+    ]
     compacted = {
         "template": hints.get("template", ""),
         "risk": hints.get("risk", "standard"),
         "reasons": list(hints.get("reasons", []) or []),
         "visible": list(hints.get("visible", []) or []),
-        "required_contracts": list(hints.get("required_contracts", []) or []),
+        # The skin contract is already present in each applicable scaffold and
+        # enforced locally; do not duplicate its long name in every packet item.
+        "required_contracts": required_contracts,
     }
     risk_gated = {
         key: value for key, value in dict(hints.get("risk_gated_contracts", {}) or {}).items()

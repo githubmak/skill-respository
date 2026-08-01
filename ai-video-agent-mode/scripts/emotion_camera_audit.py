@@ -9,8 +9,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 from modec_v4 import (
     attention_handoff_issues, camera_competition_issues, continuity_contract_issues,
     coverage_role_issues,
+    character_scene_objective_issues, cut_decision_contract_issues,
     expectation_anchor_issues, jimeng_shot_group_issues, performance_causality_issues,
     listener_reaction_issues, performance_contract_issues, shot_group_handoff_issues,
+    prompt_information_budget_issues, relationship_emotion_arc_issues,
+    sequence_directing_plan_issues,
+    sound_directing_plan_issues,
     state_transition_replay_issues, story_punch_issues,
 )
 
@@ -32,6 +36,19 @@ def audit(run_dir, output_path=None):
         issues.extend(performance_causality_issues(metadata, visible))
         issues.extend(performance_contract_issues(metadata, prompt, visible))
         issues.extend(story_punch_issues(metadata, prompt, visible))
+        issues.extend(character_scene_objective_issues(metadata, prompt, visible, required=bool(visible)))
+        participants = set(visible)
+        participants.update(
+            str(event.get("speaker", "") or "").strip()
+            for event in metadata.get("dialogue_events", [])
+            if isinstance(event, dict) and str(event.get("speaker", "") or "").strip()
+        )
+        issues.extend(relationship_emotion_arc_issues(metadata, prompt, required=len(participants) > 1))
+        issues.extend(sequence_directing_plan_issues(metadata, prompt))
+        issues.extend(cut_decision_contract_issues(metadata, prompt))
+        issues.extend(prompt_information_budget_issues(metadata, prompt))
+        control = shot.get("generation_control", {}) if isinstance(shot.get("generation_control"), dict) else {}
+        issues.extend(sound_directing_plan_issues(metadata, prompt, audio_enabled=bool(control.get("audio_enabled"))))
         issues.extend(listener_reaction_issues(metadata, prompt))
         issues.extend(expectation_anchor_issues(metadata, prompt))
         issues.extend(continuity_contract_issues(metadata, prompt, visible))

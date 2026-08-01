@@ -3,10 +3,16 @@ import json
 import sys
 
 REQUIRED = ("scene", "space_anchor", "screen_positions", "wardrobe_lock", "prop_state",
-            "light_source", "light_direction", "light_temperature", "audio_policy")
+            "light_source", "light_direction", "light_temperature", "audio_policy",
+            "foreground_layer", "midground_layer", "background_layer",
+            "genre_visual_signature", "lived_in_detail", "depth_focus_policy",
+            "landscape_identity", "landscape_composition", "natural_motion_system",
+            "environment_story_arc", "reveal_order", "light_weather_progression",
+            "breathing_policy")
 OPTIONAL_FLAT_FIELDS = (
     "space_id", "space_master_sentence", "entrance_exit", "prop_activity_zone",
-    "tone_palette", "light_texture_purpose",
+    "tone_palette", "light_texture_purpose", "skin_tone_reference", "face_light_policy",
+    "skin_color_cast_boundary", "skin_texture_boundary",
 )
 
 

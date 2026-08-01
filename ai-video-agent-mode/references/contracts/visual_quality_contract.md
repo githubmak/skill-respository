@@ -1,6 +1,6 @@
 # Visual Quality Contract Slice
 
-权威来源仍是 `references/format_constraints.md` §B0/§B7 与 `references/production_quality_knowledge.md` §2/§8。本文件只作为快速定位切片。
+权威来源仍是 `references/format_constraints.md` §B0/§B7 与 `references/production_quality_knowledge.md` §2/§8/§15。本文件只作为快速定位切片。
 
 画面质感必须落成可执行视觉锚点：
 
@@ -8,4 +8,10 @@
 - 脸、手、道具、浅阴影、反光、背景虚化或剧情相关材质中的 1–2 个核心点。
 - 写实/实拍/电影剧照目标需满足 `cinematic_image_contract` 或等价正文：构图锚点、焦平面/景深、曝光黑位、色彩分离、空气层、真实材质、非完美瑕疵和记忆帧。
 - 整条视频质感提升使用 `video_texture_contract`：统一全片影像基调、曝光黑位、高光不过曝、材质运动响应、空气层运动、镜头稳定/运动预算和跨镜质感继承。
+- Scene Lock 同时建立 `landscape_identity/landscape_composition/natural_motion_system/environment_story_arc/reveal_order/light_weather_progression/breathing_policy`。环境镜至少消费两项，人物镜只消费一项不抢戏事实；风景统一地域季节、构图重心、自然差速运动和剧情触发后的环境余波。
+- 清晰人物镜建立 `skin_tone_protection_contract`：脸部主光/补光独立于环境色，冷色与霓虹止于背景和轮廓，墙痕/水渍/灰尘/雾粒/体积光束止于环境或中后景；源文明示的伤痕、妆容、泪痕、污迹和剪影使用授权模式保留。
+- 写正文前分类隐性视觉先验：职业/场景负向概念、背对人物视线、镜面/照片反射几何、无源文依据的功能面展示、驾驶视线、遮挡/肩线/倒影误生人物。
+- 活动道具建立 `prop_lifecycle_contract`；多人纵深建立 `perspective_scale_contract`；清晰人物建立 `lighting_topology_contract`。
+- 透视必须保持共同支撑平面、近大远小投影、真实头身/骨架与道具相对尺寸不变，以及沿景深运动时连续缩放。
+- 高风险关键帧输出起始/戏眼/结束三帧，并附状态差异、连续性与T2V事实一致性检查。
 - 复杂对白、多人反应、道具转移或复杂运镜时，只保留一个光影/构图锚点，避免为质感堆料导致抽卡风险。

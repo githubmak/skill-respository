@@ -11,7 +11,7 @@ AUXILIARY_KINDS = {"cinematic", "video_texture", "support"}
 CAMERA_TERMS = ("推近", "拉远", "横移", "环绕", "摇镜", "跟拍", "拉焦", "变焦", "甩镜")
 
 
-def compile_direct_prompt(segments, required_fragments=None, max_chars=700):
+def compile_direct_prompt(segments, required_fragments=None, max_chars=700, information_budget=None):
     """Return text plus a compile report without inventing replacement facts."""
     required_fragments = [str(value).strip() for value in required_fragments or [] if str(value).strip()]
     normalized = []
@@ -40,6 +40,18 @@ def compile_direct_prompt(segments, required_fragments=None, max_chars=700):
         text = _join(normalized)
 
     issues = []
+    budget = information_budget if isinstance(information_budget, dict) else {}
+    enhancer_limit = budget.get("visual_enhancer_limit")
+    active_enhancers = sorted({
+        item["kind"] for item in normalized
+        if item["kind"] in {"cinematic", "video_texture"} and item["clauses"]
+    })
+    if isinstance(enhancer_limit, int) and not isinstance(enhancer_limit, bool):
+        if len(active_enhancers) > enhancer_limit:
+            issues.append(
+                "直投正文视觉增强层超过prompt_information_budget限制：%s；必须回到Master Production选择主次"
+                % "、".join(active_enhancers)
+            )
     protected_omissions = [item for item in omitted if item["kind"] in PROTECTED_KINDS]
     if protected_omissions:
         issues.append("直投编译需要删除硬事实才能满足字数上限，必须回到Master Production重写规范正文")
@@ -60,7 +72,35 @@ def compile_direct_prompt(segments, required_fragments=None, max_chars=700):
         "omitted": omitted,
         "segment_order": [segment["kind"] for segment in normalized],
         "required_fragments": required_fragments,
+        "budget_profile": str(budget.get("profile", "") or ""),
+        "visual_enhancer_limit": enhancer_limit,
+        "active_visual_enhancers": active_enhancers,
     }
+
+
+def compile_director_card(segments, required_fragments=None, information_budget=None,
+                          min_chars=180, max_chars=500):
+    """Compile a compact copy card without weakening protected-fact rules.
+
+    The card is a companion view.  It is allowed to omit only complete
+    auxiliary clauses; if a protected clause must be removed, the result is
+    rejected instead of silently degrading the prompt.
+    """
+    result = compile_direct_prompt(
+        segments,
+        required_fragments=required_fragments,
+        max_chars=max_chars,
+        information_budget=information_budget,
+    )
+    result["view"] = "director_card"
+    if len(result["text"]) < min_chars:
+        result["issues"].append(
+            "导演卡仅%d字，低于%d字密度下限；必须回到Master Production补足可见事实"
+            % (len(result["text"]), min_chars)
+        )
+    result["min_chars"] = min_chars
+    result["max_chars"] = max_chars
+    return result
 
 
 def _fit(segments, max_chars):

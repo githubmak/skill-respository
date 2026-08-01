@@ -4,6 +4,8 @@ These helpers keep the "base_action may be empty" rule consistent across
 preflight, duration validation, and director assembly.
 """
 
+from production_intelligence import prop_lifecycle_risk
+
 NON_ACTION_TYPES = [
     "empty", "background", "object", "prop", "environment", "establishing",
     "transition", "black", "still", "insert",
@@ -41,6 +43,20 @@ MEMORY_MARKERS = ["当年", "曾经", "回忆", "想起", "往昔", "旧日", "�
 WEDDING_MEMORY_MARKERS = ["大婚", "成婚", "婚仪", "赐婚", "迎亲"]
 MEMORY_EVENT_MARKERS = WEDDING_MEMORY_MARKERS + ["相遇", "告白", "争吵", "离开", "去世", "死去", "救下", "受伤", "事故", "火灾", "背叛", "毕业", "出生"]
 EVENT_TRANSITION_MARKERS = ["穿越", "时空", "异世", "另一个时代", "来到过去", "来到未来", "梦醒", "幻觉消退", "传送", "瞬移", "重生", "变身", "变形", "苏醒"]
+
+# A functional surface is the side of a prop that its user must face to use it.
+# Video models often rotate that surface toward the audience for readability,
+# so active use needs an explicit user/prop/camera orientation contract.
+FUNCTIONAL_SURFACE_PROP_WORDS = [
+    "手机", "智能手机", "平板", "平板电脑", "笔记本电脑", "电脑屏幕", "显示器",
+    "书页", "书本", "文件", "纸张", "照片", "相片", "手表", "表盘", "仪表盘",
+    "镜子", "镜面",
+]
+FUNCTIONAL_SURFACE_USE_WORDS = [
+    "玩", "游戏", "查看", "察看", "看", "盯", "望", "凝视", "阅读", "读",
+    "浏览", "刷", "滑动", "点击", "点按", "操作", "使用", "输入", "打字",
+    "回复", "翻页", "照镜子", "对镜",
+]
 
 
 def shot_type_text(subshot):
@@ -139,6 +155,33 @@ def quality_contract(subshot):
     }
 
 
+def functional_surface_risk(value):
+    """Return True when a person actively uses a prop's functional face.
+
+    Static props and transfers intentionally do not trigger this contract. The
+    check walks source_subshots so a main task cannot hide the risky action in
+    a later child beat.
+    """
+    for text in _semantic_text_leaves(value):
+        normalized = str(text or "").replace("书桌", "").replace("书架", "").replace("书房", "")
+        if not any(prop in normalized for prop in FUNCTIONAL_SURFACE_PROP_WORDS):
+            continue
+        if any(action in normalized for action in FUNCTIONAL_SURFACE_USE_WORDS):
+            return True
+    return False
+
+
+def _semantic_text_leaves(value):
+    if isinstance(value, dict):
+        for child in value.values():
+            yield from _semantic_text_leaves(child)
+    elif isinstance(value, (list, tuple, set)):
+        for child in value:
+            yield from _semantic_text_leaves(child)
+    elif isinstance(value, str) and value.strip():
+        yield value
+
+
 def validation_profile(subshot, metadata=None, visible_characters=None):
     """Return the single authority for risk-triggered Composer contracts.
 
@@ -177,6 +220,12 @@ def validation_profile(subshot, metadata=None, visible_characters=None):
         and metadata["continuity_contract"].get("state_change")
     )
     expectation = metadata.get("expectation_anchor", {})
+    participants = set(visible)
+    participants.update(
+        str(event.get("speaker", "") or "").strip()
+        for event in events if isinstance(event, dict)
+        and str(event.get("speaker", "") or "").strip()
+    )
     return {
         "profile": profile,
         "risk_tier": risk.get("tier", "standard"),
@@ -187,6 +236,17 @@ def validation_profile(subshot, metadata=None, visible_characters=None):
         "pressure_release_design": tension in ("rising", "peak"),
         "listener_reaction_plan": bool(events) and len(visible) > 1,
         "expectation_anchor": isinstance(expectation, dict) and expectation.get("applicable") is True,
+        "character_scene_objective_contract": has_character_performance,
+        "relationship_emotion_arc": has_character_performance and len(participants) > 1,
+        "sequence_directing_plan": True,
+        "cut_decision_contract": True,
+        "prompt_information_budget": True,
+        "sound_directing_plan": True,
+        "prop_functional_surface_contract": functional_surface_risk(subshot),
+        "skin_tone_protection_contract": has_character_performance,
+        "prop_lifecycle_contract": prop_lifecycle_risk(subshot),
+        "perspective_scale_contract": len(visible) > 1,
+        "lighting_topology_contract": has_character_performance,
     }
 
 

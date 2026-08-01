@@ -8,6 +8,7 @@ import sys
 
 from contract_registry import PROMPT_CONTRACT_VERSION
 from pipeline_runtime import atomic_json
+from production_intelligence import build_emotion_visible_state
 
 
 FACT_PATTERNS = {
@@ -71,6 +72,7 @@ def analyze_package(package):
                 "derived_contracts": _active_contracts(metadata),
             },
             "state_transitions": transitions,
+            "visible_emotion_state": build_emotion_visible_state(shot),
         }
         nodes.append(node)
 
@@ -147,6 +149,8 @@ def _active_contracts(metadata):
         "source_constraint_basemap", "performance_contract", "continuity_contract",
         "story_punch_contract", "reroll_control", "pressure_release_design",
         "cinematic_image_contract", "video_texture_contract",
+        "prop_lifecycle_contract", "perspective_scale_contract",
+        "lighting_topology_contract", "skin_tone_protection_contract",
     )
     return [name for name in names if isinstance(metadata.get(name), dict) and metadata.get(name)]
 

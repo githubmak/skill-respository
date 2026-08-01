@@ -13,8 +13,8 @@ from episode_state_graph import analyze_package
 from spatial_storyboard import build_spatial_storyboard_reference
 from current_keyframe import build_current_shot_keyframe_reference
 from validate_scene_locks import validate
-from shot_semantics import dispatch_risk, temporal_transition_candidate, validation_profile
-from dispatch_cache import _compact_composer_item, _composer_execution_hints, _dynamic_master_chunks, _editor_review_chunks, _retry_examples, active_packet_paths, prepare_dispatch_packets
+from shot_semantics import dispatch_risk, functional_surface_risk, temporal_transition_candidate, validation_profile
+from dispatch_cache import _compact_composer_item, _composer_execution_hints, _dynamic_master_chunks, _editor_review_chunks, _retry_examples, _write_composer_scaffold, active_packet_paths, prepare_dispatch_packets
 from contract_registry import (
     AGENT_PHASE_NAMES, LOCAL_PHASE_NAMES, PHASE_BATCH_SIZE,
     PHASE_TIMEOUT_SECONDS, PIPELINE_CONTRACT_VERSION, PIPELINE_PHASES,
@@ -30,7 +30,7 @@ from pipeline_runner import _local_phase_valid, _materialize, _review_target_sho
 from prepare_master_retry import prepare as prepare_master_retry
 from redispatch_incomplete_master import redispatch as redispatch_incomplete_master
 from check_export import INTERNAL_TITLE_LEAK, _direct_export_blocks, _export_check, _plan_index as export_plan_index, _source_dialogue_events as export_source_dialogue_events
-from export_with_validation import _build_direct_copy_prompt, _build_direct_constraint_block, _global_lock_lines, _high_risk_direct_blocks_enabled
+from export_with_validation import _build_direct_copy_prompt, _build_direct_constraint_block, _global_lock_lines, _high_risk_direct_blocks_enabled, _scene_state_lines
 from validate_modec import _main_shot_expectations as validate_main_shot_expectations, _source_dialogue_events as validate_source_dialogue_events
 from preflight_check import PLACEHOLDER_CHARACTER_NAMES
 from pre_editor_gate import run as pre_editor_gate
@@ -53,7 +53,21 @@ def run():
         os.makedirs(os.path.join(run_dir, ".cache", "orchestrator"))
         locks = {"scenes": [{"scene": "场景A", "space_anchor": "门与长桌", "screen_positions": "甲左乙右",
                                "wardrobe_lock": "沿用确认设定", "prop_state": "文件夹在桌中央",
-                               "light_source": "顶灯", "light_direction": "上方", "light_temperature": "4500K", "audio_policy": "原生音频关闭"}]}
+                               "light_source": "顶灯", "light_direction": "上方", "light_temperature": "4500K",
+                               "foreground_layer": "前景桌角轻虚化形成低位框景",
+                               "midground_layer": "中景长桌承载人物与文件夹活动区",
+                               "background_layer": "后景右侧门与资料柜形成纵深且弱虚化",
+                               "genre_visual_signature": "都市关系短剧的克制室内陈设与冷白夜灯",
+                               "lived_in_detail": "桌沿细划痕与文件纸边轻微起毛",
+                               "depth_focus_policy": "人物与文件夹实焦，前景桌角轻虚，后景低对比退后",
+                               "landscape_identity": "冬季夜间都市办公区，玻璃与旧木形成冷硬生活质感",
+                               "landscape_composition": "长桌横线压住中景，右后门形成纵深引导，左侧留白给人物关系",
+                               "natural_motion_system": "空调弱风只让文件纸角低幅颤动，窗外散光缓慢移动",
+                               "environment_story_arc": "起态办公室安静，文件被推动后纸角颤动，余波停在未关的右后门",
+                               "reveal_order": "先见长桌与人物距离，后发现中央文件，最终停在右后门",
+                               "light_weather_progression": "冬夜冷白窗光保持方向，顶灯随剧情不跳色",
+                               "breathing_policy": "建立镜交代长桌纵深，人物镜只保留纸角与门口呼吸",
+                               "audio_policy": "原生音频关闭"}]}
         lock_path = os.path.join(run_dir, ".cache", "analysis", "scene_locks.json")
         _write(lock_path, locks)
         assert not validate(lock_path)
@@ -402,6 +416,19 @@ def run():
                 "tone_palette": "冷白顶灯、低饱和青灰",
                 "light_texture_purpose": "让手机玻璃边缘有低亮反光",
                 "visual_scene_prefix": "冷白顶灯下的长桌空间",
+                "foreground_layer": "前景桌角轻虚化形成低位框景",
+                "midground_layer": "中景长桌承载甲乙与手机活动区",
+                "background_layer": "后景右侧门与资料柜形成纵深且弱虚化",
+                "genre_visual_signature": "都市关系短剧的克制室内陈设与冷白夜灯",
+                "lived_in_detail": "桌沿细划痕与手机玻璃指印",
+                "depth_focus_policy": "人物与手机实焦，前景桌角轻虚，后景低对比退后",
+                "landscape_identity": "冬季夜间都市办公室，玻璃、旧木与文件构成克制职业气味",
+                "landscape_composition": "长桌横向分割中景，右后门形成纵深引导，人物间中央留白",
+                "natural_motion_system": "空调弱风只让纸角低幅颤动，窗外散光缓慢移动",
+                "environment_story_arc": "起态空间安静，手机亮起后玻璃反光增强，余波落在未关的门",
+                "reveal_order": "先见人物和长桌距离，后发现手机，最终停在右后门",
+                "light_weather_progression": "冬夜冷白窗光保持方向，顶灯不跳色",
+                "breathing_policy": "人物镜只保留纸角和门口低幅环境呼吸",
             },
             "screen_text_policy": {
                 "mode": "ai_overlay",
@@ -414,6 +441,19 @@ def run():
         }
         assert not source_constraint_basemap_issues(formal_metadata)
         assert not scene_tone_palette_issues(formal_metadata)
+        layered_prompt = (
+            "生成规格：16:9画幅，都市关系短剧。\n\n"
+            "主体与空间锁定：前景桌角轻虚化形成低位框景，中景长桌承载甲乙与手机活动区，"
+            "后景右侧门与资料柜低对比退后；长桌横向分割中景，右后门形成纵深引导，人物间中央留白。\n\n"
+            "主镜头连续规则：人物与手机实焦，背景弱虚化不抢焦。\n\n"
+            "子镜头组：【镜头1｜0.0-4.0秒】甲把手机停在桌边，乙闭口看着。\n\n"
+            "光照、声音与稳定约束：冷白夜灯照亮桌沿细划痕与手机玻璃指印。"
+        )
+        assert not scene_tone_palette_issues(formal_metadata, layered_prompt)
+        assert any("至少两层" in issue for issue in scene_tone_palette_issues(
+            formal_metadata,
+            layered_prompt.replace("前景桌角轻虚化形成低位框景，", "").replace("后景右侧门与资料柜低对比退后", "空背景"),
+        ))
         assert not screen_text_policy_metadata_issues(formal_metadata, safe_ui_prompt)
         assert not tension_curve_role_issues(formal_metadata)
         repeated_palette_lines = _global_lock_lines({"shots": [
@@ -423,6 +463,14 @@ def run():
         palette_section = repeated_palette_lines[repeated_palette_lines.index("- 本集影调色卡索引："):]
         assert sum(1 for line in palette_section if line.startswith("- SP-A：")) == 1
         assert any("手机玻璃低亮反光" in line for line in repeated_palette_lines)
+        scene_rows = _scene_state_lines(
+            {"shots": [{"shot_id": "S10", "qa_metadata": {"scene_tone_palette": formal_metadata["scene_tone_palette"]}}]},
+            {"shots": [{"shot_id": "S10", "scene": "场景A"}]},
+        )
+        assert "前中后景层次" in scene_rows[0] and "题材与生活质感" in scene_rows[0]
+        assert "风景身份与构图" in scene_rows[0] and "环境演进与呼吸" in scene_rows[0]
+        assert "前景桌角" in scene_rows[1] and "都市关系短剧" in scene_rows[1] and "人物与手机实焦" in scene_rows[1]
+        assert "长桌横向分割" in scene_rows[1] and "手机亮起后" in scene_rows[1]
         bad_formal = json.loads(json.dumps(formal_metadata, ensure_ascii=False))
         bad_formal["source_constraint_basemap"]["tension_curve_role"] = "乱写"
         assert source_constraint_basemap_issues(bad_formal)
@@ -866,7 +914,11 @@ def run():
         assert not any(light_profile[key] for key in (
             "performance_causality", "performance_contract", "story_punch_contract",
             "ai_model_readiness_score", "pressure_release_design", "listener_reaction_plan",
+            "character_scene_objective_contract", "relationship_emotion_arc",
         ))
+        assert light_profile["sequence_directing_plan"] and light_profile["cut_decision_contract"]
+        assert light_profile["prompt_information_budget"]
+        assert light_profile["sound_directing_plan"]
         dialogue_profile = validation_profile({
             "subshot_id": "D-01", "characters": ["甲", "乙"], "visible_characters": ["甲", "乙"],
             "dialogue_refs": ["D1"], "dialogue_events": [{"speaker": "甲", "text": "别再骗我。"}],
@@ -874,6 +926,10 @@ def run():
         })
         assert dialogue_profile["performance_contract"] and dialogue_profile["story_punch_contract"]
         assert dialogue_profile["listener_reaction_plan"]
+        assert dialogue_profile["character_scene_objective_contract"]
+        assert dialogue_profile["relationship_emotion_arc"]
+        # 清晰人物表演镜必须有肤色保护合同，纯环境/物件镜不增加该负担。
+        assert dialogue_profile["skin_tone_protection_contract"] is True
         peak_profile = validation_profile(
             {"subshot_id": "P-01", "characters": ["甲"], "visible_characters": ["甲"], "base_action": "甲伸手拿起药瓶"},
             {"emotion_driver": {"tension_intent": "peak"}}, ["甲"],
@@ -884,6 +940,22 @@ def run():
             "base_action": "甲将手机递给乙", "duration": 5,
         })
         assert high_profile["ai_model_readiness_score"]
+        phone_game = {
+            "subshot_id": "PHONE-01", "characters": ["男孩"], "visible_characters": ["男孩"],
+            "base_action": "男孩双手横握手机玩游戏", "duration": 4,
+        }
+        assert functional_surface_risk(phone_game)
+        assert validation_profile(phone_game)["prop_functional_surface_contract"] is True
+        assert not functional_surface_risk({"base_action": "男孩把手机递给父亲"})
+        assert not functional_surface_risk({"base_action": "手机静置在桌面右侧"})
+        assert validation_profile({
+            "subshot_id": "ENV-PHONE", "shot_type": "object", "non_character_confirmed": True,
+            "visual_intent": "桌面上的手机", "base_action": "手机静置在桌面右侧", "characters": [],
+        })["prop_functional_surface_contract"] is False
+        assert validation_profile({
+            "subshot_id": "ENV-SKIN", "shot_type": "object", "non_character_confirmed": True,
+            "visual_intent": "空置窗边", "base_action": "窗帘轻晃", "characters": [],
+        })["skin_tone_protection_contract"] is False
         high_hint = _composer_execution_hints({"subshot_id": "H1", "visible_characters": ["甲", "乙"], "duration": 5, "editorial_mode": "shot_group", "emotion_driver": {"tension_intent": "rising"}})
         assert high_hint["risk_gated_contracts"] == {"ai_model_readiness_score": True, "pressure_release_design": True}
         scaffold_packets = prepare_dispatch_packets(run_dir, "master_production", 1, ["S1"])
@@ -899,6 +971,24 @@ def run():
         assert scaffold_metadata["source_constraint_basemap"]["creative_profile"] == "balanced"
         assert "viewpoint_motion_lock" in scaffold_metadata["source_constraint_basemap"]
         assert "scene_tone_palette" in scaffold_metadata
+        assert "landscape_identity" in scaffold_metadata["scene_tone_palette"]
+        assert "environment_story_arc" in scaffold_metadata["scene_tone_palette"]
+        assert "character_scene_objective_contract" in scaffold_metadata
+        assert "relationship_emotion_arc" in scaffold_metadata
+        assert "sequence_directing_plan" in scaffold_metadata
+        assert "cut_decision_contract" in scaffold_metadata
+        assert "prompt_information_budget" in scaffold_metadata
+        assert "sound_directing_plan" in scaffold_metadata
+        phone_scaffold_path = _write_composer_scaffold(
+            run_dir,
+            [_master_item("PHONE01", "男孩玩手机游戏")],
+            os.path.join(run_dir, ".cache", "dispatch"),
+            "phone_surface_test",
+            lock_path,
+        )
+        phone_scaffold = _read(phone_scaffold_path)
+        assert "prop_functional_surface_contract" in phone_scaffold["shots"][0]["qa_metadata"]
+        assert "skin_tone_protection_contract" in phone_scaffold["shots"][0]["qa_metadata"]
         assert check_rule_consistency(os.path.dirname(os.path.dirname(__file__)))["pass"] is True
         assert "screen_text_policy" in scaffold_metadata
         assert "tension_curve_role" in scaffold_metadata

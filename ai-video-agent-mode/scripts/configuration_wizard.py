@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Persist one explicitly confirmed Phase-0 answer at a time.
+"""Persist explicitly confirmed Phase-0 configuration.
 
-The wizard is intentionally stateful only after the user has supplied an
-export base.  It prevents a caller from treating template defaults as a bulk
-confirmation and makes the next required question deterministic.
+Interactive setup records one ordered answer group at a time. Batch setup
+accepts all required fields atomically, but only when the caller explicitly
+supplies every field; template defaults never count as confirmation.
 """
 
 import argparse
@@ -23,6 +23,9 @@ ROOT = os.path.dirname(os.path.dirname(__file__))
 TEMPLATE_PATH = os.path.join(ROOT, "references", "project_config.template.json")
 MODE_ALIASES = {
     "文本": "t2v", "文本生成视频": "t2v", "文生视频": "t2v", "t2v": "t2v",
+}
+PLATFORM_ALIASES = {
+    "jimeng": "即梦", "seedance": "即梦", "即梦": "即梦",
 }
 
 
@@ -75,6 +78,26 @@ def _set(config, dotted, value):
     parent[parts[-1]] = value
 
 
+def _deep_merge(base, override):
+    result = copy.deepcopy(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = copy.deepcopy(value)
+    return result
+
+
+def _normalize_value(field, value):
+    if field == "generation_control.mode" and isinstance(value, str):
+        text = value.strip()
+        return MODE_ALIASES.get(text.lower(), MODE_ALIASES.get(text, text.lower()))
+    if field == "target_platform" and isinstance(value, str):
+        text = value.strip()
+        return PLATFORM_ALIASES.get(text.lower(), PLATFORM_ALIASES.get(text, text))
+    return value
+
+
 def _next(config):
     fields = next_fields(config)
     return fields[0] if fields else None
@@ -96,6 +119,9 @@ def _status(config, run_dir):
         return {"pass": False, "action": "blocked", "issues": issues}
     confirmation = _confirmation(config)
     if not confirmation.get("confirmed_at"):
+        # generation_control.mode is a fixed T2V contract field rather than a
+        # separate Wizard question. Completing setup confirms that fixed value.
+        confirmation["confirmed_fields"] = list(BASE_FIELDS)
         snapshot = confirmation_snapshot(config)
         confirmation["confirmed_values"] = snapshot
         confirmation["confirmed_values_sha256"] = confirmation_snapshot_hash(snapshot)
@@ -146,8 +172,7 @@ def answer(run_dir, fields, raw_values):
             value = json.loads(raw_value)
         except json.JSONDecodeError:
             value = raw_value
-        if field == "generation_control.mode" and isinstance(value, str):
-            value = MODE_ALIASES.get(value.strip().lower(), MODE_ALIASES.get(value.strip(), value))
+        value = _normalize_value(field, value)
         _set(config, field, value)
         if not _value_is_present(field, value):
             raise ValueError("invalid value for %s" % field)
@@ -155,6 +180,57 @@ def answer(run_dir, fields, raw_values):
             confirmation["confirmed_fields"].append(field)
     _write(path, config)
     return _status(config, run_dir)
+
+
+def confirm_all(run_dir, config_path):
+    """Atomically confirm a complete caller-supplied configuration.
+
+    The input file must explicitly contain every BASE_FIELDS value. Existing
+    confirmation metadata is discarded so a copied template or stale run
+    cannot authorize itself.
+    """
+    run_dir = os.path.abspath(run_dir)
+    config_path = os.path.abspath(config_path)
+    supplied = _load(config_path)
+    if not isinstance(supplied, dict):
+        raise ValueError("batch config must contain a JSON object")
+
+    for field in BASE_FIELDS:
+        value = _normalize_value(field, _get(supplied, field))
+        _set(supplied, field, value)
+    missing = [field for field in BASE_FIELDS if not _value_is_present(field, _get(supplied, field))]
+    if missing:
+        raise ValueError("batch config must explicitly provide: %s" % ", ".join(missing))
+
+    export_base = os.path.abspath(str(supplied["export_base"]).strip())
+    supplied["export_base"] = export_base
+    if not _inside_base(run_dir, export_base):
+        raise ValueError("run_dir must be created under the user-confirmed export_base")
+    if os.path.exists(run_dir) and os.listdir(run_dir):
+        raise ValueError("run_dir must be new and empty; do not clear or reuse an old run")
+
+    supplied.pop("confirmation", None)
+    config = _deep_merge(_load(TEMPLATE_PATH), supplied)
+    config["confirmation"] = copy.deepcopy(_load(TEMPLATE_PATH)["confirmation"])
+    issues = config_issues(config, run_dir=run_dir, require_confirmation=False)
+    if issues:
+        raise ValueError("invalid batch config: %s" % ", ".join(issues))
+
+    confirmation = _confirmation(config)
+    confirmation["confirmed_fields"] = list(BASE_FIELDS)
+    snapshot = confirmation_snapshot(config)
+    confirmation["confirmed_values"] = snapshot
+    confirmation["confirmed_values_sha256"] = confirmation_snapshot_hash(snapshot)
+    confirmation["confirmed_at"] = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
+    os.makedirs(run_dir, exist_ok=True)
+    _write(_config_path(run_dir), config)
+    return {
+        "pass": True,
+        "action": "confirmed",
+        "setup_mode": "high_quality_fast",
+        "confirmed_fields": list(BASE_FIELDS),
+        "config_path": _config_path(run_dir),
+    }
 
 
 def main(argv=None):
@@ -169,14 +245,19 @@ def main(argv=None):
     answer_parser.add_argument("--value", action="append", required=True)
     status_parser = sub.add_parser("status")
     status_parser.add_argument("--run-dir", required=True)
+    batch_parser = sub.add_parser("batch")
+    batch_parser.add_argument("--run-dir", required=True)
+    batch_parser.add_argument("--config", required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "start":
             result = start(args.run_dir, args.export_base)
         elif args.command == "answer":
             result = answer(args.run_dir, args.field, args.value)
-        else:
+        elif args.command == "status":
             result = _status(_load(_config_path(args.run_dir)), os.path.abspath(args.run_dir))
+        else:
+            result = confirm_all(args.run_dir, args.config)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         result = {"pass": False, "action": "blocked", "issues": [str(exc)]}
     print(json.dumps(result, ensure_ascii=False, indent=2))

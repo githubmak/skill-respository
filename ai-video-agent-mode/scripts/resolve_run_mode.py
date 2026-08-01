@@ -48,7 +48,7 @@ FIELD_PROMPTS = {
     "canvas": "请输入画幅，例如 16:9 或 9:16。",
     "visual_style": "请输入本项目的视觉风格描述。",
     "max_shot_duration": "请输入单条生成片段的最大时长（秒，不能超过平台能力）。",
-    "target_platform": "请输入目标生成平台，例如 即梦、可灵、Runway 或 Veo。",
+    "target_platform": "请输入目标生成平台；当前合同仅支持即梦 T2V。",
     "generation_control.audio_enabled": "是否启用原生音频？默认 true；请输入 true 或 false。",
     "delivery.markdown_path": "请输入本次交付 Markdown 的绝对路径；后续将自动导出到此位置。",
 }
@@ -84,7 +84,14 @@ def _value_is_present(field, value):
         return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
     if field == "delivery.markdown_path":
         return isinstance(value, str) and bool(value.strip()) and os.path.isabs(value)
+    if field == "export_base":
+        return isinstance(value, str) and bool(value.strip()) and os.path.isabs(value)
     return isinstance(value, str) and bool(value.strip())
+
+
+def _supported_target_platform(value):
+    text = str(value or "").strip().lower()
+    return "即梦" in text or text in {"jimeng", "seedance"}
 
 
 def confirmation_snapshot(config):
@@ -113,6 +120,12 @@ def config_issues(config, run_dir=None, require_confirmation=True):
     for field in BASE_FIELDS:
         if not _value_is_present(field, _get(config, field)):
             issues.append(field)
+    mode = str(_get(config, "generation_control.mode") or "").strip().lower()
+    if mode and mode != "t2v":
+        issues.append("generation_control.mode must be t2v")
+    platform = _get(config, "target_platform")
+    if _value_is_present("target_platform", platform) and not _supported_target_platform(platform):
+        issues.append("target_platform must be 即梦 for the current T2V contract")
     prompt_limits = config.get("prompt_limits", {})
     if not isinstance(prompt_limits, dict):
         issues.append("prompt_limits")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fast structural validator for jimeng-dialogue-performance-storyboard outputs."""
+"""Structural and implicit-prompt-risk validator for storyboard outputs."""
 
 from __future__ import annotations
 
@@ -129,10 +129,319 @@ KEYFRAME_CAMERA_TERMS = (
     "闯入式镜头", "冲入画面", "时间断裂",
     "快速推", "快速拉", "快速横移", "手持抖动", "强运镜",
 )
+NEGATION_CUES_BEFORE = (
+    "不要", "不要出现", "不要戴", "不要带", "不要穿", "不能有", "不应有", "不出现", "不戴", "不带", "不穿", "不是", "不在",
+    "禁止", "避免", "去掉", "去除", "移除", "排除", "没有", "无", "非",
+)
+NEGATION_CUES_AFTER = ("不要出现", "不能出现", "不应出现", "不出现", "去掉", "去除", "移除", "排除", "不存在")
+NEGATIVE_PRIMING_GROUPS = (
+    (
+        "医疗职业/场景",
+        ("护士帽", "护士服", "病号服", "白大褂", "手术服", "听诊器", "医院", "病房", "诊室", "手术室"),
+        "改写目标发型、实际服装和目标地点固定锚点",
+    ),
+    (
+        "警务/军事职业与场景",
+        ("警帽", "警服", "警徽", "警局", "军帽", "军装", "迷彩服", "肩章", "战场"),
+        "改写人物真实身份、日常服装和目标场景",
+    ),
+    (
+        "学校/未成年人场景",
+        ("校服", "红领巾", "教室", "校园"),
+        "改写人物年龄、实际服装和目标地点",
+    ),
+    (
+        "婚礼/宗教场景",
+        ("婚纱", "头纱", "婚礼", "教堂", "僧袍", "道袍"),
+        "改写实际服装、发型和目标场景锚点",
+    ),
+    (
+        "司法/拘押场景",
+        ("囚服", "监狱", "法庭"),
+        "改写实际服装、人物关系和目标地点",
+    ),
+)
+PHONE_OPERATION_TERMS = (
+    "玩手机游戏", "玩手机", "玩手游", "打手游", "刷手机", "看手机", "浏览手机", "浏览消息",
+    "手机打字", "用手机打字", "手机上打字", "操作手机", "双手横持手机", "单手竖持手机",
+    "拇指点击手机", "拇指滑动手机",
+)
+PHONE_EXPLICIT_DISPLAY_TERMS = (
+    "观众需要看清", "观众必须看清", "给观众看", "向镜头展示手机屏幕", "展示手机屏幕",
+    "手机屏幕特写", "屏幕内容展示镜",
+)
+PHONE_SCREEN_TO_CAMERA_TERMS = (
+    "屏幕正对镜头", "屏幕朝向镜头", "屏幕面向镜头", "屏幕正对观众", "屏幕朝向观众", "屏幕面向观众",
+)
+PHONE_CAMERA_BACK_TERMS = (
+    "手机背面朝向镜头", "手机背面和斜侧边缘朝向镜头", "手机背面与斜侧边缘朝向镜头",
+    "镜头只见手机背面", "镜头仅见手机背面", "镜头只看见手机背面", "手机斜侧边缘朝向镜头",
+    "镜头只见手机侧边", "镜头仅见手机侧边",
+)
+PHONE_GAME_INTERFACE_TERMS = ("游戏界面", "游戏角色", "游戏按钮", "HUD", "技能栏", "血条", "小地图", "可读游戏文字")
+VISIBLE_SKIN_TERMS = ("脸", "脸部", "脸颊", "嘴", "眼", "下颌", "肤色", "皮肤", "双手", "手部")
+COLORED_ENVIRONMENT_TERMS = (
+    "蓝灰", "灰蓝", "冷蓝", "深蓝", "暗蓝", "冷青", "暗绿", "墨绿", "青绿", "紫灰", "淡紫灰",
+    "暗红", "深红", "红棕", "黑棕", "暖棕", "冷棕", "暗金", "暖金", "霓虹", "彩色环境光",
+)
+VOLUMETRIC_LIGHT_TERMS = ("丁达尔", "体积光", "光束", "光柱", "薄雾", "雾气", "尘埃", "浮尘", "烟雾")
+POSITIVE_SKIN_TONE_TERMS = (
+    "自然肤色", "中性肤色", "自然偏暖肤色", "偏暖肤色", "自然血色", "肤色均匀", "脸部保暖",
+    "肤色微暖", "肤色清透", "肤色自然均匀", "肤色保持自然", "人物脸部保持中性", "脸部主光保持中性",
+)
+SKIN_LIGHTING_TERMS = (
+    "脸部受光均匀", "脸部柔和", "柔光落在脸", "窗光落在脸", "主光落在脸", "脸侧受光",
+    "鼻侧", "眼窝", "下颌", "浅阴影", "脸部暗部保留细节",
+)
+NEGATIVE_ONLY_SKIN_TERMS = ("不发青", "不发灰", "不惨白", "不污染脸", "不被环境色污染", "不过曝")
+VOLUMETRIC_PROTECTION_TERMS = (
+    "脸部与活动手保持清晰", "脸部和活动手保持清晰", "脸、嘴和活动手保持清晰", "脸部保持清晰",
+    "光束落到后景", "光束落在后景", "光束落到背景", "光束落在背景", "光束落到地面", "光束落在地面",
+)
+PERSON_NEAR_DEPTH_TERMS = ("前景", "近处", "镜头近端", "纵深近端")
+PERSON_FAR_DEPTH_TERMS = ("后景", "远处", "镜头远端", "纵深远端")
+GROUND_PERSPECTIVE_TERMS = (
+    "同一地面", "同一木地板", "同一石板路", "同一走廊地面", "同一连续地面",
+    "脚底落在", "双脚落在", "地面纵深线", "地板纵深线", "纵深线向后收束",
+    "消失点", "连续承载空间", "同一承载空间", "同一空间透视",
+)
+NEAR_PROJECTION_TERMS = (
+    "近处人物投影略大", "近处人物投影较大", "近处画面投影略大", "近处画面投影较大",
+    "画面投影略大", "画面投影较大", "画面占比略大", "画面占比较大",
+)
+FAR_PROJECTION_TERMS = (
+    "远处人物投影较小", "远处人物投影略小", "远处画面投影较小", "远处画面投影略小",
+    "画面投影较小", "画面投影略小", "画面占比较小", "画面占比略小",
+)
+BODY_SCALE_LOCK_TERMS = (
+    "头身比例稳定", "头身比保持稳定", "骨架比例稳定", "骨架保持稳定",
+    "真实身高关系保持", "真实身高关系稳定", "真实身高和体型保持", "真实体型保持",
+)
+TOWARD_CAMERA_TERMS = ("走向镜头", "朝镜头走", "走近镜头", "靠近镜头", "向镜头靠近")
+AWAY_FROM_CAMERA_TERMS = ("远离镜头", "背向镜头走远", "向画面深处走", "沿纵深走远")
+CONTINUOUS_GROWTH_TERMS = ("画面占比连续增大", "投影尺度连续增大", "画面投影连续增大")
+CONTINUOUS_SHRINK_TERMS = ("画面占比连续减小", "投影尺度连续减小", "画面投影连续减小")
 
 
 def compact_len(text: str) -> int:
     return len(re.sub(r"\s+", "", text))
+
+
+def strip_quoted_content(text: str) -> str:
+    """Exclude source dialogue/OS text from visual-concept linting."""
+    return re.sub(r"[“\"][^”\"]*[”\"]", "", text)
+
+
+def has_negation_near(text: str, start: int, end: int) -> bool:
+    before = text[max(0, start - 14):start].rstrip()
+    after = text[end:min(len(text), end + 10)].lstrip()
+    flexible_prefix = re.search(
+        r"(?:不要|不能|不应|禁止|避免|去掉|去除|移除|排除|没有|不是|不戴|不带|不穿)[^，。；;\n]{0,6}$",
+        before,
+    )
+    return bool(flexible_prefix) or any(before.endswith(cue) for cue in NEGATION_CUES_BEFORE) or any(
+        after.startswith(cue) for cue in NEGATION_CUES_AFTER
+    )
+
+
+def negative_priming_issues(text: str, negative_field: bool = False) -> list[str]:
+    cleaned = strip_quoted_content(text)
+    issues: list[str] = []
+    for label, terms, rewrite in NEGATIVE_PRIMING_GROUPS:
+        hits: list[str] = []
+        for term in terms:
+            for match in re.finditer(re.escape(term), cleaned):
+                if negative_field or has_negation_near(cleaned, match.start(), match.end()):
+                    hits.append(term)
+                    break
+        if hits:
+            issues.append(f"{label}：{','.join(dict.fromkeys(hits))}；{rewrite}")
+    return issues
+
+
+def phone_operation_detected(text: str) -> bool:
+    cleaned = strip_quoted_content(text)
+    if any(term in cleaned for term in PHONE_OPERATION_TERMS):
+        return True
+    return bool(
+        re.search(r"手机[^。；;\n]{0,24}(?:玩|打)游戏", cleaned)
+        or re.search(r"(?:玩|打)游戏[^。；;\n]{0,24}手机", cleaned)
+        or re.search(r"手机[^。；;\n]{0,16}(?:打字|浏览|滑动|点击)", cleaned)
+    )
+
+
+def phone_display_explicit(text: str) -> bool:
+    cleaned = strip_quoted_content(text)
+    return any(term in cleaned for term in PHONE_EXPLICIT_DISPLAY_TERMS)
+
+
+def phone_screen_faces_user(text: str) -> bool:
+    cleaned = strip_quoted_content(text)
+    return bool(
+        re.search(r"屏幕(?:朝向|面向|斜向)[^，。；;\n]{0,10}(?:本人|使用者|持机者)", cleaned)
+        or any(term in cleaned for term in ("屏幕朝向使用者", "屏幕面向使用者", "屏幕朝向持机者", "屏幕面向持机者"))
+    )
+
+
+def phone_camera_sees_back_or_edge(text: str) -> bool:
+    cleaned = strip_quoted_content(text)
+    return any(term in cleaned for term in PHONE_CAMERA_BACK_TERMS)
+
+
+def phone_operation_issues(direct: str, state: str, keyframe_image: str) -> list[str]:
+    if not phone_operation_detected(direct) or phone_display_explicit(direct):
+        return []
+    cleaned = strip_quoted_content(direct)
+    issues: list[str] = []
+    if any(term in cleaned for term in PHONE_SCREEN_TO_CAMERA_TERMS):
+        issues.append("操作型手机被错误升级为展示型；屏幕不得默认正对镜头/观众")
+    if not phone_screen_faces_user(direct):
+        issues.append("缺少用户侧朝向：写明屏幕朝向持机人物本人")
+    if not phone_camera_sees_back_or_edge(direct):
+        issues.append("缺少镜头侧朝向：写明手机背面或斜侧边缘朝向镜头")
+    ui_hits = [term for term in PHONE_GAME_INTERFACE_TERMS if term in cleaned]
+    if ui_hits:
+        issues.append(f"无展示任务却描述游戏界面：{','.join(ui_hits)}；改用拇指动作和屏幕冷光")
+    if not phone_screen_faces_user(state):
+        issues.append("【状态继承】必须复写屏幕朝向持机人物本人")
+    if keyframe_image and (
+        not phone_screen_faces_user(keyframe_image) or not phone_camera_sees_back_or_edge(keyframe_image)
+    ):
+        issues.append("操作型手机关键帧必须重复屏幕朝本人、手机背面或斜侧边缘朝镜头")
+    return issues
+
+
+def skin_tone_protection_issues(direct: str) -> list[str]:
+    cleaned = strip_quoted_content(direct)
+    has_visible_skin = any(term in cleaned for term in VISIBLE_SKIN_TERMS)
+    color_hits = [term for term in COLORED_ENVIRONMENT_TERMS if term in cleaned]
+    volume_hits = [term for term in VOLUMETRIC_LIGHT_TERMS if term in cleaned]
+    if not has_visible_skin or not (color_hits or volume_hits):
+        return []
+    issues: list[str] = []
+    positive_skin = any(term in cleaned for term in POSITIVE_SKIN_TONE_TERMS)
+    lighting_anchor = any(term in cleaned for term in SKIN_LIGHTING_TERMS)
+    negative_only = any(term in cleaned for term in NEGATIVE_ONLY_SKIN_TERMS)
+    if not positive_skin:
+        detail = ",".join((color_hits + volume_hits)[:5])
+        issues.append(f"彩色环境/体积光缺少正向中性肤色锚点 -> {detail}")
+    if not lighting_anchor:
+        issues.append("缺少脸部受光面或浅阴影落点；写明主光照哪侧脸及鼻侧/眼窝/下颌阴影")
+    if negative_only and not positive_skin:
+        issues.append("不能只用不发青/不发灰/不过曝保护肤色；改写为自然偏暖或中性肤色")
+    if volume_hits and not any(term in cleaned for term in VOLUMETRIC_PROTECTION_TERMS):
+        issues.append("丁达尔/体积光缺少主体避让；写明窄束落在背景或地面，脸、嘴和活动手保持清晰")
+    return issues
+
+
+def group_cast_names(cast: str) -> list[str]:
+    names: list[str] = []
+    for raw_line in cast.splitlines():
+        line = re.sub(r"^[-*]\s*", "", raw_line.strip())
+        match = re.match(r"([\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9_·]{0,11})", line)
+        if match:
+            names.append(match.group(1))
+    return list(dict.fromkeys(names))
+
+
+def named_person_contexts(direct: str, cast_names: list[str]) -> dict[str, list[str]]:
+    if len(cast_names) < 2:
+        return {}
+    matches: list[tuple[int, int, str]] = []
+    for name in cast_names:
+        matches.extend((match.start(), match.end(), name) for match in re.finditer(re.escape(name), direct))
+    matches.sort()
+    contexts: dict[str, list[str]] = {name: [] for name in cast_names}
+    for index, (start, end, name) in enumerate(matches):
+        previous_name_end = matches[index - 1][1] if index > 0 else 0
+        previous_boundary = max(
+            direct.rfind(mark, previous_name_end, start)
+            for mark in ("。", "；", ";", "，", "，", "\n")
+        )
+        prefix_start = max(previous_name_end, previous_boundary + 1, start - 24)
+        next_name_start = matches[index + 1][0] if index + 1 < len(matches) else len(direct)
+        boundary = re.search(r"[。；;\n]", direct[end:])
+        sentence_end = end + boundary.start() if boundary else len(direct)
+        context_end = min(next_name_start, sentence_end, end + 72)
+        suffix = direct[end:context_end]
+        connector = re.search(r"(?:和|与|及)(?=[^，。；;\n]{0,12}(?:前景|近处|后景|远处|镜头近端|镜头远端))", suffix)
+        if connector:
+            suffix = suffix[:connector.start()]
+        contexts[name].append(direct[prefix_start:start] + name + suffix)
+    return contexts
+
+
+def person_depth_labels(contexts: dict[str, list[str]]) -> dict[str, set[str]]:
+    labels: dict[str, set[str]] = {}
+    for name, parts in contexts.items():
+        joined = "；".join(parts)
+        person_labels: set[str] = set()
+        if any(term in joined for term in PERSON_NEAR_DEPTH_TERMS):
+            person_labels.add("near")
+        if any(term in joined for term in PERSON_FAR_DEPTH_TERMS):
+            person_labels.add("far")
+        labels[name] = person_labels
+    return labels
+
+
+def perspective_scale_issues(direct: str, cast_names: list[str]) -> list[str]:
+    cleaned = strip_quoted_content(direct)
+    issues: list[str] = []
+    contexts = named_person_contexts(cleaned, cast_names)
+    labels = person_depth_labels(contexts)
+    near_names = [name for name, values in labels.items() if "near" in values]
+    far_names = [name for name, values in labels.items() if "far" in values]
+    paired_depth = re.search(
+        r"([^，。；;\n]{1,12})[与和]([^，。；;\n]{1,12})分别[^，。；;\n]{0,20}"
+        r"(?:前景|近处|镜头近端)[^，。；;\n]{0,8}(?:后景|远处|镜头远端)",
+        cleaned,
+    )
+    if paired_depth:
+        first, second = paired_depth.group(1), paired_depth.group(2)
+        if any(name in first for name in cast_names) and any(name in second for name in cast_names):
+            near_names.append(next(name for name in cast_names if name in first))
+            far_names.append(next(name for name in cast_names if name in second))
+    has_named_depth_split = bool(near_names and far_names and set(near_names) != set(far_names))
+    near_context = "；".join(part for name in near_names for part in contexts.get(name, []))
+    shoulder_local_only = bool(near_names) and all(
+        any(term in "；".join(contexts.get(name, [])) for term in ("肩线", "后脑边缘", "局部侧脸"))
+        for name in set(near_names)
+    ) and (
+        "肩后" in cleaned
+        and any(term in near_context for term in ("占画面", "裁切", "弱虚化"))
+    )
+    if has_named_depth_split and not shoulder_local_only:
+        has_ground_perspective = any(term in cleaned for term in GROUND_PERSPECTIVE_TERMS) or bool(
+            re.search(r"同一[^，。；;\n]{0,12}(?:地面|地板|路面|石板路|走廊|台阶|承载面|空间透视)", cleaned)
+        )
+        if not has_ground_perspective:
+            issues.append("具名人物分处不同纵深但缺少同一连续地面/承载空间及透视收束")
+        if not (
+            any(term in cleaned for term in NEAR_PROJECTION_TERMS)
+            and any(term in cleaned for term in FAR_PROJECTION_TERMS)
+        ):
+            issues.append("具名人物分处不同纵深但缺少近处投影较大、远处投影较小的画面事实")
+        has_body_scale_lock = any(term in cleaned for term in BODY_SCALE_LOCK_TERMS) or bool(
+            re.search(r"(?:头身比|头身比例|骨架|真实身高|真实体型)[^，。；;\n]{0,16}(?:稳定|保持|不变)", cleaned)
+        )
+        if not has_body_scale_lock:
+            issues.append("具名人物分处不同纵深但缺少头身比例/骨架/真实身高关系锁定")
+
+    if any(term in cleaned for term in TOWARD_CAMERA_TERMS):
+        if not any(term in cleaned for term in CONTINUOUS_GROWTH_TERMS) and not re.search(
+            r"(?:画面占比|投影尺度|画面投影)[^，。；;\n]{0,10}(?:连续|逐渐|逐步|平滑)[^，。；;\n]{0,6}增大", cleaned
+        ):
+            issues.append("人物走向镜头时必须写画面占比随距离连续增大")
+        if not any(term in cleaned for term in BODY_SCALE_LOCK_TERMS):
+            issues.append("人物走向镜头时必须保持头身比例、骨架或真实身高稳定")
+    if any(term in cleaned for term in AWAY_FROM_CAMERA_TERMS):
+        if not any(term in cleaned for term in CONTINUOUS_SHRINK_TERMS) and not re.search(
+            r"(?:画面占比|投影尺度|画面投影)[^，。；;\n]{0,10}(?:连续|逐渐|逐步|平滑)[^，。；;\n]{0,6}减小", cleaned
+        ):
+            issues.append("人物远离镜头时必须写画面占比随距离连续减小")
+        if not any(term in cleaned for term in BODY_SCALE_LOCK_TERMS):
+            issues.append("人物远离镜头时必须保持头身比例、骨架或真实身高稳定")
+    return issues
 
 
 def iter_groups(text: str):
@@ -308,7 +617,14 @@ def keyframe_trigger_reasons(direct: str, header: str) -> list[str]:
     return reasons
 
 
-def validate_child(group_id: str, number: int, header: str, block: str, issues: list[str]) -> None:
+def validate_child(
+    group_id: str,
+    number: int,
+    header: str,
+    block: str,
+    cast_names: list[str],
+    issues: list[str],
+) -> None:
     sid = f"{group_id}-{number}"
     if not re.match(rf"^{number}\s*，\s*\d+(?:\.\d+)?s\s*，\s*(普通|复杂)。?$", header):
         issues.append(f"{sid}: 镜号应为“{number}，时长s，普通/复杂。” -> {header}")
@@ -324,6 +640,9 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
         return
     performance = extract(block, "【表演与声音】", "【状态继承】")
     mouth_window = extract_optional_field(block, "【口型分窗】")
+    state = extract_optional_field(block, "【状态继承】")
+    necessary = extract_optional_field(block, "【本镜必要约束｜直接复制】")
+    negative = extract_optional_field(block, "【本镜补充负面提示词｜直接复制】")
     keyframe_image = extract_optional_field(block, KEYFRAME_IMAGE_FIELD)
     keyframe_video = extract_optional_field(block, KEYFRAME_VIDEO_FIELD)
     if keyframe_image and not keyframe_video:
@@ -378,7 +697,8 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
     )
     if needs_visible_count and not VISIBLE_COUNT_RE.search(direct + "\n" + extract_optional_field(block, "【本镜必要约束｜直接复制】")):
         issues.append(f"{sid}: 多人/画外/肩线/倒影/虚化人物镜头需要声明本镜画面内可见人数；纯画外声音不计入")
-    if ("只拍" in direct or "只保留" in direct) and re.search(r"中景|中近景|中远景|全景|远景", direct):
+    hand_object_only = bool(re.search(r"(?:只拍|只保留)(?:手部|手和道具|道具|手机|物件|局部)", direct))
+    if hand_object_only and re.search(r"中景|中近景|中远景|全景|远景", direct):
         issues.append(f"{sid}: hand/object-only frame conflicts with medium or wide shot size")
     if "肩后" in direct and "肩线" not in direct:
         issues.append(f"{sid}: shoulder shot should state foreground shoulder line and target")
@@ -410,6 +730,19 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
     if any(term in direct for term in UI_RISK_TERMS):
         if not any(term in direct for term in UI_STRUCTURE_TERMS):
             issues.append(f"{sid}: UI/文字需要写清屏幕朝向、模糊界面或后期叠字安全区")
+    for field_name, field_text, negative_field in (
+        ("【画面描述｜直接复制】", direct, False),
+        ("【本镜必要约束｜直接复制】", necessary, False),
+        ("【本镜补充负面提示词｜直接复制】", negative, True),
+    ):
+        for issue in negative_priming_issues(field_text, negative_field=negative_field):
+            issues.append(f"{sid}: {field_name} 负向具体概念泄漏 -> {issue}")
+    for issue in phone_operation_issues(direct, state, keyframe_image):
+        issues.append(f"{sid}: 操作型手机朝向风险 -> {issue}")
+    for issue in skin_tone_protection_issues(direct):
+        issues.append(f"{sid}: 环境色污染肤色风险 -> {issue}")
+    for issue in perspective_scale_issues(direct, cast_names):
+        issues.append(f"{sid}: 人物透视比例风险 -> {issue}")
     if post_text_inside_direct(direct):
         issues.append(f"{sid}: 后期叠字的具体文字不要写进直接提示词；只预留安全区，具体文字写到【表演与声音】中的后期文字句")
     if "后期叠字" in direct and not any(term in direct for term in ("安全区", "画面左侧", "画面右侧", "贴合屏幕平面", "预留")):
@@ -433,8 +766,6 @@ def validate_child(group_id: str, number: int, header: str, block: str, issues: 
         if any(compact_len(text) > 18 for text in bubble_texts):
             if not all(term in direct for term in ("大号", "文字居中", "留白")):
                 issues.append(f"{sid}: 长AI消息气泡需要写“大号清晰气泡、文字居中、背景留白干净”，避免文字乱贴或变形")
-        necessary = extract_optional_field(block, "【本镜必要约束｜直接复制】")
-        negative = extract_optional_field(block, "【本镜补充负面提示词｜直接复制】")
         if not all(term in necessary for term in SIDE_OVERLAY_NECESSARY_TERMS):
             issues.append(f"{sid}: AI消息气泡需要【本镜必要约束｜直接复制】声明不属于手机且不贴手机")
         if not any(term in negative for term in SIDE_OVERLAY_NEGATIVE_TERMS):
@@ -631,7 +962,10 @@ def validate(path: Path) -> list[str]:
     if internal_hits:
         issues.append("final output should not expose internal scene-preset terms -> " + ",".join(internal_hits))
     global_section = extract_top_section(text, "## 全局锁定")
+    global_negative_section = extract_top_section(text, "## 通用负面提示词｜直接复制")
     scene_state_section = extract_top_section(text, "## 场景状态表")
+    for issue in negative_priming_issues(global_negative_section, negative_field=True):
+        issues.append(f"通用负面提示词存在具体领域概念泄漏 -> {issue}")
     if COLOR_CARD_TITLE not in global_section:
         issues.append(f"## 全局锁定 missing {COLOR_CARD_TITLE}")
     else:
@@ -663,12 +997,13 @@ def validate(path: Path) -> list[str]:
         for line in [x.strip() for x in cast.splitlines() if x.strip()]:
             if any(sep in line for sep in "、，；;"):
                 issues.append(f"{group_id}: cast line should contain one visible character/group only -> {line}")
+        cast_names = group_cast_names(cast)
         children = list(iter_children(block))
         if not children:
             issues.append(f"{group_id}: no child shots found")
         for expected_number, child in enumerate(children, start=1):
             child_count += 1
-            validate_child(group_id, expected_number, child.group(1).strip(), child.group(0), issues)
+            validate_child(group_id, expected_number, child.group(1).strip(), child.group(0), cast_names, issues)
         child_directs = [
             direct_prompt(child.group(0))
             for child in children

@@ -43,6 +43,13 @@ from modec_v4 import (
     video_texture_contract_issues,
 )
 from negative_prompts import PLACEHOLDER, is_fight_context
+from production_intelligence import (
+    lighting_topology_contract_issues,
+    multi_person_attention_budget_issues,
+    perspective_scale_contract_issues,
+    prop_lifecycle_contract_issues,
+    visual_prior_risk_issues,
+)
 from contract_registry import QA_REQUIRED_FIELDS
 from shot_semantics import validation_profile as derive_validation_profile
 
@@ -183,6 +190,19 @@ def main(run_dir):
                 errors.append(prefix + issue)
         if validation_profile["listener_reaction_plan"]:
             for issue in listener_reaction_issues(metadata, full_prompt):
+                errors.append(prefix + issue)
+        for issue in visual_prior_risk_issues(full_prompt, json.dumps(plan_item, ensure_ascii=False)):
+            errors.append(prefix + issue)
+        for issue in multi_person_attention_budget_issues(metadata, full_prompt, visible):
+            errors.append(prefix + issue)
+        if validation_profile["prop_lifecycle_contract"] or "prop_lifecycle_contract" in metadata:
+            for issue in prop_lifecycle_contract_issues(metadata, full_prompt, validation_profile["prop_lifecycle_contract"]):
+                errors.append(prefix + issue)
+        if validation_profile["perspective_scale_contract"] or "perspective_scale_contract" in metadata:
+            for issue in perspective_scale_contract_issues(metadata, full_prompt, visible, validation_profile["perspective_scale_contract"]):
+                errors.append(prefix + issue)
+        if validation_profile["lighting_topology_contract"] or "lighting_topology_contract" in metadata:
+            for issue in lighting_topology_contract_issues(metadata, full_prompt, validation_profile["lighting_topology_contract"]):
                 errors.append(prefix + issue)
         fight = is_fight_context(
             plan_item.get("scene_type", ""), plan_item.get("shot_type", ""), full_prompt

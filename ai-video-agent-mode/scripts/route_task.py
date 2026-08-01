@@ -86,15 +86,64 @@ def route(mode, run_dir=None, subshot_id=None, intent=None):
     return result
 
 
+def high_quality_fast_start(run_dir, config_path, source_path):
+    """Confirm complete setup and advance the unchanged pipeline to its first pause."""
+    source_path = os.path.abspath(source_path)
+    if not os.path.isfile(source_path):
+        raise ValueError("source file does not exist: %s" % source_path)
+    from configuration_wizard import confirm_all
+    from workflow_supervisor import run_until_pause
+
+    configuration = confirm_all(run_dir, config_path)
+    initialization = resolve("full", run_dir, "resume")
+    if not initialization.get("pass"):
+        return {
+            "pass": False,
+            "mode": "full",
+            "intent": "new",
+            "setup_mode": "high_quality_fast",
+            "configuration": configuration,
+            "initialization": initialization,
+            "blocking": initialization.get("blocking", ["confirmed configuration could not initialize"]),
+        }
+    supervisor = run_until_pause(run_dir, source_path)
+    status = supervisor.get("status")
+    passed = status in {"host_dispatch_required", "waiting_for_workers", "completed"}
+    return {
+        "pass": passed,
+        "mode": "full",
+        "intent": "new",
+        "setup_mode": "high_quality_fast",
+        "quality_pipeline_preserved": True,
+        "skipped_phases": [],
+        "configuration": configuration,
+        "initialization": initialization,
+        "supervisor": supervisor,
+        "blocking": [] if passed else [supervisor.get("reason") or status or "fast start blocked"],
+    }
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("mode", choices=sorted(ROUTES))
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--subshot-id")
     parser.add_argument("--intent", choices=("new", "resume", "audit", "reexport"))
+    parser.add_argument("--config", help="Complete JSON configuration for high-quality fast mode.")
+    parser.add_argument("--source", help="Source script for high-quality fast mode.")
+    parser.add_argument("--auto-start", action="store_true", help="Confirm complete configuration and start the unchanged full pipeline.")
     args = parser.parse_args()
     try:
-        outcome = route(args.mode, args.run_dir, args.subshot_id, args.intent)
+        if args.auto_start:
+            if args.mode != "full" or args.intent not in (None, "new"):
+                raise ValueError("--auto-start only supports full --intent new")
+            if not args.config or not args.source:
+                raise ValueError("--auto-start requires both --config and --source")
+            outcome = high_quality_fast_start(args.run_dir, args.config, args.source)
+        else:
+            if args.config or args.source:
+                raise ValueError("--config and --source require --auto-start")
+            outcome = route(args.mode, args.run_dir, args.subshot_id, args.intent)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(json.dumps({"pass": False, "blocking": [str(exc)]}, ensure_ascii=False))
         sys.exit(2)

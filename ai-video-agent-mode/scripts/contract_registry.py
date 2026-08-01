@@ -127,6 +127,9 @@ QA_REQUIRED_FIELDS = (
     "quality_contract", "dramatic_design", "duration_design", "viewpoint",
     "visual_hierarchy", "entry_strategy", "reveal_strategy",
     "focus_strategy", "temporal_transition_contract", "story_punch_contract",
+    "scene_tone_palette", "character_scene_objective_contract",
+    "relationship_emotion_arc", "sequence_directing_plan",
+    "cut_decision_contract", "prompt_information_budget", "sound_directing_plan",
 )
 
 # Heavy semantic QA fields are risk-gated by modec_v4 validators instead of

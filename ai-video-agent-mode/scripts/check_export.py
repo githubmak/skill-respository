@@ -48,6 +48,13 @@ from modec_v4 import (
     video_texture_contract_issues,
 )
 from negative_prompts import PLACEHOLDER, is_fight_context
+from production_intelligence import (
+    lighting_topology_contract_issues,
+    multi_person_attention_budget_issues,
+    perspective_scale_contract_issues,
+    prop_lifecycle_contract_issues,
+    visual_prior_risk_issues,
+)
 from contract_registry import QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
 from shot_semantics import validation_profile as derive_validation_profile
 
@@ -185,6 +192,15 @@ def check_export(md_path, run_dir, quality_mode=False):
         plan_item = plan_map.get(sid, {})
         visible = _as_list(plan_item.get("visible_characters", plan_item.get("characters", [])))
         validation_profile = derive_validation_profile(plan_item, metadata, visible)
+        production_issues = (
+            visual_prior_risk_issues(full_prompt, json.dumps(plan_item, ensure_ascii=False))
+            + multi_person_attention_budget_issues(metadata, full_prompt, visible)
+            + prop_lifecycle_contract_issues(metadata, full_prompt, validation_profile["prop_lifecycle_contract"])
+            + perspective_scale_contract_issues(metadata, full_prompt, visible, validation_profile["perspective_scale_contract"])
+            + lighting_topology_contract_issues(metadata, full_prompt, validation_profile["lighting_topology_contract"])
+        )
+        if production_issues:
+            metadata_missing += 1
         role_errors = role_partition_issues(metadata, visible)
         if role_errors:
             role_issues += 1

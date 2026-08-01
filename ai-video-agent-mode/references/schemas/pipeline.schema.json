@@ -87,9 +87,22 @@
         "light_temperature": {"type": "string", "minLength": 1},
         "tone_palette": {"type": "string", "minLength": 1},
         "light_texture_purpose": {"type": "string", "minLength": 1},
+        "foreground_layer": {"type": "string", "minLength": 1},
+        "midground_layer": {"type": "string", "minLength": 1},
+        "background_layer": {"type": "string", "minLength": 1},
+        "genre_visual_signature": {"type": "string", "minLength": 1},
+        "lived_in_detail": {"type": "string", "minLength": 1},
+        "depth_focus_policy": {"type": "string", "minLength": 1},
+        "landscape_identity": {"type": "string", "minLength": 1},
+        "landscape_composition": {"type": "string", "minLength": 1},
+        "natural_motion_system": {"type": "string", "minLength": 1},
+        "environment_story_arc": {"type": "string", "minLength": 1},
+        "reveal_order": {"type": "string", "minLength": 1},
+        "light_weather_progression": {"type": "string", "minLength": 1},
+        "breathing_policy": {"type": "string", "minLength": 1},
         "audio_policy": {"type": "string", "minLength": 1}
       },
-      "required": ["scene", "space_anchor", "screen_positions", "wardrobe_lock", "prop_state", "light_source", "light_direction", "light_temperature", "audio_policy"],
+      "required": ["scene", "space_anchor", "screen_positions", "wardrobe_lock", "prop_state", "light_source", "light_direction", "light_temperature", "foreground_layer", "midground_layer", "background_layer", "genre_visual_signature", "lived_in_detail", "depth_focus_policy", "landscape_identity", "landscape_composition", "natural_motion_system", "environment_story_arc", "reveal_order", "light_weather_progression", "breathing_policy", "audio_policy"],
       "additionalProperties": false
     },
     "director_item": {
@@ -156,8 +169,19 @@
         "source_constraint_basemap": {"$ref": "#/definitions/source_constraint_basemap"},
         "scene_tone_palette": {"$ref": "#/definitions/scene_tone_palette"},
         "screen_text_policy": {"$ref": "#/definitions/screen_text_policy"},
+        "prop_functional_surface_contract": {"$ref": "#/definitions/prop_functional_surface_contract"},
+        "skin_tone_protection_contract": {"$ref": "#/definitions/skin_tone_protection_contract"},
+        "prop_lifecycle_contract": {"$ref": "#/definitions/prop_lifecycle_contract"},
+        "perspective_scale_contract": {"$ref": "#/definitions/perspective_scale_contract"},
+        "lighting_topology_contract": {"$ref": "#/definitions/lighting_topology_contract"},
         "tension_curve_role": {"$ref": "#/definitions/tension_curve_role"},
         "story_punch_contract": {"$ref": "#/definitions/story_punch_contract"},
+        "character_scene_objective_contract": {"$ref": "#/definitions/character_scene_objective_contract"},
+        "relationship_emotion_arc": {"$ref": "#/definitions/relationship_emotion_arc"},
+        "sequence_directing_plan": {"$ref": "#/definitions/sequence_directing_plan"},
+        "cut_decision_contract": {"$ref": "#/definitions/cut_decision_contract"},
+        "prompt_information_budget": {"$ref": "#/definitions/prompt_information_budget"},
+        "sound_directing_plan": {"$ref": "#/definitions/sound_directing_plan"},
         "performance_contract": {"$ref": "#/definitions/performance_contract"},
         "dialogue_events": {
           "type": "array",
@@ -241,6 +265,10 @@
         "stress_words": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"type": "string", "minLength": 1}},
         "subtext_visible_evidence": {"type": "string", "minLength": 4},
         "turn_relation": {"type": "string", "enum": ["initiate", "respond", "deflect", "interrupt", "withdraw", "bridge", "continue"]},
+        "conversation_mode": {"type": "string", "enum": ["clean_turn", "overlap", "interrupted", "unfinished", "self_correction", "non_answer", "source_supported_other"]},
+        "response_latency": {"type": "string"},
+        "overlap_or_interrupt_window": {"type": "string"},
+        "conversation_source_basis": {"type": "string"},
         "lip_sync": {"type": "boolean"}
       },
       "required": [
@@ -281,9 +309,22 @@
         "space_master_sentence": {"type": "string", "minLength": 1},
         "tone_palette": {"type": "string", "minLength": 1},
         "light_texture_purpose": {"type": "string", "minLength": 1},
-        "visual_scene_prefix": {"type": "string", "minLength": 1}
+        "visual_scene_prefix": {"type": "string", "minLength": 1},
+        "foreground_layer": {"type": "string", "minLength": 1},
+        "midground_layer": {"type": "string", "minLength": 1},
+        "background_layer": {"type": "string", "minLength": 1},
+        "genre_visual_signature": {"type": "string", "minLength": 1},
+        "lived_in_detail": {"type": "string", "minLength": 1},
+        "depth_focus_policy": {"type": "string", "minLength": 1},
+        "landscape_identity": {"type": "string", "minLength": 1},
+        "landscape_composition": {"type": "string", "minLength": 1},
+        "natural_motion_system": {"type": "string", "minLength": 1},
+        "environment_story_arc": {"type": "string", "minLength": 1},
+        "reveal_order": {"type": "string", "minLength": 1},
+        "light_weather_progression": {"type": "string", "minLength": 1},
+        "breathing_policy": {"type": "string", "minLength": 1}
       },
-      "required": ["space_id", "space_master_sentence", "tone_palette", "light_texture_purpose", "visual_scene_prefix"],
+      "required": ["space_id", "space_master_sentence", "tone_palette", "light_texture_purpose", "visual_scene_prefix", "foreground_layer", "midground_layer", "background_layer", "genre_visual_signature", "lived_in_detail", "depth_focus_policy", "landscape_identity", "landscape_composition", "natural_motion_system", "environment_story_arc", "reveal_order", "light_weather_progression", "breathing_policy"],
       "additionalProperties": false
     },
     "screen_text_policy": {
@@ -296,6 +337,98 @@
         "perspective_rule": {"type": "string"}
       },
       "required": ["mode", "text_refs", "render_rule", "safe_area", "perspective_rule"],
+      "additionalProperties": false
+    },
+    "prop_functional_surface_contract": {
+      "type": "object",
+      "properties": {
+        "applicable": {"type": "boolean"},
+        "prop": {"type": "string", "minLength": 1},
+        "functional_surface": {"type": "string", "minLength": 1},
+        "user": {"type": "string", "minLength": 1},
+        "user_view_relation": {"type": "string", "minLength": 2},
+        "camera_half_space": {"type": "string", "minLength": 2},
+        "camera_visible_surface": {"type": "string", "minLength": 2},
+        "grip_contact": {"type": "string", "minLength": 2},
+        "interaction_evidence": {"type": "string", "minLength": 2},
+        "content_visibility": {"type": "string", "enum": ["hidden", "partial", "readable", "post_overlay", "not_applicable"]},
+        "orientation_lock": {"type": "string", "minLength": 2},
+        "fallback_shot": {"type": "string", "minLength": 2}
+      },
+      "required": [
+        "applicable", "prop", "functional_surface", "user", "user_view_relation",
+        "camera_half_space", "camera_visible_surface", "grip_contact", "interaction_evidence",
+        "content_visibility", "orientation_lock", "fallback_shot"
+      ],
+      "additionalProperties": false
+    },
+    "skin_tone_protection_contract": {
+      "type": "object",
+      "properties": {
+        "applicable": {"type": "boolean"},
+        "subjects": {"type": "string", "minLength": 2},
+        "protection_mode": {"type": "string", "enum": ["natural_protected", "motivated_color_cast", "source_authorized_marks", "silhouette"]},
+        "source_allowed_skin_marks": {"type": "string", "minLength": 2},
+        "skin_tone_baseline": {"type": "string", "minLength": 2},
+        "face_light_and_exposure": {"type": "string", "minLength": 2},
+        "face_fill_shadow_policy": {"type": "string", "minLength": 2},
+        "environment_color_boundary": {"type": "string", "minLength": 2},
+        "texture_atmosphere_boundary": {"type": "string", "minLength": 2},
+        "continuity_lock": {"type": "string", "minLength": 2},
+        "fallback": {"type": "string", "minLength": 2}
+      },
+      "required": [
+        "applicable", "subjects", "protection_mode", "source_allowed_skin_marks",
+        "skin_tone_baseline", "face_light_and_exposure", "face_fill_shadow_policy",
+        "environment_color_boundary", "texture_atmosphere_boundary", "continuity_lock", "fallback"
+      ],
+      "additionalProperties": false
+    },
+    "prop_lifecycle_contract": {
+      "type": "object",
+      "properties": {
+        "prop": {"type": "string", "minLength": 2},
+        "purpose": {"type": "string", "minLength": 2},
+        "visible_surface": {"type": "string", "minLength": 2},
+        "start_location": {"type": "string", "minLength": 2},
+        "contact_owner": {"type": "string", "minLength": 2},
+        "contact_mode": {"type": "string", "minLength": 2},
+        "motion_path": {"type": "string", "minLength": 2},
+        "end_location": {"type": "string", "minLength": 2},
+        "end_orientation": {"type": "string", "minLength": 2},
+        "next_shot_state": {"type": "string", "minLength": 2}
+      },
+      "required": ["prop", "purpose", "visible_surface", "start_location", "contact_owner", "contact_mode", "motion_path", "end_location", "end_orientation", "next_shot_state"],
+      "additionalProperties": false
+    },
+    "perspective_scale_contract": {
+      "type": "object",
+      "properties": {
+        "subjects_depth": {"type": "string", "minLength": 2},
+        "support_plane": {"type": "string", "minLength": 2},
+        "projection_scale_rule": {"type": "string", "minLength": 2},
+        "body_ratio_lock": {"type": "string", "minLength": 2},
+        "motion_scaling": {"type": "string", "minLength": 2},
+        "prop_scale_lock": {"type": "string", "minLength": 2},
+        "grounding_evidence": {"type": "string", "minLength": 2},
+        "fallback": {"type": "string", "minLength": 2}
+      },
+      "required": ["subjects_depth", "support_plane", "projection_scale_rule", "body_ratio_lock", "motion_scaling", "prop_scale_lock", "grounding_evidence", "fallback"],
+      "additionalProperties": false
+    },
+    "lighting_topology_contract": {
+      "type": "object",
+      "properties": {
+        "motivated_source": {"type": "string", "minLength": 2},
+        "source_direction": {"type": "string", "minLength": 2},
+        "temperature_range": {"type": "string", "minLength": 2},
+        "face_light_layer": {"type": "string", "minLength": 2},
+        "environment_light_layer": {"type": "string", "minLength": 2},
+        "shadow_exposure_policy": {"type": "string", "minLength": 2},
+        "volume_light_boundary": {"type": "string", "minLength": 2},
+        "conflict_resolution": {"type": "string", "minLength": 2}
+      },
+      "required": ["motivated_source", "source_direction", "temperature_range", "face_light_layer", "environment_light_layer", "shadow_exposure_policy", "volume_light_boundary", "conflict_resolution"],
       "additionalProperties": false
     },
     "cinematic_image_contract": {
@@ -344,6 +477,95 @@
         "continuity_carryover",
         "risk_controls"
       ],
+      "additionalProperties": false
+    },
+    "character_scene_objective_contract": {
+      "type": "object",
+      "properties": {
+        "focus_character": {"type": "string", "minLength": 3},
+        "scene_objective": {"type": "string", "minLength": 3},
+        "stakes": {"type": "string", "minLength": 3},
+        "obstacle": {"type": "string", "minLength": 3},
+        "active_tactic": {"type": "string", "minLength": 3},
+        "visible_tactic_evidence": {"type": "string", "minLength": 3},
+        "tactic_shift": {"type": "string", "minLength": 3},
+        "knowledge_gap": {"type": "string", "minLength": 3},
+        "power_state_change": {"type": "string", "minLength": 3},
+        "end_action_state": {"type": "string", "minLength": 3}
+      },
+      "required": ["focus_character", "scene_objective", "stakes", "obstacle", "active_tactic", "visible_tactic_evidence", "tactic_shift", "knowledge_gap", "power_state_change", "end_action_state"],
+      "additionalProperties": false
+    },
+    "relationship_emotion_arc": {
+      "type": "object",
+      "properties": {
+        "participants": {"type": "string", "minLength": 3},
+        "start_relation_state": {"type": "string", "minLength": 3},
+        "conflicting_wants": {"type": "string", "minLength": 3},
+        "emotional_misalignment": {"type": "string", "minLength": 3},
+        "turn_trigger": {"type": "string", "minLength": 3},
+        "power_shift": {"type": "string", "minLength": 3},
+        "end_relation_state": {"type": "string", "minLength": 3},
+        "shared_residue": {"type": "string", "minLength": 3}
+      },
+      "required": ["participants", "start_relation_state", "conflicting_wants", "emotional_misalignment", "turn_trigger", "power_shift", "end_relation_state", "shared_residue"],
+      "additionalProperties": false
+    },
+    "sequence_directing_plan": {
+      "type": "object",
+      "properties": {
+        "scene_visual_argument": {"type": "string", "minLength": 3},
+        "sequence_position": {"type": "string", "enum": ["establish", "hold", "escalate", "break", "release", "resolve"]},
+        "distance_lens_stage": {"type": "string", "minLength": 3},
+        "composition_motif_state": {"type": "string", "minLength": 3},
+        "rule_break_or_hold": {"type": "string", "minLength": 3},
+        "blocking_camera_coordination": {"type": "string", "minLength": 3},
+        "environment_beat": {"type": "string", "minLength": 3},
+        "handoff": {"type": "string", "minLength": 3}
+      },
+      "required": ["scene_visual_argument", "sequence_position", "distance_lens_stage", "composition_motif_state", "rule_break_or_hold", "blocking_camera_coordination", "environment_beat", "handoff"],
+      "additionalProperties": false
+    },
+    "cut_decision_contract": {
+      "type": "object",
+      "properties": {
+        "cut_mode": {"type": "string", "enum": ["hold", "action", "reaction", "dialogue", "sound", "delayed", "match", "scene_transition"]},
+        "trigger": {"type": "string", "minLength": 3},
+        "pre_cut_hold": {"type": "string", "minLength": 3},
+        "information_gain": {"type": "string", "minLength": 3},
+        "sound_strategy": {"type": "string", "minLength": 3},
+        "economy_reason": {"type": "string", "minLength": 3},
+        "fallback": {"type": "string", "minLength": 3}
+      },
+      "required": ["cut_mode", "trigger", "pre_cut_hold", "information_gain", "sound_strategy", "economy_reason", "fallback"],
+      "additionalProperties": false
+    },
+    "prompt_information_budget": {
+      "type": "object",
+      "properties": {
+        "profile": {"type": "string", "enum": ["environment", "object", "action", "dialogue", "dramatic"]},
+        "primary_render_task": {"type": "string", "minLength": 3},
+        "must_render": {"type": "string", "minLength": 3},
+        "supporting_visual": {"type": "string", "minLength": 3},
+        "metadata_only": {"type": "string", "minLength": 3},
+        "visual_enhancer_limit": {"type": "integer", "minimum": 1, "maximum": 2},
+        "compression_rule": {"type": "string", "minLength": 3}
+      },
+      "required": ["profile", "primary_render_task", "must_render", "supporting_visual", "metadata_only", "visual_enhancer_limit", "compression_rule"],
+      "additionalProperties": false
+    },
+    "sound_directing_plan": {
+      "type": "object",
+      "properties": {
+        "primary_source": {"type": "string", "minLength": 3},
+        "source_direction_distance": {"type": "string", "minLength": 3},
+        "room_environment_response": {"type": "string", "minLength": 3},
+        "foreground_background_priority": {"type": "string", "minLength": 3},
+        "silence_or_drop": {"type": "string", "minLength": 3},
+        "lead_lag_strategy": {"type": "string", "minLength": 3},
+        "cut_support": {"type": "string", "minLength": 3}
+      },
+      "required": ["primary_source", "source_direction_distance", "room_environment_response", "foreground_background_priority", "silence_or_drop", "lead_lag_strategy", "cut_support"],
       "additionalProperties": false
     },
     "tension_curve_role": {

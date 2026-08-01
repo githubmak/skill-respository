@@ -9,13 +9,18 @@
 - 移除“上一镜、继承、尾帧、剪辑、切到、反打到、当前主角、当前对话者”等元叙述，改写为当前可见事实。
 - 开头优先使用 `scene_tone_palette.visual_scene_prefix`：画幅/视觉风格 + 本镜固定空间锚点 + 本镜影调光线。
 - 控制在 700 中文字符以内；light 镜也不得低质缩水，普通剧情镜低于 180 中文字符应升级或重写。
+- 同一事实源另生成 `【导演卡｜直接复制｜180-500字】`，只删完整辅助质感句；若删除空间、连续性、表演、光影、原生台词或 `must_render` 才能达500字，必须阻断回修，不能用截断或空话替代。
 - 必含画幅、影调、色卡/视觉前缀、画面主体、运镜状态、光影描述和 1–2 个具体质感锚点。
 - 推荐使用即梦友好导演卡顺序：画幅/风格 → 场景色卡/影调 → 主体位置与可见人数 → 表演/台词/听者反应 → 运镜路径或稳定状态 → 光影材质 → 落幅。
 - 对白镜必须显式落地 `dialogue_performance_kernel` 的可见部分：1–3 个逐字原文重音词及说法、潜台词转译后的手眼/道具/距离证据、说话者口型、听者低幅反应、句末闭口与余波落幅；OS/OV/画外声只写闭口承接。
-- 禁止把 `line_function/subtext/turn_relation/inner_emotion/display_intent/emotion_delta` 等分析标签、枚举名或强度数字写进直投正文。它们必须先转译成可见动作、构图、声音、运镜响应或落幅。
+- 禁止把 `line_function/subtext/turn_relation/conversation_mode/response_latency/overlap_or_interrupt_window/conversation_source_basis/inner_emotion/display_intent/emotion_delta/scene_objective/active_tactic/knowledge_gap/power_state_change/sequence_directing_plan/cut_decision_contract/prompt_information_budget` 等分析标签、枚举名或强度数字写进直投正文。它们必须先转译成可见停顿/抢话/收句、动作、构图、环境节拍、声音、运镜响应或落幅。
+- 按 `prompt_information_budget` 保护 `must_render`，并限制 `cinematic/video_texture` 中实际进入正文的视觉增强层数量；超过 `visual_enhancer_limit` 时阻断回修，不由编译器擅自删除较好的增强层。
 - 人物/对白镜应只保留一个构图戏眼和一个有因果的运镜/固定策略；不得堆叠多个“高级”构图、运镜和表情指令争抢同一时间窗。
+- 功能面道具风险镜必须保留“功能面朝使用者、摄影机实际可见面、握持/接触、操作证据、方向终态”这些可见事实；不得泄漏 `prop_functional_surface_contract/content_visibility/camera_half_space` 字段名。需要读清内容时使用肩后/过肩/俯拍/斜上方同侧机位或拆镜，不把手机屏幕、照片正面、书页或表盘转向观众。
 - 高风险镜才追加 `本镜必要约束｜直接复制` 与 `本镜补充负面提示词｜直接复制`。
 
 导出统一由 `scripts/direct_prompt_compiler.py` 结构化编译，顺序固定为：
 `visual_prefix → space → continuity → performance → light → video_texture → cinematic`。
-编译器跨段精确去重，只删除完整辅助句，不截断句子；空间、连续性、表演、光影和原生音频台词均为受保护事实。辅助质感句压缩后仍超过 700 字，或压缩必须删除受保护事实时，Export 必须阻断并退回 Master Production 重写，不得静默裁切。
+编译器跨段精确去重，只删除完整辅助句，不截断句子；空间、连续性、表演、光影、原生音频台词和 `must_render` 均为受保护事实。辅助质感句压缩后仍超过 700 字、视觉增强层超过预算，或压缩必须删除受保护事实时，Export 必须阻断并退回 Master Production 重写，不得静默裁切。
+
+完整 Markdown、`.concise.md` 和 `.engineering.md` 共用同一 canonical package。简洁视图只含导演卡和负面词；工程视图可保留句级来源、Scene Lock、动作失败预测、合同字段和压缩差异，但不能成为新的模型正文。

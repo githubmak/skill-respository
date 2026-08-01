@@ -17,7 +17,9 @@ from modec_v4 import (
     attention_handoff_issues,
     camera_competition_issues,
     camera_beat_map_issues,
+    character_scene_objective_issues,
     coverage_role_issues,
+    cut_decision_contract_issues,
     continuity_contract_issues,
     direct_feed_prompt_issues,
     dialogue_event_issues,
@@ -29,15 +31,21 @@ from modec_v4 import (
     listener_reaction_issues,
     performance_causality_issues,
     performance_contract_issues,
+    prop_functional_surface_contract_issues,
+    skin_tone_protection_contract_issues,
     physical_transition_chain_issues,
     pressure_release_issues,
+    prompt_information_budget_issues,
     prompt_state_machine_issues,
     prompt_length_profile,
     prompt_length_issues,
     prompt_soft_range,
     reroll_control_issues,
+    relationship_emotion_arc_issues,
     role_partition_issues,
     scene_tone_palette_issues,
+    sequence_directing_plan_issues,
+    sound_directing_plan_issues,
     shot_group_handoff_issues,
     screen_text_policy_issues,
     screen_text_policy_metadata_issues,
@@ -54,6 +62,13 @@ from modec_v4 import (
     video_texture_contract_issues,
 )
 from negative_prompts import PLACEHOLDER, is_fight_context
+from production_intelligence import (
+    lighting_topology_contract_issues,
+    multi_person_attention_budget_issues,
+    perspective_scale_contract_issues,
+    prop_lifecycle_contract_issues,
+    visual_prior_risk_issues,
+)
 from shot_semantics import quality_contract as derive_quality_contract, validation_profile as derive_validation_profile
 from contract_registry import QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
 
@@ -156,7 +171,7 @@ def validate_composer_output(path, run_dir=None, report_path=None):
             issues.append(prefix + problem)
         for problem in source_constraint_basemap_issues(metadata):
             issues.append(prefix + problem)
-        for problem in scene_tone_palette_issues(metadata):
+        for problem in scene_tone_palette_issues(metadata, full_prompt):
             issues.append(prefix + problem)
         for problem in video_texture_contract_issues(metadata, full_prompt):
             issues.append(prefix + problem)
@@ -208,6 +223,55 @@ def validate_composer_output(path, run_dir=None, report_path=None):
                 issues.append(prefix + problem)
         if validation_profile["story_punch_contract"]:
             for problem in story_punch_issues(metadata, full_prompt, visible):
+                issues.append(prefix + problem)
+        if validation_profile["character_scene_objective_contract"]:
+            for problem in character_scene_objective_issues(metadata, full_prompt, visible):
+                issues.append(prefix + problem)
+        if validation_profile["relationship_emotion_arc"]:
+            for problem in relationship_emotion_arc_issues(metadata, full_prompt):
+                issues.append(prefix + problem)
+        for problem in sequence_directing_plan_issues(metadata, full_prompt):
+            issues.append(prefix + problem)
+        for problem in cut_decision_contract_issues(metadata, full_prompt):
+            issues.append(prefix + problem)
+        for problem in prompt_information_budget_issues(metadata, full_prompt):
+            issues.append(prefix + problem)
+        audio_enabled = bool((shot.get("generation_control", {}) or {}).get("audio_enabled"))
+        for problem in sound_directing_plan_issues(metadata, full_prompt, audio_enabled=audio_enabled):
+            issues.append(prefix + problem)
+        if validation_profile["prop_functional_surface_contract"] or "prop_functional_surface_contract" in metadata:
+            for problem in prop_functional_surface_contract_issues(
+                metadata,
+                full_prompt,
+                required=validation_profile["prop_functional_surface_contract"],
+            ):
+                issues.append(prefix + problem)
+        if validation_profile["skin_tone_protection_contract"] or "skin_tone_protection_contract" in metadata:
+            for problem in skin_tone_protection_contract_issues(
+                metadata,
+                full_prompt,
+                visible,
+                required=validation_profile["skin_tone_protection_contract"],
+            ):
+                issues.append(prefix + problem)
+        for problem in visual_prior_risk_issues(full_prompt, json.dumps(plan_item, ensure_ascii=False)):
+            issues.append(prefix + problem)
+        for problem in multi_person_attention_budget_issues(metadata, full_prompt, visible):
+            issues.append(prefix + problem)
+        if validation_profile["prop_lifecycle_contract"] or "prop_lifecycle_contract" in metadata:
+            for problem in prop_lifecycle_contract_issues(
+                metadata, full_prompt, required=validation_profile["prop_lifecycle_contract"]
+            ):
+                issues.append(prefix + problem)
+        if validation_profile["perspective_scale_contract"] or "perspective_scale_contract" in metadata:
+            for problem in perspective_scale_contract_issues(
+                metadata, full_prompt, visible, required=validation_profile["perspective_scale_contract"]
+            ):
+                issues.append(prefix + problem)
+        if validation_profile["lighting_topology_contract"] or "lighting_topology_contract" in metadata:
+            for problem in lighting_topology_contract_issues(
+                metadata, full_prompt, required=validation_profile["lighting_topology_contract"]
+            ):
                 issues.append(prefix + problem)
         for problem in prompt_state_machine_issues(metadata, full_prompt, visible):
             issues.append(prefix + problem)
@@ -316,6 +380,7 @@ def _aggregate_context(index, source_ids):
     ))
     result["dialogue_events"] = [event for value in values for event in value.get("dialogue_events", []) if isinstance(event, dict)]
     result["lighting"] = "；".join(str(value.get("lighting", "") or "") for value in values if value.get("lighting"))
+    result["source_subshots"] = values
     return result
 
 

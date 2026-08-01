@@ -2,7 +2,7 @@
 """Focused regression tests for direct-copy and episode-level quality upgrades."""
 
 from dialogue_timing import analyze_dialogue_timing
-from direct_prompt_compiler import compile_direct_prompt
+from direct_prompt_compiler import compile_direct_prompt, compile_director_card
 from episode_director_audit import analyze_package
 from generate_shotplan import (
     _characters_in_source_order,
@@ -10,9 +10,17 @@ from generate_shotplan import (
     _pack_source_actions_with_interactions,
 )
 from modec_v4 import (
+    character_scene_objective_issues,
+    cut_decision_contract_issues,
     dialogue_event_issues,
     direct_copy_prompt_issues,
     performance_contract_issues,
+    prop_functional_surface_contract_issues,
+    skin_tone_protection_contract_issues,
+    prompt_information_budget_issues,
+    relationship_emotion_arc_issues,
+    sequence_directing_plan_issues,
+    sound_directing_plan_issues,
     story_punch_issues,
 )
 
@@ -57,6 +65,23 @@ def run():
         {"kind": "cinematic", "text": "推近，横移，环绕。"},
     ])
     assert any("运镜执行竞争" in issue for issue in competing_camera["issues"])
+    over_budget = compile_direct_prompt([
+        {"kind": "visual_prefix", "text": "16:9写实短剧。"},
+        {"kind": "video_texture", "text": "跨镜保持低饱和黑位。"},
+        {"kind": "cinematic", "text": "前景门框轻虚化。"},
+    ], information_budget={"profile": "dialogue", "visual_enhancer_limit": 1})
+    assert any("视觉增强层超过" in issue for issue in over_budget["issues"])
+    assert over_budget["budget_profile"] == "dialogue"
+
+    director_card = compile_director_card([
+        {"kind": "visual_prefix", "text": "9:16画幅，写实电影风格，夜雨车站，冷蓝环境光与远处暖色站牌。"},
+        {"kind": "space", "text": "前景湿伞边缘，中景角色A站在站牌左侧，后景雨幕和空旷站台形成纵深，保持画面左侧空间。"},
+        {"kind": "continuity", "text": "角色A胸口朝画面右侧，右手握住文件袋，固定机位缓慢推近，落幅停在眼神与文件袋之间。"},
+        {"kind": "performance", "text": "角色A低声说：我只是想把事情说清楚。说完闭口，指节收紧，角色B在后景弱虚化观察反应。"},
+        {"kind": "light", "text": "窗边冷光勾勒肩线，面部保持中性肤色，暖色只落在站牌和湿地反光，雨雾空气层轻微流动。"},
+    ], ["我只是想把事情说清楚"], {})
+    assert not director_card["issues"], director_card["issues"]
+    assert 180 <= len(director_card["text"]) <= 500
 
     valid_episode = {"shots": [
         _shot("S1", "setup", "全景", "角色A呼吸放慢", "角色A双手垂在身侧"),
@@ -144,6 +169,32 @@ def run():
     )
     assert not dialogue_issues, dialogue_issues
 
+    interrupted, interrupted_prompt = _valid_dialogue_case()
+    interrupted["dialogue_events"][0].update({
+        "conversation_mode": "interrupted",
+        "response_latency": "立即",
+        "overlap_or_interrupt_window": "none",
+        "conversation_source_basis": "源文以破折号停句",
+    })
+    interrupted_issues = dialogue_event_issues(
+        interrupted, visible_characters=["角色A", "角色B"],
+        full_prompt=interrupted_prompt, audio_enabled=True, duration=4,
+    )
+    assert any("非顺序轮次必须写" in issue for issue in interrupted_issues)
+
+    overlapping, overlapping_prompt = _valid_dialogue_case()
+    overlapping["dialogue_events"][0].update({
+        "conversation_mode": "overlap",
+        "response_latency": "0.1秒",
+        "overlap_or_interrupt_window": "1.6-1.8秒",
+        "conversation_source_basis": "源文写角色B话音未落，角色A已经开口",
+    })
+    overlapping_issues = dialogue_event_issues(
+        overlapping, visible_characters=["角色A", "角色B"],
+        full_prompt=overlapping_prompt, audio_enabled=True, duration=4,
+    )
+    assert not overlapping_issues, overlapping_issues
+
     repeated_subtext, repeated_prompt = _valid_dialogue_case()
     repeated_subtext["dialogue_events"][0]["subtext"] = "你根本没有回来。"
     repeated_issues = dialogue_event_issues(
@@ -196,10 +247,140 @@ def run():
     )
     assert any("必须说明镜头为何响应" in issue for issue in unmotivated_camera_issues)
 
+    directing_metadata, directing_prompt = _valid_directing_contracts()
+    assert not character_scene_objective_issues(
+        directing_metadata, directing_prompt, ["角色A", "角色B"]
+    )
+    assert not relationship_emotion_arc_issues(directing_metadata, directing_prompt)
+    assert not sequence_directing_plan_issues(directing_metadata, directing_prompt)
+    assert not cut_decision_contract_issues(directing_metadata, directing_prompt)
+    assert not prompt_information_budget_issues(directing_metadata, directing_prompt)
+    assert not sound_directing_plan_issues(
+        directing_metadata, directing_prompt, audio_enabled=True
+    )
+
+    bad_objective = dict(directing_metadata)
+    bad_objective["character_scene_objective_contract"] = dict(
+        directing_metadata["character_scene_objective_contract"], tactic_shift="随便变化"
+    )
+    assert any("tactic_shift" in issue for issue in character_scene_objective_issues(
+        bad_objective, directing_prompt, ["角色A", "角色B"]
+    ))
+    bad_sequence = dict(directing_metadata)
+    bad_sequence["sequence_directing_plan"] = dict(
+        directing_metadata["sequence_directing_plan"], sequence_position="random"
+    )
+    assert any("sequence_position" in issue for issue in sequence_directing_plan_issues(
+        bad_sequence, directing_prompt
+    ))
+    bad_cut = dict(directing_metadata)
+    bad_cut["cut_decision_contract"] = dict(
+        directing_metadata["cut_decision_contract"], cut_mode="reaction", trigger="画面中不存在的钟声"
+    )
+    assert any("trigger" in issue for issue in cut_decision_contract_issues(bad_cut, directing_prompt))
+    bad_budget = dict(directing_metadata)
+    bad_budget["prompt_information_budget"] = dict(
+        directing_metadata["prompt_information_budget"], visual_enhancer_limit=3
+    )
+    assert any("visual_enhancer_limit" in issue for issue in prompt_information_budget_issues(
+        bad_budget, directing_prompt
+    ))
+
     leaked_analysis = "16:9动态漫，冷白顶灯照亮角色A手背；inner_emotion=害怕失去，角色A在画面左侧闭口。"
     assert any("内部分析" in issue for issue in direct_copy_prompt_issues(leaked_analysis))
     leaked_chinese_analysis = "16:9动态漫，冷白顶灯照亮角色A手背；潜台词：逼对方承认失约。"
     assert any("内部分析" in issue for issue in direct_copy_prompt_issues(leaked_chinese_analysis))
+    leaked_conversation_analysis = "16:9动态漫，冷白顶灯照亮角色A手背；conversation_mode=overlap。"
+    assert any("内部分析" in issue for issue in direct_copy_prompt_issues(leaked_conversation_analysis))
+    leaked_surface_analysis = "16:9动态漫，冷白顶灯照亮男孩手背；content_visibility=hidden。"
+    assert any("内部分析" in issue for issue in direct_copy_prompt_issues(leaked_surface_analysis))
+
+    hidden_surface_metadata, hidden_surface_prompt = _valid_hidden_surface_case()
+    assert not prop_functional_surface_contract_issues(
+        hidden_surface_metadata, hidden_surface_prompt, required=True
+    )
+    flipped_prompt = hidden_surface_prompt + " 手机屏幕转向镜头，游戏界面清晰可见。"
+    assert any("翻向镜头" in issue for issue in prop_functional_surface_contract_issues(
+        hidden_surface_metadata, flipped_prompt, required=True
+    ))
+    assert any("必须提供" in issue for issue in prop_functional_surface_contract_issues(
+        {}, hidden_surface_prompt, required=True
+    ))
+
+    readable_metadata = {
+        "prop_functional_surface_contract": dict(
+            hidden_surface_metadata["prop_functional_surface_contract"],
+            camera_half_space="摄影机位于男孩右肩后上方，与男孩处于屏幕同一可见侧",
+            camera_visible_surface="肩后俯拍可见手机屏幕和双手边缘",
+            content_visibility="readable",
+            orientation_lock="手机横屏方向稳定，屏幕持续朝向男孩与其右肩后摄影机",
+            fallback_shot="本镜已采用肩后俯拍，不需要另拆展示镜头",
+        )
+    }
+    readable_prompt = hidden_surface_prompt.replace(
+        "镜头只见手机深色背壳和侧边框",
+        "肩后俯拍可见手机屏幕和双手边缘",
+    ).replace(
+        "手机横屏方向稳定，背壳持续朝向摄影机",
+        "手机横屏方向稳定，屏幕持续朝向男孩与其右肩后摄影机",
+    )
+    assert not prop_functional_surface_contract_issues(
+        readable_metadata, readable_prompt, required=True
+    )
+
+    clean_face_prompt = (
+        "16:9画幅，写实电影级动态漫短剧，冷青灰旧办公室。角色A在画面右侧中近景，"
+        "角色A皮肤保持自然暖灰血色；画面右前方柔和中性暖白主光照亮角色A脸部，额头鼻梁颧骨高光柔和不过曝；"
+        "低强度中性补光托住角色A眼窝、鼻翼和下颌，暗部保持干净层次；青灰色只留在后景墙面和衣物边缘轮廓反光，"
+        "不渗入角色A面中；墙面旧痕、灰尘和薄雾只存在于中后景，不覆盖角色A皮肤。"
+    )
+    clean_face_contract = {"skin_tone_protection_contract": {
+        "applicable": True, "subjects": "角色A", "protection_mode": "natural_protected",
+        "source_allowed_skin_marks": "none", "skin_tone_baseline": "角色A皮肤保持自然暖灰血色",
+        "face_light_and_exposure": "画面右前方柔和中性暖白主光照亮角色A脸部，额头鼻梁颧骨高光柔和不过曝",
+        "face_fill_shadow_policy": "低强度中性补光托住角色A眼窝、鼻翼和下颌，暗部保持干净层次",
+        "environment_color_boundary": "青灰色只留在后景墙面和衣物边缘轮廓反光，不渗入角色A面中",
+        "texture_atmosphere_boundary": "墙面旧痕、灰尘和薄雾只存在于中后景，不覆盖角色A皮肤",
+        "continuity_lock": "同场跨镜保持角色A自然暖灰肤色和右前方主光方向",
+        "fallback": "降低环境青灰饱和度，把薄雾退到后景并保留中性补光",
+    }}
+    assert not skin_tone_protection_contract_issues(clean_face_contract, clean_face_prompt, ["角色A"], required=True)
+    contaminated_prompt = clean_face_prompt + " 青绿色渗入脸部，墙面旧痕覆盖脸。"
+    assert any("不得迁移" in issue for issue in skin_tone_protection_contract_issues(
+        clean_face_contract, contaminated_prompt, ["角色A"], required=True
+    ))
+    assert any("必须提供" in issue for issue in skin_tone_protection_contract_issues(
+        {}, clean_face_prompt, ["角色A"], required=True
+    ))
+    wound_metadata = {"skin_tone_protection_contract": dict(
+        clean_face_contract["skin_tone_protection_contract"], protection_mode="source_authorized_marks",
+        source_allowed_skin_marks="源文明确的角色A左颊新鲜擦伤",
+        skin_tone_baseline="角色A左颊新鲜擦伤保留，其他皮肤保持自然暖灰血色",
+    )}
+    wound_prompt = clean_face_prompt.replace(
+        "角色A皮肤保持自然暖灰血色", "角色A左颊新鲜擦伤保留，其他皮肤保持自然暖灰血色"
+    )
+    assert not skin_tone_protection_contract_issues(wound_metadata, wound_prompt, ["角色A"], required=True)
+    neon_metadata = {"skin_tone_protection_contract": dict(
+        clean_face_contract["skin_tone_protection_contract"], protection_mode="motivated_color_cast",
+        environment_color_boundary="洋红与青色霓虹只留在后景招牌和衣物边缘轮廓反光，不渗入角色A面中",
+    )}
+    neon_prompt = clean_face_prompt.replace(
+        "青灰色只留在后景墙面和衣物边缘轮廓反光，不渗入角色A面中",
+        "洋红与青色霓虹只留在后景招牌和衣物边缘轮廓反光，不渗入角色A面中",
+    )
+    assert not skin_tone_protection_contract_issues(neon_metadata, neon_prompt, ["角色A"], required=True)
+    tyndall_metadata = {"skin_tone_protection_contract": dict(
+        clean_face_contract["skin_tone_protection_contract"],
+        texture_atmosphere_boundary="窗缝丁达尔光束和尘粒只在角色A肩后中后景，不覆盖角色A皮肤",
+    )}
+    tyndall_prompt = clean_face_prompt.replace(
+        "墙面旧痕、灰尘和薄雾只存在于中后景，不覆盖角色A皮肤",
+        "窗缝丁达尔光束和尘粒只在角色A肩后中后景，不覆盖角色A皮肤",
+    )
+    assert not skin_tone_protection_contract_issues(tyndall_metadata, tyndall_prompt, ["角色A"], required=True)
+    leaked_skin_analysis = "16:9动态漫，skin_tone_protection_contract=natural_protected，角色A在画面左侧。"
+    assert any("内部分析" in issue for issue in direct_copy_prompt_issues(leaked_skin_analysis))
 
     flat_curve = {"shots": [
         _shot("EC%d" % index, "latent", "中近景", "角色A眉间轻收", "角色A拇指压住杯沿")
@@ -280,6 +461,30 @@ def _dialogue(ref, speaker, text, time_range):
     }
 
 
+def _valid_hidden_surface_case():
+    contract = {
+        "applicable": True,
+        "prop": "手机",
+        "functional_surface": "手机屏幕",
+        "user": "男孩",
+        "user_view_relation": "手机屏幕朝向男孩本人，男孩视线落在屏幕中心",
+        "camera_half_space": "摄影机位于手机背壳外侧的男孩左前方",
+        "camera_visible_surface": "镜头只见手机深色背壳和侧边框",
+        "grip_contact": "男孩双手横握手机左右短边",
+        "interaction_evidence": "双拇指在屏幕内侧低幅点击，屏幕冷光映亮眼睑和指尖",
+        "content_visibility": "hidden",
+        "orientation_lock": "手机横屏方向稳定，背壳持续朝向摄影机",
+        "fallback_shot": "若需展示游戏内容，另拆肩后俯拍镜头",
+    }
+    prompt = (
+        "男孩坐在画面左侧中近景，手机屏幕朝向男孩本人，男孩视线落在屏幕中心；"
+        "镜头只见手机深色背壳和侧边框，男孩双手横握手机左右短边；"
+        "双拇指在屏幕内侧低幅点击，屏幕冷光映亮眼睑和指尖；"
+        "手机横屏方向稳定，背壳持续朝向摄影机。"
+    )
+    return {"prop_functional_surface_contract": contract}, prompt
+
+
 def _valid_dialogue_case():
     delivery = "低声开口，重读“根本”时下颌压住，尾音收紧"
     breath = "句前0.2秒吸气；无中段气口；句末0.3秒收气"
@@ -304,6 +509,10 @@ def _valid_dialogue_case():
         "stress_words": ["根本"],
         "subtext_visible_evidence": evidence,
         "turn_relation": "initiate",
+        "conversation_mode": "clean_turn",
+        "response_latency": "0.4秒",
+        "overlap_or_interrupt_window": "none",
+        "conversation_source_basis": "源文由角色A先开口施压",
     }
     prompt = (
         "生成规格：16:9动态漫。\n\n"
@@ -380,6 +589,86 @@ def _valid_story_punch_case():
         contract["picture_punctuation"], contract["end_residue"],
     )
     return {"story_punch_contract": contract, "dialogue_events": [{"ref": "DX1"}]}, prompt
+
+
+def _valid_directing_contracts():
+    visible_tactic = "角色A把未递出的信封压在桌面中央"
+    end_action = "角色A右手仍压住信封，角色B没有接走"
+    turn_trigger = "角色B视线第一次落到信封"
+    shared_residue = "两人隔着未递出的信封保持距离"
+    motif = "中央信封与桌面留白持续隔开两人"
+    blocking = "角色A留在画面左侧，摄影机固定守住角色B右侧反应"
+    environment = "窗外冷光被云层短暂压暗，桌面反光随之收窄"
+    must_render = "角色B延迟半拍才看向信封"
+    metadata = {
+        "character_scene_objective_contract": {
+            "focus_character": "角色A",
+            "scene_objective": "逼角色B明确是否接受信封里的承诺",
+            "stakes": "若再次被拒绝，角色A将结束这段关系",
+            "obstacle": "角色B回避回答并拒绝触碰信封",
+            "active_tactic": "角色A用信封作为交换条件施压",
+            "visible_tactic_evidence": visible_tactic,
+            "tactic_shift": "角色B仍不接信封后，角色A从追问改用沉默等待",
+            "knowledge_gap": "角色A不知道角色B已经看过信中内容",
+            "power_state_change": "主动由角色A施压转为角色B以沉默掌握",
+            "end_action_state": end_action,
+        },
+        "relationship_emotion_arc": {
+            "participants": "角色A与角色B",
+            "start_relation_state": "角色A主动求证，角色B防御回避",
+            "conflicting_wants": "角色A要明确承诺，角色B要拖延回答",
+            "emotional_misalignment": "角色A压住焦急，角色B用冷静掩饰犹豫",
+            "turn_trigger": turn_trigger,
+            "power_shift": "主动权从角色A的追问转为角色B的沉默",
+            "end_relation_state": "二人由正面求证转为隔物僵持",
+            "shared_residue": shared_residue,
+        },
+        "sequence_directing_plan": {
+            "scene_visual_argument": "信封逐渐成为二人无法跨越的关系边界",
+            "sequence_position": "break",
+            "distance_lens_stage": "延续50mm中近景并第一次停止推近",
+            "composition_motif_state": motif,
+            "rule_break_or_hold": "打破上一镜推近，改为固定观察沉默代价",
+            "blocking_camera_coordination": blocking,
+            "environment_beat": environment,
+            "handoff": "把下一镜注意力交给角色B仍未伸出的手",
+        },
+        "cut_decision_contract": {
+            "cut_mode": "reaction",
+            "trigger": turn_trigger,
+            "pre_cut_hold": "角色A说完后保留0.3秒闭口等待",
+            "information_gain": "切后首次看见角色B知道信封存在却拒绝触碰",
+            "sound_strategy": "保留窗外低风声跨越反应切点",
+            "economy_reason": "只保留一次反应切换，避免重复覆盖同一沉默",
+            "fallback": "若反应切换不稳，固定双人关系构图完成同一信息",
+        },
+        "prompt_information_budget": {
+            "profile": "dialogue",
+            "primary_render_task": "读清角色A施压与角色B延迟反应",
+            "must_render": must_render,
+            "supporting_visual": "只保留信封和窗外冷光变化",
+            "metadata_only": "场景目标、知识差、权力判断和剪辑理由不进正文",
+            "visual_enhancer_limit": 1,
+            "compression_rule": "优先台词口型、反应、信封状态与落幅，删除重复材质修辞",
+        },
+        "sound_directing_plan": {
+            "primary_source": "角色A近距离低声台词与窗外低风声",
+            "source_direction_distance": "角色A台词来自画面左侧近距离，角色B方向保持安静",
+            "room_environment_response": "办公室短混响，关门后高频轻微衰减",
+            "foreground_background_priority": "台词在前景，窗外低风声压到背景",
+            "silence_or_drop": "角色A句末闭口后环境声短降0.3秒",
+            "lead_lag_strategy": "窗外低风声延后退出并连接角色B反应",
+            "cut_support": "用风声尾音跨越角色B视线转向的反应切点",
+        },
+    }
+    prompt = (
+        "生成规格：16:9写实动态漫。\n\n"
+        "主体与空间锁定：%s；%s；%s。\n\n"
+        "主镜头连续规则：%s。\n\n"
+        "子镜头组：【镜头1｜0.0-4.0秒】%s；%s；%s；%s；%s。\n\n"
+        "光照、声音与稳定约束：%s；角色A台词来自画面左侧近距离，角色B方向保持安静。"
+    ) % (motif, blocking, environment, motif, visible_tactic, turn_trigger, must_render, end_action, shared_residue, environment)
+    return metadata, prompt
 
 
 if __name__ == "__main__":

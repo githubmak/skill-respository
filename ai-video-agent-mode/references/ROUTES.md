@@ -5,7 +5,7 @@ Read this file first. Select one explicit route, then read only the linked contr
 | Request | Route | Required reading | Run only |
 |---|---|---|---|
 | New script, changed story, or changed project settings | `full` | `SKILL.md`, `format_constraints.md`, `production_quality_knowledge.md`, `stage_gates.md` | `pipeline_runner.py`, validators, dispatch scripts |
-| Diagnose pacing, continuity, or prompt quality | `audit` | relevant exported prompt package, `format_constraints.md`; add `production_quality_knowledge.md` when the issue concerns knowledge reserve,人物一致性,空间连续或画面质感 | `episode_state_graph.py`, `episode_director_audit.py`, `check_export.py`, `validate_modec.py` |
+| Diagnose pacing, continuity, or prompt quality | `audit` | relevant exported prompt package, `format_constraints.md`; add `production_quality_knowledge.md` when the issue concerns人物目标/策略、关系情绪弧、序列镜头语言、剪辑切点、空间连续、风景美学或环境叙事 | `episode_state_graph.py`, `episode_director_audit.py`, `check_export.py`, `validate_modec.py` |
 | Generate files from a passed package | `export` | `export_spec.md` | `check_export.py`, `export_with_validation.py` |
 | Repair one failed subshot | `single-repair` | packet `constraints_path`, `retry_context_path`, compact handoff | `dispatch_cache.py`, phase validator, provenance scripts |
 | Generate prompts from an approved shot plan and Scene Lock | `compose` | Composer sections of `format_constraints.md`, `contracts/contract_index.md`, `production_quality_knowledge.md`, `dispatch/master_production_note.md` | `dispatch_cache.py`, `validate_composer_output.py` |
@@ -13,7 +13,8 @@ Read this file first. Select one explicit route, then read only the linked contr
 ## Initialization
 
 - 用户手动再次调用时默认选择 `full --intent new`，且必须指向新的空 `run_dir`。不要删除或读取旧缓存；新运行从配置确认阶段重新建立全部质量合同。
-- `full/new` 先运行 `resolve_run_mode.py`，只询问返回的 `next_fields`（首轮 1 项、后续每轮最多 2 项）。使用 `configuration_wizard.py start/answer/status` 记录每轮答案，其中 `delivery.markdown_path` 是最后一次配置项；完成确认前不得派发 Agent。
+- `full/new` 参数不完整时先运行 `resolve_run_mode.py`，只询问返回的 `next_fields`（首轮 1 项、后续每轮最多 2 项）。使用 `configuration_wizard.py start/answer/status` 记录每轮答案，其中 `delivery.markdown_path` 是最后一次配置项；完成确认前不得派发 Agent。
+- 高质量快速模式只用于用户在同一次命令中明确提供源文件与完整 JSON 配置：`python3 scripts/route_task.py full --run-dir <new_run_dir> --intent new --config <complete_config.json> --source <source.txt> --auto-start`。配置必须显式包含全部八个基础字段：`export_base`、`canvas`、`visual_style`、`max_shot_duration`、`target_platform`、`generation_control.mode`、`generation_control.audio_enabled`、`delivery.markdown_path`；模板默认值、旧确认元数据或部分配置不得算作确认。该入口调用同一个 `workflow_supervisor.py`，不得跳过任何阶段、provenance、validator 或导出门禁；缺字段、非法值、非空 run_dir、越界路径或源文件不存在时必须原子失败并保留已有文件。
 - 仅用户明确要求“继续/续跑”时使用 `full --intent resume`；`audit`、`compose`、`single-repair` 复用已确认配置而不重复提问。`export --intent reexport` 复用配置并使用锁定的 `delivery.markdown_path`，不得推导或询问新路径。
 - 一旦配置确认并进入 pipeline，以 `workflow_supervisor.py` 循环驱动。它自动处理本地阶段，并把 Agent 工作返回为 `host_dispatch_required` 的 packet 列表；主 Agent 完成 provenance 链后立刻再次调用 supervisor。尤其 `waiting_for_workers` 只表示等待已派发 worker 的回执、心跳或验证结果，绝不把它翻译成“是否继续执行”。只有路由结果明确 `needs_user_confirm=true`，或缺少无法从已有事实推导的用户选择时，才向用户提问。
 

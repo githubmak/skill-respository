@@ -58,8 +58,26 @@ DIRECT_FEED_META_TERMS = (
     "line_function", "subtext", "turn_relation", "inner_emotion", "display_intent",
     "mask_leak", "start_intensity", "end_intensity", "emotion_delta",
     "composition_priority", "camera_motivation",
+    "scene_objective", "active_tactic", "knowledge_gap", "power_state_change",
+    "relationship_emotion_arc", "sequence_directing_plan", "cut_decision_contract",
+    "prompt_information_budget", "environment_story_arc", "breathing_policy",
+    "sound_directing_plan", "sound_perspective", "lead_lag_strategy",
+    "conversation_mode", "response_latency", "overlap_or_interrupt_window",
+    "conversation_source_basis",
+    "prop_functional_surface_contract", "functional_surface", "user_view_relation",
+    "camera_half_space", "camera_visible_surface", "grip_contact", "interaction_evidence",
+    "content_visibility", "orientation_lock", "fallback_shot",
+    "skin_tone_protection_contract", "protection_mode", "source_allowed_skin_marks",
+    "skin_tone_baseline", "face_light_and_exposure", "face_fill_shadow_policy",
+    "environment_color_boundary", "texture_atmosphere_boundary", "continuity_lock",
+    "face_key_light", "face_fill_light", "skin_color_cast_boundary", "skin_texture_boundary",
+    "prop_lifecycle_contract", "perspective_scale_contract", "lighting_topology_contract",
+    "projection_scale_rule", "body_ratio_lock", "motion_scaling", "prop_scale_lock",
+    "motivated_source", "face_light_layer", "environment_light_layer", "volume_light_boundary",
     "台词功能：", "潜台词：", "轮次关系：", "内在情绪：", "对外展示：",
     "面具泄露：", "情绪变化量：", "构图优先级：", "运镜动机：",
+    "场景目标：", "行动策略：", "信息差：", "权力变化：", "镜头段落意图：",
+    "会话模式：", "响应延迟：", "抢话窗口：", "打断窗口：", "会话源文依据：",
 )
 
 TIME_RANGE_RE = re.compile(r"(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)秒")
@@ -149,6 +167,37 @@ STORY_PUNCH_FIELDS = (
     "camera_motivation",
     "end_residue",
 )
+CHARACTER_SCENE_OBJECTIVE_FIELDS = (
+    "focus_character", "scene_objective", "stakes", "obstacle", "active_tactic",
+    "visible_tactic_evidence", "tactic_shift", "knowledge_gap",
+    "power_state_change", "end_action_state",
+)
+RELATIONSHIP_EMOTION_ARC_FIELDS = (
+    "participants", "start_relation_state", "conflicting_wants",
+    "emotional_misalignment", "turn_trigger", "power_shift",
+    "end_relation_state", "shared_residue",
+)
+SEQUENCE_DIRECTING_PLAN_FIELDS = (
+    "scene_visual_argument", "sequence_position", "distance_lens_stage",
+    "composition_motif_state", "rule_break_or_hold",
+    "blocking_camera_coordination", "environment_beat", "handoff",
+)
+SEQUENCE_POSITIONS = {"establish", "hold", "escalate", "break", "release", "resolve"}
+CUT_DECISION_FIELDS = (
+    "cut_mode", "trigger", "pre_cut_hold", "information_gain",
+    "sound_strategy", "economy_reason", "fallback",
+)
+CUT_MODES = {"hold", "action", "reaction", "dialogue", "sound", "delayed", "match", "scene_transition"}
+PROMPT_INFORMATION_BUDGET_FIELDS = (
+    "profile", "primary_render_task", "must_render", "supporting_visual",
+    "metadata_only", "compression_rule",
+)
+PROMPT_INFORMATION_PROFILES = {"environment", "object", "action", "dialogue", "dramatic"}
+SOUND_DIRECTING_PLAN_FIELDS = (
+    "primary_source", "source_direction_distance", "room_environment_response",
+    "foreground_background_priority", "silence_or_drop", "lead_lag_strategy",
+    "cut_support",
+)
 DIALOGUE_LINE_FUNCTIONS = {
     "probe", "pressure", "deny", "verify", "interrupt", "farewell",
     "conceal", "reveal", "plead", "deflect", "reconcile", "narrate",
@@ -156,6 +205,10 @@ DIALOGUE_LINE_FUNCTIONS = {
 }
 DIALOGUE_TURN_RELATIONS = {
     "initiate", "respond", "deflect", "interrupt", "withdraw", "bridge", "continue",
+}
+CONVERSATION_MODES = {
+    "clean_turn", "overlap", "interrupted", "unfinished",
+    "self_correction", "non_answer", "source_supported_other",
 }
 STORY_PUNCH_GENERIC_RE = re.compile(
     r"气氛|氛围|情绪变化|表情变化|表情复杂|微表情|很紧张|更紧张|有戏|戏剧性|压迫感|张力感|"
@@ -1007,6 +1060,163 @@ def _story_punch_required(metadata, full_prompt="", visible=None):
     return bool(re.search(r"质问|拒绝|承认|反转|揭示|威胁|门外|脚步|药瓶|手机|钥匙|停住|打断|转身|递给|接住", str(full_prompt or "")))
 
 
+def character_scene_objective_issues(metadata, full_prompt="", visible_characters=None, required=True):
+    """Require playable objectives and tactics, not only named emotions."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    contract = metadata.get("character_scene_objective_contract")
+    if not required and contract in (None, {}, ""):
+        return []
+    if not isinstance(contract, dict):
+        return ["人物表演镜必须提供qa_metadata.character_scene_objective_contract"]
+    issues = _flat_directing_contract_issues(
+        contract, CHARACTER_SCENE_OBJECTIVE_FIELDS, "character_scene_objective_contract"
+    )
+    visible = _string_list(visible_characters or [])
+    focus = str(contract.get("focus_character", "") or "").strip()
+    if visible and focus not in visible:
+        issues.append("character_scene_objective_contract.focus_character必须是本镜可见人物")
+    if str(contract.get("scene_objective", "") or "").strip() in GENERIC_PERFORMANCE_TERMS:
+        issues.append("character_scene_objective_contract.scene_objective必须写角色要从对方或环境得到的具体结果")
+    tactic_shift = str(contract.get("tactic_shift", "") or "").strip()
+    if tactic_shift and not re.search(r"无切换|继续|维持|改用|转为|从.{0,30}到|触发|失败|受阻", tactic_shift):
+        issues.append("character_scene_objective_contract.tactic_shift必须写触发后的策略变化，或说明为何维持当前策略")
+    power = str(contract.get("power_state_change", "") or "").strip()
+    if power and not re.search(r"由|从|转为|变为|维持|仍|上升|下降|夺回|失去|反转|持平", power):
+        issues.append("character_scene_objective_contract.power_state_change必须写本镜前后权力状态")
+    if full_prompt:
+        for field in ("visible_tactic_evidence", "end_action_state"):
+            value = str(contract.get(field, "") or "").strip()
+            if value and not _fragment_grounded(value, full_prompt):
+                issues.append(f"character_scene_objective_contract.{field}必须落实到full_prompt的可见行动")
+    return issues
+
+
+def relationship_emotion_arc_issues(metadata, full_prompt="", required=True):
+    """Validate the relationship change that gives micro-emotion dramatic direction."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    contract = metadata.get("relationship_emotion_arc")
+    if not required and contract in (None, {}, ""):
+        return []
+    if not isinstance(contract, dict):
+        return ["对手戏必须提供qa_metadata.relationship_emotion_arc"]
+    issues = _flat_directing_contract_issues(
+        contract, RELATIONSHIP_EMOTION_ARC_FIELDS, "relationship_emotion_arc"
+    )
+    participants = str(contract.get("participants", "") or "")
+    if participants and len(re.findall(r"[^、,，/与和\s]+", participants)) < 2:
+        issues.append("relationship_emotion_arc.participants必须包含至少两个关系参与者")
+    power = str(contract.get("power_shift", "") or "")
+    if power and not re.search(r"由|从|转为|变为|维持|反转|夺回|失去|上升|下降|持平", power):
+        issues.append("relationship_emotion_arc.power_shift必须写权力关系前后变化")
+    if full_prompt:
+        for field in ("turn_trigger", "shared_residue"):
+            value = str(contract.get(field, "") or "").strip()
+            if value and not re.search(r"^(?:无转折|无共同余波|none)[:：]", value, re.I) and not _fragment_grounded(value, full_prompt):
+                issues.append(f"relationship_emotion_arc.{field}必须落实到full_prompt的可见关系变化")
+    return issues
+
+
+def sequence_directing_plan_issues(metadata, full_prompt="", required=True):
+    """Validate one shot's place inside a scene-wide visual sentence."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    contract = metadata.get("sequence_directing_plan")
+    if not required and contract in (None, {}, ""):
+        return []
+    if not isinstance(contract, dict):
+        return ["每镜必须提供qa_metadata.sequence_directing_plan"]
+    issues = _flat_directing_contract_issues(
+        contract, SEQUENCE_DIRECTING_PLAN_FIELDS, "sequence_directing_plan"
+    )
+    if contract.get("sequence_position") not in SEQUENCE_POSITIONS:
+        issues.append("sequence_directing_plan.sequence_position只允许establish/hold/escalate/break/release/resolve")
+    if full_prompt:
+        grounded = sum(
+            _fragment_grounded(str(contract.get(field, "") or ""), full_prompt)
+            for field in ("composition_motif_state", "blocking_camera_coordination", "environment_beat")
+        )
+        if grounded < 2:
+            issues.append("sequence_directing_plan的构图母题、联合调度与环境节拍至少两项必须落实到full_prompt")
+    return issues
+
+
+def cut_decision_contract_issues(metadata, full_prompt="", required=True):
+    """Require a causal cut or an explicit decision to hold the shot."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    contract = metadata.get("cut_decision_contract")
+    if not required and contract in (None, {}, ""):
+        return []
+    if not isinstance(contract, dict):
+        return ["每镜必须提供qa_metadata.cut_decision_contract"]
+    issues = _flat_directing_contract_issues(contract, CUT_DECISION_FIELDS, "cut_decision_contract")
+    mode = str(contract.get("cut_mode", "") or "").strip()
+    if mode not in CUT_MODES:
+        issues.append("cut_decision_contract.cut_mode无效")
+    trigger = str(contract.get("trigger", "") or "").strip()
+    if mode != "hold" and full_prompt and trigger and not _fragment_grounded(trigger, full_prompt):
+        issues.append("cut_decision_contract.trigger必须来自full_prompt中的动作、反应、声音或台词落点")
+    if mode == "hold" and not re.search(r"保持|不切|连续|完整|等待|守住|hold", str(contract.get("economy_reason", "") or ""), re.I):
+        issues.append("cut_decision_contract为hold时economy_reason必须说明不切镜的叙事收益")
+    return issues
+
+
+def prompt_information_budget_issues(metadata, full_prompt="", required=True):
+    """Keep stronger directing analysis from bloating the platform prompt."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    contract = metadata.get("prompt_information_budget")
+    if not required and contract in (None, {}, ""):
+        return []
+    if not isinstance(contract, dict):
+        return ["每镜必须提供qa_metadata.prompt_information_budget"]
+    issues = _flat_directing_contract_issues(
+        contract, PROMPT_INFORMATION_BUDGET_FIELDS, "prompt_information_budget"
+    )
+    if contract.get("profile") not in PROMPT_INFORMATION_PROFILES:
+        issues.append("prompt_information_budget.profile无效")
+    limit = contract.get("visual_enhancer_limit")
+    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 2:
+        issues.append("prompt_information_budget.visual_enhancer_limit必须是1或2")
+    must_render = str(contract.get("must_render", "") or "").strip()
+    if full_prompt and must_render and not _fragment_grounded(must_render, full_prompt):
+        issues.append("prompt_information_budget.must_render必须落实到full_prompt")
+    return issues
+
+
+def sound_directing_plan_issues(metadata, full_prompt="", audio_enabled=False, required=True):
+    """Validate spatial sound perspective without forcing audio into silent T2V jobs."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    contract = metadata.get("sound_directing_plan")
+    if not required and contract in (None, {}, ""):
+        return []
+    if not isinstance(contract, dict):
+        return ["每镜必须提供qa_metadata.sound_directing_plan"]
+    issues = _flat_directing_contract_issues(contract, SOUND_DIRECTING_PLAN_FIELDS, "sound_directing_plan")
+    if audio_enabled and full_prompt:
+        grounded = sum(
+            _fragment_grounded(str(contract.get(field, "") or ""), full_prompt)
+            for field in (
+                "source_direction_distance", "room_environment_response",
+                "silence_or_drop", "lead_lag_strategy",
+            )
+        )
+        if grounded < 1:
+            issues.append("原生音频开启时sound_directing_plan至少一项空间声、房间响应、静音或声画先后必须落实到full_prompt")
+    return issues
+
+
+def _flat_directing_contract_issues(contract, fields, label):
+    issues = []
+    for field in fields:
+        value = contract.get(field)
+        if not isinstance(value, str) or len(value.strip()) < 3:
+            issues.append(f"{label}.{field}必须是非空扁平字符串")
+        elif len(value) > 220:
+            issues.append(f"{label}.{field}过长，应压缩为单句导演判断")
+    for field, value in contract.items():
+        if isinstance(value, (dict, list)):
+            issues.append(f"{label}.{field}必须保持扁平，不能嵌套对象或数组")
+    return issues
+
+
 def listener_reaction_issues(metadata, full_prompt=""):
     """Require one restrained, visible listener response when a speaker has a supporting listener."""
     metadata = metadata if isinstance(metadata, dict) else {}
@@ -1432,6 +1642,10 @@ def dialogue_event_issues(
         stress_words = event.get("stress_words")
         subtext_evidence = str(event.get("subtext_visible_evidence", "") or "").strip()
         turn_relation = str(event.get("turn_relation", "") or "").strip()
+        conversation_mode = str(event.get("conversation_mode", "") or "").strip()
+        response_latency = str(event.get("response_latency", "") or "").strip()
+        overlap_window = str(event.get("overlap_or_interrupt_window", "") or "").strip()
+        conversation_source_basis = str(event.get("conversation_source_basis", "") or "").strip()
 
         if not ref:
             issues.append(f"{prefix}.ref不能为空")
@@ -1476,6 +1690,15 @@ def dialogue_event_issues(
             issues.append(f"{prefix}.turn_relation无效")
         if len(subtext_evidence) < 4:
             issues.append(f"{prefix}.subtext_visible_evidence必须写可见潜台词证据")
+        if conversation_mode:
+            if conversation_mode not in CONVERSATION_MODES:
+                issues.append(f"{prefix}.conversation_mode无效")
+            if not re.search(r"\d+(?:\.\d+)?秒|立即|无延迟|none", response_latency, re.I):
+                issues.append(f"{prefix}.response_latency必须写秒数或明确无延迟")
+            if len(conversation_source_basis) < 4:
+                issues.append(f"{prefix}.conversation_source_basis必须写源文依据")
+            if conversation_mode != "clean_turn" and overlap_window in ("", "none", "N/A"):
+                issues.append(f"{prefix}非顺序轮次必须写overlap_or_interrupt_window")
 
         match = re.fullmatch(r"(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)秒", str(event.get("time_range", "") or "").strip())
         if not match:
@@ -2066,8 +2289,8 @@ def source_constraint_basemap_issues(metadata):
     return issues
 
 
-def scene_tone_palette_issues(metadata):
-    """Validate scene-level space/tone palette metadata if supplied."""
+def scene_tone_palette_issues(metadata, full_prompt=""):
+    """Validate scene-level space, tone, and lived-in depth metadata."""
     metadata = metadata if isinstance(metadata, dict) else {}
     palette = metadata.get("scene_tone_palette")
     if palette in (None, {}, ""):
@@ -2081,6 +2304,19 @@ def scene_tone_palette_issues(metadata):
         "tone_palette",
         "light_texture_purpose",
         "visual_scene_prefix",
+        "foreground_layer",
+        "midground_layer",
+        "background_layer",
+        "genre_visual_signature",
+        "lived_in_detail",
+        "depth_focus_policy",
+        "landscape_identity",
+        "landscape_composition",
+        "natural_motion_system",
+        "environment_story_arc",
+        "reveal_order",
+        "light_weather_progression",
+        "breathing_policy",
     ):
         value = palette.get(field)
         if not isinstance(value, str) or len(value.strip()) < 2:
@@ -2090,6 +2326,34 @@ def scene_tone_palette_issues(metadata):
     for field, value in palette.items():
         if isinstance(value, (dict, list)):
             issues.append(f"scene_tone_palette.{field}必须保持扁平，不能嵌套对象或数组")
+    if full_prompt:
+        grounded_layers = sum(
+            1 for field in ("foreground_layer", "midground_layer", "background_layer")
+            if _fragment_grounded(str(palette.get(field, "") or ""), full_prompt)
+        )
+        if grounded_layers < 2:
+            issues.append("full_prompt必须落实前景/中景/后景中的至少两层具体场景细节")
+        if not any(
+            _fragment_grounded(str(palette.get(field, "") or ""), full_prompt)
+            for field in ("genre_visual_signature", "lived_in_detail")
+        ):
+            issues.append("full_prompt必须落实题材视觉气味或生活化使用痕迹")
+        if not _fragment_grounded(str(palette.get("depth_focus_policy", "") or ""), full_prompt):
+            issues.append("full_prompt必须落实焦平面、遮挡、空气透视或虚实主次控制")
+        scenic_fields = (
+            "landscape_identity", "landscape_composition", "natural_motion_system",
+            "reveal_order", "light_weather_progression",
+        )
+        scenic_grounded = sum(
+            _fragment_grounded(str(palette.get(field, "") or ""), full_prompt)
+            for field in scenic_fields
+        )
+        profile = str((metadata.get("quality_contract", {}) or {}).get("profile", "") or "")
+        required_scenic = 2 if profile == "environment" else 1
+        if scenic_grounded < required_scenic:
+            issues.append(
+                "环境镜至少落实两项、人物镜至少落实一项风景身份/构图/自然运动/揭示顺序/光候变化"
+            )
     return issues
 
 
@@ -2125,6 +2389,157 @@ def screen_text_policy_metadata_issues(metadata, full_prompt=""):
         issues.extend(screen_text_policy_issues(full_prompt))
     elif AI_SCREEN_TEXT_RE.search(str(full_prompt or "")):
         issues.append("full_prompt要求AI生成屏幕/UI文字，但screen_text_policy.mode未设为ai_overlay/ai_generated/ai_ui")
+    return issues
+
+
+FUNCTIONAL_SURFACE_VISIBILITY_MODES = {
+    "hidden", "partial", "readable", "post_overlay", "not_applicable",
+}
+
+
+def prop_functional_surface_contract_issues(metadata, full_prompt="", required=False):
+    """Keep an actively used prop face oriented to its user, not the audience."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    contract = metadata.get("prop_functional_surface_contract")
+    if contract in (None, {}, ""):
+        return ["人物使用手机/书页/照片/表盘等功能面道具时必须提供qa_metadata.prop_functional_surface_contract"] if required else []
+    if not isinstance(contract, dict):
+        return ["qa_metadata.prop_functional_surface_contract必须是对象"]
+    if contract.get("applicable") is not True:
+        return ["风险触发镜的prop_functional_surface_contract.applicable必须为true"] if required else []
+
+    issues = []
+    required_fields = (
+        "prop", "functional_surface", "user", "user_view_relation", "camera_half_space",
+        "camera_visible_surface", "grip_contact", "interaction_evidence", "orientation_lock",
+        "fallback_shot",
+    )
+    for field in required_fields:
+        if len(str(contract.get(field, "") or "").strip()) < 2:
+            issues.append(f"prop_functional_surface_contract.{field}不能为空")
+    visibility = str(contract.get("content_visibility", "") or "").strip()
+    if visibility not in FUNCTIONAL_SURFACE_VISIBILITY_MODES:
+        issues.append(
+            "prop_functional_surface_contract.content_visibility只允许hidden/partial/readable/post_overlay/not_applicable"
+        )
+    elif required and visibility == "not_applicable":
+        issues.append("风险触发镜的content_visibility不得为not_applicable")
+
+    prompt = str(full_prompt or "")
+    for field in (
+        "user_view_relation", "camera_visible_surface", "grip_contact",
+        "interaction_evidence", "orientation_lock",
+    ):
+        value = str(contract.get(field, "") or "").strip()
+        if value and not _fragment_grounded(value, prompt):
+            issues.append(f"prop_functional_surface_contract.{field}必须转译为full_prompt中的可见事实")
+
+    if visibility in {"hidden", "post_overlay"}:
+        conflict_patterns = (
+            r"(?:手机|平板|电脑|显示器).{0,12}(?:屏幕|正面).{0,10}(?:朝向|正对|转向)(?:镜头|摄影机|观众)",
+            r"(?:屏幕|游戏界面|屏幕内容).{0,8}(?:朝向|正对|转向)(?:镜头|摄影机|观众)",
+            r"(?:镜头|摄影机|观众).{0,12}(?:清晰看见|清晰看到|清晰显示|可读).{0,8}(?:屏幕|游戏界面|屏幕内容)",
+            r"(?:游戏界面|屏幕内容).{0,8}(?:清晰可见|完整可见|清晰可读)",
+            r"(?:手机|平板).{0,8}背壳.{0,8}朝向(?:人物|用户|使用者|男孩|女孩|男人|女人)",
+        )
+        if any(re.search(pattern, prompt) for pattern in conflict_patterns):
+            issues.append("隐藏功能面时不得把屏幕/正面翻向镜头或让内容对观众清晰可读")
+        visible_surface = str(contract.get("camera_visible_surface", "") or "")
+        if not any(term in visible_surface for term in ("背壳", "背面", "侧边", "书背", "封底", "表带", "边框")):
+            issues.append("hidden/post_overlay必须写清摄影机实际可见的背壳、背面、侧边或边框")
+    elif visibility in {"partial", "readable"}:
+        geometry = " ".join((
+            prompt,
+            str(contract.get("camera_half_space", "") or ""),
+            str(contract.get("fallback_shot", "") or ""),
+        ))
+        if not any(term in geometry for term in ("肩后", "过肩", "俯拍", "斜上方", "同一可见侧", "同侧")):
+            issues.append("partial/readable必须使用肩后、过肩、俯拍、斜上方或使用者同侧机位展示功能面")
+    return issues
+
+
+SKIN_TONE_PROTECTION_MODES = {
+    "natural_protected", "motivated_color_cast", "source_authorized_marks", "silhouette",
+}
+
+ACCIDENTAL_FACE_CONTAMINATION_PATTERNS = (
+    r"青绿(?:色)?(?:渗入|覆盖|污染)(?:脸|脸部|面部|皮肤)",
+    r"冷绿(?:色)?(?:渗入|覆盖|污染)(?:脸|脸部|面部|皮肤)",
+    r"(?:墙面|旧墙|墙体)(?:旧痕|污渍|水渍|斑驳).{0,8}(?:覆盖|附着|映在)(?:脸|脸部|面部|皮肤)",
+    r"(?:灰尘|尘粒|雾粒|颗粒).{0,8}(?:覆盖|附着|粘在)(?:脸|脸部|面部|皮肤)",
+    r"(?:脸|脸部|面部|皮肤).{0,8}(?:粗糙斑驳|污浊|脏污)",
+    r"(?:脸|脸部|面部).{0,8}(?:陷入|压成|变成)(?:死黑|一团黑)",
+)
+
+
+def skin_tone_protection_contract_issues(
+    metadata, full_prompt="", visible_characters=None, required=False
+):
+    """Keep environmental color, texture, haze and beams from dirtying faces."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    contract = metadata.get("skin_tone_protection_contract")
+    if contract in (None, {}, ""):
+        return ["清晰人物镜必须提供qa_metadata.skin_tone_protection_contract"] if required else []
+    if not isinstance(contract, dict):
+        return ["qa_metadata.skin_tone_protection_contract必须是对象"]
+    if contract.get("applicable") is not True:
+        return ["人物镜的skin_tone_protection_contract.applicable必须为true"] if required else []
+
+    issues = []
+    mode = str(contract.get("protection_mode", "") or "").strip()
+    if mode not in SKIN_TONE_PROTECTION_MODES:
+        issues.append(
+            "skin_tone_protection_contract.protection_mode只允许natural_protected/"
+            "motivated_color_cast/source_authorized_marks/silhouette"
+        )
+    required_fields = (
+        "subjects", "source_allowed_skin_marks", "skin_tone_baseline",
+        "face_light_and_exposure", "face_fill_shadow_policy",
+        "environment_color_boundary", "texture_atmosphere_boundary",
+        "continuity_lock", "fallback",
+    )
+    for field in required_fields:
+        if len(str(contract.get(field, "") or "").strip()) < 2:
+            issues.append(f"skin_tone_protection_contract.{field}不能为空")
+
+    subjects = str(contract.get("subjects", "") or "")
+    visible = _string_list(visible_characters)
+    generic_subject_scope = any(
+        phrase in subjects for phrase in ("所有清晰入画人物", "全部清晰入画人物", "所有可见人物")
+    )
+    if visible and not generic_subject_scope:
+        missing = [name for name in visible if name not in subjects]
+        if missing:
+            issues.append("skin_tone_protection_contract.subjects未覆盖清晰入画人物：" + "、".join(missing))
+
+    prompt = str(full_prompt or "")
+    for field in (
+        "skin_tone_baseline", "face_light_and_exposure", "face_fill_shadow_policy",
+        "environment_color_boundary", "texture_atmosphere_boundary",
+    ):
+        value = str(contract.get(field, "") or "").strip()
+        if value and not _fragment_grounded(value, prompt):
+            issues.append(f"skin_tone_protection_contract.{field}必须转译为full_prompt中的可见事实")
+
+    allowed_marks = str(contract.get("source_allowed_skin_marks", "") or "").strip().lower()
+    has_authorized_marks = allowed_marks not in ("", "none", "无", "无痕迹", "不适用", "n/a")
+    if mode == "source_authorized_marks" and not has_authorized_marks:
+        issues.append("source_authorized_marks必须填写源文明确允许的伤痕、妆容、泪痕或污迹")
+    if mode == "silhouette" and not has_authorized_marks:
+        issues.append("silhouette必须在source_allowed_skin_marks中写明源文或镜头功能依据")
+    if mode == "motivated_color_cast":
+        face_policy = " ".join((
+            str(contract.get("face_light_and_exposure", "") or ""),
+            str(contract.get("face_fill_shadow_policy", "") or ""), prompt,
+        ))
+        if not any(term in face_policy for term in ("中性补光", "中性面光", "暖白补光", "自然肤色参照", "中性眼神光")):
+            issues.append("motivated_color_cast仍须保留中性面光、补光、眼神光或自然肤色参照区")
+
+    contamination_authorized = mode == "source_authorized_marks" and has_authorized_marks
+    if not contamination_authorized and any(
+        re.search(pattern, prompt) for pattern in ACCIDENTAL_FACE_CONTAMINATION_PATTERNS
+    ):
+        issues.append("环境色、墙面纹理、灰尘雾粒或死黑阴影不得迁移到人物脸部")
     return issues
 
 
