@@ -66,6 +66,7 @@ from negative_prompts import PLACEHOLDER, is_fight_context
 from production_intelligence import (
     lighting_topology_contract_issues,
     multi_person_attention_budget_issues,
+    physical_stability_issues,
     perspective_scale_contract_issues,
     prop_lifecycle_contract_issues,
     visual_prior_risk_issues,
@@ -276,6 +277,8 @@ def validate_composer_output(path, run_dir=None, report_path=None):
                 metadata, full_prompt, required=validation_profile["lighting_topology_contract"]
             ):
                 issues.append(prefix + problem)
+        for problem in physical_stability_issues(metadata, full_prompt, visible):
+            issues.append(prefix + problem)
         for problem in prompt_state_machine_issues(metadata, full_prompt, visible):
             issues.append(prefix + problem)
         if validation_profile["listener_reaction_plan"]:

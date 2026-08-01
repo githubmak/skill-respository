@@ -1,6 +1,10 @@
 # 校验清单
 
-先运行 `scripts/validate_storyboard.py <output.md>`。本清单只用于脚本校验后的精简人工复核。
+先运行 `scripts/source_gate.py --source <源文>`，处理 `blocking`，把 `advisories/risk_flags` 作为本轮
+事实底图；再运行 `scripts/validate_storyboard.py <output.md>`。本清单只用于脚本校验后的精简人工复核。
+
+前置闸门不过度拦截：源文缺少场景标题、人物表或光影细节不等于失败，除非它让人物身份、台词归属、
+动作因果或原文无法读取。弱证据由 `使用说明` 的重要假设和场景状态表承接，最终硬校验仍以可见事实为准。
 
 ## 结构
 

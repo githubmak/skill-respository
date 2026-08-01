@@ -575,14 +575,14 @@ def run():
             "生成规格：规格\n\n"
             "主体与空间锁定：角色A在画面左侧中景，身体朝向画面右侧；手机起幅在桌面右前角。\n\n"
             "主镜头连续规则：角色A要接起电话，手机从桌面右前角转移到角色A右手，手先伸向手机、指尖接触后拿起，落幅手机在角色A右手中，下一镜继承。\n\n"
-            "子镜头组：【镜头1｜0.0-1.0秒】角色A在画面左侧中景，右手从身侧伸向桌面右前角手机，指尖接触手机边缘后拿起，落幅手机在角色A右手中，下一镜继承。\n\n"
-            "光照、声音与稳定约束：光照"
+            "子镜头组：【镜头1｜0.0-1.0秒】角色A在画面左侧中景，视线落向手机，右手从身侧伸向桌面右前角手机，指尖接触手机边缘后拿起，落幅手机在角色A右手中，下一镜继承。\n\n"
+            "光照、声音与稳定约束：同源光照保持"
         )
         transfer_metadata = {"continuity_contract": {
             "start_anchor": "手机起幅在桌面右前角",
             "end_anchor": "落幅手机在角色A右手中",
             "position_continuity": "角色A在画面左侧中景",
-            "eyeline_continuity": "角色A视线落向手机",
+            "eyeline_continuity": "视线落向手机",
             "prop_state": "手机从桌面右前角转移到角色A右手",
             "lighting_continuity": "同源光照保持",
             "next_carryover": "手机在角色A右手中，下一镜继承",
@@ -596,7 +596,8 @@ def run():
                 "time_range": "0.0-1.0秒",
             }],
         }}
-        assert not continuity_contract_issues(transfer_metadata, transfer_prompt, ["角色A"])
+        transfer_issues = continuity_contract_issues(transfer_metadata, transfer_prompt, ["角色A"])
+        assert not transfer_issues, transfer_issues
         assert not physical_transition_chain_issues(transfer_metadata, transfer_prompt)
         episode_graph = analyze_package({"contract_version": PROMPT_CONTRACT_VERSION, "shots": [
             {

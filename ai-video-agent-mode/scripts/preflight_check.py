@@ -18,6 +18,13 @@ ALLOWED_VISUAL_PUNCTUATION = {
     "camera_follow", "light_reveal", "stop_mark", "rack_focus",
 }
 PLACEHOLDER_CHARACTER_NAMES = {"主角", "角色A", "角色B", "角色甲", "角色乙"}
+# These checks protect visual economy, but a later Composer/Editor pass can
+# repair them without losing source facts.  Keep the set intentionally small:
+# identity, dialogue, ownership, and duration failures remain hard blockers.
+ADVISORY_CHECKS = {
+    "VISUAL_PUNCTUATION_COUNT",
+    "VISUAL_PUNCTUATION_VALUE",
+}
 
 
 def run(run_dir):
@@ -168,13 +175,21 @@ def run(run_dir):
 
     report_path = os.path.join(run_dir, ".cache", "preflight", "report.json")
     os.makedirs(os.path.dirname(report_path), exist_ok=True)
+    blocking = [item for item in issues if item.get("severity", "blocking") == "blocking"]
+    advisories = [item for item in issues if item.get("severity") == "advisory"]
     with open(report_path, "w", encoding="utf-8") as f:
-        json.dump({"pass": not issues, "issues": issues}, f, ensure_ascii=False, indent=2)
+        json.dump(
+            {"pass": not blocking, "issues": issues, "blocking": blocking, "advisories": advisories},
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
     return issues
 
 
 def _issue(subshot_id, check, msg):
-    return {"subshot_id": subshot_id, "check": check, "severity": "blocking", "msg": msg}
+    severity = "advisory" if check in ADVISORY_CHECKS else "blocking"
+    return {"subshot_id": subshot_id, "check": check, "severity": severity, "msg": msg}
 
 
 def _ledger_records(path, key, issues, check):
@@ -208,4 +223,4 @@ if __name__ == "__main__":
         sys.exit(1)
     issues = run(sys.argv[1])
     print(json.dumps(issues, ensure_ascii=False, indent=2))
-    sys.exit(0 if not issues else 1)
+    sys.exit(0 if not any(item.get("severity", "blocking") == "blocking" for item in issues) else 1)

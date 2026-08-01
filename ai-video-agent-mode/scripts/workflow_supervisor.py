@@ -20,6 +20,7 @@ from detect_source_rules import detect_source_rules
 from generate_shotplan import generate
 from build_shotplan import normalize
 from preflight_check import run as preflight_check
+from source_gate import run as source_gate
 from pre_editor_gate import run as pre_editor_gate
 from emotion_camera_audit import audit as emotion_camera_audit
 from episode_state_graph import build_episode_state_graph
@@ -75,6 +76,19 @@ def execute_local_phase(run_dir, phase, source_path=None):
     if phase == "orchestrator":
         source_path = _required_source(run_dir, source_path)
         _detect_and_persist_source_rules(run_dir, source_path)
+        source_report = source_gate(
+            run_dir,
+            source_path,
+            config_path=os.path.join(run_dir, "project_config.json"),
+        )
+        if not source_report.get("pass"):
+            failures = source_report.get("blocking", [])
+            detail = "; ".join(
+                str(item.get("message", item)) if isinstance(item, dict) else str(item)
+                for item in failures[:6]
+            )
+            raise ValueError("source gate failed: " + detail)
+        _persist_source_gate_evidence(run_dir, source_report)
         generate(
             source_path,
             os.path.join(run_dir, ".cache", "orchestrator"),
@@ -82,12 +96,18 @@ def execute_local_phase(run_dir, phase, source_path=None):
         )
         normalize(run_dir)
         issues = preflight_check(run_dir)
-        if issues:
+        blocking = [item for item in issues if item.get("severity", "blocking") == "blocking"]
+        if blocking:
             raise ValueError("orchestrator preflight failed: " + "; ".join(
                 str(item.get("msg", item.get("message", item))) if isinstance(item, dict) else str(item)
-                for item in issues[:8]
+                for item in blocking[:8]
             ))
-        return {"source_path": source_path}
+        return {
+            "source_path": source_path,
+            "source_gate_path": source_report.get("report_path", ""),
+            "source_gate_advisories": source_report.get("advisories", []),
+            "preflight_advisories": [item for item in issues if item.get("severity") == "advisory"],
+        }
     if phase == "editor_pass1":
         result, path = pre_editor_gate(run_dir)
         if not result.get("pass"):
@@ -247,6 +267,16 @@ def _detect_and_persist_source_rules(run_dir, source_path):
         "dialogue_pattern": rules.get("dialogue_pattern_desc", "角色名（语气）：台词"),
     }
     config["character_list"] = list(rules.get("characters", []))
+    atomic_json(config_path, config)
+
+
+def _persist_source_gate_evidence(run_dir, source_report):
+    """Expose only the internal routing evidence to later local/agent stages."""
+    config_path = os.path.join(run_dir, "project_config.json")
+    config = _load_json(config_path)
+    rules = config.setdefault("source_rules", {})
+    rules["style_evidence"] = source_report.get("style_evidence", {})
+    rules["source_gate_report"] = source_report.get("report_path", "")
     atomic_json(config_path, config)
 
 

@@ -62,6 +62,45 @@ class SemanticCollisionTests(unittest.TestCase):
 
 
 class OutputFormatTests(unittest.TestCase):
+    @staticmethod
+    def _global_scale_fixture(include_positive: bool, include_negative: bool) -> str:
+        positive = (
+            "- 全局比例与支撑锁定：全程角色骨骼与头身比例恒定，人物真实身高和体型尺寸固定；"
+            "四肢长度与关节比例稳定，地平线及消失关系稳定；人物身体主支撑点持续贴合当前承载面，"
+            "站立时双脚接地，行走时步态交替接地，坐卧时臀背或躯干贴合承载面，"
+            "腾空时保持起跳、空中与落地轨迹连续；"
+            "同镜两人身高差、骨架和相对尺寸全程一致，人物画面投影只随物理距离连续变化，"
+            "固定距离下画面占比保持稳定。"
+        ) if include_positive else ""
+        negative = (
+            "人物僵硬、全身静止、无眨眼、人物忽高忽低、体型动态变化、腿部拉长缩短、"
+            "无因尺度跳变、无因浮空、透视错乱、穿模、肢体畸形、广角畸变"
+        ) if include_negative else "人物僵硬、全身静止、无眨眼"
+        return (
+            "## 使用说明\n\n## 全局锁定\n" + positive + "\n\n"
+            "## 通用负面提示词｜直接复制\n" + negative + "\n\n"
+            "## 场景状态表\n\n## 分镜投喂卡\n"
+        )
+
+    def test_global_scale_lock_is_required(self) -> None:
+        issues = validator.validate(
+            Path("dummy.md"), self._global_scale_fixture(False, True)
+        )
+        self.assertTrue(any("missing 全局比例与支撑锁定" in issue for issue in issues), issues)
+
+    def test_global_scale_negative_terms_are_required(self) -> None:
+        issues = validator.validate(
+            Path("dummy.md"), self._global_scale_fixture(True, False)
+        )
+        self.assertTrue(any("missing scale/perspective risks" in issue for issue in issues), issues)
+
+    def test_complete_global_scale_guards_pass_their_dedicated_gate(self) -> None:
+        issues = validator.validate(
+            Path("dummy.md"), self._global_scale_fixture(True, True)
+        )
+        self.assertFalse(any("全局比例与支撑锁定" in issue for issue in issues), issues)
+        self.assertFalse(any("scale/perspective risks" in issue for issue in issues), issues)
+
     def test_field_lines_with_markdown_trailing_spaces_remain_parseable(self) -> None:
         block = (
             "【镜号】  \n1，2s，普通。\n\n"
@@ -254,6 +293,94 @@ class ShotTypeShadowTests(unittest.TestCase):
     def test_hard_minimum_behavior_is_preserved(self) -> None:
         self.assertTrue(validator.hard_minimum_fails("客厅中人物站着。"))
         self.assertFalse(validator.hard_minimum_fails("客厅手部特写，只拍右手。"))
+
+    @staticmethod
+    def _liveness_group(prompts: list[str]) -> str:
+        children = []
+        for index, prompt in enumerate(prompts, start=1):
+            children.append(
+                f"【镜号】\n{index}，3s，普通。\n\n"
+                "【画面描述｜直接复制】\n"
+                f"16:9，现代自然剧情，客厅窗侧柔光。平视近景，{prompt}。"
+                "人物完成当前动作后停稳，目光落在对话者脸上。\n\n"
+                "【表演与声音】\n无台词。\n\n"
+                "【状态继承】\n人物位置保持稳定。\n"
+            )
+        text = (
+            "#### S1-01｜镜头组总时长：9s\n\n"
+            "【出现人物】\n甲\n\n"
+            + "\n".join(children)
+        )
+        return text
+
+    def test_shadow_groups_paraphrased_liveness_devices(self) -> None:
+        text = self._liveness_group(["镜头缓慢推近", "摄影机轻推0.2米", "镜头小幅推进后停稳"])
+
+        diagnostics = validator.shadow_validate(Path("dummy.md"), text)
+
+        self.assertTrue(
+            any("liveness_family_repeat=camera_push/3" in diagnostic for diagnostic in diagnostics),
+            diagnostics,
+        )
+
+    def test_shadow_does_not_report_two_matches_or_distinct_causal_motion(self) -> None:
+        text = self._liveness_group([
+            "镜头缓慢推近",
+            "摄影机轻推0.2米",
+            "镜头固定，杯底落桌后水纹扩散两次再减弱",
+        ])
+
+        diagnostics = validator.shadow_validate(Path("dummy.md"), text)
+
+        self.assertFalse(any("liveness_family_repeat=" in item for item in diagnostics), diagnostics)
+
+    def test_character_light_push_is_not_camera_push(self) -> None:
+        text = self._liveness_group(["她轻推木门", "她轻推杯子", "她轻推对方手背"])
+
+        diagnostics = validator.shadow_validate(Path("dummy.md"), text)
+
+        self.assertFalse(any("camera_push" in item for item in diagnostics), diagnostics)
+
+    def test_shadow_groups_other_paraphrased_liveness_families(self) -> None:
+        cases = {
+            "generic_eye": ["人物轻微眨眼", "人物眼睫轻颤", "人物眼皮微动"],
+            "generic_brow": ["人物微微皱眉", "人物轻蹙眉", "人物眉心微收"],
+            "idle_fabric": ["衣摆轻动", "衣袖轻摆", "衣角轻晃"],
+            "generic_haze": ["后景薄雾", "背景轻雾", "雾气缓慢流动"],
+        }
+        for family, prompts in cases.items():
+            with self.subTest(family=family):
+                diagnostics = validator.shadow_validate(
+                    Path("dummy.md"), self._liveness_group(prompts)
+                )
+                self.assertTrue(
+                    any(f"liveness_family_repeat={family}/3" in item for item in diagnostics),
+                    diagnostics,
+                )
+
+    def test_liveness_reference_is_routed_without_new_output_fields(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        grammar = (root / "references" / "liveness-motion-grammar.md").read_text(encoding="utf-8")
+        runtime = (root / "references" / "runtime-brief.md").read_text(encoding="utf-8")
+        visual = (root / "references" / "visual-attraction-rules.md").read_text(encoding="utf-8")
+        self.assertIn("动力源 | 起始静止锚点 | 主体触发", grammar)
+        self.assertIn("liveness-motion-grammar.md", runtime)
+        self.assertIn("liveness-motion-grammar.md", visual)
+        self.assertIn("不增加模板字段", grammar)
+
+    def test_visual_profile_uses_evidence_scoring_and_conservative_fallback(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        profiles = (root / "references" / "visual-direction-profiles.md").read_text(encoding="utf-8")
+        for routing_fact in (
+            "多证据自动适配",
+            "evidence_score",
+            "narrative_modifier",
+            "period_court_cinematic",
+            "rural_lived_in_naturalism",
+            "现代夜景不自动加入霓虹",
+            "低置信回到通用电影化默认",
+        ):
+            self.assertIn(routing_fact, profiles)
 
 
 if __name__ == "__main__":

@@ -61,8 +61,9 @@ def prepare(source_path, run_dir):
     generate(source_path, orchestrator_dir, config_path)
     normalize(run_dir)
     issues = preflight_check(run_dir)
-    if issues:
-        raise ValueError("source preflight failed: %s" % "; ".join(str(issue) for issue in issues[:5]))
+    blocking = [item for item in issues if item.get("severity", "blocking") == "blocking"]
+    if blocking:
+        raise ValueError("source preflight failed: %s" % "; ".join(str(issue) for issue in blocking[:5]))
 
     plan_path = os.path.join(orchestrator_dir, "shot_plan.json")
     with open(plan_path, encoding="utf-8-sig") as handle:

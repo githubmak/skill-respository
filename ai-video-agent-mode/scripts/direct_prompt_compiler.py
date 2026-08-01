@@ -36,7 +36,7 @@ def compile_direct_prompt(segments, required_fragments=None, max_chars=700, info
     text = _join(normalized)
     omitted = []
     if len(text) > max_chars:
-        normalized, omitted = _fit(normalized, max_chars)
+        normalized, omitted = _fit(normalized, max_chars, required_fragments)
         text = _join(normalized)
 
     issues = []
@@ -103,10 +103,11 @@ def compile_director_card(segments, required_fragments=None, information_budget=
     return result
 
 
-def _fit(segments, max_chars):
+def _fit(segments, max_chars, required_fragments=None):
     """Trim whole clauses from low-priority tails; never cut through a clause."""
     result = [{"kind": item["kind"], "clauses": list(item["clauses"])} for item in segments]
     omitted = []
+    required_fragments = [str(value).strip() for value in required_fragments or [] if str(value).strip()]
     removal_order = ("cinematic", "video_texture", "support", "light", "continuity", "space", "performance")
     for kind in removal_order:
         while len(_join(result)) > max_chars:
@@ -115,6 +116,11 @@ def _fit(segments, max_chars):
                 if item["kind"] == kind
                 and item["clauses"]
                 and (kind in AUXILIARY_KINDS or len(item["clauses"]) > 1)
+                and not any(
+                    required in clause
+                    for clause in item["clauses"]
+                    for required in required_fragments
+                )
             ), None)
             if candidate is None:
                 break

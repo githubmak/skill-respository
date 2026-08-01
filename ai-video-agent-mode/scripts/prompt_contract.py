@@ -282,6 +282,20 @@ CINEMATIC_COLOR_RE = re.compile(r"冷暖|冷白|暖黄|红光|蓝黑|青灰|低�
 CINEMATIC_ATMOSPHERE_RE = re.compile(r"雨|雾|尘|水汽|烟|颗粒|空气|逆光|飘浮|湿气|霾")
 CINEMATIC_MATERIAL_RE = re.compile(r"墙皮|墙面|地面|瓷砖|水泥|玻璃|金属|纸面|衣料|木纹|水渍|污渍|划痕|裂纹|起皮|磨损|灰尘|粗糙")
 CINEMATIC_IMPERFECTION_RE = re.compile(r"不均匀|不规则|断续|细碎|污渍|划痕|磨损|起皮|裂纹|水渍|灰尘|颗粒|粗糙|残缺|暗斑|旧痕")
+LIGHT_DIRECTION_RE = re.compile(r"左|右|前|后|上|下|侧|顶部|窗外|门外|逆向|斜向")
+LIGHT_RECEIVER_RE = re.compile(r"脸|面部|眼窝|手|衣|发|墙|地|桌|门|道具|纸|木|玻璃|金属|水面")
+SHADOW_RESULT_RE = re.compile(r"阴影|暗部|黑位|明暗|高光|轮廓|反差|衰减")
+MATERIAL_RESPONSE_RE = re.compile(r"反光|高光|吸光|透光|漫反射|粗糙|纹理|磨损|褶皱|划痕|起皮|水渍|颗粒|湿润|干涩")
+MOTION_PHASE_RE = re.compile(r"先(?:发生|触发|移动|抬|转|落)|随后|稍后|稍晚|之后|延迟|余波|回收|减速|停稳|最终|落幅|起幅")
+MOTION_ACTION_RE = re.compile(r"抬|转|移|走|跑|靠近|退|伸|握|抓|放|接|压|起身|坐|躺|呼吸|视线|目光|重心|肩|下颌|停住|站稳|摆动|流动")
+MATERIAL_FAMILY_PATTERNS = (
+    re.compile(r"皮肤|肤质|脸颊|手背"),
+    re.compile(r"衣料|布料|衣袖|衣摆|丝绸|棉麻|皮革"),
+    re.compile(r"木纹|木门|木桌|纸面|书页|信封"),
+    re.compile(r"玻璃|镜面|水面|积水"),
+    re.compile(r"金属|刀剑|杯沿|门把|栏杆"),
+    re.compile(r"墙面|墙皮|石板|水泥|瓷砖|地面"),
+)
 AI_REALISM_RISK_RE = re.compile(
     r"镜面水面|水面像镜子|镜子般反射|塑料质感|塑料墙|过度干净|过于干净|无瑕|"
     r"过度霓虹|霓虹堆叠|赛博炫光|CG感|渲染感|3D渲染|游戏场景|虚拟摄影棚|"
@@ -381,8 +395,25 @@ def direct_copy_prompt_issues(feed_prompt, max_chars=700, require_visual_texture
             issues.append("画面描述｜直接复制缺少光源方向/色温/受光关系")
         if not VISIBLE_TEXTURE_ANCHOR_RE.search(feed):
             issues.append("画面描述｜直接复制缺少脸/手/道具受光、阴影/反光、背景虚化或剧情相关材质")
+    issues.extend(prompt_redundancy_issues(feed))
     issues.extend(screen_text_policy_issues(feed))
     return issues
+
+
+def prompt_redundancy_issues(text):
+    """Reject repeated executable sentences that spend prompt budget without adding facts."""
+    clauses = [
+        clause.strip()
+        for clause in re.split(r"[。！？；;\n]+", str(text or ""))
+        if len(clause.strip()) >= 6
+    ]
+    seen, repeated = set(), []
+    for clause in clauses:
+        signature = re.sub(r"[\s，,：:]", "", clause).lower()
+        if signature in seen and clause not in repeated:
+            repeated.append(clause)
+        seen.add(signature)
+    return ["直投正文存在重复执行句，浪费提示词预算：" + "、".join(repeated[:3])] if repeated else []
 
 
 def _clean_direct_feed_prompt(text):
@@ -1194,10 +1225,32 @@ def prompt_information_budget_issues(metadata, full_prompt="", required=True):
     limit = contract.get("visual_enhancer_limit")
     if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 2:
         issues.append("prompt_information_budget.visual_enhancer_limit必须是1或2")
+    primary_task = str(contract.get("primary_render_task", "") or "").strip()
     must_render = str(contract.get("must_render", "") or "").strip()
-    if full_prompt and must_render and not _fragment_grounded(must_render, full_prompt):
-        issues.append("prompt_information_budget.must_render必须落实到full_prompt")
+    if re.fullmatch(r"(?:完成|呈现|表现|做好|增强)?(?:当前)?(?:主任务|剧情|画面|镜头|电影感|高级感|质感)", primary_task):
+        issues.append("prompt_information_budget.primary_render_task不能是空泛目标")
+    if full_prompt and must_render:
+        missing_units = [
+            unit for unit in _budget_units(must_render)
+            if not _fragment_grounded(unit, full_prompt)
+        ]
+        if missing_units:
+            issues.append(
+                "prompt_information_budget.must_render存在未落实硬事实："
+                + "、".join(missing_units[:4])
+            )
+    metadata_only = str(contract.get("metadata_only", "") or "").strip()
+    if full_prompt and len(metadata_only) >= 4 and metadata_only in full_prompt:
+        issues.append("prompt_information_budget.metadata_only不得原样泄漏到full_prompt")
+    compression = str(contract.get("compression_rule", "") or "").strip()
+    if compression and not re.search(r"优先|先删|删除|压缩|整句|保留|不得|不可", compression):
+        issues.append("prompt_information_budget.compression_rule必须写清保留或整句删除顺序")
     return issues
+
+
+def _budget_units(value):
+    units = [unit.strip(" -\t") for unit in re.split(r"[；;|\n]+", str(value or ""))]
+    return [unit for unit in units if len(unit) >= 3]
 
 
 def sound_directing_plan_issues(metadata, full_prompt="", audio_enabled=False, required=True):
@@ -1471,14 +1524,27 @@ def continuity_contract_issues(metadata, full_prompt="", visible_characters=None
             if not str(transition.get(field, "") or "").strip():
                 issues.append(f"state_transitions[{index}].{field}不能为空")
         intermediate = str(transition.get("intermediate_state", "") or "").strip()
+        for state_field in ("from_state", "to_state"):
+            state_value = str(transition.get(state_field, "") or "").strip()
+            if state_value and not _fragment_grounded(state_value, full_prompt):
+                issues.append(f"state_transitions[{index}].{state_field}必须落实到模型提示词")
         if intermediate and not _fragment_grounded(intermediate, full_prompt):
             issues.append(f"state_transitions[{index}].intermediate_state必须落实到模型提示词中的可见承接动作")
         if intermediate and _looks_like_terminal_state(intermediate):
             issues.append(f"state_transitions[{index}].intermediate_state不能只写终态，必须写手伸向/接触/半转/重心跟随等中间动作")
+    if not _fragment_grounded(contract.get("start_anchor", ""), full_prompt):
+        issues.append("continuity_contract.start_anchor必须能在模型提示词中找到起幅事实")
     if not _fragment_grounded(contract.get("end_anchor", ""), full_prompt):
         issues.append("continuity_contract.end_anchor必须能在模型提示词中找到可见落幅")
     if not _fragment_grounded(contract.get("next_carryover", ""), full_prompt):
         issues.append("continuity_contract.next_carryover必须落实为可承接的画面残留")
+    for field in ("position_continuity", "eyeline_continuity", "lighting_continuity"):
+        value = str(contract.get(field, "") or "").strip()
+        if value and not _fragment_grounded(value, full_prompt):
+            issues.append(f"continuity_contract.{field}必须落实到模型提示词中的可见事实")
+    prop_state = str(contract.get("prop_state", "") or "").strip()
+    if prop_state and not _is_no_prop_state(prop_state) and not _fragment_grounded(prop_state, full_prompt):
+        issues.append("continuity_contract.prop_state必须落实到模型提示词中的可见事实")
     return issues
 
 
@@ -2230,6 +2296,24 @@ def aesthetic_directing_contract_issues(metadata, full_prompt=""):
         if thesis in ABSTRACT_VISUAL_TERMS or target in ABSTRACT_VISUAL_TERMS:
             issues.append("aesthetic_priority必须写具体视觉论点和第一落点，不能只写电影感/高级感")
 
+    bible = metadata.get("visual_bible", {})
+    if isinstance(bible, dict):
+        palette = str(bible.get("palette_system", "") or "")
+        if not (
+            len(re.findall(r"主色|辅助色|点缀色|冷|暖|中性|低饱和|高饱和", palette)) >= 2
+            and re.search(r"背景|人物|服装|道具|空间|落在|用于", palette)
+        ):
+            issues.append("visual_bible.palette_system必须说明至少两层色彩职责与画面落点")
+        light = str(bible.get("light_motivation", "") or "")
+        if not (LIGHT_SOURCE_RE.search(light) and LIGHT_DIRECTION_RE.search(light) and LIGHT_RECEIVER_RE.search(light)):
+            issues.append("visual_bible.light_motivation必须包含光源、方向和受光面")
+        material = str(bible.get("material_world", "") or "")
+        if _material_family_count(material) < 2 or not MATERIAL_RESPONSE_RE.search(material):
+            issues.append("visual_bible.material_world必须区分至少两类材质及其反光/粗糙/纹理响应")
+        imperfection = str(bible.get("imperfection_policy", "") or "")
+        if not CINEMATIC_IMPERFECTION_RE.search(imperfection):
+            issues.append("visual_bible.imperfection_policy必须选择一项自然不完美证据")
+
     dynamic = metadata.get("dynamic_aesthetic_contract", {})
     if isinstance(dynamic, dict):
         camera_path = str(dynamic.get("camera_path", "") or "")
@@ -2249,7 +2333,67 @@ def aesthetic_directing_contract_issues(metadata, full_prompt=""):
         )
         if grounded < 1:
             issues.append("static_aesthetic_contract至少一项构图/光影/材质/记忆帧必须落实到full_prompt")
+        light_design = str(static.get("light_design", "") or "")
+        if not (
+            LIGHT_SOURCE_RE.search(light_design)
+            and LIGHT_DIRECTION_RE.search(light_design)
+            and LIGHT_RECEIVER_RE.search(light_design)
+            and SHADOW_RESULT_RE.search(light_design)
+        ):
+            issues.append("static_aesthetic_contract.light_design必须包含光源、方向、受光面和阴影结果")
+        color_grade = str(static.get("color_grade", "") or "")
+        if not CINEMATIC_COLOR_RE.search(color_grade) or not re.search(r"肤色|皮肤|脸|面部|高光|黑位", color_grade):
+            issues.append("static_aesthetic_contract.color_grade必须写色彩分离及肤色/高光/黑位保护")
+        material_anchor = str(static.get("material_anchor", "") or "")
+        if _material_family_count(material_anchor) < 1 or not MATERIAL_RESPONSE_RE.search(material_anchor):
+            issues.append("static_aesthetic_contract.material_anchor必须写剧情材质及其可见响应")
+    if prompt_text and isinstance(dynamic, dict):
+        dynamic_text = " ".join(str(dynamic.get(field, "") or "") for field in DYNAMIC_AESTHETIC_CONTRACT_FIELDS)
+        hold_source = str(dynamic.get("primary_subject_motion", "") or "")
+        deliberate_hold = bool(re.search(r"固定|保持静止|无额外|不增加|不动|无运动", hold_source)) and not bool(
+            re.search(r"抬|转|移|走|跑|伸|握|抓|放|接|压|起身|坐|躺|重心|摆动|流动", str(dynamic.get("primary_subject_motion", "") or ""))
+        )
+        grounded_dynamic = sum(
+            _motion_fragment_grounded(str(dynamic.get(field, "") or ""), prompt_text)
+            for field in ("trigger", "primary_subject_motion", "end_state")
+        )
+        if grounded_dynamic < (2 if deliberate_hold else 3):
+            issues.append(
+                "dynamic_aesthetic_contract的触发、主体动作与稳定终态至少%s项必须落实到full_prompt"
+                % ("两" if deliberate_hold else "三")
+            )
+        responses = [
+            str(dynamic.get(field, "") or "")
+            for field in ("secondary_environment_motion", "material_motion", "atmosphere_motion")
+        ]
+        response_grounded = any(_fragment_grounded(value, prompt_text) for value in responses)
+        response_hold = any(re.search(r"固定|保持|静止|无额外|不增加", value) for value in responses)
+        if not response_grounded and not response_hold:
+            issues.append("dynamic_aesthetic_contract至少一个因果环境/材质/空气响应必须落实到full_prompt，或明确保持静止")
+        if not deliberate_hold:
+            primary_motion = str(dynamic.get("primary_subject_motion", "") or "")
+            if not MOTION_ACTION_RE.search(primary_motion):
+                issues.append("dynamic_aesthetic_contract.primary_subject_motion必须写可执行身体/视线/重心动作")
+            if not MOTION_PHASE_RE.search(prompt_text + " " + dynamic_text):
+                issues.append("dynamic_aesthetic_contract必须写先后、延迟、余波、减速或稳定落幅等时间节拍")
     return issues
+
+
+def _motion_fragment_grounded(value, text):
+    """Allow a subject to be stated once before a coordinated action phrase."""
+    if _fragment_grounded(value, text):
+        return True
+    fragments = [
+        fragment.strip()
+        for fragment in re.split(r"[，,、；;]|(?:并且|然后|随后|再|并)", str(value or ""))
+        if len(fragment.strip()) >= 4
+    ]
+    return any(fragment in str(text or "") for fragment in fragments)
+
+
+def _material_family_count(text):
+    value = str(text or "")
+    return sum(bool(pattern.search(value)) for pattern in MATERIAL_FAMILY_PATTERNS)
 
 
 def physical_transition_chain_issues(metadata, full_prompt=""):

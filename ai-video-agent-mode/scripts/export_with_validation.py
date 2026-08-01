@@ -497,7 +497,7 @@ def _build_direct_copy_prompt(task, plan, compile_reports=None):
             "segment_order": compiled["segment_order"],
             "removed_duplicate_count": compiled["removed_duplicate_count"],
             "omitted": compiled["omitted"],
-            "protected_dialogue_fragments": required_dialogue,
+            "protected_dialogue_fragments": _dialogue_required_fragments(task),
             "protected_required_fragments": compiled["required_fragments"],
             "budget_profile": compiled["budget_profile"],
             "visual_enhancer_limit": compiled["visual_enhancer_limit"],
@@ -510,7 +510,15 @@ def _build_direct_copy_prompt(task, plan, compile_reports=None):
 
 def _build_director_card(task, plan, compile_reports=None):
     segments, required_fragments, information_budget = _direct_prompt_inputs(task, plan)
-    compiled = compile_director_card(segments, required_fragments, information_budget)
+    # The compact card keeps dialogue, hard facts, and the dynamic action rail;
+    # the full direct-copy block is the canonical place for the static material anchor.
+    card_required = _dialogue_required_fragments(task) + _budget_render_units(information_budget)
+    motion_anchor = _dynamic_motion_anchor(
+        task.get("qa_metadata", {}) if isinstance(task.get("qa_metadata"), dict) else {}
+    )
+    if motion_anchor:
+        card_required.append(motion_anchor)
+    compiled = compile_director_card(segments, _unique_nonempty(card_required), information_budget)
     if compiled["issues"]:
         raise ValueError("导演卡编译失败：" + "；".join(compiled["issues"]))
     if isinstance(compile_reports, list):
@@ -526,8 +534,17 @@ def _build_director_card(task, plan, compile_reports=None):
 def _direct_prompt_inputs(task, plan):
     metadata = task.get("qa_metadata", {}) if isinstance(task.get("qa_metadata"), dict) else {}
     palette = metadata.get("scene_tone_palette", {}) if isinstance(metadata.get("scene_tone_palette"), dict) else {}
+    budget = metadata.get("prompt_information_budget", {}) if isinstance(metadata.get("prompt_information_budget"), dict) else {}
+    motion_anchor = _dynamic_motion_anchor(metadata)
+    static_anchor = _static_visual_anchor(metadata)
+    enhancer_limit = budget.get("visual_enhancer_limit")
     cinematic = _cinematic_direct_clause(metadata)
-    video_texture = _video_texture_direct_clause(metadata)
+    video_texture = _video_texture_direct_clause(metadata, static_anchor=static_anchor if enhancer_limit == 1 and motion_anchor else "")
+    if enhancer_limit == 1:
+        if motion_anchor:
+            cinematic = ""
+        else:
+            video_texture = ""
     prefix = _compact(palette.get("visual_scene_prefix", ""))
     style_parts = [
         "%s画幅" % plan.get("canvas", "") if plan.get("canvas", "") else "",
@@ -554,13 +571,10 @@ def _direct_prompt_inputs(task, plan):
             {"kind": "cinematic", "text": cinematic},
         ]
     control = task.get("generation_control", {}) if isinstance(task.get("generation_control"), dict) else {}
-    required_dialogue = [
-        str(event.get("text", "") or "").strip()
-        for event in metadata.get("dialogue_events", []) if isinstance(event, dict)
-        if control.get("audio_enabled") is True and str(event.get("text", "") or "").strip()
-    ]
-    must_render = str(metadata.get("prompt_information_budget", {}).get("must_render", "") or "") if isinstance(metadata.get("prompt_information_budget"), dict) else ""
-    return segments, required_dialogue + ([must_render] if must_render else []), metadata.get("prompt_information_budget", {})
+    required = _dialogue_required_fragments(task)
+    required.extend(_budget_render_units(budget))
+    required.extend(value for value in (motion_anchor, static_anchor) if value)
+    return segments, _unique_nonempty(required), budget
 
 
 def _global_lock_lines(master_package, plan):
@@ -595,7 +609,11 @@ def _global_lock_lines(master_package, plan):
         carryover = _compact(continuity.get("next_carryover") or continuity.get("end_anchor", ""))
         if carryover:
             state_lines.append("- %s：%s" % (shot.get("shot_id", ""), carryover))
-    lines = ["- 本集空间锁定索引：", ""]
+    lines = [
+        "- 全局比例与支撑锁定：全程角色骨骼与头身比例恒定，人物真实身高和体型尺寸固定；四肢长度与关节比例稳定，地平线及消失关系稳定；人物身体主支撑点持续贴合当前承载面并保留接触阴影，站立时双脚接地，行走时步态交替接地，坐卧时臀背或躯干贴合承载面，腾空时保持起跳、空中与落地轨迹连续；同镜两人身高差、骨架和相对尺寸全程一致，人物画面投影只随物理距离连续变化，固定距离下画面占比保持稳定。",
+        "",
+        "- 本集空间锁定索引：", "",
+    ]
     lines.extend(scene_lines or ["- 暂无独立空间索引；以各镜 `【画面参数】` 与 `【状态继承】` 为准。"])
     lines.extend(["", "- 本集影调色卡索引：", ""])
     palette_lines = [f"- {space_id}：{text}" for space_id, text in palette_by_space.items()]
@@ -666,6 +684,8 @@ def _global_negative_prompt(master_package):
         "背景重构", "人物瞬移", "站位互换", "道具漂浮穿手", "画面跳帧",
         "过度磨皮", "模糊失焦", "人物僵硬", "全身静止", "无眨眼",
         "空洞呆滞眼神", "面部无任何变化", "肢体不动", "木偶式静止",
+        "人物忽高忽低", "体型动态变化", "腿部拉长缩短", "无因尺度跳变",
+        "无因浮空", "透视错乱", "穿模", "肢体畸形", "广角畸变",
     ]
     for shot in master_package.get("shots", []):
         if not isinstance(shot, dict):
@@ -674,7 +694,7 @@ def _global_negative_prompt(master_package):
             term = term.strip()
             if term and term not in terms:
                 terms.append(term)
-    return "，".join(terms[:32])
+    return "，".join(terms[:48])
 
 
 def _visible_people(metadata):
@@ -756,12 +776,15 @@ def _cinematic_direct_clause(metadata):
     aesthetic = metadata.get("static_aesthetic_contract", {}) if isinstance(metadata, dict) else {}
     aesthetic = aesthetic if isinstance(aesthetic, dict) else {}
     parts = []
+    anchor = _static_visual_anchor(metadata)
+    if anchor:
+        parts.append(anchor)
     for field in (
         "visual_intent", "composition_hierarchy", "light_design", "color_grade",
         "lens_rendering", "depth_atmosphere", "material_anchor", "signature_frame",
     ):
         value = _compact(aesthetic.get(field, ""))
-        if value:
+        if value and value not in anchor:
             parts.append(value)
     for field in (
         "composition_anchor",
@@ -778,22 +801,29 @@ def _cinematic_direct_clause(metadata):
             parts.append(value)
     if not parts:
         return ""
-    return _shorten("写实影像约束（静态美术）：" + "；".join(parts), 180)
+    return "写实影像约束（静态美术）：" + "；".join(
+        part if part == anchor else _shorten(part, 72) for part in parts[:8]
+    )
 
 
-def _video_texture_direct_clause(metadata):
+def _video_texture_direct_clause(metadata, static_anchor=""):
     contract = metadata.get("video_texture_contract", {}) if isinstance(metadata, dict) else {}
     contract = contract if isinstance(contract, dict) else {}
     aesthetic = metadata.get("dynamic_aesthetic_contract", {}) if isinstance(metadata, dict) else {}
     aesthetic = aesthetic if isinstance(aesthetic, dict) else {}
     parts = []
+    anchor = _dynamic_motion_anchor(metadata)
+    if anchor:
+        parts.append(anchor)
+    if static_anchor:
+        parts.append("静态锚点" + static_anchor)
     for field in (
         "motion_thesis", "primary_subject_motion", "secondary_environment_motion",
         "camera_path", "focus_behavior", "material_motion", "atmosphere_motion",
         "tempo_easing", "end_state",
     ):
         value = _compact(aesthetic.get(field, ""))
-        if value:
+        if value and value not in anchor and value not in static_anchor:
             parts.append(value)
     for field in (
         "exposure_policy",
@@ -807,7 +837,85 @@ def _video_texture_direct_clause(metadata):
             parts.append(value)
     if not parts:
         return ""
-    return _shorten("视频质感约束（动态美术）：" + "；".join(parts), 180)
+    preserved = {value for value in (anchor, static_anchor) if value}
+    return "视频质感约束（动态美术）：" + "；".join(
+        part if part in preserved else _shorten(part, 72) for part in parts[:8]
+    )
+
+
+def _dynamic_motion_anchor(metadata):
+    """Compile the existing dynamic contract into one causal, required sentence."""
+    contract = metadata.get("dynamic_aesthetic_contract", {}) if isinstance(metadata, dict) else {}
+    contract = contract if isinstance(contract, dict) else {}
+    start = _compact(contract.get("start_state", ""))
+    trigger = _compact(contract.get("trigger", ""))
+    primary = _compact(contract.get("primary_subject_motion", ""))
+    end = _compact(contract.get("end_state", ""))
+    response = ""
+    for field in ("secondary_environment_motion", "material_motion", "atmosphere_motion"):
+        candidate = _compact(contract.get(field, ""))
+        if candidate and not re.search(r"^(?:无|没有|不增加|保持静止|保持稳定|固定|none|n/a)", candidate, re.I):
+            response = candidate
+            break
+    if not any((trigger, primary, end)):
+        return ""
+    parts = []
+    if start:
+        parts.append("起幅" + start)
+    if trigger:
+        parts.append("因" + trigger)
+    if primary:
+        parts.append("主体" + primary)
+    if response:
+        parts.append("随后" + response)
+    if end:
+        parts.append("最终" + end)
+    return "，".join(parts) + "。"
+
+
+def _static_visual_anchor(metadata):
+    """Keep one concrete light/color/material anchor available to the direct prompt."""
+    contract = metadata.get("static_aesthetic_contract", {}) if isinstance(metadata, dict) else {}
+    contract = contract if isinstance(contract, dict) else {}
+    if not any(str(contract.get(field, "") or "").strip() for field in ("light_design", "color_grade", "material_anchor")):
+        bible = metadata.get("visual_bible", {}) if isinstance(metadata, dict) else {}
+        bible = bible if isinstance(bible, dict) else {}
+        contract = {
+            "light_design": bible.get("light_motivation", ""),
+            "color_grade": bible.get("palette_system", ""),
+            "material_anchor": bible.get("material_world", ""),
+        }
+    parts = []
+    for field in ("light_design", "color_grade", "material_anchor"):
+        value = _compact(contract.get(field, ""))
+        if value:
+            parts.append(_shorten(value, 58))
+    return "，".join(parts)
+
+
+def _dialogue_required_fragments(task):
+    metadata = task.get("qa_metadata", {}) if isinstance(task.get("qa_metadata"), dict) else {}
+    control = task.get("generation_control", {}) if isinstance(task.get("generation_control"), dict) else {}
+    return [
+        str(event.get("text", "") or "").strip()
+        for event in metadata.get("dialogue_events", []) if isinstance(event, dict)
+        if control.get("audio_enabled") is True and str(event.get("text", "") or "").strip()
+    ]
+
+
+def _budget_render_units(budget):
+    value = str(budget.get("must_render", "") or "") if isinstance(budget, dict) else ""
+    return [unit.strip() for unit in re.split(r"[;；|\n]+", value) if len(unit.strip()) >= 3]
+
+
+def _unique_nonempty(values):
+    seen, result = set(), []
+    for value in values:
+        value = str(value or "").strip()
+        if value and value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
 
 
 def _clean_export_direct_text(text):

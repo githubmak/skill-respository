@@ -31,10 +31,14 @@ def main():
     args = parser.parse_args()
 
     steps = []
+    steps.append(_run("rule_consistency", [sys.executable, _script("check_rule_consistency.py")]))
+    steps.append(_run("source_gate", [sys.executable, _script("test_source_gate.py")]))
+    steps.append(_run("preflight_severity", [sys.executable, _script("test_preflight_severity.py")]))
     steps.append(_run("fast_start", [sys.executable, _script("test_fast_start.py")]))
     steps.append(_run("structure", [sys.executable, _script("test_current_pipeline.py")]))
     steps.append(_run("quality_upgrades", [sys.executable, _script("test_quality_upgrades.py")]))
     steps.append(_run("production_intelligence", [sys.executable, _script("test_production_intelligence.py")]))
+    steps.append(_run("quality_control_matrix", [sys.executable, _script("test_quality_control_matrix.py")]))
     steps.append(_run("keyframe_pipeline", [sys.executable, _script("test_keyframe_pipeline.py")]))
     steps.append(_run("visual_ab_review", [sys.executable, _script("test_visual_ab_review.py")]))
     steps.append(_run("golden_jimeng", [sys.executable, _script("golden_jimeng_check.py")]))

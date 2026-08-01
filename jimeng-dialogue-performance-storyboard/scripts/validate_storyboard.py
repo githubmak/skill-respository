@@ -26,6 +26,27 @@ BANNED_DIRECT = [
     "当前主角", "当前对话者", "视情况", "出场人物", "所有人物", "全部人物", "所有出场人物",
 ]
 NEGATIVE_NEEDLE = "人物僵硬、全身静止、无眨眼"
+GLOBAL_SCALE_LOCK_TITLE = "全局比例与支撑锁定"
+GLOBAL_SCALE_LOCK_TERMS = (
+    "角色骨骼与头身比例恒定", "真实身高和体型尺寸固定", "四肢长度与关节比例稳定",
+    "地平线及消失关系稳定", "身体主支撑点持续贴合当前承载面", "站立时双脚接地",
+    "行走时步态交替接地", "坐卧时臀背或躯干贴合承载面", "腾空时保持起跳、空中与落地轨迹连续", "两人身高差",
+    "画面投影只随物理距离连续变化", "固定距离下画面占比保持稳定",
+)
+GLOBAL_SCALE_NEGATIVE_TERMS = (
+    "人物忽高忽低", "体型动态变化", "腿部拉长缩短", "无因尺度跳变", "无因浮空",
+    "透视错乱", "穿模", "肢体畸形", "广角畸变",
+)
+LIVENESS_PATTERN_FAMILIES = {
+    "camera_push": (
+        r"(?:镜头|摄影机|机位)[^。；;\n]{0,12}(?:缓慢推近|慢慢推近|轻推|小幅推进|逐渐靠近)",
+        r"(?:缓慢推近|慢慢推近|小幅推进)(?:镜头|摄影机|机位)",
+    ),
+    "generic_eye": (r"轻微眨眼", r"缓慢眨眼", r"眼睫轻颤", r"眼皮微动"),
+    "generic_brow": (r"微微皱眉", r"轻蹙眉", r"眉心微收"),
+    "idle_fabric": (r"衣摆轻动", r"衣袖轻摆", r"衣角轻晃", r"窗帘轻摆", r"帘布轻晃"),
+    "generic_haze": (r"薄雾", r"轻雾", r"雾气缓慢流动", r"丁达尔光", r"无因体积光"),
+}
 INTERNAL_PRESET_TERMS = ("套用模板", "预设库", "候选池", "场景预设", "预设分支", "参数化场景")
 COLOR_CARD_TITLE = "本集影调色卡索引"
 VOICE_LOCK_TITLE = "本集角色声音锁定表"
@@ -1407,6 +1428,15 @@ def validate(path: Path, text: str | None = None) -> list[str]:
     global_section = extract_top_section(text, "## 全局锁定")
     global_negative_section = extract_top_section(text, "## 通用负面提示词｜直接复制")
     scene_state_section = extract_top_section(text, "## 场景状态表")
+    if GLOBAL_SCALE_LOCK_TITLE not in global_section:
+        issues.append(f"## 全局锁定 missing {GLOBAL_SCALE_LOCK_TITLE}")
+    else:
+        missing_scale_terms = [term for term in GLOBAL_SCALE_LOCK_TERMS if term not in global_section]
+        if missing_scale_terms:
+            issues.append(f"{GLOBAL_SCALE_LOCK_TITLE} lacks scale/grounding facts -> {','.join(missing_scale_terms)}")
+    missing_scale_negatives = [term for term in GLOBAL_SCALE_NEGATIVE_TERMS if term not in global_negative_section]
+    if missing_scale_negatives:
+        issues.append("## 通用负面提示词 missing scale/perspective risks -> " + ",".join(missing_scale_negatives))
     for issue in negative_priming_issues(global_negative_section, negative_field=True):
         issues.append(f"通用负面提示词存在具体领域概念泄漏 -> {issue}")
     if COLOR_CARD_TITLE not in global_section:
@@ -1524,11 +1554,13 @@ def shadow_validate(path: Path, text: str | None = None) -> list[str]:
         group_id, block = match.group(1), match.group(3)
         before_first_child = block.split("【镜号】", 1)[0]
         cast_names = group_cast_names(extract_optional_field(before_first_child, "【出现人物】"))
+        group_directs: list[str] = []
         for number, child in enumerate(iter_children(block), start=1):
             child_block = child.group(0)
             direct = direct_prompt(child_block)
             if not direct:
                 continue
+            group_directs.append(direct)
             report = build_semantic_report(
                 direct=direct,
                 header=child.group(1).strip(),
@@ -1543,6 +1575,13 @@ def shadow_validate(path: Path, text: str | None = None) -> list[str]:
                 f"semantic={semantic_state}; hard180={'fail' if report.hard_minimum_fails else 'pass'}; "
                 f"disagreement={report.disagreement}"
             )
+        for family, patterns in LIVENESS_PATTERN_FAMILIES.items():
+            count = sum(any(re.search(pattern, direct) for pattern in patterns) for direct in group_directs)
+            if count >= 3:
+                diagnostics.append(
+                    f"SHADOW {group_id}: liveness_family_repeat={family}/{count}; "
+                    "replace repeated decoration with source-driven action, light, material, or environment response"
+                )
     return diagnostics
 
 

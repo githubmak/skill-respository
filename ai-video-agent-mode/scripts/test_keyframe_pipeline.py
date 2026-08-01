@@ -20,7 +20,8 @@ def main():
     assert "门框留白把视线引向抬眼瞬间" in sequence["frames"][1]["prompt"]
     assert "低幅推近在抬眼后减速停稳" in sequence["video_prompt"]
     assert "均匀棚拍光" in sequence["negative_prompt"]
-    assert not aesthetic_directing_contract_issues(task["qa_metadata"], task["full_prompt"])
+    aesthetic_issues = aesthetic_directing_contract_issues(task["qa_metadata"], task["full_prompt"])
+    assert not aesthetic_issues, aesthetic_issues
     incomplete = _fixture()
     incomplete["qa_metadata"]["dynamic_aesthetic_contract"]["camera_path"] = ""
     assert any("camera_path" in issue for issue in aesthetic_directing_contract_issues(
@@ -52,8 +53,8 @@ def _fixture():
         "生成规格：16:9画幅，8秒，写实电影级动态漫。\n\n"
         "主体与空间锁定：前景桌角轻虚化，中景角色A站在画面左侧，后景角色B弱虚化；两人双脚落在同一连续地面，遵循近大远小，真实体型与头身比例不变。\n\n"
         "主镜头连续规则：角色A右手握手机，手机屏幕朝角色A，背壳朝摄影机，角色B闭口观察。\n\n"
-        "子镜头组：0.0-3.0秒角色A低头看手机；3.0-6.0秒角色A说“你终于回来了。”并抬眼；6.0-8.0秒角色A闭口，右手仍把手机停在胸前。\n\n"
-        "光照、声音与稳定约束：左前方中性面光照亮角色A脸侧，暖色只落在木桌，肤色自然；固定机位。"
+        "子镜头组：0.0-3.0秒角色A低头看手机；3.0-6.0秒角色A看清门口人物，抬眼并把手机从腰间抬到胸前，说“你终于回来了。”；6.0-8.0秒角色A闭口停住，手机稳定在胸前。\n\n"
+        "光照、色彩与稳定约束：左前方中性面光照亮角色A脸侧；主色暖灰落在人物与室内空间，辅助低饱和冷色落在门外背景，手机金属边缘冷白反光作点缀；肤色自然，固定机位。"
     )
     return {
         "shot_id": "S1", "subshot_id": "S1-A", "duration": 8, "full_prompt": prompt,
@@ -86,7 +87,7 @@ def _fixture():
             "scene_tone_palette": {"visual_scene_prefix": "暖灰客厅，前中后景层次清楚"},
             "visual_bible": {
                 "visual_thesis": "克制重逢让观众先看抬眼再看手机",
-                "palette_system": "暖灰占主体，门外冷色退后，手机边缘作低亮点缀",
+                "palette_system": "主色暖灰落在人物与室内空间，辅助低饱和冷色落在门外背景，手机金属边缘冷白反光作点缀",
                 "light_motivation": "左前方窗光为人物主光，室内暖反光只托住手部",
                 "contrast_exposure": "脸部曝光稳定，右脸浅阴影保留层次，高光不过曝",
                 "composition_grammar": "门框与桌角构成纵深骨架并保留关系空位",

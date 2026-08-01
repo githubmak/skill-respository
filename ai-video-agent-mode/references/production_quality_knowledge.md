@@ -2,6 +2,10 @@
 
 本文件沉淀 `ai-video-agent-mode` 在知识储备、人物/空间一致性与画面质感上的制作级规则。它只提供可迁移的生成判断和拍法语法，不替代 `format_constraints.md`，不改变当前 T2V-only 管线。
 
+用户要求唯美、灵动、现代剧质感、古风游戏质感、降低 AI 感，或源文有强题材证据时，按需读取 `visual-direction-profiles.md`。先解析一个 profile，再把它转成当前项目的 Scene Lock、Visual Bible、静态/动态美学和视频质感事实；不得把 profile 名称或游戏名称直接写入直投正文。
+
+用户进一步要求自然动态、画面不呆、减少机械微动作，或场景有可用动力源时，再按需读取 `liveness-motion-grammar.md`。把人物微表演、相位差和跨镜动静角色折叠进现有动态美学字段，不新增长期常驻上下文。
+
 正常运行不要全量加载本文件。先使用 `contracts/source_basemap_contract.md`、
 `contracts/visual_quality_contract.md` 或 `contracts/aesthetic_directing_contract.md`；只有命中索引未覆盖的
 具体制作问题或修改知识规则时，才读取对应标题区域。

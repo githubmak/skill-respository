@@ -16,6 +16,16 @@ stage and does not change the T2V-only contract. It prevents continuity rules fr
 visual direction. Every shot must carry a visual intention, then translate that intention into
 visible light, composition, material, and motion evidence.
 
+When the user requests a more beautiful, lively, modern-drama, ancient-game, wuxia, or anti-AI
+look, or the source has strong genre evidence, read `../visual-direction-profiles.md`. Resolve one
+profile before the Visual Bible, then translate it into scene-specific facts. Style words inside
+source dialogue do not activate a profile.
+
+When the user explicitly requests lively/natural motion, a previous output looks mechanical, or
+the scene has a usable physical driver, also read `../liveness-motion-grammar.md`. Fold its scene
+rhythm, causal chain, phase offsets, and semantic de-duplication into the existing dynamic fields;
+do not add schema fields or internal labels to direct-copy text.
+
 Do not use this contract to add adjectives to `full_prompt`. Keep the structured contract in
 `qa_metadata`; compile only the few visible facts that serve the current shot into direct-copy
 text. Preserve source facts, provenance, validators, and the 700-character hard limit.
@@ -103,7 +113,9 @@ Dynamic motion budget:
 
 - one primary subject action;
 - one camera path or a deliberate locked camera;
-- one low-amplitude environmental response;
+- one causal response chain with at most two low-amplitude, source-coupled responses in low-risk
+  shots; keep only one response for long dialogue, multi-character, prop-transfer, complex-support,
+  or airborne shots;
 - at most one focus handoff;
 - no second independent action chain inside the same shot.
 
@@ -115,6 +127,15 @@ Material motion must respond to the same physical cause as the subject: fabric f
 paper reacts to the hand, reflections shift with the camera, and dust/rain follows wind or impact.
 Do not animate every layer at once. The stability fallback removes the camera move first, then the
 secondary environment motion, while preserving the story beat and final state.
+
+When a visual profile is active, derive `secondary_environment_motion`, `material_motion`, and
+`atmosphere_motion` from its scene-life contract. Preserve one static anchor and use different
+response delays across foreground, subject, and background; do not repeat the same slow push,
+blink, haze, or fabric movement across adjacent shots.
+
+Across adjacent shots, assign only the needed roles from `hold → initiate → propagate → payoff →
+recover`. A peak needs a lower-energy neighbor. Treat paraphrases such as slow push/light push,
+small blink/eyelid flutter, and light haze/volumetric ray as the same motion family.
 
 ## Aesthetic Review
 
@@ -141,6 +162,20 @@ Dynamic review dimensions:
 - identity, anatomy, and prop stability;
 - visual payoff at the end state.
 
+Deterministic validation treats the contracts as visible evidence, not descriptive metadata:
+`palette_system` assigns at least two color responsibilities and screen locations;
+`light_motivation/light_design` state source, direction, receiving surface, and shadow result;
+`material_world` distinguishes at least two material families and their response;
+`imperfection_policy` keeps one motivated irregularity. In moving shots, at least two of trigger,
+primary motion, and stable end state, plus one causal response or deliberate hold, must reach the
+model prompt. Non-hold motion must also contain an executable body/eye/weight action and a temporal
+cue such as first, later, delayed response, aftershock, deceleration, or stable landing. The export
+compiler protects one compact `start → trigger → action → response → end` sentence and one static
+light/color/material anchor; it fails rather than silently dropping either when the prompt budget is
+too small. Across one scene, three repeated paraphrases from the same liveness family warn and four
+fail the episode director audit; four consecutive shots with no semantic motion or performance
+change raise a dead-motion warning.
+
 When real review evidence exists, reroll after revising the aesthetic contract if the frame is
 factually correct but visually flat, evenly lit, generic, or has no readable focal hierarchy.
 Repair hard facts before rerolling when the visual idea is strong but identity, geometry, lip sync,
@@ -156,5 +191,7 @@ for continuity score or vice versa.
 - Do not use camera movement to hide missing blocking or handoff geometry.
 - Do not let a static keyframe contract prescribe a long dynamic action; keyframes lock states,
   while `dynamic_aesthetic_contract` controls the transition between them.
+- Do not make continuity synonymous with total stillness. Keep identity, geometry, prop state,
+  light direction, and the end state stable while allowing one motivated residual motion.
 - When aesthetic and hard-fact requirements conflict, split the shot or use the stability fallback;
   never silently drop a source fact.

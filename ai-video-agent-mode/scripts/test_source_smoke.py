@@ -55,8 +55,9 @@ def run(source_path, min_shots=1):
         generate(source_path, os.path.join(run_dir, ".cache", "orchestrator"), config_path)
         normalize(run_dir)
         issues = preflight_check(run_dir)
-        if issues:
-            raise ValueError("preflight failed: %s" % "; ".join(item["msg"] for item in issues[:5]))
+        blocking = [item for item in issues if item.get("severity", "blocking") == "blocking"]
+        if blocking:
+            raise ValueError("preflight failed: %s" % "; ".join(item["msg"] for item in blocking[:5]))
         with open(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"), encoding="utf-8-sig") as handle:
             plan = json.load(handle)
         shot_count = len(plan.get("shots", []))

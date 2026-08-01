@@ -28,6 +28,16 @@ PERFORMANCE_FIELDS = (
     "primary_expression", "primary_body_action", "eye_focus",
     "voice_or_breath_control", "readable_image_moment",
 )
+LIVENESS_FAMILY_PATTERNS = {
+    "camera_push": (
+        r"(?:镜头|摄影机|机位)[^。；;\n]{0,12}(?:缓慢推近|慢慢推近|轻推|小幅推进|逐渐靠近)",
+        r"(?:缓慢推近|慢慢推近|小幅推进)(?:镜头|摄影机|机位)",
+    ),
+    "generic_eye": (r"轻微眨眼", r"缓慢眨眼", r"眼睫轻颤", r"眼皮微动"),
+    "generic_brow": (r"微微皱眉", r"轻蹙眉", r"眉心微收"),
+    "idle_fabric": (r"衣摆轻动", r"衣袖轻摆", r"衣角轻晃", r"窗帘轻摆", r"帘布轻晃"),
+    "generic_haze": (r"薄雾", r"轻雾", r"雾气缓慢流动", r"丁达尔光", r"无因体积光"),
+}
 
 
 def audit(run_dir, output_path=None):
@@ -107,6 +117,7 @@ def analyze_package(package):
             "cut_information_gain": str(cut.get("information_gain", "") or ""),
             "landscape_composition": str(palette.get("landscape_composition", "") or ""),
             "natural_motion_system": str(palette.get("natural_motion_system", "") or ""),
+            "liveness_families": sorted(_liveness_families(prompt)),
             "dialogue_timing": dialogue_records,
             "action_failure_prediction": predict_action_failure(shot),
         })
@@ -116,6 +127,8 @@ def analyze_package(package):
     _audit_tension(records, issues, warnings)
     _audit_camera_and_shot_size(records, issues, warnings)
     _audit_performance_repetition(records, issues, warnings)
+    _audit_liveness_repetition(records, issues, warnings)
+    _audit_liveness_coverage(records, warnings)
     _audit_emotion_and_memory_curve(records, issues, warnings)
     _audit_character_and_relationship_arcs(records, warnings)
     _audit_sequence_cut_and_environment(records, warnings)
@@ -132,7 +145,7 @@ def analyze_package(package):
     )
     return {
         "contract_version": PROMPT_CONTRACT_VERSION,
-        "audit_version": "episode-director-audit-v1",
+        "audit_version": "episode-director-audit-v3",
         "pass": bool(records) and not issues,
         "issues": issues,
         "warnings": warnings,
@@ -144,6 +157,7 @@ def analyze_package(package):
             "nonzero_emotion_delta_count": sum(item["emotion_delta"] not in (None, 0) for item in records),
             "tactic_shift_count": sum(bool(item["tactic_shift"] and not re.search(r"无切换|继续|维持", item["tactic_shift"])) for item in records),
             "active_cut_count": sum(item["cut_mode"] not in ("", "hold") for item in records),
+            "liveness_family_hit_count": sum(len(item["liveness_families"]) for item in records),
             "warning_count": len(warnings),
         },
         "joint_curve_audit": joint_curve_audit,
@@ -201,6 +215,48 @@ def _audit_performance_repetition(records, issues, warnings):
         fingerprints = [item["performance_core_fingerprint"] for item in window]
         if fingerprints[0] and len(set(fingerprints)) == 1:
             warnings.append("%s连续三镜核心微表演相同，建议改换泄露部位或身体承接" % _window_label(window))
+
+
+def _audit_liveness_repetition(records, issues, warnings):
+    families = tuple(LIVENESS_FAMILY_PATTERNS)
+    for size, target in ((4, issues), (3, warnings)):
+        for window in _windows(records, size):
+            if len({item["scene_id"] for item in window}) != 1:
+                continue
+            for family in families:
+                if all(family in item["liveness_families"] for item in window):
+                    message = "%s连续%d镜重复灵动性套路%s，改用源文动作、道具接触、现实光源变化或稳定观察" % (
+                        _window_label(window), size, family,
+                    )
+                    if message not in target:
+                        target.append(message)
+
+
+def _audit_liveness_coverage(records, warnings):
+    """Flag a visually dead run when no semantic motion or performance change is declared."""
+    for window in _windows(records, 4):
+        if len({item["scene_id"] for item in window}) != 1:
+            continue
+        fingerprints = [item["performance_core_fingerprint"] for item in window]
+        if (
+            fingerprints[0]
+            and len(set(fingerprints)) == 1
+            and all(not item["liveness_families"] for item in window)
+            and all(item["camera_energy"] in {"still", "low"} for item in window)
+        ):
+            warnings.append(
+                "%s连续四镜没有可辨识的因果运动或表演泄露，需补动力源/重心/道具接触或明确稳定观察"
+                % _window_label(window)
+            )
+
+
+def _liveness_families(prompt):
+    text = str(prompt or "")
+    return {
+        family
+        for family, patterns in LIVENESS_FAMILY_PATTERNS.items()
+        if any(re.search(pattern, text) for pattern in patterns)
+    }
 
 
 def _audit_emotion_and_memory_curve(records, issues, warnings):

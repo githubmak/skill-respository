@@ -84,12 +84,19 @@ def run():
         assert saved["confirmation"]["config_version"] != 999
         assert saved["confirmation"]["confirmed_fields"] == list(BASE_FIELDS)
         assert saved["generation_control"]["supports_negative_prompt"] is True
+        assert saved["source_rules"]["style_evidence"]["routing_only"] is True
+        assert saved["source_rules"]["source_gate_report"].endswith(".cache/preflight/source_gate.json")
         state = _read(os.path.join(run_dir, ".cache", "pipeline_state.json"))
         assert state["phases"]["user_confirm"]["status"] == "done"
         assert state["phases"]["orchestrator"]["status"] == "done"
         assert state["current_phase"] == "scene_lock"
         assert os.path.isfile(os.path.join(run_dir, ".cache", "orchestrator", "source_ledger.json"))
         assert os.path.isfile(os.path.join(run_dir, ".cache", "orchestrator", "dramatic_beat_ledger.json"))
+        source_gate_path = os.path.join(run_dir, ".cache", "preflight", "source_gate.json")
+        assert os.path.isfile(source_gate_path)
+        source_gate = _read(source_gate_path)
+        assert source_gate["pass"] is True
+        assert not source_gate["blocking"]
 
     with tempfile.TemporaryDirectory(prefix="ai-video-fast-invalid-") as root:
         source_path = os.path.join(root, "source.txt")

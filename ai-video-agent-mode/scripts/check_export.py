@@ -52,6 +52,7 @@ from negative_prompts import PLACEHOLDER, is_fight_context
 from production_intelligence import (
     lighting_topology_contract_issues,
     multi_person_attention_budget_issues,
+    physical_stability_issues,
     perspective_scale_contract_issues,
     prop_lifecycle_contract_issues,
     visual_prior_risk_issues,
@@ -200,6 +201,7 @@ def check_export(md_path, run_dir, quality_mode=False):
             + prop_lifecycle_contract_issues(metadata, full_prompt, validation_profile["prop_lifecycle_contract"])
             + perspective_scale_contract_issues(metadata, full_prompt, visible, validation_profile["perspective_scale_contract"])
             + lighting_topology_contract_issues(metadata, full_prompt, validation_profile["lighting_topology_contract"])
+            + physical_stability_issues(metadata, full_prompt, visible)
         )
         if production_issues:
             metadata_missing += 1

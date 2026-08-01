@@ -24,6 +24,10 @@ PROP_ACTIONS = (
 )
 DEPTH_TERMS = ("前景", "中景", "后景", "近处", "远处", "靠近镜头", "远离镜头")
 COLLECTIVE_SUBJECTS = ("所有清晰入画人物", "全部清晰入画人物", "所有可见人物")
+DEPTH_MOTION_TERMS = ("靠近镜头", "远离镜头", "走向镜头", "走入前景", "退向后景", "从后景走向", "沿景深")
+LOCOMOTION_TERMS = ("行走", "走向", "走近", "跑向", "奔向", "追逐", "上楼", "下楼")
+SUPPORTED_POSTURE_TERMS = ("坐下", "坐在", "坐着", "靠坐", "躺", "卧", "伏", "趴", "骑马", "骑乘", "倒地")
+AIRBORNE_POSTURE_TERMS = ("轻功", "腾空", "跃起", "跳起", "飞行", "凌空", "被击飞", "坠落", "下落")
 
 
 def classify_visual_prior_risks(prompt, source_text=""):
@@ -161,6 +165,59 @@ def perspective_scale_contract_issues(metadata, prompt="", visible_characters=No
         issues.append("透视合同必须说明近大远小或同一深度的投影尺度关系")
     if not any(term in projection for term in ("头身比例", "骨架比例", "真实体型", "体型不变")):
         issues.append("透视合同必须锁定真实体型、骨架或头身比例不随纵深改变")
+    body_lock = str(contract.get("body_ratio_lock", "") or "")
+    if not any(term in body_lock for term in ("真实身高", "身高不变", "身高稳定")):
+        issues.append("perspective_scale_contract.body_ratio_lock必须锁定人物真实身高")
+    if not any(term in body_lock for term in ("四肢长度", "手臂长度", "腿部长度", "肢体长度")):
+        issues.append("perspective_scale_contract.body_ratio_lock必须锁定四肢长度")
+    if len(visible) >= 2 and not any(term in body_lock for term in ("身高差", "相对身高")):
+        issues.append("多人透视合同必须锁定人物身高差或相对身高")
+    grounding = " ".join(str(contract.get(field, "") or "") for field in ("support_plane", "grounding_evidence"))
+    if not any(term in grounding for term in ("地平线", "消失点", "消失关系", "透视线")):
+        issues.append("透视合同必须用地平线、消失点或透视线固定空间投影")
+    if not any(term in grounding for term in ("接地", "脚底", "接触点", "支撑", "承载面")):
+        issues.append("透视合同必须提供脚底接触点、支撑或承载面证据")
+    motion_scaling = str(contract.get("motion_scaling", "") or "")
+    if any(term in text for term in DEPTH_MOTION_TERMS):
+        if not any(term in motion_scaling for term in ("连续", "平滑", "逐步")):
+            issues.append("沿景深移动时motion_scaling必须说明画面投影连续变化")
+        if not any(term in motion_scaling for term in ("物理距离", "靠近", "远离", "景深")):
+            issues.append("沿景深移动时motion_scaling必须绑定人物物理距离变化")
+    return issues
+
+
+def physical_stability_issues(metadata, prompt="", visible_characters=None):
+    """Require support and trajectory evidence only for physically changing poses."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    text = str(prompt or "")
+    if not text:
+        return []
+    issues = []
+    perspective = metadata.get("perspective_scale_contract", {})
+    perspective = perspective if isinstance(perspective, dict) else {}
+    evidence = text + " " + _flatten_text(perspective)
+
+    if any(term in text for term in LOCOMOTION_TERMS) and not any(
+        term in evidence for term in ("步态", "脚步", "交替接地", "双脚", "地面", "路面", "台阶", "重心")
+    ):
+        issues.append("行走/奔跑镜必须写步态、脚步接地、连续地面/台阶或重心证据")
+    if any(term in text for term in SUPPORTED_POSTURE_TERMS) and not any(
+        term in evidence for term in ("承载面", "支撑", "接触", "臀", "腰背", "椅", "沙发", "床", "马背", "地面")
+    ):
+        issues.append("坐卧/骑乘/倒地镜必须写身体主支撑点与承载面接触")
+    if any(term in text for term in AIRBORNE_POSTURE_TERMS):
+        if not any(term in evidence for term in ("起跳", "离地", "轨迹", "抛物线", "空中路径", "飞行路径", "下落")):
+            issues.append("腾空/飞行镜必须写起跳或空中轨迹")
+        if not any(term in evidence for term in ("落地", "停稳", "稳定飞行", "保持飞行", "持续飞行", "稳定在空中")):
+            issues.append("腾空/飞行镜必须写落地支撑或稳定飞行终态")
+    if any(term in text for term in DEPTH_MOTION_TERMS):
+        if not any(term in evidence for term in ("头身比例", "骨架", "真实身高", "真实体型")):
+            issues.append("人物沿景深移动时必须锁定头身、骨架、真实身高或真实体型")
+        if not (
+            any(term in evidence for term in ("画面占比", "投影尺度", "投影占比", "近大远小"))
+            and any(term in evidence for term in ("连续", "平滑", "逐步"))
+        ):
+            issues.append("人物沿景深移动时必须说明投影占比随物理距离连续变化")
     return issues
 
 
@@ -184,6 +241,20 @@ def lighting_topology_contract_issues(metadata, prompt="", required=False):
     face = str(contract.get("face_light_layer", "") or "")
     if not any(term in face for term in ("脸", "面部", "眼窝", "鼻翼", "下颌", "肤色")):
         issues.append("lighting_topology_contract.face_light_layer必须明确人物面光或肤色落点")
+    direction = str(contract.get("source_direction", "") or "")
+    if not any(term in direction for term in ("左", "右", "前", "后", "上", "下", "侧", "顶部", "窗外", "门外")):
+        issues.append("lighting_topology_contract.source_direction必须给出可执行光源方向")
+    temperature = str(contract.get("temperature_range", "") or "")
+    if not re.search(r"\d{4}K|冷|暖|中性|日光|月光|火光", temperature):
+        issues.append("lighting_topology_contract.temperature_range必须给出色温或冷暖关系")
+    shadow = str(contract.get("shadow_exposure_policy", "") or "")
+    if not any(term in shadow for term in ("阴影", "暗部", "黑位")) or not any(
+        term in shadow for term in ("保留", "可读", "细节", "不过曝", "不死黑")
+    ):
+        issues.append("lighting_topology_contract.shadow_exposure_policy必须说明暗部可读与高光保护")
+    conflict = str(contract.get("conflict_resolution", "") or "")
+    if not any(term in conflict for term in ("脸", "面部", "肤色", "皮肤")):
+        issues.append("lighting_topology_contract.conflict_resolution必须声明面部/肤色优先级")
     return issues
 
 

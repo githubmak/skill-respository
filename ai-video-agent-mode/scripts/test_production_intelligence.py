@@ -9,6 +9,7 @@ from production_intelligence import (
     classify_visual_prior_risks,
     lighting_topology_contract_issues,
     multi_person_attention_budget_issues,
+    physical_stability_issues,
     perspective_scale_contract_issues,
     predict_action_failure,
     prop_lifecycle_contract_issues,
@@ -74,15 +75,34 @@ def _test_prop_and_action_contracts():
 def _test_perspective_and_lighting():
     perspective = {
         "subjects_depth": "甲在前景，乙在后景", "support_plane": "两人双脚落在同一连续地面",
-        "projection_scale_rule": "遵循近大远小，甲画面占比大于乙", "body_ratio_lock": "两人真实体型与头身比例不变",
-        "motion_scaling": "乙靠近镜头时画面占比连续增大", "prop_scale_lock": "手机真实尺寸相对持有者手掌不变",
+        "projection_scale_rule": "遵循近大远小，甲画面占比大于乙", "body_ratio_lock": "两人真实身高、真实体型、头身比例、四肢长度与身高差保持不变",
+        "motion_scaling": "乙靠近镜头时画面占比只随物理距离连续增大", "prop_scale_lock": "手机真实尺寸相对持有者手掌不变",
         "grounding_evidence": "脚底接触点、地平线和遮挡关系共同确认纵深", "fallback": "纵深不稳定时改为同一深度双人中景",
     }
-    perspective_prompt = "甲在前景，乙在后景；两人双脚落在同一连续地面。遵循近大远小，甲画面占比大于乙，两人真实体型与头身比例不变。脚底接触点、地平线和遮挡关系共同确认纵深。"
+    perspective_prompt = "甲在前景，乙在后景；两人双脚落在同一连续地面。遵循近大远小，甲画面占比大于乙，两人真实身高、真实体型、头身比例、四肢长度与身高差保持不变。乙靠近镜头时画面占比只随物理距离连续增大。脚底接触点、地平线和遮挡关系共同确认纵深。"
     assert not perspective_scale_contract_issues(
         {"perspective_scale_contract": perspective}, perspective_prompt, ["甲", "乙"], True
     )
     assert perspective_scale_contract_issues({}, perspective_prompt, ["甲", "乙"], True)
+    weak_perspective = dict(perspective, body_ratio_lock="两人头身比例不变")
+    weak_issues = perspective_scale_contract_issues(
+        {"perspective_scale_contract": weak_perspective}, perspective_prompt, ["甲", "乙"], True
+    )
+    assert any("真实身高" in issue for issue in weak_issues)
+    assert any("四肢长度" in issue for issue in weak_issues)
+    assert any("身高差" in issue for issue in weak_issues)
+    assert physical_stability_issues(
+        {}, "角色从后景走向镜头，最终停住。", ["角色"]
+    )
+    stable_walk = (
+        "角色从后景走向镜头，脚步交替落在连续石板地面，重心平滑前移；"
+        "真实身高、头身比例与骨架保持不变，画面占比只随物理距离连续增大，最终双脚接地停稳。"
+    )
+    assert not physical_stability_issues({}, stable_walk, ["角色"])
+    assert physical_stability_issues({}, "角色施展轻功腾空。", ["角色"])
+    assert not physical_stability_issues(
+        {}, "角色屈膝起跳后沿抛物线腾空，下落后双脚落地停稳。", ["角色"]
+    )
     lighting = {
         "motivated_source": "窗外日光", "source_direction": "画面左前方",
         "temperature_range": "主光5200K、室内环境光3800K", "face_light_layer": "面部中性补光保护肤色与眼窝层次",

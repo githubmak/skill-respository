@@ -1,15 +1,25 @@
 #!/usr/bin/env python3
 """Focused regression tests for direct-copy and episode-level quality upgrades."""
 
+from pathlib import Path
+
 from dialogue_timing import analyze_dialogue_timing
 from direct_prompt_compiler import compile_direct_prompt, compile_director_card
 from episode_director_audit import analyze_package
+from export_with_validation import (
+    _build_direct_copy_prompt,
+    _dynamic_motion_anchor,
+    _global_lock_lines,
+    _global_negative_prompt,
+)
+from negative_prompts import build_negative_prompt_for_item, support_mode_for_text
 from generate_shotplan import (
     _characters_in_source_order,
     _offscreen_character_mention,
     _pack_source_actions_with_interactions,
 )
 from prompt_contract import (
+    aesthetic_directing_contract_issues,
     character_scene_objective_issues,
     cut_decision_contract_issues,
     dialogue_event_issues,
@@ -26,6 +36,138 @@ from prompt_contract import (
 
 
 def run():
+    skill_root = Path(__file__).resolve().parents[1]
+    liveness = (skill_root / "references" / "liveness-motion-grammar.md").read_text(encoding="utf-8")
+    aesthetic = (skill_root / "references" / "contracts" / "aesthetic_directing_contract.md").read_text(encoding="utf-8")
+    constraints = (skill_root / "references" / "format_constraints.md").read_text(encoding="utf-8")
+    profiles = (skill_root / "references" / "visual-direction-profiles.md").read_text(encoding="utf-8")
+    assert "动力源 | 起始静止锚点 | 主体触发" in liveness
+    assert "at most two low-amplitude, source-coupled responses" in aesthetic
+    assert "liveness-motion-grammar.md" in aesthetic
+    assert "一条因果响应链" in constraints
+    for routing_fact in ("多证据自动适配", "evidence_score", "narrative_modifier", "period_court_cinematic",
+                         "rural_lived_in_naturalism", "现代夜景不自动加入霓虹", "低置信回到通用电影化默认"):
+        assert routing_fact in profiles, routing_fact
+
+    aesthetic_prompt = (
+        "16:9写实电影短片，前景门框压住画面左侧，中景角色A站在粗糙木桌旁。"
+        "左侧窗光照亮角色A面部和手背，鼻翼阴影保留细节，暗部不死黑；"
+        "低饱和青灰背景与微暖肤色分离，高光不过曝。粗糙木桌吸光，带断续水渍的玻璃杯产生不均匀反光。"
+        "门打开后角色A抬眼看向门口，窗帘稍晚轻摆一次，最终角色A右手仍压住桌沿并停稳。"
+    )
+    aesthetic_metadata = {"visual_bible": {
+        "visual_thesis": "门口变化打破角色A的防御，第一落点是压住桌沿的手",
+        "palette_system": "主色低饱和青灰落在背景，辅助微暖肤色落在人物，玻璃冷白反光作点缀",
+        "light_motivation": "左侧窗光照亮角色A面部、手背与桌沿",
+        "contrast_exposure": "暗部保留层次不死黑，高光不过曝",
+        "composition_grammar": "前景门框与中景木桌形成关系阻隔",
+        "material_world": "粗糙木桌吸光，带水渍玻璃杯产生不均匀反光",
+        "atmosphere_rule": "空气保持清晰，只在后景保留轻微空间纵深",
+        "imperfection_policy": "玻璃杯保留断续水渍与不均匀反光",
+        "reference_policy": "无外部参考，只使用当前场景事实",
+        "continuity_lock": "跨镜保持左侧窗光、青灰背景和木桌位置",
+    }, "static_aesthetic_contract": {
+        "visual_intent": "读清角色A被门口变化打断",
+        "composition_hierarchy": "前景门框压住左侧，中景角色A与木桌为第一层",
+        "light_design": "左侧窗光照亮角色A面部和手背，鼻翼阴影保留细节",
+        "color_grade": "低饱和青灰背景与微暖肤色分离，高光不过曝、黑位可读",
+        "lens_rendering": "50mm中近景，焦平面停在手与脸之间",
+        "depth_atmosphere": "前景门框轻虚，中景实焦，后景低幅弱化",
+        "material_anchor": "粗糙木桌吸光，玻璃杯水渍产生不均匀反光",
+        "signature_frame": "角色A右手压住桌沿，目光刚落向门口",
+        "aesthetic_exclusions": "不增加无因雾层或装饰辉光",
+    }, "dynamic_aesthetic_contract": {
+        "motion_thesis": "静态防御被开门声触发，低幅响应后重新稳定",
+        "start_state": "角色A右手压住桌沿并看向桌面",
+        "trigger": "门打开",
+        "primary_subject_motion": "角色A抬眼看向门口",
+        "secondary_environment_motion": "窗帘稍晚轻摆一次",
+        "camera_path": "摄影机固定在50mm中近景",
+        "focus_behavior": "焦点保持在角色A脸与手之间",
+        "material_motion": "玻璃杯反光保持稳定",
+        "atmosphere_motion": "后景空气层保持静止",
+        "tempo_easing": "抬眼动作先快后缓，窗帘余波自行减弱",
+        "end_state": "最终角色A右手仍压住桌沿并停稳",
+        "stability_fallback": "取消窗帘响应并保持固定机位",
+    }, "aesthetic_priority": {
+        "visual_thesis": "门口变化打破防御",
+        "primary_eye_target": "角色A压住桌沿的右手",
+        "secondary_visual_layer": "门口方向的低幅窗帘响应",
+        "must_preserve": "角色A身份、手部接触、窗光方向和终态",
+        "degrade_first": "先删除窗帘响应和后景空气层",
+    }}
+    assert not aesthetic_directing_contract_issues(aesthetic_metadata, aesthetic_prompt)
+    weak_aesthetic = {key: dict(value) for key, value in aesthetic_metadata.items()}
+    weak_aesthetic["visual_bible"]["material_world"] = "所有表面都很高级"
+    weak_aesthetic["static_aesthetic_contract"]["light_design"] = "电影感光影"
+    weak_issues = aesthetic_directing_contract_issues(weak_aesthetic, aesthetic_prompt)
+    assert any("至少两类材质" in issue for issue in weak_issues)
+    assert any("光源、方向、受光面和阴影结果" in issue for issue in weak_issues)
+    export_task = {"full_prompt": aesthetic_prompt, "qa_metadata": aesthetic_metadata, "shot_id": "A1", "subshot_id": "A1-1"}
+    compile_reports = []
+    direct_aesthetic = _build_direct_copy_prompt(
+        export_task,
+        {"canvas": "16:9", "visual_style": "写实电影短片"},
+        compile_reports,
+    )
+    motion_anchor = _dynamic_motion_anchor(aesthetic_metadata)
+    assert motion_anchor in direct_aesthetic
+    assert "粗糙木桌吸光" in direct_aesthetic and "不均匀反光" in direct_aesthetic
+    assert compile_reports and motion_anchor in compile_reports[0]["protected_required_fragments"]
+
+    weak_motion = {key: dict(value) for key, value in aesthetic_metadata.items()}
+    weak_motion["dynamic_aesthetic_contract"]["primary_subject_motion"] = "灵动地表现情绪"
+    weak_motion["dynamic_aesthetic_contract"]["secondary_environment_motion"] = "窗帘轻摆一次"
+    weak_motion["dynamic_aesthetic_contract"]["tempo_easing"] = "自然流畅"
+    weak_motion["dynamic_aesthetic_contract"]["end_state"] = "角色A右手仍压住桌沿并站着"
+    weak_motion_prompt = (
+        aesthetic_prompt.replace("窗帘稍晚轻摆一次", "窗帘轻摆一次")
+        .replace("最终角色A右手仍压住桌沿并停稳", "角色A右手仍压住桌沿并站着")
+    )
+    weak_motion_issues = aesthetic_directing_contract_issues(weak_motion, weak_motion_prompt)
+    assert any("可执行身体/视线/重心动作" in issue for issue in weak_motion_issues)
+    assert any("时间节拍" in issue for issue in weak_motion_issues)
+
+    scale_locks = "\n".join(_global_lock_lines({"shots": []}, {"visual_style": "写实"}))
+    assert "全局比例与支撑锁定" in scale_locks
+    assert "站立时双脚接地" in scale_locks
+    assert "行走时步态交替接地" in scale_locks
+    assert "腾空时保持起跳、空中与落地轨迹连续" in scale_locks
+    assert "两人身高差" in scale_locks
+    scale_negative = _global_negative_prompt({"shots": []})
+    for term in ("人物忽高忽低", "体型动态变化", "腿部拉长缩短", "无因尺度跳变",
+                 "无因浮空", "透视错乱", "穿模", "肢体畸形", "广角畸变"):
+        assert term in scale_negative, term
+    assert support_mode_for_text("角色站定在门边") == "grounded"
+    assert support_mode_for_text("角色沿走廊跑向楼梯") == "locomotion"
+    assert support_mode_for_text("角色坐在沙发上") == "supported"
+    assert support_mode_for_text("角色施展轻功腾空") == "airborne"
+    airborne_negative = build_negative_prompt_for_item({"full_prompt": "角色施展轻功腾空"})
+    assert "空中无因悬停" in airborne_negative and "脚底脱离支撑面" not in airborne_negative
+    grounded_negative = build_negative_prompt_for_item({"full_prompt": "角色站定在门边"})
+    assert "脚底脱离支撑面" in grounded_negative and "空中无因悬停" not in grounded_negative
+
+    budget_metadata = {"prompt_information_budget": {
+        "profile": "dialogue", "primary_render_task": "角色A说：别走",
+        "must_render": "角色A说：别走；角色B右手握住钥匙",
+        "supporting_visual": "窗外车灯扫过墙面", "metadata_only": "关系权力发生逆转",
+        "visual_enhancer_limit": 1, "compression_rule": "先整句删除辅助视觉，保留台词与道具",
+    }}
+    budget_prompt = "角色A说：别走。角色B右手握住钥匙，最终停在门边。"
+    assert not prompt_information_budget_issues(budget_metadata, budget_prompt)
+    missing_budget_prompt = "角色A说：别走，最终停在门边。"
+    assert any("角色B右手握住钥匙" in issue for issue in prompt_information_budget_issues(
+        budget_metadata, missing_budget_prompt
+    ))
+    leaked_budget_prompt = budget_prompt + "关系权力发生逆转。"
+    assert any("metadata_only" in issue for issue in prompt_information_budget_issues(
+        budget_metadata, leaked_budget_prompt
+    ))
+    repeated_direct = "窗外侧光照亮角色A手背。窗外侧光照亮角色A手背。"
+    assert any("重复执行句" in issue for issue in direct_copy_prompt_issues(
+        repeated_direct, require_visual_texture=False
+    ))
+
     dedup = compile_direct_prompt([
         {"kind": "visual_prefix", "text": "16:9动态漫。冷白顶灯。"},
         {"kind": "space", "text": "冷白顶灯。角色A站在画面左侧。"},
@@ -54,6 +196,14 @@ def run():
         {"kind": "space", "text": "不可删除空间事实" * 30},
     ], max_chars=40)
     assert hard_overflow["issues"] and len(hard_overflow["text"]) > 40
+
+    motion_anchor = "起幅角色A站定，因门响主体抬眼，随后窗帘轻摆，最终角色A停稳。"
+    protected_motion = compile_direct_prompt([
+        {"kind": "space", "text": "空间硬事实" * 30},
+        {"kind": "video_texture", "text": motion_anchor + "；装饰性空气层。"},
+    ], required_fragments=[motion_anchor], max_chars=80)
+    assert motion_anchor in protected_motion["text"]
+    assert protected_motion["issues"]
 
     negative_camera = compile_direct_prompt([
         {"kind": "visual_prefix", "text": "16:9动态漫。"},
@@ -113,6 +263,28 @@ def run():
     assert not flat_result["pass"]
     assert any("连续三镜均为峰值" in issue for issue in flat_result["issues"])
     assert any("重复同一组" in issue for issue in flat_result["issues"])
+
+    repeated_liveness = {"shots": [
+        _shot("L%d" % index, "setup", "中景", "角色A视线移向门口%d" % index, "角色A右手停在桌沿%d" % index)
+        for index in range(1, 5)
+    ]}
+    for shot in repeated_liveness["shots"]:
+        shot["full_prompt"] += " 摄影机缓慢推近0.2米。"
+    liveness_result = analyze_package(repeated_liveness)
+    assert any("重复灵动性套路camera_push" in issue for issue in liveness_result["issues"])
+
+    dead_liveness = {"shots": [
+        _shot("DL%d" % index, "setup", "中景", "角色A保持克制", "角色A保持原姿态")
+        for index in range(1, 5)
+    ]}
+    for shot in dead_liveness["shots"]:
+        shot["qa_metadata"]["performance_contract"].update({
+            "eye_focus": "角色A看向门口",
+            "voice_or_breath_control": "保持呼吸",
+            "readable_image_moment": "角色A保持原姿态",
+        })
+    dead_result = analyze_package(dead_liveness)
+    assert any("没有可辨识的因果运动" in warning for warning in dead_result["warnings"])
 
     cross_scene_peaks = {"shots": [
         dict(_shot("C%d" % index, "peak", "中景", "角色A眉间轻收", "角色A拇指压住杯沿"), scene="SC%d" % index)

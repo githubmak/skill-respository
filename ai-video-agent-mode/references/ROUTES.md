@@ -5,7 +5,7 @@
 
 | Route | 适用任务 | `read_first` | `read_on_demand` | `run_only` |
 |---|---|---|---|---|
-| `full` | 新源文、剧情或配置变化；明确续跑 | `stage_gates.md` | 最新 stage summary、命中的合同索引行 | `workflow_supervisor.py` |
+| `full` | 新源文、剧情或配置变化；明确续跑 | `stage_gates.md` | 最新 source-gate/stage summary、命中的合同索引行 | `workflow_supervisor.py` |
 | `compose` | 已有 shot plan 与 Scene Lock | `agent_protocol.md` | packet 的 constraints/scaffold/scene lock cache | dispatch 与 Composer validator |
 | `single-repair` | 修一个失败主镜或字段 | packet constraints、retry context | 对应 stage summary | provenance 与 merge 脚本 |
 | `audit` | 诊断现有包，不重生成 | 无 | validator 报告、命中的合同索引行 | 全集/导演/情绪/ModeC/export audit |
