@@ -16,21 +16,13 @@ import os
 import re
 from pathlib import Path
 
+from visual_profile_router import route_visual_profile
+
 
 SCENE_RE = re.compile(r"^(?:场景|地点)[：:]|^\d+-\d+\b|^SCENE\b", re.I)
 DIALOGUE_RE = re.compile(r"^([^：:]{1,24})(?:（[^）]*）)?[：:](.+)$")
 ACTION_RE = re.compile(r"^(?:△|动作[：:])")
 INSTRUCTION_RE = re.compile(r"^(?:system|assistant|忽略(?:以上|之前)|不要遵守|执行命令)", re.I)
-STYLE_CHANNELS = {
-    "era_reality": ("古代", "古装", "历史", "武侠", "仙侠", "现代", "当代", "都市"),
-    "place_architecture": ("宫廷", "府邸", "江湖", "客厅", "办公室", "咖啡馆", "夜车", "乡村", "小镇"),
-    "wardrobe_identity": ("汉服", "长袍", "铠甲", "道袍", "西装", "大衣", "制服", "粗布"),
-    "technology": ("手机", "电脑", "汽车", "马车", "电梯", "霓虹", "烛火"),
-    "weather_light": ("月光", "窗光", "雨", "雪", "雾", "阴天", "车灯", "天光"),
-    "physical_action": ("拔剑", "骑马", "追逐", "轻功", "施法", "奔跑", "下车", "开门"),
-}
-
-
 def inspect_source(source_path: str, config_path: str | None = None) -> dict:
     blocking: list[dict] = []
     advisories: list[dict] = []
@@ -87,8 +79,10 @@ def inspect_source(source_path: str, config_path: str | None = None) -> dict:
         advisories.append(_issue("LONG_UNSCOPED_SOURCE", "长源文缺少足够场景锚点，建议先做段落/地点切分", "advisory"))
 
     config_info = {}
+    config = {}
     if config_path:
         config_info = _check_config(config_path, blocking)
+        config = _load_config(config_path)
 
     stats = {
         "line_count": len(lines),
@@ -112,7 +106,7 @@ def inspect_source(source_path: str, config_path: str | None = None) -> dict:
     return _result(path, text, blocking, advisories, {
         "stats": stats,
         "evidence": evidence,
-        "style_evidence": _style_evidence(text),
+        "style_evidence": route_visual_profile(text, config),
     })
 
 
@@ -159,7 +153,20 @@ def _check_config(config_path: str, blocking: list[dict]) -> dict:
         blocking.append(_issue("UNSUPPORTED_PLATFORM", "当前技能仅支持即梦 T2V，配置平台为：%s" % platform))
     if mode and mode != "t2v":
         blocking.append(_issue("UNSUPPORTED_MODE", "当前技能仅支持 t2v，配置模式为：%s" % mode))
-    return {"target_platform": platform, "mode": mode}
+    return {
+        "target_platform": platform,
+        "mode": mode,
+        "visual_style": str(config.get("visual_style", "") or "").strip(),
+        "genre": str(config.get("genre", "") or "").strip(),
+    }
+
+
+def _load_config(config_path: str) -> dict:
+    try:
+        value = json.loads(Path(config_path).expanduser().read_text(encoding="utf-8-sig"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
 
 
 def _result(path: Path, text: str, blocking: list[dict], advisories: list[dict], extra: dict) -> dict:
@@ -179,20 +186,8 @@ def _issue(code: str, message: str, severity: str = "blocking") -> dict:
 
 
 def _style_evidence(text: str) -> dict:
-    hits = {
-        channel: [term for term in terms if term in text]
-        for channel, terms in STYLE_CHANNELS.items()
-        if any(term in text for term in terms)
-    }
-    score = len(hits) * 2
-    confidence = "high" if len(hits) >= 3 and score >= 6 else "medium" if len(hits) >= 2 else "low"
-    return {
-        "channels": hits,
-        "independent_channel_count": len(hits),
-        "evidence_score": score,
-        "confidence": confidence,
-        "routing_only": True,
-    }
+    """Backward-compatible helper retained for callers outside source_gate."""
+    return route_visual_profile(text)
 
 
 def _sha256(path: Path) -> str:

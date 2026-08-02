@@ -1225,6 +1225,13 @@ def prompt_information_budget_issues(metadata, full_prompt="", required=True):
     limit = contract.get("visual_enhancer_limit")
     if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 2:
         issues.append("prompt_information_budget.visual_enhancer_limit必须是1或2")
+    supporting_visual = str(contract.get("supporting_visual", "") or "").strip()
+    supporting_units = _budget_units(supporting_visual)
+    if isinstance(limit, int) and not isinstance(limit, bool) and len(supporting_units) > limit:
+        issues.append(
+            "prompt_information_budget.supporting_visual包含%d项视觉增强，超过声明预算%d；保留最服务剧情的一项"
+            % (len(supporting_units), limit)
+        )
     primary_task = str(contract.get("primary_render_task", "") or "").strip()
     must_render = str(contract.get("must_render", "") or "").strip()
     if re.fullmatch(r"(?:完成|呈现|表现|做好|增强)?(?:当前)?(?:主任务|剧情|画面|镜头|电影感|高级感|质感)", primary_task):
@@ -2210,7 +2217,7 @@ def cinematic_image_contract_issues(metadata, full_prompt=""):
     return issues
 
 
-def video_texture_contract_issues(metadata, full_prompt=""):
+def video_texture_contract_issues(metadata, full_prompt="", required=False):
     """Validate a moving-image texture contract when supplied.
 
     ``cinematic_image_contract`` protects a strong frame. This contract protects
@@ -2220,7 +2227,7 @@ def video_texture_contract_issues(metadata, full_prompt=""):
     metadata = metadata if isinstance(metadata, dict) else {}
     contract = metadata.get("video_texture_contract")
     if contract in (None, {}, ""):
-        return []
+        return ["每镜必须提供qa_metadata.video_texture_contract"] if required else []
     if not isinstance(contract, dict):
         return ["qa_metadata.video_texture_contract必须是对象"]
     issues = []
@@ -2376,7 +2383,30 @@ def aesthetic_directing_contract_issues(metadata, full_prompt=""):
                 issues.append("dynamic_aesthetic_contract.primary_subject_motion必须写可执行身体/视线/重心动作")
             if not MOTION_PHASE_RE.search(prompt_text + " " + dynamic_text):
                 issues.append("dynamic_aesthetic_contract必须写先后、延迟、余波、减速或稳定落幅等时间节拍")
+        active_responses = [
+            value for value in responses
+            if _active_causal_response(value)
+        ]
+        events = metadata.get("dialogue_events", []) if isinstance(metadata.get("dialogue_events"), list) else []
+        dialogue_chars = sum(len(str(event.get("text", "") or "")) for event in events if isinstance(event, dict))
+        priority = metadata.get("performance_priority", {}) if isinstance(metadata.get("performance_priority"), dict) else {}
+        visible_people = 1 + len(priority.get("supporting", []) or []) + len(priority.get("background", []) or [])
+        continuity = metadata.get("continuity_contract", {}) if isinstance(metadata.get("continuity_contract"), dict) else {}
+        constrained = len(events) > 1 or dialogue_chars >= 18 or visible_people > 1 or continuity.get("state_change") is True
+        response_limit = 1 if constrained else 2
+        if len(active_responses) > response_limit:
+            issues.append(
+                "dynamic_aesthetic_contract包含%d个活动环境/材质/空气响应，超过本镜预算%d；其余字段应明确保持稳定"
+                % (len(active_responses), response_limit)
+            )
     return issues
+
+
+def _active_causal_response(value):
+    text = str(value or "")
+    if re.search(r"保持(?:稳定|静止|不变)|无额外|不增加|固定|静止|不动", text):
+        return False
+    return bool(re.search(r"摆|动|移|流|扩散|颤|偏|晃|扫过|变化|响应|跟随|减弱|恢复|起伏|涟漪", text))
 
 
 def _motion_fragment_grounded(value, text):

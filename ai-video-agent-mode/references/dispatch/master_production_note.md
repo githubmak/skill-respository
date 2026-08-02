@@ -3,6 +3,8 @@
 每个 `packet.items` 只生成一条即梦 T2V 主镜任务，输出顶层只能是 `{"shots":[...]}`，并写入
 `packet._batch_output_path`。先读 scene lock cache 和 composer scaffold；保留全部 locked fields，
 再按本 sidecar 附带的 direct-copy、Master 决策、视觉质量和静态/动态美学切片填写空字段。
+scaffold 中的 `scene_motion_plan_path` 是生成前跨镜动态职责，按当前 shot_id 消费但不得把内部角色名
+写进正文；`scene_texture_plan_path` 是场级视频质感事实源，预填的 `video_texture_contract` 不得清空。
 
 ## 生成顺序
 
@@ -55,6 +57,11 @@
   方向、受光面和阴影结果；清晰人物填写 `skin_tone_protection_contract`，保持自然面光并把空气介质退后。
 - 静态合同先确定唯一视线路径和记忆帧；动态合同按起始→触发→稳定终态组织。材质、反射、雨雾尘
   只响应同一物理原因。失稳时先去运镜，再去次要环境运动，不删剧情终态。
+- 动态合同先服从 motion plan 的跨镜职责和响应预算：没有源文/Scene Lock 动力源时允许稳定观察；
+  不得为了匹配 initiate/propagate/payoff 等内部职责而新增动作。同一场相邻镜优先轮换道具接触、
+  重心、视线/头身相位、声音呼吸、现实光源或稳定观察，不把慢推、眨眼、衣摆和薄雾当默认灵动。
+- `video_texture_contract` 继承场级影像基调、曝光、材质运动、空气运动、镜头稳定和跨镜连续；
+  单镜正文只落地一个曝光/受光点、一个材质响应和一条镜头稳定规则，不复制完整场级合同。
 - `prompt_information_budget` 保护源文、空间、口型、动作终态、关键道具和唯一视觉论点，只选
   1–2 个增强点；新增导演合同不构成加长正文。镜头组件只能作为知识储备使用并改写成当前事实。
 - 前台导演精修层只优化可见表达。`creative_profile` 只能 safe/balanced/expressive；

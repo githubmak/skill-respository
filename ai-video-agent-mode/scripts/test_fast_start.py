@@ -85,6 +85,8 @@ def run():
         assert saved["confirmation"]["confirmed_fields"] == list(BASE_FIELDS)
         assert saved["generation_control"]["supports_negative_prompt"] is True
         assert saved["source_rules"]["style_evidence"]["routing_only"] is True
+        assert "scene_receipts" not in saved["source_rules"]["style_evidence"]
+        assert saved["source_rules"]["style_evidence"]["scene_receipt_count"] >= 1
         assert saved["source_rules"]["source_gate_report"].endswith(".cache/preflight/source_gate.json")
         state = _read(os.path.join(run_dir, ".cache", "pipeline_state.json"))
         assert state["phases"]["user_confirm"]["status"] == "done"
@@ -92,6 +94,7 @@ def run():
         assert state["current_phase"] == "scene_lock"
         assert os.path.isfile(os.path.join(run_dir, ".cache", "orchestrator", "source_ledger.json"))
         assert os.path.isfile(os.path.join(run_dir, ".cache", "orchestrator", "dramatic_beat_ledger.json"))
+        assert os.path.isfile(os.path.join(run_dir, ".cache", "orchestrator", "scene_motion_plan.json"))
         source_gate_path = os.path.join(run_dir, ".cache", "preflight", "source_gate.json")
         assert os.path.isfile(source_gate_path)
         source_gate = _read(source_gate_path)

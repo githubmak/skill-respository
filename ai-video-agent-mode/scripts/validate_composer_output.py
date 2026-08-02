@@ -175,7 +175,7 @@ def validate_composer_output(path, run_dir=None, report_path=None):
             issues.append(prefix + problem)
         for problem in scene_tone_palette_issues(metadata, full_prompt):
             issues.append(prefix + problem)
-        for problem in video_texture_contract_issues(metadata, full_prompt):
+        for problem in video_texture_contract_issues(metadata, full_prompt, required=True):
             issues.append(prefix + problem)
         for problem in aesthetic_directing_contract_issues(metadata, full_prompt):
             issues.append(prefix + problem)

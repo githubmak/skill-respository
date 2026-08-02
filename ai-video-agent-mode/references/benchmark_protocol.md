@@ -19,3 +19,6 @@ python3 scripts/benchmark_core_pipeline.py \
 ```
 
 The benchmark passes only if every scenario has both 0% and 10% failure-injection runs, every run contains exactly 50 main shots, and measured P95 is at most 55 minutes. Do not infer or simulate latency from configured batch sizes.
+
+Real rendered-video visual strategy calibration is a separate, manually invoked evidence workflow.
+Use `visual_calibration_protocol.md`; never add it to the production supervisor or standard regression suite.

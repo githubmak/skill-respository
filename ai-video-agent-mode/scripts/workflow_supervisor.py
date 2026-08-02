@@ -21,6 +21,7 @@ from generate_shotplan import generate
 from build_shotplan import normalize
 from preflight_check import run as preflight_check
 from source_gate import run as source_gate
+from scene_motion_plan import build as build_scene_motion_plan
 from pre_editor_gate import run as pre_editor_gate
 from emotion_camera_audit import audit as emotion_camera_audit
 from episode_state_graph import build_episode_state_graph
@@ -95,6 +96,7 @@ def execute_local_phase(run_dir, phase, source_path=None):
             os.path.join(run_dir, "project_config.json"),
         )
         normalize(run_dir)
+        motion_plan, motion_plan_path = build_scene_motion_plan(run_dir)
         issues = preflight_check(run_dir)
         blocking = [item for item in issues if item.get("severity", "blocking") == "blocking"]
         if blocking:
@@ -107,6 +109,8 @@ def execute_local_phase(run_dir, phase, source_path=None):
             "source_gate_path": source_report.get("report_path", ""),
             "source_gate_advisories": source_report.get("advisories", []),
             "preflight_advisories": [item for item in issues if item.get("severity") == "advisory"],
+            "scene_motion_plan_path": motion_plan_path,
+            "motion_plan_advisories": motion_plan.get("advisories", []),
         }
     if phase == "editor_pass1":
         result, path = pre_editor_gate(run_dir)
@@ -275,7 +279,18 @@ def _persist_source_gate_evidence(run_dir, source_report):
     config_path = os.path.join(run_dir, "project_config.json")
     config = _load_json(config_path)
     rules = config.setdefault("source_rules", {})
-    rules["style_evidence"] = source_report.get("style_evidence", {})
+    style_evidence = source_report.get("style_evidence", {})
+    if isinstance(style_evidence, dict):
+        # Keep fixed global context compact. Scene Lock can read the persisted
+        # source report once when scene_receipt_count indicates overrides.
+        style_evidence = {
+            key: value for key, value in style_evidence.items()
+            if key != "scene_receipts"
+        }
+        style_evidence["scene_receipt_count"] = len(
+            source_report.get("style_evidence", {}).get("scene_receipts", [])
+        )
+    rules["style_evidence"] = style_evidence
     rules["source_gate_report"] = source_report.get("report_path", "")
     atomic_json(config_path, config)
 

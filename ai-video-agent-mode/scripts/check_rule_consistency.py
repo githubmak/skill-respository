@@ -388,6 +388,21 @@ RULES = {
             "scripts/test_keyframe_pipeline.py": ("门框留白把视线引向抬眼瞬间", "低幅推近在抬眼后减速停稳"),
         },
     },
+    "preproduction_visual_motion_texture_plans": {
+        "label": "前置视觉路由、跨镜动态与场级视频质感底图",
+        "checks": {
+            "references/stage_gates.md": ("scene_motion_plan.json", "scene_texture_plan.json", "video_texture_contract"),
+            "references/visual-direction-profiles.md": ("visual_profile_router.py", "项目回执", "逐场回执"),
+            "references/dispatch/scene_lock_note.md": ("source_rules.style_evidence", "scene_receipt_count", "矛盾证据"),
+            "references/dispatch/master_production_note.md": ("scene_motion_plan_path", "scene_texture_plan_path", "video_texture_contract"),
+            "scripts/visual_profile_router.py": ("route_visual_profile", "scene_receipts", "contradictions"),
+            "scripts/scene_motion_plan.py": ("dynamic_role", "response_budget", "source_grounding_required"),
+            "scripts/scene_texture_plan.py": ("video_texture_contract", "exposure_policy", "continuity_carryover"),
+            "scripts/dispatch_cache.py": ("scene_motion_plan_path", "scene_texture_plan_path", "contract_for_scene"),
+            "scripts/test_preproduction_quality_plans.py": ("mixed_source", "超过声明预算", "语义运动家族"),
+            "scripts/run_regression_suite.py": ("preproduction_quality_plans", "test_preproduction_quality_plans.py"),
+        },
+    },
 }
 
 

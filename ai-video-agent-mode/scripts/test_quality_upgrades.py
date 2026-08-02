@@ -128,6 +128,24 @@ def run():
     assert any("可执行身体/视线/重心动作" in issue for issue in weak_motion_issues)
     assert any("时间节拍" in issue for issue in weak_motion_issues)
 
+    overloaded_motion = {key: dict(value) for key, value in aesthetic_metadata.items()}
+    overloaded_motion["dialogue_events"] = [
+        {"text": "这句话已经足够长，需要把环境响应收敛到唯一一项。"},
+        {"text": "另一句继续占用口型与表演容量。"},
+    ]
+    overloaded_motion["dynamic_aesthetic_contract"].update({
+        "secondary_environment_motion": "窗帘稍晚轻摆一次",
+        "material_motion": "玻璃杯反光随后移动",
+        "atmosphere_motion": "后景空气颗粒最后低幅流动并减弱",
+    })
+    overloaded_prompt = aesthetic_prompt.replace(
+        "窗帘稍晚轻摆一次",
+        "窗帘稍晚轻摆一次，玻璃杯反光随后移动，后景空气颗粒最后低幅流动并减弱",
+    )
+    assert any("超过本镜预算1" in issue for issue in aesthetic_directing_contract_issues(
+        overloaded_motion, overloaded_prompt
+    ))
+
     scale_locks = "\n".join(_global_lock_lines({"shots": []}, {"visual_style": "写实"}))
     assert "全局比例与支撑锁定" in scale_locks
     assert "站立时双脚接地" in scale_locks

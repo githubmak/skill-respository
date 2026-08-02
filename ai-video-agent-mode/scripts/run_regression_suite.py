@@ -34,6 +34,7 @@ def main():
     steps.append(_run("rule_consistency", [sys.executable, _script("check_rule_consistency.py")]))
     steps.append(_run("source_gate", [sys.executable, _script("test_source_gate.py")]))
     steps.append(_run("preflight_severity", [sys.executable, _script("test_preflight_severity.py")]))
+    steps.append(_run("preproduction_quality_plans", [sys.executable, _script("test_preproduction_quality_plans.py")]))
     steps.append(_run("fast_start", [sys.executable, _script("test_fast_start.py")]))
     steps.append(_run("structure", [sys.executable, _script("test_current_pipeline.py")]))
     steps.append(_run("quality_upgrades", [sys.executable, _script("test_quality_upgrades.py")]))

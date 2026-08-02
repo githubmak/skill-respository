@@ -38,6 +38,15 @@ LIVENESS_FAMILY_PATTERNS = {
     "idle_fabric": (r"衣摆轻动", r"衣袖轻摆", r"衣角轻晃", r"窗帘轻摆", r"帘布轻晃"),
     "generic_haze": (r"薄雾", r"轻雾", r"雾气缓慢流动", r"丁达尔光", r"无因体积光"),
 }
+SEMANTIC_MOTION_FAMILY_PATTERNS = {
+    "body_weight": r"重心|迈步|走|跑|奔|起身|坐下|后退|上前|转身|落地",
+    "prop_contact": r"手指|拇指|掌心|握|抓|压|推|拉|递|接|放下|拿起|触碰|杯沿|桌沿",
+    "eyeline_phase": r"视线|目光|抬眼|转头|回头|看向|望向|盯住",
+    "breath_voice_residue": r"呼吸|吸气|呼气|气口|句末|闭口|声线|余音|肩线下沉",
+    "environment_light": r"窗光|车灯|烛|火光|墙影|门风|雨|雪|水纹|倒影|反光",
+    "material_response": r"衣料|衣袖|纸角|玻璃|金属|积水|涟漪|布料|材质",
+    "deliberate_hold": r"固定机位|保持静止|稳定观察|无额外运动|停稳",
+}
 
 
 def audit(run_dir, output_path=None):
@@ -118,6 +127,7 @@ def analyze_package(package):
             "landscape_composition": str(palette.get("landscape_composition", "") or ""),
             "natural_motion_system": str(palette.get("natural_motion_system", "") or ""),
             "liveness_families": sorted(_liveness_families(prompt)),
+            "semantic_motion_families": sorted(_semantic_motion_families(prompt, metadata)),
             "dialogue_timing": dialogue_records,
             "action_failure_prediction": predict_action_failure(shot),
         })
@@ -230,6 +240,18 @@ def _audit_liveness_repetition(records, issues, warnings):
                     )
                     if message not in target:
                         target.append(message)
+    for window in _windows(records, 4):
+        if len({item["scene_id"] for item in window}) != 1:
+            continue
+        common = set(window[0]["semantic_motion_families"])
+        for item in window[1:]:
+            common.intersection_update(item["semantic_motion_families"])
+        common.discard("deliberate_hold")
+        if common:
+            warnings.append(
+                "%s连续四镜复用同一语义运动家族%s；复核是否应换用源文道具、重心、声画或稳定观察"
+                % (_window_label(window), sorted(common)[0])
+            )
 
 
 def _audit_liveness_coverage(records, warnings):
@@ -256,6 +278,16 @@ def _liveness_families(prompt):
         family
         for family, patterns in LIVENESS_FAMILY_PATTERNS.items()
         if any(re.search(pattern, text) for pattern in patterns)
+    }
+
+
+def _semantic_motion_families(prompt, metadata):
+    dynamic = metadata.get("dynamic_aesthetic_contract", {}) if isinstance(metadata, dict) else {}
+    dynamic_text = " ".join(str(value or "") for value in dynamic.values()) if isinstance(dynamic, dict) else ""
+    text = str(prompt or "") + " " + dynamic_text
+    return {
+        family for family, pattern in SEMANTIC_MOTION_FAMILY_PATTERNS.items()
+        if re.search(pattern, text)
     }
 
 

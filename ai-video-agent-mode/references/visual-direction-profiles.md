@@ -49,6 +49,8 @@
 
 内部记录轻量解析回执：`base_profile | narrative_modifier | confidence(high/medium/low) | evidence_score | matched_evidence | contradictions | inherited_or_overridden | applied_layers | user_overrides`。它只供 Scene Lock 和审查消费，不进入 `full_prompt`、最终 Markdown 或新增 schema；证据不足时回到通用电影化默认。
 
+当前确定性实现由 `scripts/visual_profile_router.py` 生成项目回执和逐场回执。固定全局配置只保留项目回执与逐场数量，完整逐场回执留在 source gate 报告；Scene Lock 仅在数量大于零时读取当前场景，避免把整集证据复制进每个 packet。
+
 ## 共同视觉底座
 
 所有 profile 都建立四层：

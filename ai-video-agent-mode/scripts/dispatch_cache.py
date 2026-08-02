@@ -28,6 +28,8 @@ from batch_planner import analysis_chunks as _analysis_chunks, batch_risk as _ba
 from batch_planner import dynamic_master_chunks as _plan_dynamic_master_chunks
 from batch_planner import editor_review_chunks as _editor_review_chunks
 from contract_registry import PROMPT_CONTRACT_VERSION
+from scene_motion_plan import build as build_scene_motion_plan
+from scene_texture_plan import build as build_scene_texture_plan, contract_for_scene
 
 block_source_pycache_until_run_dir()
 
@@ -107,6 +109,8 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
     scene_lock_cache_path = None
     if phase == "master_production":
         scene_lock_cache_path = _write_scene_lock_cache(run_dir, items, out_dir, group_tag)
+        _motion_plan, scene_motion_plan_path = build_scene_motion_plan(run_dir)
+        scene_texture_plan, scene_texture_plan_path = build_scene_texture_plan(run_dir, scene_lock_cache_path)
     paths = []
 
     for idx, chunk in enumerate(chunks, 1):
@@ -118,7 +122,8 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
         packet_items = chunk
         if phase == "master_production":
             scaffold_path = _write_composer_scaffold(
-                run_dir, chunk, out_dir, dispatch_tag, scene_lock_cache_path
+                run_dir, chunk, out_dir, dispatch_tag, scene_lock_cache_path,
+                scene_motion_plan_path, scene_texture_plan_path, scene_texture_plan,
             )
             packet_items = [_compact_composer_item(item) for item in chunk]
         retry_context_path = None
@@ -679,7 +684,10 @@ def _dynamic_master_chunks(items, force_single=False):
     return _plan_dynamic_master_chunks(items, _compact_composer_item, force_single=force_single)
 
 
-def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_lock_cache_path):
+def _write_composer_scaffold(
+    run_dir, items, dispatch_dir, dispatch_tag, scene_lock_cache_path,
+    scene_motion_plan_path="", scene_texture_plan_path="", scene_texture_plan=None,
+):
     config = _load_optional_json(os.path.join(run_dir, "project_config.json"))
     project_control = config.get("generation_control", {})
     shots = []
@@ -792,6 +800,9 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
                     "must_preserve": "",
                     "degrade_first": "",
                 },
+                "video_texture_contract": contract_for_scene(
+                    scene_texture_plan or {}, str(item.get("scene", "") or "__default__")
+                ),
                 "character_scene_objective_contract": {
                     "focus_character": "",
                     "scene_objective": "",
@@ -1072,6 +1083,8 @@ def _write_composer_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_l
             "generation_control",
         ],
         "scene_lock_cache_path": scene_lock_cache_path,
+        "scene_motion_plan_path": scene_motion_plan_path,
+        "scene_texture_plan_path": scene_texture_plan_path,
         "shots": shots,
     }
     path = os.path.join(dispatch_dir, "master_production_%s_scaffold.json" % dispatch_tag)
