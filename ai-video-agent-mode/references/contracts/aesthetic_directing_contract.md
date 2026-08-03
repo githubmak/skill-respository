@@ -38,6 +38,15 @@ Create one project/scene visual bible before composing shots. It is the stable s
 composition_grammar | material_world | atmosphere_rule | imperfection_policy |
 reference_policy | continuity_lock`
 
+For every scene with two or more shots, also freeze a compact `camera_variation_plan`
+inside the scene bible or sequence plan. It names the available composition families and
+assigns each shot a single family and a single camera family. The plan must be source-supported:
+for example, a three-person triangle, diagonal riverbank depth line, foreground frame, central
+void, low-angle reveal, overhead pressure, lateral reveal, or pull-back isolation. Do not cycle
+families mechanically when the blocking does not support them. Three adjacent shots may not
+repeat the same `shot size + angle + composition family + movement family` unless the story is
+intentionally frozen and the reason is stated.
+
 Rules:
 
 - `visual_thesis` is one sentence describing what the audience should feel and where the eye
@@ -84,6 +93,11 @@ Static-frame rules:
 
 - There is one primary focal subject and at most one secondary visual emphasis. Do not make the
   face, hands, prop, background light, and text all compete for first attention.
+- Leave breathing room in the subject's gaze or action direction. Foreground occlusion may frame
+  the shot but must not cover the primary eyes, mouth, or active hand, and should not consume more
+  than roughly one third of the readable primary silhouette. Avoid frame-edge cuts through necks,
+  elbows, wrists, knees, or ankles. Separate overlapping people with depth, value, rim contrast, or
+  lateral offset so heads, faces, shoulder lines, hands, and legs remain individually readable.
 - Every lighting statement must name a source, direction, receiving surface, and shadow result.
   “Warm cinematic light” alone is invalid.
 - Use a concrete visual consequence for every lens parameter. A 50mm lens must support the stated
@@ -136,6 +150,26 @@ blink, haze, or fabric movement across adjacent shots.
 Across adjacent shots, assign only the needed roles from `hold → initiate → propagate → payoff →
 recover`. A peak needs a lower-energy neighbor. Treat paraphrases such as slow push/light push,
 small blink/eyelid flutter, and light haze/volumetric ray as the same motion family.
+
+### Terminal frame contract
+
+Every shot, and especially the final shot of a scene or sequence, carries a terminal frame
+contract. It is not a negative prompt. It is compiled into visible positive facts:
+
+`visible_count | final_slot_map | identity_visibility | face_and_limb_separation |
+prop_and_garment_state | support_and_contact | camera_lock | light_exposure_lock |
+no_new_entrant | no_duplicate_subject | final_hold`
+
+The final 20% of the clip must reduce to one readable composition. The camera decelerates and
+holds; no new person, duplicate body, prop handoff, costume change, spatial re-layout, exposure
+jump, or light-source change is introduced. In a three-person frame, write fixed screen slots and
+explicit separation of faces, hands, shoulders, and legs. If a person is not visible, write that
+the voice remains offscreen instead of letting the model invent a body. A complex action, UI,
+transition, or new entrance must finish before the terminal hold or move to another shot.
+
+The direct prompt must contain a natural sentence equivalent to: `最后20%画面只保留当前可见
+人数和站位，人物边界与接触点分开，摄影机减速停住，光线和曝光锁定，不新增人物、重复人物、
+道具或动作，保持稳定到结束。`
 
 ## Aesthetic Review
 

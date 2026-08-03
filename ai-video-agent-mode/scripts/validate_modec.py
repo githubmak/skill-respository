@@ -52,7 +52,7 @@ from production_intelligence import (
     visual_prior_risk_issues,
 )
 from contract_registry import PROMPT_CONTRACT_VERSION, QA_REQUIRED_FIELDS
-from shot_semantics import validation_profile as derive_validation_profile
+from shot_semantics import validation_profile as derive_validation_profile, disabled_risk_gated_fields
 
 
 def main(run_dir):
@@ -171,6 +171,8 @@ def main(run_dir):
 
         visible = _as_list(plan_item.get("visible_characters", plan_item.get("characters", [])))
         validation_profile = derive_validation_profile(plan_item, metadata, visible)
+        for field in disabled_risk_gated_fields(plan_item, metadata, visible):
+            errors.append(prefix + "不适用的风险字段不得由Agent重新注入：qa_metadata." + field)
         for issue in role_partition_issues(metadata, visible):
             errors.append(prefix + issue)
         for issue in insert_shot_issues(metadata, full_prompt, shot.get("duration", 0), visible):

@@ -61,6 +61,38 @@ class SemanticCollisionTests(unittest.TestCase):
         self.assertNotEqual(overhead, oblique)
 
 
+class CameraVariationAndTerminalTests(unittest.TestCase):
+    def test_cross_group_signature_detects_repeated_composition(self) -> None:
+        prompt = "50mm平视中景，前景门框形成框景，镜头固定记录人物。"
+        signatures = [validator.group_camera_signature(prompt) for _ in range(3)]
+        self.assertTrue(signatures[0])
+        self.assertEqual(signatures[0], signatures[1])
+        self.assertEqual(signatures[1], signatures[2])
+
+    def test_cross_group_signature_distinguishes_visual_tasks(self) -> None:
+        prompts = (
+            "35mm斜前方全景，前景门框形成框景，镜头固定。",
+            "50mm平视中景，三角关系构图，摄影机横移0.2米。",
+            "85mm轻俯近景，中央空位留白，镜头轻推后停稳。",
+        )
+        signatures = [validator.group_camera_signature(prompt) for prompt in prompts]
+        self.assertEqual(3, len(set(signatures)))
+
+    def test_terminal_frame_requires_positive_anti_duplication_facts(self) -> None:
+        prompt = (
+            "本镜画面内可见人数：2人，角色A在左侧、角色B在右侧。"
+            "最后20%摄影机减速停稳，两人脸、手和四肢边界分开，道具仍归角色A，"
+            "光线曝光保持，不新增人物，不产生重复人物，保持到结束。"
+        )
+        self.assertEqual([], validator.terminal_frame_issues(prompt, "S1-03", 1))
+
+    def test_terminal_frame_rejects_unstable_last_shot(self) -> None:
+        issues = validator.terminal_frame_issues(
+            "本镜画面内可见人数：2人，角色A和角色B继续向门口走。", "S1-03", 1
+        )
+        self.assertTrue(any("终端稳定事实" in issue for issue in issues), issues)
+
+
 class OutputFormatTests(unittest.TestCase):
     @staticmethod
     def _global_scale_fixture(include_positive: bool, include_negative: bool) -> str:
@@ -73,11 +105,18 @@ class OutputFormatTests(unittest.TestCase):
             "固定距离下画面占比保持稳定。"
         ) if include_positive else ""
         negative = (
-            "人物僵硬、全身静止、无眨眼、人物忽高忽低、体型动态变化、腿部拉长缩短、"
+            "机械循环动作、无因重复眨眼、无因身体抖动、人物忽高忽低、体型动态变化、腿部拉长缩短、"
             "无因尺度跳变、无因浮空、透视错乱、穿模、肢体畸形、广角畸变"
-        ) if include_negative else "人物僵硬、全身静止、无眨眼"
+        ) if include_negative else "机械循环动作、无因重复眨眼、无因身体抖动"
         return (
             "## 使用说明\n\n## 全局锁定\n" + positive + "\n\n"
+            "## 制作质量总控\n"
+            "画面质感基线：门框构图，人物实焦，木桌保留划痕。\n"
+            "光效与曝光连续：左侧窗光照亮人物脸和手，暗部可读。\n"
+            "动态美学基线：起幅稳定，动作触发后低幅响应并落幅停稳。\n"
+            "表演与情绪基线：听见台词后压住反应，眼神泄露并保留余波。\n"
+            "蒙太奇与剪辑基线：动作或反应切点增加新信息，声音自然承接。\n"
+            "穿帮与抽卡总控：锁定身份、接触支撑、道具归属、口型和稳定终态。\n\n"
             "## 通用负面提示词｜直接复制\n" + negative + "\n\n"
             "## 场景状态表\n\n## 分镜投喂卡\n"
         )
@@ -100,6 +139,24 @@ class OutputFormatTests(unittest.TestCase):
         )
         self.assertFalse(any("全局比例与支撑锁定" in issue for issue in issues), issues)
         self.assertFalse(any("scale/perspective risks" in issue for issue in issues), issues)
+
+    def test_shot_quality_control_requires_visible_execution_dimensions(self) -> None:
+        control = (
+            "画面质感：右侧人物为第一视觉落点，50mm实焦，木桌保留细划痕。\n"
+            "光效与曝光：左侧窗光照亮脸和手，阴影保留细节，高光稳定。\n"
+            "动态美学：起幅人物压住桌沿，开门声触发抬眼，镜头固定，落幅停稳。\n"
+            "表演与情绪：听见开门声触发戒备，对外保持平静，眼神泄露，余波停在门口。\n"
+            "穿帮控制：右手持续接触桌沿，双脚接地，道具仍在桌面右侧。\n"
+            "抽卡策略：中风险，手部接触与抬眼竞争；固定机位，人工首轮检查。\n"
+            "蒙太奇与剪辑：非蒙太奇；保持镜头让抬眼产生信息增量，环境声连续。"
+        )
+        direct = "16:9写实电影短片，50mm平视近景，人物身体面向门口，镜头固定。"
+        self.assertEqual([], validator.quality_control_issues(control, direct))
+
+    def test_shot_quality_control_rejects_internal_placeholders(self) -> None:
+        control = "\n".join(f"{label}：已检查，按合同执行。" for label in validator.SHOT_QUALITY_LABELS)
+        issues = validator.quality_control_issues(control, "16:9写实电影短片，平视近景，镜头固定。")
+        self.assertTrue(any("不能使用内部占位" in issue for issue in issues), issues)
 
     def test_field_lines_with_markdown_trailing_spaces_remain_parseable(self) -> None:
         block = (
@@ -131,6 +188,19 @@ class OutputFormatTests(unittest.TestCase):
         )
         issues = validator.validate(Path("dummy.md"), text)
         self.assertTrue(any("镜头组编号跳号或重复" in issue for issue in issues))
+
+    def test_bundle_requires_identical_project_quality_contracts(self) -> None:
+        shared = (
+            "## 全局锁定\n统一人物与空间锁。\n\n"
+            "## 制作质量总控\n画面质感基线：自然电影感。\n\n"
+            "## 通用负面提示词｜直接复制\n换脸、穿模。\n"
+        )
+        changed = shared.replace("自然电影感", "高饱和广告感")
+        issues = validator.bundle_contract_issues([
+            (Path("scene_a.md"), shared),
+            (Path("scene_b.md"), changed),
+        ])
+        self.assertTrue(any("制作质量总控" in issue for issue in issues), issues)
 
 
 class ShotTypeShadowTests(unittest.TestCase):
@@ -169,7 +239,7 @@ class ShotTypeShadowTests(unittest.TestCase):
         prompt = "她从右手递出卡片，对方接触后接过并握住，她再松手。"
         self.assertEqual("high_risk_transition", validator.detect_shot_type(prompt))
 
-    def test_complete_short_silent_shot_disagrees_with_hard_minimum(self) -> None:
+    def test_complete_short_silent_shot_is_not_rejected_by_length(self) -> None:
         prompt = (
             "16:9，3D精致CG，旧厨房暖黄窗光照在木纹墙面。平视中景，镜头固定。"
             "她发现水管漏水，身体面向墙角水阀，转身上前按下阀门，水流逐渐停止，地面积水不再扩散。"
@@ -178,21 +248,22 @@ class ShotTypeShadowTests(unittest.TestCase):
         report = validator.build_semantic_report(prompt)
         self.assertEqual("silent_causal", report.shot_type)
         self.assertTrue(report.semantically_complete, report.missing_slots)
-        self.assertTrue(report.hard_minimum_fails)
-        self.assertEqual("semantic-pass/hard180-fail", report.disagreement)
+        self.assertEqual("short", report.length_guidance)
+        self.assertEqual("semantic-complete/short", report.disagreement)
 
     def test_long_but_incomplete_shot_disagrees_with_semantics(self) -> None:
         prompt = "人物站在客厅。" * 30
         report = validator.build_semantic_report(prompt)
-        self.assertFalse(report.hard_minimum_fails)
         self.assertFalse(report.semantically_complete)
-        self.assertEqual("semantic-fail/hard180-pass", report.disagreement)
+        self.assertNotEqual("short", report.length_guidance)
+        self.assertEqual("semantic-incomplete/despite-length", report.disagreement)
 
-    def test_cutaway_profile_uses_short_guidance_without_relaxing_hard_gate(self) -> None:
+    def test_cutaway_profile_uses_short_guidance_without_a_minimum_gate(self) -> None:
         prompt = "本镜画面内可见人数：0人。空镜只拍水纹。"
         report = validator.build_semantic_report(prompt)
         self.assertEqual((90, 220), (report.recommended_min, report.recommended_max))
-        self.assertFalse(report.hard_minimum_fails)
+        self.assertEqual("short", report.length_guidance)
+        self.assertFalse(validator.has_visible_person(prompt))
 
     def test_phone_semantics_require_purpose_and_orientation(self) -> None:
         prompt = "16:9，3D CG，客厅暖光，平视中景，镜头固定。她拿着手机，画面停在她低头的姿态。"
@@ -270,6 +341,31 @@ class ShotTypeShadowTests(unittest.TestCase):
         )
         self.assertEqual([], issues)
 
+    def test_exact_ai_bubble_text_requires_explicit_opt_in(self) -> None:
+        direct = (
+            "16:9，3D自然电影CG，客厅窗光落在木纹桌面，桌面保留低亮反光。"
+            "她身体面向手机，双手横持手机停在胸前，屏幕朝向本人，手机背面朝向镜头；"
+            "画面右侧安全区出现单条独立二维绿色聊天气泡浮层，气泡内写：“明天见”。"
+            "平视中近景，镜头固定，画面停在她看向手机的姿态。"
+        )
+        block = (
+            "【镜号】\n1，3s，复杂。\n\n"
+            f"【画面描述｜直接复制】\n{direct}\n\n"
+            "【表演与声音】\n无台词。\n\n"
+            "【状态继承】\n手机仍在她双手胸前，屏幕朝向本人。\n\n"
+            "【本镜制作控制】\n"
+            "画面质感：木纹低亮反光。\n光效与曝光：窗光落在桌面并保持稳定。\n"
+            "动态美学：稳定起幅，手机提示触发视线，尾部停稳。\n"
+            "表演与情绪：提示触发她抬眼，手指泄露停顿，余波停在手机。\n"
+            "穿帮控制：手机背面朝镜头。\n抽卡策略：高风险，文字默认后期。\n"
+            "蒙太奇与剪辑：非蒙太奇，保持连续。\n\n"
+            "【本镜必要约束｜直接复制】\n气泡不属于手机，不贴手机。\n\n"
+            "【本镜补充负面提示词｜直接复制】\n聊天气泡贴手机。"
+        )
+        issues: list[str] = []
+        validator.validate_child("S1-01", 1, "1，3s，复杂。", block, ["她"], issues)
+        self.assertTrue(any("精确UI默认后期叠加" in issue for issue in issues), issues)
+
     def test_keyframe_pair_counts_as_one_optional_function(self) -> None:
         block = (
             "【关键帧生图提示】\n首帧：人物站定。\n\n"
@@ -290,9 +386,47 @@ class ShotTypeShadowTests(unittest.TestCase):
         self.assertIn("道具接触", report.missing_slots)
         self.assertIn("原持有人释放", report.missing_slots)
 
-    def test_hard_minimum_behavior_is_preserved(self) -> None:
-        self.assertTrue(validator.hard_minimum_fails("客厅中人物站着。"))
-        self.assertFalse(validator.hard_minimum_fails("客厅手部特写，只拍右手。"))
+    def test_cutaway_validation_does_not_require_body_facing(self) -> None:
+        block = (
+            "【镜号】\n1，2s，普通。\n\n"
+            "【画面描述｜直接复制】\n"
+            "16:9，3D自然电影CG，旧厨房暖黄窗光落在木纹桌面，木纹反光很弱。"
+            "本镜画面内可见人数：0人，空镜只拍桌面杯水，俯视特写，镜头固定，杯子居中；"
+            "门外脚步声停下后水纹扩散一次再减弱，画面停在平静杯面。\n\n"
+            "【表演与声音】\n无台词，保留门外脚步声。\n\n"
+            "【状态继承】\n杯子仍在桌面中央，水面恢复平静。\n\n"
+            "【剪辑衔接】\n独立生成；用门外脚步声作为声桥。"
+        )
+        issues: list[str] = []
+        validator.validate_child("S1-01", 1, "1，2s，普通。", block, [], issues)
+        self.assertFalse(any("body-facing" in issue for issue in issues), issues)
+        self.assertFalse(any("semantic contract incomplete" in issue for issue in issues), issues)
+
+    def test_full_child_validation_accepts_semantically_complete_short_prompt(self) -> None:
+        direct = (
+            "16:9，3D自然电影CG，旧厨房暖黄窗光照在木纹墙面。平视中景，镜头固定。"
+            "她发现水管漏水，身体面向墙角水阀，转身按下阀门，水流停止；"
+            "她仍站在墙边，画面停在不再扩散的积水。"
+        )
+        self.assertLess(validator.compact_len(direct), 180)
+        block = (
+            "【镜号】\n1，3s，普通。\n\n"
+            f"【画面描述｜直接复制】\n{direct}\n\n"
+            "【表演与声音】\n无台词。\n\n"
+            "【状态继承】\n她仍面向关闭的水阀，积水不再扩散。\n\n"
+            "【本镜制作控制】\n"
+            "画面质感：旧墙木纹受窗光，积水是唯一视觉落点。\n"
+            "光效与曝光：左侧窗光照在墙面，暗部保持可读并稳定。\n"
+            "动态美学：稳定起幅，漏水触发按阀，水流停止后落幅停稳。\n"
+            "表演与情绪：发现漏水触发她转身，肩背泄露紧张，余波停在水阀。\n"
+            "穿帮控制：右手接触水阀，双脚接地，积水边界稳定。\n"
+            "抽卡策略：低风险，固定机位并只保留一次转身按阀。\n"
+            "蒙太奇与剪辑：非蒙太奇，完整保留原因到结果。"
+        )
+        issues: list[str] = []
+        validator.validate_child("S1-01", 1, "1，3s，普通。", block, ["她"], issues)
+        self.assertFalse(any("semantic contract incomplete" in issue for issue in issues), issues)
+        self.assertFalse(any("too thin" in issue for issue in issues), issues)
 
     @staticmethod
     def _liveness_group(prompts: list[str]) -> str:

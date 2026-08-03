@@ -58,7 +58,7 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
         source_units.append(source_unit)
 
         # Scene header detection using config pattern
-        m = re.match(scene_pattern, line)
+        m = _match_scene_header(line, scene_pattern)
         if m:
             source_unit["type"] = "scene_header"
             if current_scene:
@@ -106,6 +106,18 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
             speaker = dm.group(1).strip()
             tone = dm.group(3) or ""
             content = dm.group(4).strip()
+
+            # Colons also introduce timestamps, URLs, camera directions and
+            # state labels. Only treat the line as dialogue when its prefix is
+            # a known character or an explicit OS/OV marker.
+            if not _looks_like_dialogue_prefix(speaker, tone, content, characters_list):
+                source_unit["type"] = "action"
+                beats.append({
+                    "type": "action", "text": line,
+                    "scene": current_scene["name"] if current_scene else "",
+                    "source_ids": [source_id],
+                })
+                continue
 
             # Check if this is actually an action line (config-driven keyword match)
             is_action = bool(action_kw) and any(kw in line for kw in action_kw)
@@ -355,8 +367,9 @@ def _offscreen_character_mention(character, text):
     if not character or character not in text:
         return False
     sound_patterns = (
-        rf"(?:门外|画外|窗外|电话里|听筒里)[^。；]{{0,20}}{re.escape(character)}[^。；]{{0,12}}(?:声音|说话声|喊声|哭声|笑声)",
-        rf"{re.escape(character)}的(?:声音|说话声|喊声|哭声|笑声)[^。；]{{0,16}}(?:传来|响起|出现)",
+        rf"(?:门外|画外|窗外|电话里|听筒里|隔墙|墙外|门那边|电话那头)[^。；，,]{{0,24}}{re.escape(character)}[^。；，,]{{0,16}}(?:声音|说话声|喊声|哭声|笑声|说)",
+        rf"(?:他|她|对方|那边)[^。；，,]{{0,12}}(?:在门外|在墙外|在电话里|隔着墙)[^。；，,]{{0,12}}(?:说|喊|哭|笑)[^。；]*{re.escape(character)}?",
+        rf"{re.escape(character)}的(?:声音|说话声|喊声|哭声|笑声)[^。；，,]{{0,16}}(?:传来|响起|出现)",
     )
     return any(re.search(pattern, text) for pattern in sound_patterns)
 
@@ -364,8 +377,53 @@ def _offscreen_character_mention(character, text):
 def _characters_in_source_order(text, characters):
     """Return mentioned characters ordered by first appearance in this beat."""
     text = str(text or "")
-    found = [str(character) for character in characters or [] if str(character) and str(character) in text]
+    candidates = [str(character).strip() for character in characters or [] if str(character).strip() and str(character).strip() in text]
+    found = []
+    occupied = []
+    # Prefer the longest configured name when one name is a substring of
+    # another (林 vs 林岚), but retain a shorter name when it appears elsewhere.
+    for character in sorted(candidates, key=lambda value: (-len(value), text.find(value))):
+        starts = [match.start() for match in re.finditer(re.escape(character), text)]
+        if not starts:
+            continue
+        usable = [
+            start for start in starts
+            if not any(start < end and start + len(character) > begin for begin, end in occupied)
+        ]
+        if usable:
+            found.append(character)
+            occupied.extend((start, start + len(character)) for start in usable)
     return sorted(found, key=lambda character: (text.find(character), len(character)))
+
+
+def _looks_like_dialogue_prefix(speaker, tone, content, characters):
+    speaker = str(speaker or "").strip()
+    content = str(content or "").strip()
+    if not speaker or not content:
+        return False
+    if speaker in {"时间", "地点", "场景", "动作", "镜头", "画面", "状态", "说明", "备注", "系统", "提示"}:
+        return False
+    if re.match(r"^(?:https?://|ftp://|www\.)", content, re.I) or re.match(r"^\d{1,2}:\d{2}(?::\d{2})?$", content):
+        return False
+    if speaker in {str(value).strip() for value in characters or []}:
+        return True
+    tone_upper = str(tone or "").upper()
+    if any(token in tone_upper for token in ("OS", "OV")) or any(token in str(tone or "") for token in ("旁白", "内心")):
+        return True
+    # Preserve unlisted natural-language speakers while rejecting metadata
+    # prefixes and path-like content above.
+    return bool(re.search(r"[。！？“”‘’！？，,]", content)) or len(content) >= 2
+
+
+def _match_scene_header(line, pattern):
+    match = re.match(pattern, line)
+    if match:
+        return match
+    return re.match(
+        r"^(?:第\s*\d+\s*场|场\s*\d+|\d+\.\s*(?:INT\.|EXT\.)|(?:INT\.|EXT\.)\s+)",
+        line,
+        re.I,
+    )
 
 
 def _register_dramatic_beats(records, beat, owner_subshot_id, texts):
@@ -688,7 +746,7 @@ def _pack_action_beats(beats, max_shot_duration, characters):
     def action_duration(action_group):
         text = "；".join(item.get("text", "") for item in action_group)
         from validate_durations import _estimate_action_seconds
-        return max(2.0, min(float(max_shot_duration), _estimate_action_seconds(text) + 0.5))
+        return max(2.0, _estimate_action_seconds(text) + 0.5)
 
     def compatible(previous, current):
         if previous.get("scene", "") != current.get("scene", ""):
@@ -738,6 +796,11 @@ def _pack_action_beats(beats, max_shot_duration, characters):
         if group and action_duration(candidate) > max_shot_duration + 1e-6:
             flush()
             candidate = [beat]
+        if action_duration(candidate) > max_shot_duration + 1e-6:
+            raise ValueError(
+                "single action semantic unit exceeds user-confirmed max_shot_duration "
+                "and cannot be safely compressed: %s" % beat.get("text", "")
+            )
         group = candidate
     flush()
     return packed

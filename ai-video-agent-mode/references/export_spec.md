@@ -28,6 +28,7 @@ Markdown 只导出直接投喂和人工操作所需内容，禁止出现 QA 元�
 
 ## 使用说明
 ## 全局锁定
+## 制作质量总控
 ## 通用负面提示词｜直接复制
 ## 场景状态表
 ## 分镜投喂卡
@@ -64,6 +65,15 @@ Markdown 只导出直接投喂和人工操作所需内容，禁止出现 QA 元�
 【剪辑衔接】
 {transition_prompt}
 
+【本镜制作控制】
+画面质感：{visual_quality_execution}
+光效与曝光：{lighting_and_exposure_execution}
+动态美学：{dynamic_aesthetic_execution}
+表演与情绪：{performance_and_emotion_execution}
+穿帮控制：{continuity_and_physical_execution}
+抽卡策略：{reroll_execution}
+蒙太奇与剪辑：{montage_and_cut_execution}
+
 【本镜必要约束｜直接复制】
 {high_risk_constraint_block}
 
@@ -71,13 +81,15 @@ Markdown 只导出直接投喂和人工操作所需内容，禁止出现 QA 元�
 {high_risk_negative_block}
 ```
 
+`## 制作质量总控` 与 `【本镜制作控制】` 是用户可见的人工执行信息，不是 raw `qa_metadata`，也不直接粘贴进即梦正文。前者汇总全片画面、光效、动态、表演、剪辑和风险基线；后者必须把本镜合同转译为上述七行，不能只写“已检查/按合同执行”。
+
 复杂/高风险镜使用与 Jimeng 相同的最终字段 `【关键帧生图提示】` 和 `【即梦视频提示｜配合关键帧】`。前者依次包含起始状态关键帧、戏眼关键帧、结束状态关键帧；后者按时间段连接三帧。随后输出人物/道具状态差异表、关键帧连续性检查和关键帧/T2V事实一致性检查。它们是前期稳定参考，不是九宫格、P01-P09、多格漫画、I2V 声明或已上传的首尾帧槽位。
 
-成功导出还会在确认目录生成同名 `.concise.md` 与 `.engineering.md`：简洁视图只提供每镜180–500字导演卡和负面词；工程视图提供句级来源、Scene Lock、合同字段、动作失败预测和压缩差异。两者与完整 Markdown/XLSX 来源相同，不产生第二套剧情事实。
+成功导出还会在确认目录生成同名 `.concise.md` 与 `.engineering.md`：简洁视图只提供每镜不超过500字且无最低字数的导演卡和负面词；工程视图提供句级来源、Scene Lock、合同字段、动作失败预测和压缩差异。两者与完整 Markdown/XLSX 来源相同，不产生第二套剧情事实。
 
 下一镜转场提示词由导出脚本根据当前镜 `continuity_contract.next_carryover/end_anchor` 与下一镜 `continuity_contract.start_anchor` 自动生成，只用于连续生成和剪辑操作，不写入 `full_prompt`，不得新增剧情、服装、对白或人物动作。最后一镜写 `无，段落结束。`
 
-镜头执行节拍来自 Director 的 `camera_beat_map`：展示时间窗、表演触发、视觉主体与落幅、镜头响应和承接状态，用于人工复核或平台分段执行；不是 QA 元数据，不投喂为额外模型段落。没有动态节拍时明确写“连续镜头，无额外切换”。
+镜头执行节拍来自锁定 shot plan 的 `camera_beat_map`：展示时间窗、表演触发、视觉主体与落幅、镜头响应和承接状态，用于人工复核或平台分段执行；不是 QA 元数据，不投喂为额外模型段落。没有动态节拍时明确写“连续镜头，无额外切换”。
 
 `画面描述｜直接复制` 是唯一推荐复制到即梦正文框的正向提示词。它从规范 `full_prompt` 派生，开头优先使用压缩 `视觉场景前缀`，并控制在 700 中文字符以内。该块不得保留“上一镜、继承、尾帧、剪辑、切到、反打到、当前主角”等元叙述，也不得出现 `line_function/subtext/turn_relation/conversation_mode/response_latency/overlap_or_interrupt_window/conversation_source_basis/inner_emotion/display_intent/emotion_delta/scene_objective/active_tactic/knowledge_gap/power_state_change/sequence_directing_plan/cut_decision_contract/prompt_information_budget` 等内部分析标签、枚举值或强度数字。对白、情绪、角色行动、关系、镜头段落与剪辑判断必须先转译为原文重音说法、可见停顿/抢话/收句、手眼/呼吸/道具/距离证据、听者反应、构图、运镜响应、环境节拍和落幅；同时清晰包含画幅、影调、色卡/视觉场景前缀、画面主体、运镜状态、光影描述，以及脸、手、道具、反光、浅阴影、背景虚化或剧情相关材质中的可见锚点。风景只按环境镜两项、人物镜一项消费风景身份/构图/自然运动/揭示/光候事实；启用 `video_texture_contract` 时再追加一条压缩视频质感约束，不得把图片级长材质描述逐镜复制。
 

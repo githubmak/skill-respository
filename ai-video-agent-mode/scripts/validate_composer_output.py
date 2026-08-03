@@ -71,7 +71,11 @@ from production_intelligence import (
     prop_lifecycle_contract_issues,
     visual_prior_risk_issues,
 )
-from shot_semantics import quality_contract as derive_quality_contract, validation_profile as derive_validation_profile
+from shot_semantics import (
+    quality_contract as derive_quality_contract,
+    validation_profile as derive_validation_profile,
+    disabled_risk_gated_fields,
+)
 from contract_registry import PROMPT_CONTRACT_VERSION, QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
 
 
@@ -202,6 +206,8 @@ def validate_composer_output(path, run_dir=None, report_path=None):
             plan_item.get("visible_characters", plan_item.get("characters", director_item.get("visible_characters", [])))
         )
         validation_profile = derive_validation_profile(plan_item, metadata, visible)
+        for field in disabled_risk_gated_fields(plan_item, metadata, visible):
+            issues.append(prefix + "不适用的风险字段不得由Agent重新注入：qa_metadata.%s" % field)
         _validate_scaffold_lock(prefix, shot, scaffold_map.get(sid), issues)
         expected_transition = ((scaffold_map.get(sid) or {}).get("qa_metadata", {}) or {}).get("temporal_transition_contract", {})
         for problem in temporal_transition_contract_issues(metadata, full_prompt, duration, expected_transition):

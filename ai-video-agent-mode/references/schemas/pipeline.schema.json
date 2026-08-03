@@ -196,7 +196,8 @@
         "visual_bible": {"$ref": "#/definitions/visual_bible"},
         "static_aesthetic_contract": {"$ref": "#/definitions/static_aesthetic_contract"},
         "dynamic_aesthetic_contract": {"$ref": "#/definitions/dynamic_aesthetic_contract"},
-        "aesthetic_priority": {"$ref": "#/definitions/aesthetic_priority"}
+        "aesthetic_priority": {"$ref": "#/definitions/aesthetic_priority"},
+        "terminal_frame_contract": {"$ref": "#/definitions/terminal_frame_contract"}
       },
       "additionalProperties": true
     },
@@ -549,6 +550,25 @@
         "degrade_first": {"type": "string", "minLength": 3}
       },
       "required": ["visual_thesis", "primary_eye_target", "secondary_visual_layer", "must_preserve", "degrade_first"],
+      "additionalProperties": false
+    },
+    "terminal_frame_contract": {
+      "type": "object",
+      "properties": {
+        "applicable": {"type": "boolean"},
+        "visible_count": {"type": "string", "minLength": 1},
+        "final_slot_map": {"type": "string", "minLength": 1},
+        "identity_visibility": {"type": "string", "minLength": 1},
+        "face_and_limb_separation": {"type": "string", "minLength": 1},
+        "prop_and_garment_state": {"type": "string", "minLength": 1},
+        "support_and_contact": {"type": "string", "minLength": 1},
+        "camera_lock": {"type": "string", "minLength": 1},
+        "light_exposure_lock": {"type": "string", "minLength": 1},
+        "no_new_entrant": {"type": "string", "minLength": 1},
+        "no_duplicate_subject": {"type": "string", "minLength": 1},
+        "final_hold": {"type": "string", "minLength": 1}
+      },
+      "required": ["applicable", "visible_count", "final_slot_map", "identity_visibility", "face_and_limb_separation", "prop_and_garment_state", "support_and_contact", "camera_lock", "light_exposure_lock", "no_new_entrant", "no_duplicate_subject", "final_hold"],
       "additionalProperties": false
     },
     "character_scene_objective_contract": {

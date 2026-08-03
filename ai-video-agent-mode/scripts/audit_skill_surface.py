@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Reject retired agent surfaces and accidental phase resurrection."""
+
+from __future__ import annotations
+
+import os
+
+from contract_registry import AGENT_PHASE_NAMES
+
+
+CURRENT_AGENT_PHASES = frozenset({"scene_lock", "master_production", "editor_pass2"})
+RETIRED_RELATIVE_PATHS = (
+    "references/agents/01_orchestrator_storyboard_agent.md",
+    "references/agents/02_director_enhancement_agent.md",
+    "references/agents/02_scene_lock_agent.md",
+    "references/agents/03_master_production_agent.md",
+    "references/agents/04_qa_review_agent.md",
+    "references/examples/camera_example.json",
+    "references/examples/director_example.json",
+    "references/examples/emotion_example.json",
+    "references/examples/scene_example.json",
+    "scripts/modec_v4.py",
+)
+
+
+def audit(skill_root: str) -> list[str]:
+    issues = []
+    if AGENT_PHASE_NAMES != CURRENT_AGENT_PHASES:
+        issues.append(
+            "current agent phases changed: expected %s, got %s"
+            % (sorted(CURRENT_AGENT_PHASES), sorted(AGENT_PHASE_NAMES))
+        )
+    for relative in RETIRED_RELATIVE_PATHS:
+        if os.path.exists(os.path.join(skill_root, relative)):
+            issues.append("retired surface still exists: " + relative)
+
+    contract_path = os.path.join(skill_root, "references", "format_constraints.md")
+    try:
+        with open(contract_path, "r", encoding="utf-8-sig") as handle:
+            contract = handle.read()
+    except OSError:
+        issues.append("missing active field contract: references/format_constraints.md")
+    else:
+        if "## §A — 归档分析记录结构" in contract:
+            issues.append("archive-only §A remains in the active field contract")
+    return issues
+
+
+def main() -> int:
+    root = os.path.dirname(os.path.dirname(__file__))
+    issues = audit(root)
+    print("[SKILL SURFACE] %s" % ("PASS" if not issues else "FAIL"))
+    for issue in issues:
+        print("- " + issue)
+    return 0 if not issues else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

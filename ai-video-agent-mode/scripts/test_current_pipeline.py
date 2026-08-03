@@ -19,7 +19,7 @@ from contract_registry import (
     AGENT_PHASE_NAMES, LOCAL_PHASE_NAMES, PHASE_BATCH_SIZE,
     PHASE_TIMEOUT_SECONDS, PIPELINE_CONTRACT_VERSION, PIPELINE_PHASES,
     PROMPT_CONTRACT_VERSION,
-    QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS, machine_contract_issues,
+    QA_REQUIRED_FIELDS, RISK_GATED_QA_FIELDS, SHOT_REQUIRED_FIELDS, machine_contract_issues,
     pipeline_gates,
 )
 from dispatch_receipts import heartbeat as receipt_heartbeat, issue as issue_receipt, load_and_verify as verify_dispatch_receipt
@@ -129,11 +129,27 @@ def run():
         direct_copy_fixture = "16:9画幅，动态漫，冷白顶灯下的长桌空间。角色A在画面左侧，手机玻璃边缘有低亮反光，背景弱虚化。"
         with open(export_fixture, "w", encoding="utf-8") as handle:
             handle.write(
-                "S10-01\n## 使用说明\n## 全局锁定\n## 通用负面提示词｜直接复制\n## 场景状态表\n## 分镜投喂卡\n"
+                "S10-01\n## 使用说明\n## 全局锁定\n"
+                "## 制作质量总控\n"
+                "画面质感基线：长桌构图，人物实焦，手机玻璃保留低亮反光。\n"
+                "光效与曝光连续：冷白顶灯照亮手背，背景暗部保持可读。\n"
+                "动态美学基线：起幅稳定，动作触发后低幅响应并停稳。\n"
+                "表演与情绪基线：触发后以眼神和呼吸泄露，结尾保留余波。\n"
+                "蒙太奇与剪辑基线：动作或反应切点必须增加新信息并保持声桥。\n"
+                "穿帮与抽卡总控：锁定身份、支撑、手机朝向、口型和稳定终态。\n"
+                "## 通用负面提示词｜直接复制\n## 场景状态表\n## 分镜投喂卡\n"
                 "【画面参数】\n16:9，动态漫，冷白长桌色卡。\n"
                 "【画面描述｜直接复制】\n"
                 + direct_copy_fixture
                 + "\n【运镜描述】\n固定镜头。\n【光影描述】\n冷白顶灯照亮手背。\n【负面提示词｜直接复制】\n手指畸形\n【表演与声音】\n无台词。\n【状态继承】\n手机仍在桌边。\n"
+                "【本镜制作控制】\n"
+                "画面质感：手机边缘反光是第一视觉落点，背景弱虚化。\n"
+                "光效与曝光：冷白顶灯从上方照亮手背，暗部保持可读。\n"
+                "动态美学：起幅手机静止，手部触发后低幅响应，固定镜头记录稳定落幅。\n"
+                "表演与情绪：无可见人物表演，环境和手机状态承接当前余波。\n"
+                "穿帮控制：手机仍在桌边，玻璃功能面朝向和桌面接触保持稳定。\n"
+                "抽卡策略：低风险；固定机位和单一道具状态；按常规首轮检查。\n"
+                "蒙太奇与剪辑：非蒙太奇；保持镜头以手机状态提供信息增量，无额外声桥。\n"
             )
         with open(os.path.splitext(export_fixture)[0] + ".xlsx", "wb") as handle:
             handle.write(b"PK")
@@ -156,7 +172,7 @@ def run():
         packet = _read(packet_paths[0])
         assert packet.get("source_sha256")
         assert "local_validation_command" in packet and packet["local_validation_command"][-2] == "--run-dir"
-        assert packet.get("context_policy", {}).get("quality_policy", "").startswith("Execution hints are speed aids")
+        assert packet.get("context_policy", {}).get("quality_policy", "").startswith("Fill core fields")
         assert all("execution_hints" in item for item in packet.get("items", []))
         with open(packet["constraints_path"], encoding="utf-8") as handle:
             constraints_text = handle.read()
@@ -299,7 +315,8 @@ def run():
         assert check({"items": [{"shot_id": "S1"}]}) > 0
         assert {"shot_id", "subshot_id", "duration", "full_prompt", "negative_prompt", "qa_metadata", "generation_control"} == SHOT_REQUIRED_FIELDS
         assert "temporal_transition_contract" in QA_REQUIRED_FIELDS
-        assert "story_punch_contract" in QA_REQUIRED_FIELDS
+        assert "story_punch_contract" not in QA_REQUIRED_FIELDS
+        assert RISK_GATED_QA_FIELDS["story_punch_contract"] == "story_punch_contract"
         retry_context_path = os.path.join(run_dir, "retry_context.json")
         _write(retry_context_path, {"items": [{"repair_fields": ["full_prompt"]}]})
         assert [os.path.basename(path) for path in _retry_examples(retry_context_path)] == ["format_example.txt"]
@@ -932,14 +949,15 @@ def run():
             assert len(redispatch_packets) == 2
             recovery = redispatch_incomplete_master(redispatch_dir, "unit-test recovery batching")
             assert len(recovery["missing_shot_ids"]) == 12
-            assert len(recovery["new_packets"]) == 2
-            assert [len(_read(path)["items"]) for path in recovery["new_packets"]] == [10, 2]
+            recovery_sizes = [len(_read(path)["items"]) for path in recovery["new_packets"]]
+            assert recovery_sizes == [10, 2], recovery_sizes
         high_items = [_master_item("F%02d" % index, "两人打斗后互相格挡") for index in range(1, 6)]
         high_risk = dispatch_risk(high_items[0])
         assert high_risk["tier"] == "high" and high_risk["batch_capacity"] == 2
         assert [len(batch) for batch in _dynamic_master_chunks(high_items)] == [2, 2, 1]
         low_hint = _composer_execution_hints({"subshot_id": "L1", "visible_characters": ["甲"], "duration": 2, "editorial_mode": "continuous_take"})
-        assert low_hint["risk_gated_contracts"] == {"ai_model_readiness_score": False, "pressure_release_design": False}
+        assert not low_hint["risk_gated_contracts"]["ai_model_readiness_score"]
+        assert not low_hint["risk_gated_contracts"]["pressure_release_design"]
         light_profile = validation_profile({
             "subshot_id": "ENV-01", "shot_type": "environment", "non_character_confirmed": True,
             "visual_intent": "雨夜空走廊", "base_action": "", "characters": [],
@@ -991,7 +1009,8 @@ def run():
             "visual_intent": "空置窗边", "base_action": "窗帘轻晃", "characters": [],
         })["skin_tone_protection_contract"] is False
         high_hint = _composer_execution_hints({"subshot_id": "H1", "visible_characters": ["甲", "乙"], "duration": 5, "editorial_mode": "shot_group", "emotion_driver": {"tension_intent": "rising"}})
-        assert high_hint["risk_gated_contracts"] == {"ai_model_readiness_score": True, "pressure_release_design": True}
+        assert high_hint["risk_gated_contracts"]["ai_model_readiness_score"]
+        assert high_hint["risk_gated_contracts"]["pressure_release_design"]
         scaffold_packets = prepare_dispatch_packets(run_dir, "master_production", 1, ["S1"])
         scaffold_packet = _read(scaffold_packets[0])
         scaffold = _read(scaffold_packet["composer_scaffold_path"])
@@ -1007,12 +1026,30 @@ def run():
         assert "scene_tone_palette" in scaffold_metadata
         assert "landscape_identity" in scaffold_metadata["scene_tone_palette"]
         assert "environment_story_arc" in scaffold_metadata["scene_tone_palette"]
-        assert "character_scene_objective_contract" in scaffold_metadata
-        assert "relationship_emotion_arc" in scaffold_metadata
         assert "sequence_directing_plan" in scaffold_metadata
         assert "cut_decision_contract" in scaffold_metadata
         assert "prompt_information_budget" in scaffold_metadata
         assert "sound_directing_plan" in scaffold_metadata
+        light_scaffold_path = _write_composer_scaffold(
+            run_dir,
+            [light_items[0]],
+            os.path.join(run_dir, ".cache", "dispatch"),
+            "light_contract_test",
+            lock_path,
+        )
+        light_scaffold_metadata = _read(light_scaffold_path)["shots"][0]["qa_metadata"]
+        assert all(field not in light_scaffold_metadata for field in RISK_GATED_QA_FIELDS)
+        high_scaffold_path = _write_composer_scaffold(
+            run_dir,
+            [high_items[0]],
+            os.path.join(run_dir, ".cache", "dispatch"),
+            "high_contract_test",
+            lock_path,
+        )
+        high_scaffold_metadata = _read(high_scaffold_path)["shots"][0]["qa_metadata"]
+        high_scaffold_profile = validation_profile(high_items[0])
+        for field, profile_key in RISK_GATED_QA_FIELDS.items():
+            assert (field in high_scaffold_metadata) is bool(high_scaffold_profile.get(profile_key, False))
         phone_scaffold_path = _write_composer_scaffold(
             run_dir,
             [_master_item("PHONE01", "男孩玩手机游戏")],

@@ -4,6 +4,8 @@ These helpers keep the "base_action may be empty" rule consistent across
 preflight, duration validation, and director assembly.
 """
 
+import re
+
 from production_intelligence import prop_lifecycle_risk
 
 NON_ACTION_TYPES = [
@@ -57,6 +59,23 @@ FUNCTIONAL_SURFACE_USE_WORDS = [
     "浏览", "刷", "滑动", "点击", "点按", "操作", "使用", "输入", "打字",
     "回复", "翻页", "照镜子", "对镜",
 ]
+
+
+def disabled_risk_gated_fields(subshot, metadata=None, visible_characters=None):
+    """Return optional fields that an Agent must not resurrect.
+
+    Scaffolds intentionally omit these fields when their source facts do not
+    activate the corresponding contract.  Keeping the check here gives every
+    downstream validator the same authority and prevents context bloat from
+    being reintroduced by a worker.
+    """
+    from contract_registry import RISK_GATED_QA_FIELDS
+    profile = validation_profile(subshot, metadata, visible_characters)
+    metadata = metadata if isinstance(metadata, dict) else {}
+    return sorted(
+        field for field, profile_key in RISK_GATED_QA_FIELDS.items()
+        if field in metadata and not profile.get(profile_key, False)
+    )
 
 
 def shot_type_text(subshot):
@@ -165,6 +184,14 @@ def functional_surface_risk(value):
     for text in _semantic_text_leaves(value):
         normalized = str(text or "").replace("书桌", "").replace("书架", "").replace("书房", "")
         if not any(prop in normalized for prop in FUNCTIONAL_SURFACE_PROP_WORDS):
+            continue
+        # Observation, passive state, and quoted/UI copy are not a person's
+        # active use of the functional face.  These exclusions prevent a
+        # camera description such as “镜头看手机” from paying the full
+        # orientation contract while retaining “她看手机/滑动屏幕”.
+        if re.search(r"(?:看见|看到|看不清|看不见|被看|镜头看|镜头对准|屏幕显示|显示着|写着|写有)", normalized):
+            continue
+        if re.search(r"[“\"「『].{0,30}(?:查看|看|阅读|浏览|使用).{0,30}[”\"」』]", normalized):
             continue
         if any(action in normalized for action in FUNCTIONAL_SURFACE_USE_WORDS):
             return True

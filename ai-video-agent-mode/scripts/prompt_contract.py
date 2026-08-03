@@ -275,6 +275,12 @@ AESTHETIC_PRIORITY_FIELDS = (
     "visual_thesis", "primary_eye_target", "secondary_visual_layer",
     "must_preserve", "degrade_first",
 )
+TERMINAL_FRAME_CONTRACT_FIELDS = (
+    "applicable", "visible_count", "final_slot_map", "identity_visibility",
+    "face_and_limb_separation", "prop_and_garment_state", "support_and_contact",
+    "camera_lock", "light_exposure_lock", "no_new_entrant", "no_duplicate_subject",
+    "final_hold",
+)
 CINEMATIC_COMPOSITION_RE = re.compile(r"前景|遮挡|门框|窗框|框景|引导线|留白|低机位|高机位|俯拍|仰拍|非对称|纵深")
 CINEMATIC_DEPTH_RE = re.compile(r"焦平面|景深|焦外|虚化|远端|背景压缩|空气透视|雾化|前景虚|后景虚|浅景深")
 CINEMATIC_EXPOSURE_RE = re.compile(r"暗部|黑位|不过曝|高光|低照度|曝光|主光|辅光|阴影|受光面|反差")
@@ -2399,6 +2405,42 @@ def aesthetic_directing_contract_issues(metadata, full_prompt=""):
                 "dynamic_aesthetic_contract包含%d个活动环境/材质/空气响应，超过本镜预算%d；其余字段应明确保持稳定"
                 % (len(active_responses), response_limit)
             )
+    return issues
+
+
+def terminal_frame_contract_issues(metadata, full_prompt=""):
+    """Validate and ground the positive terminal-frame anti-duplication contract."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    contract = metadata.get("terminal_frame_contract")
+    if contract in (None, {}, ""):
+        return []
+    if not isinstance(contract, dict):
+        return ["qa_metadata.terminal_frame_contract必须是对象"]
+    issues = []
+    for field in TERMINAL_FRAME_CONTRACT_FIELDS:
+        value = contract.get(field)
+        if field == "applicable":
+            if not isinstance(value, bool):
+                issues.append("terminal_frame_contract.applicable必须是布尔值")
+            continue
+        if not isinstance(value, str) or len(value.strip()) < 2:
+            issues.append(f"terminal_frame_contract.{field}必须是非空可见事实")
+    if issues:
+        return issues
+    text = str(full_prompt or "")
+    if not text:
+        return []
+    grounded = 0
+    for field in ("visible_count", "final_slot_map", "face_and_limb_separation", "prop_and_garment_state", "camera_lock", "light_exposure_lock", "final_hold"):
+        value = str(contract.get(field, "") or "")
+        if _fragment_grounded(value, text):
+            grounded += 1
+    if grounded < 3:
+        issues.append("terminal_frame_contract至少三项（人数/槽位、边界或道具、摄影机/光曝、终端保持）必须落实到full_prompt")
+    if not re.search(r"最后(?:约?20%|一段|画面)|终态|落幅|停稳|保持到结束", text):
+        issues.append("full_prompt必须写最后20%终端保持，而不能只在QA字段声明")
+    if not re.search(r"不新增|不再新增|不出现新|不重复|不产生重复|人物数量保持|可见人数保持", text):
+        issues.append("full_prompt必须写不新增或不重复主体的正向终端事实")
     return issues
 
 

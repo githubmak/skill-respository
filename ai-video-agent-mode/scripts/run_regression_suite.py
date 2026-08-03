@@ -32,6 +32,7 @@ def main():
 
     steps = []
     steps.append(_run("rule_consistency", [sys.executable, _script("check_rule_consistency.py")]))
+    steps.append(_run("skill_surface", [sys.executable, _script("audit_skill_surface.py")]))
     steps.append(_run("source_gate", [sys.executable, _script("test_source_gate.py")]))
     steps.append(_run("preflight_severity", [sys.executable, _script("test_preflight_severity.py")]))
     steps.append(_run("preproduction_quality_plans", [sys.executable, _script("test_preproduction_quality_plans.py")]))
@@ -43,6 +44,7 @@ def main():
     steps.append(_run("keyframe_pipeline", [sys.executable, _script("test_keyframe_pipeline.py")]))
     steps.append(_run("visual_ab_review", [sys.executable, _script("test_visual_ab_review.py")]))
     steps.append(_run("golden_jimeng", [sys.executable, _script("golden_jimeng_check.py")]))
+    steps.append(_run("edge_cases", [sys.executable, _script("test_edge_cases.py")]))
     if args.source:
         steps.append(_run("source_smoke", [
             sys.executable, _script("test_source_smoke.py"),

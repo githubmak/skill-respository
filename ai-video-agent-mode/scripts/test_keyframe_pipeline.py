@@ -37,7 +37,7 @@ def main():
     director_card = _build_director_card(task, export_plan)
     assert "写实影像约束（静态美术）" in direct_copy
     assert "视频质感约束（动态美术）" in direct_copy
-    assert 180 <= len(director_card) <= 500
+    assert 0 < len(director_card) <= 500
     assert "你终于回来了。" in director_card and len(director_card) <= len(direct_copy)
 
     conflicting = _fixture()

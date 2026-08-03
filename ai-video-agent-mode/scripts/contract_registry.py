@@ -102,6 +102,9 @@ def machine_contract_issues():
         issues.append("every pipeline phase must have exactly one executor")
     if AGENT_PHASE_NAMES & LOCAL_PHASE_NAMES:
         issues.append("agent and local phase sets must not overlap")
+    overlap = set(QA_REQUIRED_FIELDS) & set(RISK_GATED_QA_FIELDS)
+    if overlap:
+        issues.append("core and risk-gated QA fields overlap: %s" % ",".join(sorted(overlap)))
     for spec in PIPELINE_PHASE_SPECS:
         name = spec["name"]
         if spec["executor"] not in {"agent", "local"}:
@@ -122,20 +125,25 @@ SHOT_REQUIRED_FIELDS = frozenset({
 
 QA_REQUIRED_FIELDS = (
     "dramatic_goal", "performance_priority", "action_budget", "start_state", "end_state",
-    "emotion_driver", "performance_contract", "continuity_contract", "reroll_control", "dialogue_refs",
+    "continuity_contract", "reroll_control", "dialogue_refs",
     "dialogue_events", "editorial_mode", "camera_beat_map", "sequence_context",
     "quality_contract", "dramatic_design", "duration_design", "viewpoint",
     "visual_hierarchy", "entry_strategy", "reveal_strategy",
-    "focus_strategy", "temporal_transition_contract", "story_punch_contract",
-    "scene_tone_palette", "character_scene_objective_contract",
-    "relationship_emotion_arc", "sequence_directing_plan",
+    "focus_strategy", "temporal_transition_contract", "scene_tone_palette", "sequence_directing_plan",
     "cut_decision_contract", "prompt_information_budget", "sound_directing_plan",
 )
 
-# Heavy semantic QA fields are risk-gated by prompt_contract validators instead of
-# globally required for every shot. This keeps light/environment/simple shots
-# from paying the same context and generation cost as high-risk character shots.
-RISK_GATED_QA_FIELDS = (
-    "ai_model_readiness_score",
-    "pressure_release_design",
-)
+# Map optional QA fields to shot_semantics.validation_profile keys. Scaffolds
+# omit disabled fields so light environment/object shots do not pay character-
+# performance context costs. Validators still require every enabled field.
+RISK_GATED_QA_FIELDS = {
+    "emotion_driver": "performance_contract",
+    "performance_causality": "performance_causality",
+    "performance_contract": "performance_contract",
+    "story_punch_contract": "story_punch_contract",
+    "character_scene_objective_contract": "character_scene_objective_contract",
+    "relationship_emotion_arc": "relationship_emotion_arc",
+    "listener_reaction_plan": "listener_reaction_plan",
+    "ai_model_readiness_score": "ai_model_readiness_score",
+    "pressure_release_design": "pressure_release_design",
+}

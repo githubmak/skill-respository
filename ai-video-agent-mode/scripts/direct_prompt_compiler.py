@@ -79,7 +79,7 @@ def compile_direct_prompt(segments, required_fragments=None, max_chars=700, info
 
 
 def compile_director_card(segments, required_fragments=None, information_budget=None,
-                          min_chars=180, max_chars=500):
+                          min_chars=0, max_chars=500):
     """Compile a compact copy card without weakening protected-fact rules.
 
     The card is a companion view.  It is allowed to omit only complete
@@ -93,7 +93,7 @@ def compile_director_card(segments, required_fragments=None, information_budget=
         information_budget=information_budget,
     )
     result["view"] = "director_card"
-    if len(result["text"]) < min_chars:
+    if min_chars > 0 and len(result["text"]) < min_chars:
         result["issues"].append(
             "导演卡仅%d字，低于%d字密度下限；必须回到Master Production补足可见事实"
             % (len(result["text"]), min_chars)

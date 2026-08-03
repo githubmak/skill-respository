@@ -9,23 +9,32 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-CHILD_FIELDS = ["【镜号】", "【画面描述｜直接复制】", "【表演与声音】", "【状态继承】"]
+QUALITY_CONTROL_FIELD = "【本镜制作控制】"
+CHILD_FIELDS = ["【镜号】", "【画面描述｜直接复制】", "【表演与声音】", "【状态继承】", QUALITY_CONTROL_FIELD]
 KEYFRAME_IMAGE_FIELD = "【关键帧生图提示】"
 KEYFRAME_VIDEO_FIELD = "【即梦视频提示｜配合关键帧】"
 DIRECT_NEXT_FIELDS = (KEYFRAME_IMAGE_FIELD, KEYFRAME_VIDEO_FIELD, "【表演与声音】")
 REQUIRED_TOP_SECTIONS = [
     "## 使用说明",
     "## 全局锁定",
+    "## 制作质量总控",
     "## 通用负面提示词｜直接复制",
     "## 场景状态表",
     "## 分镜投喂卡",
 ]
+GLOBAL_QUALITY_LABELS = (
+    "画面质感基线", "光效与曝光连续", "动态美学基线",
+    "表演与情绪基线", "蒙太奇与剪辑基线", "穿帮与抽卡总控",
+)
+SHOT_QUALITY_LABELS = (
+    "画面质感", "光效与曝光", "动态美学", "表演与情绪",
+    "穿帮控制", "抽卡策略", "蒙太奇与剪辑",
+)
 BANNED_DIRECT = [
     "继承", "延续上一镜", "上一镜", "尾帧", "接上一镜", "空间保持", "位置继承", "物理座位不变", "剪辑", "切到", "反打到",
     "下一镜执行", "声音语气：", "表情：", "动作：", "情绪：", "脑海浮现", "后期插入", "左外",
     "当前主角", "当前对话者", "视情况", "出场人物", "所有人物", "全部人物", "所有出场人物",
 ]
-NEGATIVE_NEEDLE = "人物僵硬、全身静止、无眨眼"
 GLOBAL_SCALE_LOCK_TITLE = "全局比例与支撑锁定"
 GLOBAL_SCALE_LOCK_TERMS = (
     "角色骨骼与头身比例恒定", "真实身高和体型尺寸固定", "四肢长度与关节比例稳定",
@@ -70,6 +79,21 @@ CAMERA_TERMS = ("镜头", "相机", "机位", "平视", "俯视", "仰视", "侧
 CAMERA_SIGNATURE_ANGLE_TERMS = (
     "斜俯", "侧俯", "俯视", "仰视", "低机位", "高机位", "平视", "侧面", "侧后方", "斜前方",
 )
+COMPOSITION_FAMILY_TERMS = (
+    ("前景框景", ("框景", "门框", "窗框", "肩后前景")),
+    ("三角关系", ("三角构图", "三人三角")),
+    ("斜线纵深", ("斜线构图", "纵深构图", "消失线")),
+    ("中央空位", ("中心留白", "中央留白", "空位留白")),
+    ("横向揭示", ("横向构图", "横移揭示")),
+    ("低机位压力", ("低角度压力", "低机位")),
+    ("高机位压力", ("高角度压力", "高机位", "俯视压力")),
+    ("拉远留白", ("孤独留白", "拉远孤独")),
+    ("门窗分割", ("窗格分割", "门缝构图")),
+)
+TERMINAL_STABILITY_TERMS = ("最后20%", "最后 20%", "终态", "落幅", "停稳", "保持到结束")
+TERMINAL_ANTI_DUPLICATE_TERMS = ("不新增人物", "不新增主体", "不产生重复人物", "不产生重复主体", "不重复主体")
+TERMINAL_SEPARATION_TERMS = ("边界分开", "边界清晰", "脸和手分开", "手脚分开", "肢体分开", "不互相遮挡", "不重叠")
+SLOT_TERMS = ("左侧", "右侧", "中间", "前景", "中景", "后景", "槽位", "站位")
 RELATION_TERMS = ("面对", "相对", "身侧", "身后", "前方", "后方", "之间", "隔着", "挽着", "肩线", "右手", "左手", "朝向", "背对", "侧身")
 FACING_TERMS = ("面向", "背向", "身体朝向", "身体仍朝", "上身朝向", "头部转向", "头部偏向")
 VISUAL_TARGET_VERBS = ("面向", "看向", "朝向", "对着", "望向", "盯着", "凝视", "锁住")
@@ -260,6 +284,14 @@ LIGHTING_MATERIAL_TERMS = (
     "光", "受光", "反光", "高光", "阴影", "虚化", "景深", "木纹", "石纹", "金属", "玻璃", "布料",
     "棉麻", "皮革", "水面", "湿润", "粗糙", "磨损", "颗粒", "纹理", "质感",
 )
+MOTIVATED_LIGHT_SOURCE_TERMS = (
+    "窗光", "顶光", "台灯", "灯光", "日光", "自然光", "壁灯", "路灯", "灯牌", "吊灯", "落地灯",
+    "屏幕光", "车灯", "店招", "天光", "月光", "烛火", "火光", "火盆", "门外光",
+)
+VISUAL_RESULT_TERMS = (
+    "落在", "照在", "照亮", "扫过", "擦过", "映在", "投在", "进入", "勾亮", "压暗", "压在",
+    "受光", "反光", "高光", "阴影", "明暗", "纹理", "褶皱", "磨损", "虚化", "衰减",
+)
 END_STATE_TERMS = (
     "画面停在", "画面定格", "镜头停在", "镜头定格", "最后停在", "最终停在", "结束时",
     "稳定停在", "稳定在", "落定", "保持到画面结束", "停住不动", "仍停在", "仍保持",
@@ -315,30 +347,30 @@ class SemanticShotReport:
     recommended_max: int
     length: int
     missing_slots: tuple[str, ...]
-    hard_minimum_fails: bool
 
     @property
     def semantically_complete(self) -> bool:
         return not self.missing_slots
 
     @property
+    def length_guidance(self) -> str:
+        if self.length < self.recommended_min:
+            return "short"
+        if self.length > self.recommended_max:
+            return "long"
+        return "in-range"
+
+    @property
     def disagreement(self) -> str:
-        if self.hard_minimum_fails and self.semantically_complete:
-            return "semantic-pass/hard180-fail"
-        if not self.hard_minimum_fails and not self.semantically_complete:
-            return "semantic-fail/hard180-pass"
+        if self.semantically_complete and self.length_guidance == "short":
+            return "semantic-complete/short"
+        if not self.semantically_complete and self.length_guidance != "short":
+            return "semantic-incomplete/despite-length"
         return "none"
 
 
 def compact_len(text: str) -> int:
     return len(re.sub(r"\s+", "", text))
-
-
-def hard_minimum_fails(text: str) -> bool:
-    """Preserve the current 180-character gate during shadow calibration."""
-    return compact_len(text) < 180 and not any(
-        term in text for term in ("手部特写", "特写", "空镜", "只拍", "镜头不拍人物")
-    )
 
 
 def has_scene_anchor(text: str) -> bool:
@@ -352,6 +384,17 @@ def has_scene_anchor(text: str) -> bool:
             prefix,
         )
     )
+
+
+def has_executable_visual_detail(text: str) -> bool:
+    cleaned = strip_quoted_content(text)
+    has_light_relation = any(term in cleaned for term in MOTIVATED_LIGHT_SOURCE_TERMS) and any(
+        term in cleaned for term in VISUAL_RESULT_TERMS
+    )
+    has_material_relation = any(
+        term in cleaned for term in ("木纹", "石纹", "金属", "玻璃", "布料", "棉麻", "皮革", "纸面", "水面")
+    ) and any(term in cleaned for term in VISUAL_RESULT_TERMS)
+    return has_light_relation or has_material_relation
 
 
 def has_end_state(text: str) -> bool:
@@ -370,6 +413,23 @@ def has_visible_dialogue(text: str) -> bool:
         re.search(r"(?:说|问|喊|低语|回应|反问)[：:]?\s*[“\"][^”\"]+[”\"]", text)
         or (quoted_lines(text) and any(term in text for term in LIP_SYNC_TERMS))
     )
+
+
+def has_visible_person(text: str, cast_names: list[str] | None = None) -> bool:
+    """Return whether this shot contains a visible human subject."""
+    cast_names = cast_names or []
+    cleaned = strip_quoted_content(text)
+    if is_standalone_cutaway(text) or re.search(r"可见人数[：:]\s*(?:0|零)人", cleaned):
+        return False
+    offscreen = set(offscreen_names(text))
+    if any(name in cleaned and name not in offscreen for name in cast_names):
+        return True
+    count_match = VISIBLE_COUNT_RE.search(cleaned)
+    if count_match and not re.search(r"(?:0|零)人", count_match.group(0)):
+        return True
+    if re.search(r"人物|男人|女人|男孩|女孩|老人|孩子|说话者|听者|主角", cleaned):
+        return True
+    return bool(re.search(r"(?:^|[，。；;\s])(?:他|她)(?:的|在|站|坐|走|看|手|脸|身体|肩|背|$)", cleaned))
 
 
 def has_multiple_visible_people(text: str, cast_names: list[str]) -> bool:
@@ -437,8 +497,8 @@ def semantic_completeness_issues(
     )
     if not visible_subject:
         missing.append("可见主体与当前关系")
-    if not any(term in direct for term in SCENE_TONE_PREFIX_TERMS + LIGHTING_MATERIAL_TERMS):
-        missing.append("光影或材质执行")
+    if not has_executable_visual_detail(direct):
+        missing.append("动机光源或剧情材质落点")
     if not any(term in cleaned for term in ACTION_CHAIN_TERMS + HELD_STATE_TERMS + ENVIRONMENT_RESPONSE_TERMS):
         missing.append("可见变化或明确保持")
     if not has_end_state(direct):
@@ -466,6 +526,10 @@ def semantic_completeness_issues(
             term in direct + performance for term in LISTENER_REACTION_TERMS
         ):
             missing.append("听者反应")
+        has_trigger = any(term in cleaned for term in ("听见", "听到", "看见", "看到", "发现", "察觉", "被", "话音", "提到", "说到", "问完", "之后", "后，"))
+        has_leak = any(term in cleaned for term in FACIAL_DETAIL_TERMS + BODY_PROP_EMOTION_TERMS)
+        if not (has_trigger and has_leak):
+            missing.append("表演触发与可见泄露")
     elif shot_type == "multi_character_relationship":
         if not has_multiple_visible_people(direct, cast_names):
             missing.append("多人同框关系")
@@ -562,7 +626,6 @@ def build_semantic_report(
         recommended_max=recommended_max,
         length=compact_len(direct),
         missing_slots=tuple(missing),
-        hard_minimum_fails=hard_minimum_fails(direct),
     )
 
 
@@ -920,6 +983,59 @@ def extract_top_section(text: str, heading: str) -> str:
     return m.group(1).strip() if m else ""
 
 
+def labeled_control_value(text: str, label: str) -> str:
+    match = re.search(r"(?:^|\n)" + re.escape(label) + r"[：:]\s*([^\n]+)", str(text or ""))
+    return match.group(1).strip() if match else ""
+
+
+def quality_control_issues(control: str, direct: str) -> list[str]:
+    issues: list[str] = []
+    if not control.strip():
+        return [f"missing {QUALITY_CONTROL_FIELD}"]
+    values = {label: labeled_control_value(control, label) for label in SHOT_QUALITY_LABELS}
+    for label, value in values.items():
+        if len(value) < 6:
+            issues.append(f"{QUALITY_CONTROL_FIELD}.{label}缺少本镜可执行内容")
+        elif any(term in value for term in ("已检查", "按合同", "同上", "见内部", "待定", "TBD")):
+            issues.append(f"{QUALITY_CONTROL_FIELD}.{label}不能使用内部占位或审查结论")
+
+    dynamic = values.get("动态美学", "")
+    if dynamic and not (
+        any(term in dynamic for term in ("起幅", "起态", "固定起点"))
+        and any(term in dynamic for term in ("触发", "有意静止", "保持静止", "无主体动作"))
+        and any(term in dynamic for term in ("落幅", "终态", "停稳", "稳定"))
+    ):
+        issues.append(f"{QUALITY_CONTROL_FIELD}.动态美学必须写起幅、触发/有意静止和稳定落幅")
+
+    performance = values.get("表演与情绪", "")
+    has_visible_person = not is_standalone_cutaway(direct) and not re.search(r"可见人数[：:]\s*[0零]人", direct)
+    if has_visible_person and performance and not (
+        any(term in performance for term in ("触发", "听见", "看见", "感到"))
+        and any(term in performance for term in ("泄露", "眼", "呼吸", "嘴角", "下颌", "手", "肩", "重心"))
+        and any(term in performance for term in ("余波", "残留", "落幅", "停在"))
+    ):
+        issues.append(f"{QUALITY_CONTROL_FIELD}.表演与情绪必须写触发、可见泄露和余波")
+
+    montage = values.get("蒙太奇与剪辑", "")
+    if detect_shot_type(direct) == "montage_fragment" and montage and not (
+        any(term in montage for term in ("固定锚点", "重复锚点", "同一构图", "匹配点"))
+        and any(term in montage for term in ("状态增量", "时间增量", "数量变化", "阶段变化"))
+        and any(term in montage for term in ("声音", "声桥", "切点", "回到现实", "现实锚点"))
+    ):
+        issues.append(f"{QUALITY_CONTROL_FIELD}.蒙太奇与剪辑必须写固定锚点、单片段状态增量和声音/切点承接")
+
+    light = values.get("光效与曝光", "")
+    if any(term in direct for term in ("体积光", "丁达尔", "闪电", "火光", "霓虹", "屏幕光", "倒影", "反射")):
+        if not (
+            any(term in light for term in ("光源", "窗", "灯", "火", "屏幕", "反射面"))
+            and any(term in light for term in ("方向", "左", "右", "上", "后", "前", "侧"))
+            and any(term in light for term in ("受光", "落在", "照亮", "作用于", "接收面"))
+            and any(term in light for term in ("边界", "止于", "不越过", "衰减", "稳定", "持续"))
+        ):
+            issues.append(f"{QUALITY_CONTROL_FIELD}.光效与曝光必须写光源、方向、受光面和时间/空间边界")
+    return issues
+
+
 def direct_sentence(state_change: str, label: str) -> str:
     m = re.search(re.escape(label) + r"[：:]\s*([^\n；;]+)", state_change)
     return m.group(1).strip() if m else ""
@@ -1090,10 +1206,13 @@ def validate_child(
     performance = extract(block, "【表演与声音】", "【状态继承】")
     mouth_window = extract_optional_field(block, "【口型分窗】")
     state = extract_optional_field(block, "【状态继承】")
+    quality_control = extract_optional_field(block, QUALITY_CONTROL_FIELD)
     necessary = extract_optional_field(block, "【本镜必要约束｜直接复制】")
     negative = extract_optional_field(block, "【本镜补充负面提示词｜直接复制】")
     keyframe_image = extract_optional_field(block, KEYFRAME_IMAGE_FIELD)
     keyframe_video = extract_optional_field(block, KEYFRAME_VIDEO_FIELD)
+    for issue in quality_control_issues(quality_control, direct):
+        issues.append(f"{sid}: {issue}")
     optional_count = optional_function_count(block)
     optional_limit = 3 if "复杂" in header else 1
     if optional_count > optional_limit:
@@ -1116,8 +1235,6 @@ def validate_child(
         )
     if compact_len(direct) > 500:
         issues.append(f"{sid}: direct prompt over 500 chars -> {compact_len(direct)}")
-    if hard_minimum_fails(direct):
-        issues.append(f"{sid}: ordinary dialogue/drama direct prompt looks too thin -> {compact_len(direct)} chars")
     prefix = direct[:120]
     if not any(term in prefix for term in ASPECT_TERMS):
         issues.append(f"{sid}: direct prompt prefix missing aspect ratio/画幅")
@@ -1131,10 +1248,11 @@ def validate_child(
         issues.append(f"{sid}: direct prompt missing camera placement or angle")
     if not has_camera_state(direct):
         issues.append(f"{sid}: direct prompt missing static state or one camera path")
-    if not any(term in direct for term in RELATION_TERMS):
-        issues.append(f"{sid}: direct prompt missing body or prop relationship")
-    if not any(term in direct for term in FACING_TERMS):
-        issues.append(f"{sid}: direct prompt missing body-facing anchor")
+    visible_person = has_visible_person(direct, cast_names)
+    if visible_person and not any(term in direct for term in RELATION_TERMS):
+        issues.append(f"{sid}: visible-person prompt missing body or prop relationship")
+    if visible_person and not any(term in direct for term in FACING_TERMS):
+        issues.append(f"{sid}: visible-person prompt missing body-facing anchor")
     if re.search(r"(?:身体|上身)朝(?:左|右)(?!侧)", direct):
         issues.append(f"{sid}: body direction must name a person or fixed anchor, not only left/right")
     offscreen_target_hits = offscreen_visual_target_issues(direct, block)
@@ -1214,11 +1332,12 @@ def validate_child(
         if not any(term in direct for term in ("单条", "一行", "一个", "仅一条", "仅一行")):
             issues.append(f"{sid}: AI消息气泡必须限制为单条/一行短文本")
         bubble_texts = bubble_quotes(direct)
+        if bubble_texts and not all(term in direct for term in ("AI画内生成", "允许文字近似")):
+            issues.append(f"{sid}: 精确UI默认后期叠加；只有明确写AI画内生成且允许文字近似时才把气泡文字放进直接提示词")
         if len(bubble_texts) > 1:
             issues.append(f"{sid}: 同一镜不应同时生成多条精确气泡文字；请拆成多镜或合并为一个绿色气泡")
-        if any(compact_len(text) > 18 for text in bubble_texts):
-            if not all(term in direct for term in ("大号", "文字居中", "留白")):
-                issues.append(f"{sid}: 长AI消息气泡需要写“大号清晰气泡、文字居中、背景留白干净”，避免文字乱贴或变形")
+        if any(compact_len(text) > 12 for text in bubble_texts):
+            issues.append(f"{sid}: 超过12字的精确UI必须改为后期文字，不继续增加AI气泡约束")
         if not all(term in necessary for term in SIDE_OVERLAY_NECESSARY_TERMS):
             issues.append(f"{sid}: AI消息气泡需要【本镜必要约束｜直接复制】声明不属于手机且不贴手机")
         if not any(term in negative for term in SIDE_OVERLAY_NEGATIVE_TERMS):
@@ -1300,6 +1419,11 @@ def validate_child(
         issues.append(
             f"{sid}: long action chain may be simplified by AI; split into prepare/contact/final-state shots -> {','.join(action_chain_hits[:8])}"
         )
+    semantic_report = build_semantic_report(direct, header, performance, block, cast_names)
+    if semantic_report.missing_slots:
+        issues.append(
+            f"{sid}: direct prompt semantic contract incomplete -> {','.join(semantic_report.missing_slots)}"
+        )
 
 
 def camera_signature(direct: str) -> str:
@@ -1311,6 +1435,42 @@ def camera_signature(direct: str) -> str:
         parts.append(angle)
     parts.append("move" if moving else "static")
     return ":".join(parts)
+
+
+def composition_family(direct: str) -> str:
+    """Return the explicit composition family; do not infer one from vague beauty words."""
+    for family, terms in COMPOSITION_FAMILY_TERMS:
+        if any(term in direct for term in terms):
+            return family
+    return ""
+
+
+def group_camera_signature(direct: str) -> str:
+    """Signature used only for cross-group variety checks."""
+    family = composition_family(direct)
+    if not family:
+        return ""
+    return f"{camera_signature(direct)}:{family}"
+
+
+def terminal_frame_issues(direct: str, group_id: str, child_index: int) -> list[str]:
+    """Require positive terminal facts that prevent end-of-shot duplication and drift."""
+    issues: list[str] = []
+    if not any(term in direct for term in TERMINAL_STABILITY_TERMS):
+        issues.append(f"{group_id}-{child_index}: 最后一镜缺少最后20%终端稳定事实（停稳/落幅/保持到结束）")
+        return issues
+    if not any(term in direct for term in TERMINAL_ANTI_DUPLICATE_TERMS):
+        issues.append(f"{group_id}-{child_index}: 最后一镜缺少不新增/不重复主体的正向事实")
+    is_cutaway = is_standalone_cutaway(direct)
+    zero_people = bool(re.search(r"可见人数[：:]\s*[0零]人", direct))
+    if not is_cutaway and not zero_people:
+        if not VISIBLE_COUNT_RE.search(direct):
+            issues.append(f"{group_id}-{child_index}: 最后一镜人物镜必须写可见人数")
+        if not any(term in direct for term in SLOT_TERMS):
+            issues.append(f"{group_id}-{child_index}: 最后一镜人物镜必须写最终人物槽位/站位")
+        if not any(term in direct for term in TERMINAL_SEPARATION_TERMS):
+            issues.append(f"{group_id}-{child_index}: 最后一镜多人/人物镜必须写脸、手、四肢边界分开")
+    return issues
 
 
 def shoulder_actor(direct: str) -> str:
@@ -1420,14 +1580,19 @@ def validate(path: Path, text: str | None = None) -> list[str]:
     for section in REQUIRED_TOP_SECTIONS:
         if section not in text:
             issues.append(f"missing top section {section}")
-    if NEGATIVE_NEEDLE not in text:
-        issues.append("missing anti-stiffness negative prompt")
     internal_hits = [term for term in INTERNAL_PRESET_TERMS if term in text]
     if internal_hits:
         issues.append("final output should not expose internal scene-preset terms -> " + ",".join(internal_hits))
     global_section = extract_top_section(text, "## 全局锁定")
+    quality_section = extract_top_section(text, "## 制作质量总控")
     global_negative_section = extract_top_section(text, "## 通用负面提示词｜直接复制")
     scene_state_section = extract_top_section(text, "## 场景状态表")
+    for label in GLOBAL_QUALITY_LABELS:
+        value = labeled_control_value(quality_section, label)
+        if len(value) < 8:
+            issues.append(f"## 制作质量总控 missing executable {label}")
+        elif any(term in value for term in ("已检查", "按合同", "同上", "见内部", "待定", "TBD")):
+            issues.append(f"## 制作质量总控 {label} cannot be an internal placeholder")
     if GLOBAL_SCALE_LOCK_TITLE not in global_section:
         issues.append(f"## 全局锁定 missing {GLOBAL_SCALE_LOCK_TITLE}")
     else:
@@ -1460,6 +1625,9 @@ def validate(path: Path, text: str | None = None) -> list[str]:
     group_count = child_count = 0
     groups = list(iter_groups(text))
     previous_group_number: tuple[int, int] | None = None
+    previous_group_last_state = ""
+    previous_group_scene: int | None = None
+    scene_group_records: list[tuple[int, str, list[str]]] = []
     for match in groups:
         group_count += 1
         group_id, group_total, block = match.group(1), match.group(2), match.group(3)
@@ -1496,10 +1664,26 @@ def validate(path: Path, text: str | None = None) -> list[str]:
             direct_prompt(child.group(0))
             for child in children
         ]
+        scene_group_records.append((scene_number, group_id, child_directs))
         child_states = [
             extract(child.group(0), "【状态继承】")
             for child in children
         ]
+        if child_directs and previous_group_last_state and previous_group_scene == scene_number:
+            first_direct = child_directs[0]
+            if orientation_jump(previous_group_last_state, first_direct):
+                issues.append(
+                    f"{group_id}-1: 同场景跨镜头组朝向跳变；新组首镜必须重写转身/回身/肩线转正/双脚停稳"
+                )
+            jumped_props = prop_state_jump(previous_group_last_state, first_direct)
+            if jumped_props:
+                issues.append(
+                    f"{group_id}-1: 同场景跨镜头组物品状态不一致 -> {','.join(jumped_props)}"
+                )
+            if posture_support_jump(previous_group_last_state, first_direct):
+                issues.append(
+                    f"{group_id}-1: 同场景跨镜头组人体支撑点未在首镜重写"
+                )
         for index in range(1, len(children)):
             if orientation_jump(child_states[index - 1], child_directs[index]):
                 issues.append(
@@ -1514,6 +1698,9 @@ def validate(path: Path, text: str | None = None) -> list[str]:
                 issues.append(
                     f"{group_id}-{index + 1}: 上一镜人体支撑点已锁定，下一镜不能概括成坐在中间/坐着/靠着；必须复写臀部/腰背/双腿与承载物接触点，或先写手撑、脚踩、腰臀挪动、重心转移和新支撑点稳定"
                 )
+        if child_states:
+            previous_group_last_state = child_states[-1]
+            previous_group_scene = scene_number
         child_durations = []
         for child in children:
             duration_match = re.search(r"，\s*(\d+(?:\.\d+)?)s\s*，", child.group(1))
@@ -1537,6 +1724,31 @@ def validate(path: Path, text: str | None = None) -> list[str]:
         for index in range(1, len(shoulder_actors)):
             if shoulder_actors[index - 1] and shoulder_actors[index] and shoulder_actors[index - 1] == shoulder_actors[index]:
                 issues.append(f"{group_id}: consecutive shoulder shots use same shoulder actor; reverse shot should swap foreground shoulder")
+
+    # Scene-level camera variety: compare the first child of adjacent groups so a
+    # sequence cannot hide three repeated compositions behind different group headings.
+    for index in range(2, len(scene_group_records)):
+        a_scene, a_id, a_directs = scene_group_records[index - 2]
+        b_scene, b_id, b_directs = scene_group_records[index - 1]
+        c_scene, c_id, c_directs = scene_group_records[index]
+        if a_scene != b_scene or b_scene != c_scene:
+            continue
+        signatures = [
+            group_camera_signature(directs[0]) if directs else ""
+            for directs in (a_directs, b_directs, c_directs)
+        ]
+        if signatures[0] and signatures[0] == signatures[1] == signatures[2]:
+            issues.append(
+                f"{c_id}: 同场连续三组复用同一景别+角度+构图+运镜组合 -> {signatures[2]}；需改为建立/关系/细节/余波中的不同视觉任务"
+            )
+
+    # The last visible shot of every scene needs a positive terminal contract.
+    scene_last: dict[int, tuple[str, list[str]]] = {}
+    for scene_number, group_id, directs in scene_group_records:
+        scene_last[scene_number] = (group_id, directs)
+    for scene_number, (group_id, directs) in scene_last.items():
+        if directs:
+            issues.extend(terminal_frame_issues(directs[-1], group_id, len(directs)))
 
     if group_count == 0:
         issues.append("no shot groups found; use #### S1-01 with group-level 【出现人物】 and no file/case prefix")
@@ -1572,7 +1784,7 @@ def shadow_validate(path: Path, text: str | None = None) -> list[str]:
             diagnostics.append(
                 f"SHADOW {group_id}-{number}: type={report.shot_type}/{report.label}; "
                 f"length={report.length}; guide={report.recommended_min}-{report.recommended_max}; "
-                f"semantic={semantic_state}; hard180={'fail' if report.hard_minimum_fails else 'pass'}; "
+                f"semantic={semantic_state}; length_guidance={report.length_guidance}; "
                 f"disagreement={report.disagreement}"
             )
         for family, patterns in LIVENESS_PATTERN_FAMILIES.items():
@@ -1585,6 +1797,24 @@ def shadow_validate(path: Path, text: str | None = None) -> list[str]:
     return diagnostics
 
 
+def bundle_contract_issues(items: list[tuple[Path, str]]) -> list[str]:
+    """Check project locks that must remain identical across scene files."""
+    if len(items) < 2:
+        return []
+    issues: list[str] = []
+    first_path, first_text = items[0]
+    sections = ("## 全局锁定", "## 制作质量总控", "## 通用负面提示词｜直接复制")
+    for section in sections:
+        baseline = re.sub(r"\s+", "", extract_top_section(first_text, section))
+        for path, text in items[1:]:
+            current = re.sub(r"\s+", "", extract_top_section(text, section))
+            if baseline != current:
+                issues.append(
+                    f"{path}: {section} 与 {first_path} 不一致；多场景文件必须复用同一项目锁定"
+                )
+    return issues
+
+
 def main(argv: list[str]) -> int:
     shadow_report = "--shadow-report" in argv[1:]
     raw_paths = [arg for arg in argv[1:] if arg != "--shadow-report"]
@@ -1593,9 +1823,14 @@ def main(argv: list[str]) -> int:
         print("usage: validate_storyboard.py [--shadow-report] <file.md> [more.md ...]", file=sys.stderr)
         return 2
     failed = False
-    for raw in raw_paths:
-        path = Path(raw)
-        text = path.read_text(encoding="utf-8")
+    items = [(Path(raw), Path(raw).read_text(encoding="utf-8")) for raw in raw_paths]
+    bundle_issues = bundle_contract_issues(items)
+    if bundle_issues:
+        print("PROJECT: FAIL")
+        for issue in bundle_issues:
+            print(f"  - {issue}")
+        failed = True
+    for path, text in items:
         issues = validate(path, text)
         print(f"{path}: {'OK' if not issues else 'FAIL'}")
         for issue in issues:

@@ -210,6 +210,10 @@ def _write_master_markdown(path, master_package, plan, compile_reports=None):
     ]
     lines.extend(_global_lock_lines(master_package, plan))
     lines.extend([
+        "## 制作质量总控", "",
+    ])
+    lines.extend(_global_quality_control_lines(master_package))
+    lines.extend([
         "## 通用负面提示词｜直接复制", "",
         _global_negative_prompt(master_package), "",
         "## 场景状态表", "",
@@ -245,7 +249,7 @@ def _write_master_markdown(path, master_package, plan, compile_reports=None):
             _picture_parameter_line(task, plan), "",
             "【画面描述｜直接复制】", "",
             _build_direct_copy_prompt(task, plan, compile_reports), "",
-            "【导演卡｜直接复制｜180-500字】", "",
+            "【导演卡｜直接复制｜≤500字】", "",
             _build_director_card(task, plan, compile_reports), "",
             "【运镜描述】", "",
             _camera_description(camera_beats, task), "",
@@ -273,6 +277,7 @@ def _write_master_markdown(path, master_package, plan, compile_reports=None):
             lines.extend(["无台词。", ""])
         lines.extend(["【状态继承】", "", _state_carryover(task), ""])
         lines.extend(["【剪辑衔接】", "", _build_transition_prompt(task, next_task), ""])
+        lines.extend(["【本镜制作控制】", "", _shot_production_control(task), ""])
         if camera_beats:
             lines.extend(["【镜头执行】", ""])
             _append_execution_beats(lines, {"camera_beat_map": camera_beats})
@@ -325,7 +330,7 @@ def _write_master_markdown(path, master_package, plan, compile_reports=None):
 
 
 def _write_concise_markdown(path, master_package, plan):
-    """Write only the 180-500 character copy cards and basic shot identity."""
+    """Write only compact copy cards and basic shot identity."""
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     masters = {item.get("shot_id", ""): item for item in master_package.get("shots", []) if isinstance(item, dict)}
     lines = [
@@ -344,7 +349,7 @@ def _write_concise_markdown(path, master_package, plan):
         card = _build_director_card(task, plan)
         lines.extend([
             "### %s｜%ss" % (task.get("shot_id", ""), float(task.get("duration", 0) or 0)), "",
-            "【导演卡｜直接复制｜180-500字】", "", card, "",
+            "【导演卡｜直接复制｜≤500字】", "", card, "",
             "【负面提示词｜直接复制】", "", str(task.get("negative_prompt", "") or ""), "", "---", "",
         ])
     with open(path, "w", encoding="utf-8") as handle:
@@ -553,28 +558,85 @@ def _direct_prompt_inputs(task, plan):
     ]
     style_prefix = _compact("，".join(part for part in style_parts if part) + "。")
     sections = _prompt_sections(task.get("full_prompt", ""))
+    composition_clause = _composition_direct_clause(metadata)
+    terminal_clause = _terminal_frame_direct_clause(metadata)
     if sections:
+        space_text = sections.get("主体与空间锁定", "")
+        continuity_text = sections.get("主镜头连续规则", "")
+        if composition_clause and composition_clause not in space_text:
+            space_text = "；".join(part for part in (space_text, composition_clause) if part)
+        if terminal_clause and terminal_clause not in continuity_text:
+            continuity_text = "；".join(part for part in (continuity_text, terminal_clause) if part)
         segments = [
             {"kind": "visual_prefix", "text": style_prefix},
-            {"kind": "space", "text": sections.get("主体与空间锁定", "")},
-            {"kind": "continuity", "text": sections.get("主镜头连续规则", "")},
+            {"kind": "space", "text": space_text},
+            {"kind": "continuity", "text": continuity_text},
             {"kind": "performance", "text": _strip_inner_shot_headings(sections.get("子镜头组", ""))},
             {"kind": "light", "text": sections.get("光照、声音与稳定约束", "")},
             {"kind": "video_texture", "text": video_texture},
             {"kind": "cinematic", "text": cinematic},
         ]
     else:
+        direct_fallback = jimeng_feed_prompt(task.get("full_prompt", ""))
+        if composition_clause and composition_clause not in direct_fallback:
+            direct_fallback = "；".join(part for part in (direct_fallback, composition_clause) if part)
+        if terminal_clause and terminal_clause not in direct_fallback:
+            direct_fallback = "；".join(part for part in (direct_fallback, terminal_clause) if part)
         segments = [
             {"kind": "visual_prefix", "text": style_prefix},
-            {"kind": "performance", "text": jimeng_feed_prompt(task.get("full_prompt", ""))},
+            {"kind": "performance", "text": direct_fallback},
             {"kind": "video_texture", "text": video_texture},
             {"kind": "cinematic", "text": cinematic},
         ]
     control = task.get("generation_control", {}) if isinstance(task.get("generation_control"), dict) else {}
     required = _dialogue_required_fragments(task)
     required.extend(_budget_render_units(budget))
-    required.extend(value for value in (motion_anchor, static_anchor) if value)
+    required.extend(value for value in (motion_anchor, static_anchor, terminal_clause) if value)
     return segments, _unique_nonempty(required), budget
+
+
+def _composition_direct_clause(metadata):
+    """Return one concrete composition skeleton for the model-facing prompt."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    static = metadata.get("static_aesthetic_contract", {}) if isinstance(metadata.get("static_aesthetic_contract"), dict) else {}
+    cinematic = metadata.get("cinematic_image_contract", {}) if isinstance(metadata.get("cinematic_image_contract"), dict) else {}
+    bible = metadata.get("visual_bible", {}) if isinstance(metadata.get("visual_bible"), dict) else {}
+    values = [
+        static.get("composition_hierarchy", ""),
+        cinematic.get("composition_anchor", ""),
+        bible.get("composition_grammar", ""),
+    ]
+    value = next((_compact(item) for item in values if _compact(item)), "")
+    if not value:
+        return ""
+    return "构图骨架：" + _shorten(value, 110)
+
+
+def _terminal_frame_direct_clause(metadata):
+    """Translate terminal_frame_contract into positive, visible anti-duplication facts."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    contract = metadata.get("terminal_frame_contract", {})
+    if not isinstance(contract, dict) or not contract:
+        return ""
+    def value(key):
+        return _compact(contract.get(key, ""))
+    pieces = []
+    if value("visible_count") or value("final_slot_map"):
+        pieces.append("最后20%只保留" + "、".join(part for part in (value("visible_count"), value("final_slot_map")) if part))
+    for key in ("identity_visibility", "face_and_limb_separation", "prop_and_garment_state", "support_and_contact"):
+        if value(key):
+            pieces.append(value(key))
+    if value("camera_lock"):
+        pieces.append(value("camera_lock"))
+    if value("light_exposure_lock"):
+        pieces.append(value("light_exposure_lock"))
+    if value("no_new_entrant"):
+        pieces.append(value("no_new_entrant"))
+    if value("no_duplicate_subject"):
+        pieces.append(value("no_duplicate_subject"))
+    if value("final_hold"):
+        pieces.append(value("final_hold"))
+    return "终端画面：" + "，".join(pieces) if pieces else ""
 
 
 def _global_lock_lines(master_package, plan):
@@ -623,6 +685,169 @@ def _global_lock_lines(master_package, plan):
         lines.extend(state_lines[:8])
     lines.append("")
     return lines
+
+
+def _contract_text(metadata, key, fields, limit=300):
+    contract = metadata.get(key, {}) if isinstance(metadata, dict) else {}
+    contract = contract if isinstance(contract, dict) else {}
+    values = []
+    for field in fields:
+        value = contract.get(field, "")
+        if isinstance(value, list):
+            value = "；".join(str(item) for item in value if str(item).strip())
+        value = _compact(value)
+        if value and value.lower() not in {"none", "n/a", "na"} and value not in values:
+            values.append(value)
+    return _shorten("；".join(values), limit) if values else ""
+
+
+def _first_contract_text(shots, key, fields, fallback):
+    for shot in shots:
+        metadata = shot.get("qa_metadata", {}) if isinstance(shot.get("qa_metadata"), dict) else {}
+        value = _contract_text(metadata, key, fields, 360)
+        if value:
+            return value
+    return fallback
+
+
+def _global_quality_control_lines(master_package):
+    shots = [shot for shot in master_package.get("shots", []) if isinstance(shot, dict)]
+    visual = _first_contract_text(
+        shots, "visual_bible",
+        ("visual_thesis", "composition_grammar", "material_world", "imperfection_policy"),
+        "每镜保持一个第一视觉落点、一个构图骨架和一至两项有剧情作用的材质或自然不完美。",
+    )
+    light = _first_contract_text(
+        shots, "visual_bible",
+        ("light_motivation", "contrast_exposure", "atmosphere_rule", "continuity_lock"),
+        "现实或剧情动机光固定来源、方向、受光面和阴影结果；脸与活动手优先，高光不过曝、黑位可读。",
+    )
+    dynamic = _first_contract_text(
+        shots, "dynamic_aesthetic_contract",
+        ("motion_thesis", "camera_path", "tempo_easing", "stability_fallback"),
+        "每镜只保留一个主体动作、一条摄影机路径和一个因果响应；按起幅、触发、响应、稳定落幅组织。",
+    )
+    performance = _first_contract_text(
+        shots, "source_constraint_basemap",
+        ("performance_baseline_lock", "emotion_micro_chain", "emotion_residue_contract"),
+        "人物表演按触发、对外控制、最小可见泄露、对手反应和情绪余波组织，口型优先于运镜。",
+    )
+    cut_modes = []
+    risk_rank = {"low": 1, "medium": 2, "high": 3}
+    highest_risk, risk_reasons = "low", []
+    for shot in shots:
+        metadata = shot.get("qa_metadata", {}) if isinstance(shot.get("qa_metadata"), dict) else {}
+        cut = metadata.get("cut_decision_contract", {}) if isinstance(metadata.get("cut_decision_contract"), dict) else {}
+        mode = _compact(cut.get("cut_mode", ""))
+        if mode and mode not in cut_modes:
+            cut_modes.append(mode)
+        reroll = metadata.get("reroll_control", {}) if isinstance(metadata.get("reroll_control"), dict) else {}
+        level = str(reroll.get("risk_level", "low") or "low").lower()
+        if risk_rank.get(level, 0) > risk_rank.get(highest_risk, 0):
+            highest_risk = level
+        reason = _compact(reroll.get("risk_reason", ""))
+        if reason and reason not in risk_reasons:
+            risk_reasons.append(reason)
+    montage = "本项目切点模式：%s；每次切换必须有动作、反应、台词、声音、匹配形态或场景变化触发，并产生新信息。" % (
+        "、".join(cut_modes[:6]) if cut_modes else "保持或动作/反应切点"
+    )
+    risk = "全片最高抽卡风险：%s；锁定身份、人体比例、接触/支撑、空间、道具、功能面、口型、光源和稳定终态%s。" % (
+        highest_risk,
+        "；主要来源：" + "；".join(risk_reasons[:3]) if risk_reasons else "",
+    )
+    return [
+        "- 画面质感基线：" + visual, "",
+        "- 光效与曝光连续：" + light, "",
+        "- 动态美学基线：" + dynamic, "",
+        "- 表演与情绪基线：" + performance, "",
+        "- 蒙太奇与剪辑基线：" + montage, "",
+        "- 穿帮与抽卡总控：" + risk, "",
+    ]
+
+
+def _shot_production_control(task):
+    metadata = task.get("qa_metadata", {}) if isinstance(task.get("qa_metadata"), dict) else {}
+    visual = _contract_text(
+        metadata, "aesthetic_priority",
+        ("visual_thesis", "primary_eye_target", "secondary_visual_layer", "must_preserve", "degrade_first"), 360,
+    ) or _contract_text(
+        metadata, "static_aesthetic_contract",
+        ("visual_intent", "composition_hierarchy", "light_design", "material_anchor", "signature_frame"), 360,
+    ) or "第一视觉落点、构图焦点和一个光影/材质锚点以画面描述为准。"
+
+    light = _contract_text(
+        metadata, "lighting_topology_contract",
+        ("motivated_source", "source_direction", "temperature_range", "face_light_layer", "shadow_exposure_policy", "volume_light_boundary", "conflict_resolution"), 420,
+    ) or _contract_text(
+        metadata, "video_texture_contract",
+        ("exposure_policy", "material_motion_policy", "atmosphere_motion_policy", "continuity_carryover"), 420,
+    ) or "继承场景动机光方向；脸与活动手曝光可读，高光不过曝、黑位保留层次。"
+
+    dynamic_contract = metadata.get("dynamic_aesthetic_contract", {}) if isinstance(metadata.get("dynamic_aesthetic_contract"), dict) else {}
+    dynamic_anchor = _dynamic_motion_anchor(metadata)
+    dynamic = "；".join(filter(None, (
+        dynamic_anchor,
+        _compact(dynamic_contract.get("camera_path", "")),
+        _compact(dynamic_contract.get("tempo_easing", "")),
+        "失稳降级：" + _compact(dynamic_contract.get("stability_fallback", "")) if _compact(dynamic_contract.get("stability_fallback", "")) else "",
+    ))) or "起幅保持可读；无新增动力源时有意静止；最终停在可继承的稳定落幅。"
+
+    performance_contract = metadata.get("performance_contract", {}) if isinstance(metadata.get("performance_contract"), dict) else {}
+    relationship = metadata.get("relationship_emotion_arc", {}) if isinstance(metadata.get("relationship_emotion_arc"), dict) else {}
+    performance_parts = [
+        "触发：" + _compact(performance_contract.get("trigger_event", "")) if _compact(performance_contract.get("trigger_event", "")) else "",
+        "对外控制：" + _compact(performance_contract.get("display_intent", "")) if _compact(performance_contract.get("display_intent", "")) else "",
+        "可见泄露：" + _compact(performance_contract.get("mask_leak", "")) if _compact(performance_contract.get("mask_leak", "")) else "",
+        "身体/视线：" + "；".join(filter(None, (_compact(performance_contract.get("primary_body_action", "")), _compact(performance_contract.get("eye_focus", ""))))) if any(_compact(performance_contract.get(field, "")) for field in ("primary_body_action", "eye_focus")) else "",
+        "关系转折：" + _compact(relationship.get("turn_trigger", "")) if _compact(relationship.get("turn_trigger", "")) else "",
+        "余波：" + (_compact(relationship.get("shared_residue", "")) or _compact(performance_contract.get("end_residue", ""))) if (_compact(relationship.get("shared_residue", "")) or _compact(performance_contract.get("end_residue", ""))) else "",
+    ]
+    performance = "；".join(part for part in performance_parts if part) or "本镜无可见人物表演；情绪由当前物件、环境变化或声音余波承接。"
+
+    continuity = _contract_text(
+        metadata, "continuity_contract",
+        ("start_anchor", "position_continuity", "eyeline_continuity", "prop_state", "end_anchor", "next_carryover"), 300,
+    )
+    physical = []
+    for key, fields in (
+        ("prop_lifecycle_contract", ("prop", "start_location", "contact_mode", "motion_path", "end_location", "end_orientation")),
+        ("prop_functional_surface_contract", ("prop", "functional_surface", "user_view_relation", "camera_visible_surface", "grip_contact", "orientation_lock")),
+        ("perspective_scale_contract", ("subjects_depth", "support_plane", "body_ratio_lock", "grounding_evidence", "motion_scaling")),
+    ):
+        value = _contract_text(metadata, key, fields, 260)
+        if value:
+            physical.append(value)
+    anti_fault = _shorten("；".join(filter(None, (continuity, *physical))), 480) or "锁定人物身份、屏幕左右、身体支撑面、道具归属与稳定终态。"
+
+    reroll = metadata.get("reroll_control", {}) if isinstance(metadata.get("reroll_control"), dict) else {}
+    steps = reroll.get("mitigation_steps", []) if isinstance(reroll.get("mitigation_steps"), list) else []
+    risk = "风险%s；来源：%s；策略：%s；人工首轮检查：%s" % (
+        str(reroll.get("risk_level", "low") or "low"),
+        _compact(reroll.get("risk_reason", "")) or "常规身份、动作与空间稳定",
+        "；".join(_compact(step) for step in steps if _compact(step)) or "保持单一主体动作、单一路径和稳定终态",
+        "需要" if reroll.get("manual_first_pass_check") is True else "按常规复核",
+    )
+
+    cut = metadata.get("cut_decision_contract", {}) if isinstance(metadata.get("cut_decision_contract"), dict) else {}
+    temporal = metadata.get("temporal_transition_contract", {}) if isinstance(metadata.get("temporal_transition_contract"), dict) else {}
+    temporal_kind = str(temporal.get("kind", "none") or "none")
+    montage = "%s；切点：%s；信息增量：%s；声音承接：%s；降级：%s" % (
+        "非蒙太奇" if temporal_kind in {"", "none"} else "时空/蒙太奇类型" + temporal_kind,
+        _compact(cut.get("trigger", "")) or _compact(cut.get("cut_mode", "")) or "保持当前连续镜头",
+        _compact(cut.get("information_gain", "")) or "保持当前唯一叙事节拍",
+        _compact(cut.get("sound_strategy", "")) or _compact(temporal.get("sound_bridge", "")) or "无额外声桥",
+        _compact(cut.get("fallback", "")) or _compact(temporal.get("fallback", "")) or "不稳定时保持当前构图",
+    )
+
+    return "\n".join([
+        "画面质感：" + _shorten(visual, 480),
+        "光效与曝光：" + _shorten(light, 480),
+        "动态美学：" + _shorten(dynamic, 480),
+        "表演与情绪：" + _shorten(performance, 480),
+        "穿帮控制：" + anti_fault,
+        "抽卡策略：" + _shorten(risk, 480),
+        "蒙太奇与剪辑：" + _shorten(montage, 480),
+    ])
 
 
 def _scene_state_lines(master_package, plan):
@@ -861,15 +1086,15 @@ def _dynamic_motion_anchor(metadata):
         return ""
     parts = []
     if start:
-        parts.append("起幅" + start)
+        parts.append(start if re.search(r"^(?:起幅|起态|固定起点)", start) else "起幅" + start)
     if trigger:
-        parts.append("因" + trigger)
+        parts.append(trigger if re.search(r"^(?:因|由|被|当|听见|看见)", trigger) else "因" + trigger)
     if primary:
-        parts.append("主体" + primary)
+        parts.append(primary if re.search(r"^(?:主体|人物|角色|镜头|摄影机)", primary) else "主体" + primary)
     if response:
-        parts.append("随后" + response)
+        parts.append(response if re.search(r"^(?:随后|同时|稍后|继而|接着)", response) else "随后" + response)
     if end:
-        parts.append("最终" + end)
+        parts.append(end if re.search(r"^(?:最终|终态|最后|落幅|停在|停稳)", end) else "最终" + end)
     return "，".join(parts) + "。"
 
 

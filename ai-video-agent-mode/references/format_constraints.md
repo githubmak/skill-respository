@@ -11,237 +11,9 @@
 
 技能目录只保存 schema、算法、枚举、验证器和中性占位符。项目名、人物名、题材、服装、灯光、场景细节和剧情事实只允许出现在运行目录的 `project_config.json`、project bible、`source_ledger.json`、`scene_locks.json`、`dramatic_beat_ledger.json`、`shot_plan.json` 与 `prompt_package.json`。示例只能使用 `角色A/角色B/场景A/关键道具` 等中性占位符。
 
-## §A — 归档分析记录结构（非当前运行阶段）
+## Retired Contracts
 
-本节仅保留旧分析记录的字段语义，供读取历史证据和理解字段来源；当前状态机不派发独立
-Emotion、Scene、Camera 或 Director 阶段，也不得产生本节所述的独立运行产物。
-
-### A1. 顶层结构
-
-```json
-{"items": []}
-```
-
-- 归档分析记录只允许 `items` 一个顶层数组键。
-- 禁止 `shots`、`sub_shots`、`analyses`、中文结构键或额外 meta/data。
-- batch 与 merged 文件使用同一结构。
-
-### A2. 通用字段
-
-每个 item 必须包含：
-
-```json
-{
-  "id": "S1-01-01",
-  "shot_id": "S1-01",
-  "subshot_id": "S1-01-01"
-}
-```
-
-- `id` 与 `subshot_id` 相同。
-- `shot_id` 是主镜头 ID。
-- 字段使用 snake_case 英文，顺序与 dispatch 一致。
-
-### A3. Emotion Item
-
-```json
-{
-  "id": "",
-  "shot_id": "",
-  "subshot_id": "",
-  "emotion_type": "",
-  "expression_level": "micro",
-  "gaze": "",
-  "micro_expression": "",
-  "body_tension": "",
-  "body_parts_focus": "",
-  "voice_tone": "",
-  "action_beat_start": "",
-  "action_beat_transition": "",
-  "action_beat_end": "",
-  "per_char_actions": [
-    {
-      "character": "",
-      "performance_role": "primary",
-      "beat_start": "",
-      "beat_transition": "",
-      "beat_end": "",
-      "micro_expression": "",
-      "body_parts_focus": ""
-    }
-  ],
-  "emotion_trigger_short": "",
-  "performance_note": "",
-  "performance_chain": {
-    "trigger": "剧情触发原因",
-    "facial_control": "当前景别可见的眼神、眉尾、嘴角或呼吸变化",
-    "detail_leak": "由当前景别可见的身体细部或已确认关键道具开始的泄露",
-    "body_follow_through": "肩背、重心、步伐或接触关系如何承接",
-    "voice_delivery": "台词/OS/OV的语气，或无台词时的呼吸落点",
-    "end_residue": "下一节拍仍可见的状态"
-  },
-  "expectation_anchor": {
-    "applicable": false,
-    "semantic_mode": "literal_agent | figurative_personification | need_or_lack | symbolic_association | none",
-    "anchor_type": "none | object | person_action | event | space | custom_visible",
-    "anchor": "无则N/A；有则写原文可见的信、门、屏幕、对方动作或空间位置",
-    "expecting_subject": "字面等待者、拟人意象或需求主体；无则N/A",
-    "source_interpretation": "说明为何按字面、拟人、缺失/需求或象征处理；不能只靠类型枚举",
-    "progress_event": "锚点本镜是否发生可见进展；无则N/A",
-    "detail_cut_eligibility": "hold | eligible_on_progress | not_applicable"
-  }
-}
-```
-
-- `expression_level` 只允许 `micro / visible / strong`。
-- `performance_role` 只允许 `primary / supporting / background`。
-- 有人物镜头只能有一个 primary；最多一个 supporting focus，其他角色归 background。
-- background 不强制独立微反应，可使用群体连续状态。
-- “有意不反应”允许，但必须写明触发原因与可见终态。
-- `performance_chain` 是所有后续镜头决策的共同输入。每项只写当前景别可见的一个主证据；道具未由剧本、配置或前镜确认时不得伪造为情绪泄露载体。
-- Emotion Agent 只在等待、观察、担心或期待会影响本镜焦点、切镜或连续性时登记 `expectation_anchor`。先判断语义模式而不是套枚举：`literal_agent` 为字面人物的可拍期待；`figurative_personification` 为“花等归人”一类借物拟人，默认改为环境意象，除非源文明确授权拟人演出；`need_or_lack` 为“渴者等水”一类需求/匮乏，锚点必须是实际可见的水源、容器或抵达事件；`symbolic_association` 是不承担实体因果的意象联想。只有源文可见对象、人物动作、事件、空间位置或 `custom_visible` 状态可作为锚点；纯修辞或不可见愿望不得强建字段。`detail_cut_eligibility=eligible_on_progress` 仅表示锚点发生可见进展时允许 Director 选择一次切镜，不等于必须切镜；没有候选时可省略整个字段。
-
-### A4. Scene Item
-
-```json
-{
-  "id": "",
-  "shot_id": "",
-  "subshot_id": "",
-  "space_type": "",
-  "space_name": "",
-  "char_positions": [],
-  "char_wardrobes": [],
-  "bg_foreground": "",
-  "bg_midground": "",
-  "bg_background": "",
-  "light_type": "",
-  "light_temp": 5200,
-  "light_direction": "",
-  "light_hardness": "soft",
-  "mood_atmosphere": "",
-  "ambient_sound": "",
-  "audio_background": "",
-  "audio_foreground": "",
-  "audio_midground": "",
-  "bgm_style": "",
-  "color_contrast_desc": "",
-  "light_effect_primary_char": "",
-  "light_effect_other_chars": "",
-  "lighting": "",
-  "sfx_timing": "",
-  "prop_state": "本镜确认的道具归属、接触、遮挡、损伤或未变化状态；无关键道具则明确无",
-  "start_carryover": "从上一镜继承的位置、道具、光线或空间状态；首镜写场景建立状态",
-  "end_carryover": "本镜结束后下一镜必须继承的空间、道具或光线状态"
-}
-```
-
-- `light_hardness` 只允许 `soft / hard / mixed`。
-- `light_temp` 是数字 K 值，不带 K 后缀。
-- 同一场景景别变化不改变光源与色温；变化必须由剧情内光源事件解释。
-- Scene Item 是项目内光源类型、方向、软硬和色温事实的唯一权威。Camera/Director/Composer 只能逐字引用或压缩表达，不得重新发明光源事实。
-- 前中背景写可见物，不写工程标签。
-- `prop_state`、`start_carryover`、`end_carryover` 是场景首产物，不得留给 Composer 猜测；它们必须与人物站位和光源一并承接到下一镜。
-
-### A5. Camera Item
-
-```json
-{
-  "id": "",
-  "shot_id": "",
-  "subshot_id": "",
-  "shot_size": "",
-  "camera_lens_mm": 35,
-  "camera_relative_pos": "",
-  "camera_distance_steps": 2,
-  "camera_height_relative": "",
-  "angle_str": "",
-  "camera_facing_desc": "",
-  "viewpoint": "observer | participant | authority | vulnerable | objective",
-  "visual_hierarchy": "主体、支持层与背景层的画面权重",
-  "entry_strategy": "none | enter_frame | camera_follow | occlusion_reveal | reaction_first",
-  "reveal_strategy": "direct | progressive | delayed | reaction_then_subject",
-  "focus_strategy": "single_plane | deep_focus | rack_focus | single_reframe | actor_blocking",
-  "movement_type": "固定",
-  "movement_detail": "",
-  "movement_speed": "",
-  "axis_start": "",
-  "axis_end": "",
-  "char_entry": "",
-  "char_exit": "",
-  "end_state": "",
-  "composition": "",
-  "lens_effect": "",
-  "movement_arc_deg": 0,
-  "body_extra": "",
-  "editorial_mode": "continuous_take | shot_group",
-  "camera_beat_map": [
-    {
-      "trigger": "emotion_driver表演重音、道具状态变化或台词落点",
-      "visual_priority": "当前主要人物/道具/关系",
-      "camera_response": "hold | push_in | pull_back | reframe | rack_focus | hard_cut | cut_detail | follow",
-      "time_range": "1.2-2.0秒",
-      "focus_owner": "承担当前画面注意力的人物名；道具细节写object；不得在同一T2V任务中A→B→A",
-      "focus_subject": "承担本节拍的人物、手部或道具",
-      "framing": "中近景 | 特写 | 双人中景等落幅景别与构图",
-      "camera_position": "机位位置、高度、前景肩膀/遮挡和空间锚点",
-      "camera_movement": "固定、极慢推近、拉远、单向重构图、拉焦、硬切或跟随之一",
-      "screen_lock": "画面左右、前中后景、实焦/虚焦关系",
-      "axis_relation": "相对既有轴线的同侧/反打关系与左右位置",
-      "axis_carryover": "切换前后必须继承的轴线、朝向和左右关系",
-      "transition_type": "continuous | hard_cut | motivated_insert | reframe | hold",
-      "carryover": "切换后必须保留的人物、道具、轴线或光源状态",
-      "end_frame": "本子镜落幅交给下一段的姿态、视线、道具和焦点状态"
-    }
-  ],
-  "scene_anchor_usage": {
-    "position_anchor": "引用 Scene Lock 的具体站位或无人物构图锚点",
-    "light_anchor": "引用 Scene Lock 的光源方向与色温",
-    "prop_anchor": "引用 Scene Lock 的道具状态",
-    "carryover_anchor": "引用前一主镜的终态与当前主镜起态"
-  },
-  "sequence_context": {
-    "sequence_id": "仅连续拆分时填写",
-    "segment_index": 1,
-    "segment_count": 1,
-    "entry_carryover": "本段开头继承的状态",
-    "exit_carryover": "本段结束交给下一段的状态"
-  },
-  "expectation_anchor_plan": {
-    "applicable": false,
-    "semantic_mode": "literal_agent | figurative_personification | need_or_lack | symbolic_association | none",
-    "anchor_type": "none | object | person_action | event | space | custom_visible",
-    "anchor": "来自 Emotion/source ledger 的期待锚点；无则N/A",
-    "expecting_subject": "字面人物、需求主体或拟人意象；无则N/A",
-    "source_interpretation": "字面/拟人/需求/象征的判别依据；无则N/A",
-    "progress_event": "本镜可见进展；无则N/A",
-    "camera_decision": "hold_same_framing | detail_cut_on_progress | reframe_on_progress | not_applicable",
-    "return_target": "细节/重构后必须回到的期待者；无则N/A",
-    "end_carryover": "锚点未兑现时必须保留的可见状态；无则N/A"
-  }
-}
-```
-
-- `shot_size`：大特写、特写、中近景、中景、全景、大远景。
-- `movement_type`：固定、推、拉、摇、移、跟、升、降、俯、仰、环绕、甩、变焦、旋转、手持、穿梭。
-- `shot_function` 枚举中文含义：`establish`=建立空间，`reveal`=揭示信息，`entrance`=人物出场，`reaction`=人物反应，`confrontation`=对峙冲突，`transition`=转场承接，`action`=动作推进，`dialogue`=对白/台词镜，`object`=物件/道具信息。
-- `duration_rationale` 枚举中文含义：`simple_action`=简单动作，`continuous_dialogue`=连续对白，`continuous_interaction`=连续互动，`continuous_action`=连续动作，`sustained_reveal`=持续揭示。
-- `editorial_mode` 枚举中文含义：`continuous_take`=一条连续摄影轨迹，`shot_group`=同一 T2V 任务内 1–3 个由表演重音触发的连续子镜。
-- `camera_response` 枚举中文含义：`hold`=保持机位，`push_in`=推近，`pull_back`=拉远，`reframe`=单向重构图，`rack_focus`=拉焦，`hard_cut`=无转场硬切，`cut_detail`=切入细节，`follow`=跟随。
-- `quality_contract.profile` 枚举中文含义：`environment`=环境镜，`object`=物件/道具镜，`action`=动作镜，`dialogue`=对白/台词镜，`dramatic`=强戏剧/关系张力镜。
-- `emotion_driver` 是运镜前置输入，人物镜必须填写，环境/物件镜可写中性 `N/A` 说明。Camera/Composer 不得新增其中没有的情绪结论。`emotion_driver.trigger/start_state/visible_leak/face_or_eyeline/voice_or_breath/end_residue/tension_intent/empathy_anchor` 必须与 `performance_contract` 同向，且关键可见证据进入 `子镜头组`。人物情绪不得只写“开心/伤心/生气/高傲/害怕”等标签；必须从情绪微表演链中选择与源文匹配的 3–5 个可见证据，例如眉心、眼神、嘴角、下颌、肩颈、指尖、袖口/道具、视线落点、呼吸或停顿。
-- `continuous_take` 每子镜只能有一个主要 `movement_type`；复合移动必须是同一方向的连续轨迹。`movement_detail` 必须说明固定机位是否允许极慢推近，并排除未授权的摇移、跟拍、拉焦或变焦；这只锁定摄影机，不得抹掉 `visual_progression` 中已确认的人物、道具、视线或关系变化。`shot_group` 使用 1–3 项 `camera_beat_map`，每项必须由同一 `narrative_beat_id` 下 `emotion_driver` 或 `performance_chain` 的表情、细部/道具泄露、身体承接、语气落点、道具状态变化或台词落点触发；每项明确发生时间、`focus_owner`、`focus_subject`、落幅景别、`camera_response`、机位/运动锁、屏幕锁、轴线承接、转场类型与状态承接。允许一次 `A→B` 的自然反打/切特写/移镜；同一即梦任务禁止 `A→B→A`、第二次人物交接或第二个独立剧情节拍，必须拆为下一 T2V 任务并交后期硬切。
-- 穿越、ACT、FPV、POV、水平横移和鸟瞰属于可选特殊视角，必须由当前源文的尺度、路线、主观限制、动作受力、人物顺序或地理关系触发。使用时在 `source_constraint_basemap.viewpoint_motion_lock` 写明“视角任务 → 摄影机绑定对象 → 相对高度/距离 → 唯一主路径 → 速度曲线 → 至多一次焦点交接 → 稳定落幅”，并把可见部分落实到 `movement_detail/camera_beat_map/full_prompt`。禁止只写视角标签；第二动作链、回切、两次以上方向变化、多层穿越或无可见原因的高频抖动必须降运镜或拆镜。鸟瞰成片不是空间调度图，不得生成地图标记、轨迹箭头或文字标签。
-- `hard_cut` 只用于 `shot_group`，每个即梦任务最多一次，必须由具体表演重音触发并写明准确时间点；它表示无淡入淡出、无黑场、无特效过渡的瞬时硬切。切后必须重新写明景别、实焦主体、屏幕左右、轴线关系和可见承接，禁止只写“明确剪切”。若需要回切到切前人物，不得在本条继续写第二次硬切；以当前落幅作为剪辑接点，在下一条 T2V 的起幅继承状态。
-- 有前中后景人物关系时，`composition` 或 `camera_beat_map.framing` 必须写清前景为实焦、轻度虚焦或强焦外，中景/背景哪个人物为实焦，焦点是否稳定；焦外人物用空间距离、景深和“不出现可辨认五官/不抢焦点”约束，不得以不合理压暗人物亮度替代景深控制。
-- 仅当一个连续剧情动作、长台词或连续关系判断必须拆成多个子镜时，填写 `sequence_context`。各段继承上一段的姿态、道具、声音边界和情绪残留；不得每段从中性站姿重新起演。
-- 注意力交接只能选择一种主策略：固定双人构图内一次拉焦、一次单向重构图、或演员走位改变画面权重而机位固定。单向重构图允许一次摇、轨道横移或跟随人物走位的同向轨迹；必须写清跟随对象、起止构图与落幅，不得叠加拉焦或变焦。
-- 重要人物出场先由 `narrative_weight` 决定是否需要视觉标点。high/critical 出场从遮挡揭示、低机位比例、前景反应、单向跟随、光线揭示、停步落幅或一次拉焦中选择 1–2 项；不得为了“重要”堆叠所有手段。
-- 相邻镜头允许相同景别；不为“景别梯度”强制变化。
-- 焦距是剧情启发式。情绪镜不强制 85mm；镜头必须同时满足空间关系、人物数量和面部可见性。
-- 人物朝向剧情对象。除非原文明确自拍视频、直播、对观众说话或看镜头内设备，不得直视镜头。
-- Master Production 必须消费 packet 中的 Scene Lock，并在三份合同中写明站位、光线、道具与承接。不得用抽象“延续场景”代替可核验锚点。
-- Director 必须先消费 `expectation_anchor` 的语义判别再决定景别：字面主体可围绕其可见期待与进展组织；拟人/象征仅可作为环境意象或主观联想，不能被误拍成实体角色行动；需求/缺失不得把尚未出现的满足物拍成已在场。锚点静止或当前构图已读清进展与反应时选 `hold_same_framing`；只有 `progress_event` 发生且局部信息无法在当前景别读清时选 `detail_cut_on_progress`；切到锚点后 `return_target` 必须回到字面人物期待者，或在环境意象模式回到叙事主体/保持环境构图。禁止因为“有信/手机/门”本身自动插入特写。
+旧 Emotion、Scene、Camera、Director 独立产物合同已移除；历史语义由 Git 历史保留，当前运行只接受 §B–§E。历史 `composer` 脚本名与 `.cache/composer/` 路径仅是稳定产物接口，不表示存在独立 Composer Agent。
 
 ## §B — Master Production 批次输出
 
@@ -253,7 +25,9 @@ Emotion、Scene、Camera 或 Director 阶段，也不得产生本节所述的独
 
 导出必须通过 `direct_prompt_compiler.py` 按“视觉前缀→空间→连续性→表演→光影→视频质感→电影质感”编译：跨段精确去重，只按完整句删除辅助质感，不得从句中截断。空间、连续性、表演、光影和原生音频台词属于受保护事实；辅助句压缩后仍超过 700 字，或必须删除受保护事实才能达标时，Export 阻断并退回 Master Production 重写。
 
-完整直投正文之外必须从同一 segments 编译 `【导演卡｜直接复制｜180-500字】`。导演卡只能删除完整辅助质感句，不得删除 visual_prefix/space/continuity/performance/light 或锁定台词与 `must_render`；低于180字或为满足500字必须删除受保护事实时阻断回修。默认另导出 `.concise.md` 简洁交付视图和 `.engineering.md` 工程审查视图；前者只含导演卡与负面词，后者保留句级 source ID/Scene Lock/合同溯源、动作失败评分和压缩差异，不得投喂模型。
+完整直投正文之外必须从同一 segments 编译 `【导演卡｜直接复制｜≤500字】`。导演卡只能删除完整辅助质感句，不得删除 visual_prefix/space/continuity/performance/light、终端稳定事实、锁定台词或 `must_render`；导演卡不设最低字数，为满足500字必须删除受保护事实时阻断回修。默认另导出 `.concise.md` 简洁交付视图和 `.engineering.md` 工程审查视图；前者只含导演卡与负面词，后者保留句级 source ID/Scene Lock/合同溯源、动作失败评分和压缩差异，不得投喂模型。
+
+每场必须先冻结 `camera_variation_plan`，为每镜分配一个由空间和剧情支持的构图骨架与一个固定/单一路径运镜；连续三镜不得重复同一“景别+角度+构图+运镜”组合，除非明确写出情绪冻结理由。每镜必须填写 `terminal_frame_contract`，并把最后20%的可见人数、最终槽位、人物边界与脸/手/肢体分离、道具归属、支撑接触、摄影机停稳、光线曝光锁定和不新增/不重复主体转译进 `full_prompt`；不得只留在 QA、负面词或工程视图。
 
 ### B0.1 制作智能合同
 
@@ -267,7 +41,7 @@ Emotion、Scene、Camera 或 Director 阶段，也不得产生本节所述的独
 
 每个子镜的注意力预算固定为：一个实焦主体、一个主动作或状态变化、一个可读表演证据、一个落幅承接。优先语序为“主体与屏幕位置 → 触发动作 → 当前景别可见的表情/身体 → 声音或口型 → 必要稳定约束”。人物情绪镜的可读表演证据应压缩为 3–5 个微动作，至少覆盖眉眼/嘴角/下颌、手指/道具/袖口、肩颈/重心、呼吸/停顿、视线落点中的三类。同主镜已锁定的画幅、风格、服装、光源、空间结构和通用禁令不得在每段复述；只有发生变化或影响本段执行时才再出现。
 
-复杂度分档只减少内部合同和可选审查字段，不减少 `画面描述｜直接复制` 的核心信息。light 镜仍必须落地视觉场景前缀、景别/机位、人物位置与面向、台词或声音文本、说话者表演、听者/环境反应、镜头状态、光影/材质落点和画面结束状态；普通剧情镜导出低于 180 中文字符视为密度不足，应升级为 standard 或重写。standard/high 镜优先拆镜，不通过删掉空间、台词、道具归属、光影或结束状态来压缩。
+复杂度分档只减少内部合同和可选审查字段，不减少 `画面描述｜直接复制` 的核心信息。light 镜仍必须落地视觉场景前缀、具体构图骨架、景别/机位、人物位置与面向、台词或声音文本、说话者表演、听者/环境反应、镜头状态、光影/材质落点和最后20%终端状态；不设最低字数，短镜按必要语义完整度通过。standard/high 镜优先拆镜，不通过删掉空间、台词、道具归属、光影或终端状态来压缩。
 
 禁止保留不产生可见结果的导演话术，例如“建立空间”“体现关系”“提升质感”“增强感染力”“保证质量”“整体层次分明”。以可见动作、焦点、景深、光线、声音或终态替代。字数软区间用于诊断而非填充；实际时长只由连续对白、互动、动作或揭示的可见节拍证明。
 
@@ -275,7 +49,7 @@ Emotion、Scene、Camera 或 Director 阶段，也不得产生本节所述的独
 
 Master Production 写镜前先建立本镜 `source_constraint_basemap`：空间与入口出口、人物朝向、状态/道具、物理反推、张弛功能、情绪钩子、角色表演基线、多人体反应、影调光影、声音/口型、屏幕文字策略和可选的特殊视角运动锁；再按适用性填写角色行动、关系情绪弧、序列导演、剪辑切点与提示词信息预算合同。它们都是防返工底图，不投喂模型；`full_prompt` 只消费其中能被即梦看见的事实。Scene Lock 可提供 `space_id / space_master_sentence / entrance_exit / prop_activity_zone / tone_palette / light_texture_purpose` 与七项风景导演扁平字段；同一地点跨镜必须复用同一个空间ID、主锁定句、入口出口和道具活动区，不能因新镜头重新开局、重排左右或重置道具。
 
-人物一致性从“可见人数闸门”开始。多人、画外声或同场人物多于本镜实际入画人物时，Composer 必须在 `performance_priority` 与 `full_prompt` 中区分清晰入画、肩线/背影/倒影/虚化入画和纯画外声；肩线、背影、倒影、虚化人影都计入可见人物，纯画外声不计入。不可见人物不得作为视觉朝向目标；若 B 不入画，禁止写 A 看向/面向/对着 B，应写 A 视线落向画外声源或固定空间锚点，并在稳定约束中声明 B 不入画。
+人物一致性从“可见人数闸门”开始。多人、画外声或同场人物多于本镜实际入画人物时，Master 必须在 `performance_priority` 与 `full_prompt` 中区分清晰入画、肩线/背影/倒影/虚化入画和纯画外声；肩线、背影、倒影、虚化人影都计入可见人物，纯画外声不计入。不可见人物不得作为视觉朝向目标；若 B 不入画，禁止写 A 看向/面向/对着 B，应写 A 视线落向画外声源或固定空间锚点，并在稳定约束中声明 B 不入画。
 
 最终提示词采用“主镜头状态机 → 子镜头状态机”装配，不按灵感散写。`主镜头连续规则` 只写全局不可变状态和唯一戏剧问题，固定顺序为：单一剧情问题 → 情绪/冲突触发 → 空间状态总锁 → 道具生命周期总锁 → 运镜响应原则 → 本镜禁止变化项。`子镜头组` 的每个时间窗固定顺序为：承接上一落幅 → 人物位置/朝向/视线 → 道具位置/朝向/接触状态 → 唯一触发/动作 → 情绪可见证据 → 镜头响应 → 结束状态/下一镜继承 → 禁止变化项。字段名仍使用英文 snake_case；中文标签只用于提示词正文分段和人工审阅。
 
@@ -303,9 +77,11 @@ AI 漫剧互动戏的插入镜以稳定优先：已确认道具特写、环境�
 
 ### B1. 顶层与 shot 结构
 
-`risk_tier`、`risk_reasons`、`batch_capacity` 与 `review_scope` 仅存在于 dispatch packet；Editor review window 对应使用 `review_tier`、`risk_reasons` 与 `review_scope`。它们只决定批大小与可读上下文，不是 Composer 输出字段，不得写入 `full_prompt`、`qa_metadata`、`negative_prompt` 或 `generation_control`。`light` 只代表可缩窄审查上下文，绝不代表免除 Agent 复审、三份合同、确定性验证或最终导出验证。`creative_profile` 是创作自由度档位，只能为 `safe/balanced/expressive`：safe 优先低风险直投稳定，balanced 默认启用前台导演精修、对白表演核和 1–2 个质感锚点，expressive 只在低风险或用户明确要求风格化时扩大构图/特殊视角/速度曲线；任何档位都不得降低 direct-copy 密度、T2V-only、源文保真、provenance、validator、golden 或规则一致性。
+`risk_tier`、`risk_reasons`、`batch_capacity` 与 `review_scope` 仅存在于 dispatch packet；Editor review window 对应使用 `review_tier`、`risk_reasons` 与 `review_scope`。它们只决定批大小与可读上下文，不是 Master Production 输出字段，不得写入 `full_prompt`、`qa_metadata`、`negative_prompt` 或 `generation_control`。`light` 只代表可缩窄审查上下文，绝不代表免除 Agent 复审、三份合同、确定性验证或最终导出验证。`creative_profile` 是创作自由度档位，只能为 `safe/balanced/expressive`：safe 优先低风险直投稳定，balanced 默认启用前台导演精修、对白表演核和 1–2 个质感锚点，expressive 只在低风险或用户明确要求风格化时扩大构图/特殊视角/速度曲线；任何档位都不得降低 direct-copy 密度、T2V-only、源文保真、provenance、validator、golden 或规则一致性。
 
-Composer batch 只输出：
+风险专项字段以派发 scaffold 的字段存在性为唯一运行开关：scaffold 缺席即不适用，Master Production 不得补回空对象、`none` 或其他占位符；scaffold 已提供则必须完整填写并通过对应 validator。省略风险专项字段绝不降低 direct-copy、连续性、口型、静态/动态美学、provenance、确定性验证或导出门槛。
+
+Master Production batch 只输出：
 
 ```json
 {
@@ -553,7 +329,7 @@ Composer batch 只输出：
 - 输出必须以 dispatch 的 `composer_scaffold_path` 为骨架；`shot_id/subshot_id/duration/negative_prompt/qa_metadata.dialogue_refs/qa_metadata.dialogue_events[].ref|kind|speaker|text/generation_control` 是确定性锁定字段，Agent 不得改写。
 - 相同场景的画幅、风格、服装、共享光源与空间锚点只从 `scene_lock_cache_path` 读取一次；各镜通过 `scene_lock_ref` 引用，不重复推导场景不变项。
 - `mode` 必须固定为 `t2v`，且 `generation_control` 不得出现素材、路径或引用字段。
-- `temporal_transition_contract` 是每镜必填合同。它只能消费派发骨架中的源文候选：没有候选时 `kind=none` 且不得启用；`memory_flashback` 只适用于明确回忆且存在可拍过去事实；`story_event_transition` 只适用于源文事件确实造成场景、意识、时空或人物状态切换。候选并不强制特效，Composer 可以在 `decision_reason` 说明为何正常切换更忠实。启用时必须先写 `effect_source_basis`，再根据当前事件配置一个且仅一个效果；它不得来自固定白名单、通用模板或无关风格。合同还必须有不超时的时间窗、前后状态、声音桥、`lip_sync=false`、逐字出现在 `full_prompt` 的 `prompt_anchor` 与降级方案；不得叠加效果、虚构回忆事实。所有已启用的合同一律 `high` 抽卡风险且 `manual_first_pass_check=true`。
+- `temporal_transition_contract` 是每镜必填合同。它只能消费派发骨架中的源文候选：没有候选时 `kind=none` 且不得启用；`memory_flashback` 只适用于明确回忆且存在可拍过去事实；`story_event_transition` 只适用于源文事件确实造成场景、意识、时空或人物状态切换。候选并不强制特效，Master 可以在 `decision_reason` 说明为何正常切换更忠实。启用时必须先写 `effect_source_basis`，再根据当前事件配置一个且仅一个效果；它不得来自固定白名单、通用模板或无关风格。合同还必须有不超时的时间窗、前后状态、声音桥、`lip_sync=false`、逐字出现在 `full_prompt` 的 `prompt_anchor` 与降级方案；不得叠加效果、虚构回忆事实。所有已启用的合同一律 `high` 抽卡风险且 `manual_first_pass_check=true`。
 
 ### B2. full_prompt 五段
 
@@ -595,7 +371,7 @@ Composer batch 只输出：
 - 稳定控制优先级固定为：本段戏剧主体与实焦 > 已声明运镜/切换 > 空间结构与屏幕左右连续 > 通用固定机位/轻微推近控制。不得让通用的“固定、微推、不摇移”否定已声明的硬切、重构图、跟随或焦点转移。
 - 数值只保留 1–2 个决定性锚点；不堆 mm、度、速度和距离。
 - `dramatic_goal` 留在 QA 元数据，不重复写入模型提示词。
-- Camera 必须落实 `viewpoint/visual_hierarchy/entry_strategy/reveal_strategy/focus_strategy`。人物跟随属于合法单一运镜；采用跟随时，以起幅、路径和落幅锁定空间，不得同时声称固定机位或固定框景全程不变。
+- Master 必须落实 `viewpoint/visual_hierarchy/entry_strategy/reveal_strategy/focus_strategy`。人物跟随属于合法单一运镜；采用跟随时，以起幅、路径和落幅锁定空间，不得同时声称固定机位或固定框景全程不变。
 
 #### 子镜头组
 
@@ -667,7 +443,7 @@ Composer batch 只输出：
 
 ### B6. negative_prompt
 
-- Composer 精确输出 `{{NEGATIVE_PROMPT_AUTO_INJECT}}`。
+- Master 精确输出 `{{NEGATIVE_PROMPT_AUTO_INJECT}}`。
 - `full_prompt` 中不能出现负面提示词标题或占位符。
 - 归一化脚本按普通、多人、对白、参考驱动和打斗上下文注入精简词组；通用负面词覆盖肢体、手部、五官、身份漂移、帧间闪烁、光影突变、物体消失、穿插、口型、水印和画风突变等崩坏维度。
 - 负面词只写不希望出现的概念，不写“禁止……”式正向命令。
@@ -683,7 +459,7 @@ Export 也可从已验证的主镜和连续性合同自动派生“人物站位�
 - 只用于制作和验证，不投喂视频模型。
 - `dramatic_goal` 必须是本镜具体目标。
 - `dramatic_design` 必须包含镜头功能、叙事权重、唯一信息增量、反应归属、唯一 `narrative_beat_id`、本节拍内部 `dramatic_beat_ids` 与 `visual_punctuation`。每个 beat ID 必须在 `dramatic_beat_ledger.json` 中唯一归属于当前子镜，且新生成的 shot plan 应让同一主镜内的 beat ID 共享同一个 `narrative_beat_id`。`dramatic_beat_ids` 和 `duration_design.dramatic_beats` 只证明该单一剧情节拍的起势、承接、转折或落幅；若出现新的事件目标、主动作链、反应归属、情绪结论、第二次人物注意力交接或需要回切的独立反打，必须拆成下一主镜。high/critical 重要出场的 `visual_punctuation` 必须从 `occlusion_reveal / low_angle_scale / foreground_reaction / camera_follow / light_reveal / stop_mark / rack_focus` 中选 1–2 项；其他镜可为空。
-- `story_punch_contract` 是防止“合规但平”的轻量戏眼合同。人物、对白、道具变化、`rising/peak` 或高叙事权重镜必须填写：观众问题、人物压力、可见压力物、剧情转折、画面标点、唯一构图优先级、运镜动机和尾帧残留。`composition_priority` 必须写主体与前中后景、画面位置、留白、遮挡、距离或焦点关系；`camera_motivation` 必须写唯一运镜/固定策略及其响应的表演、台词、道具或空间因果。它不允许新增剧情设定；所有字段必须来自源文、`dramatic_design`、`emotion_driver`、`performance_contract` 或 `continuity_contract`，并把可见部分落到 `full_prompt`。环境/纯物件低风险镜可输出空对象。
+- `story_punch_contract` 是防止“合规但平”的轻量戏眼合同。人物、对白、道具变化、`rising/peak` 或高叙事权重镜必须填写：观众问题、人物压力、可见压力物、剧情转折、画面标点、唯一构图优先级、运镜动机和尾帧残留。`composition_priority` 必须写主体与前中后景、画面位置、留白、遮挡、距离或焦点关系；`camera_motivation` 必须写唯一运镜/固定策略及其响应的表演、台词、道具或空间因果。它不允许新增剧情设定；所有字段必须来自源文、`dramatic_design`、`emotion_driver`、`performance_contract` 或 `continuity_contract`，并把可见部分落到 `full_prompt`。环境/纯物件低风险镜的 scaffold 不提供此字段，输出必须省略。
 - `duration_design` 必须逐字继承 Orchestrator 的时长策略和依据；低利用率本身不是错误，缺少内容依据或用静态余韵填充才是错误。
 - `source_constraint_basemap` 是生成前底图，可包含 `space_basis/state_prop_basis/character_orientation_basis/tension_curve_role/sound_lip_sync_basis/screen_text_policy/single_shot_risk/visible_people_gate/performance_baseline_lock/emotion_micro_chain/dialogue_performance_kernel/emotion_residue_contract/physical_structure_chain/shot_component_choice/viewpoint_motion_lock/premium_director_polish/creative_profile`。它用于减少返工和帮助 Editor 复核，不能作为模型提示词正文输出。`visible_people_gate` 写本镜可见人数、清晰/肩线/虚化/画外分类；`performance_baseline_lock` 写主要人物的常态控制方式、优先泄露部位、默认动作幅度、爆发阈值和禁用表演习惯；`emotion_micro_chain` 写本镜情绪触发后选择的 3–5 个微动作；`dialogue_performance_kernel` 写台词功能、说话者口型、关键词重音、听者低幅反应、句末闭口和余波落幅，无对白写 none；`emotion_residue_contract` 写触发前状态、泄露部位、压抑/释放方式和尾帧残留，无情绪承接写 none；`physical_structure_chain` 写本镜所有概括动作的起点、接触、转换和终态；`shot_component_choice` 写本镜采用的唯一镜头组件或明确写 none；`viewpoint_motion_lock` 在使用特殊视角时写摄影机绑定关系、相对高度/距离、唯一主路径、速度曲线、至多一次焦点交接、稳定落幅和降级/拆镜阈值，不使用时写 none；`premium_director_polish` 写即梦友好卡的前台精修目标，不新增模型事实；`creative_profile` 只能为 safe、balanced 或 expressive，且不得降低任何质量门槛。
 - `scene_tone_palette` 必须包含 `space_id/space_master_sentence/tone_palette/light_texture_purpose/visual_scene_prefix`，并逐字承接 Scene Lock 的六项生活化景深事实：`foreground_layer/midground_layer/background_layer/genre_visual_signature/lived_in_detail/depth_focus_policy`，以及七项风景导演事实：`landscape_identity/landscape_composition/natural_motion_system/environment_story_arc/reveal_order/light_weather_progression/breathing_policy`。前景写靠近镜头的框景、局部遮挡或轻虚化材质；中景写人物活动区、接触面和关键道具；后景写纵深结构、出口或低幅环境；题材视觉气味必须转成建筑、陈设、天气、时代、职业或光色证据；生活痕迹只选1–2项真实磨损、使用状态或自然活动；景深策略明确实焦层、焦外层、遮挡和空气透视。风景身份统一地域、季节、时段、地貌/建筑、植被水体与人类痕迹；风景构图锁定主形体、地平线或空间分割、引导线、视觉重心和留白；自然运动写风、叶、草、水、云雾、雨雪与人群的统一方向及不同响应速度；环境弧写起态→剧情触发后的变化→余波；揭示顺序写先看见→后发现→最终停留；光候演进只允许有因果的时段/天气/光线变化；呼吸策略分配建立镜、人物镜与缓冲镜的信息密度。正文仍只落实前中后景中至少两层、题材或生活痕迹一项、虚实主次一项，并按环境镜至少两项、人物镜至少一项消费风景身份/构图/自然运动/揭示/光候事实，不得逐镜复制全部场景资产。推荐额外包含制作级色卡扁平字段：`mood_function/main_color/support_color/accent_color/color_temperature_range/key_light_direction/shadow_color/contrast/saturation/skin_tone_protection/material_reflection/allowed_variation/forbidden_color_pollution`。
@@ -702,11 +478,11 @@ Export 也可从已验证的主镜和连续性合同自动派生“人物站位�
 - `static_aesthetic_contract` 用于每个主镜的代表性记忆帧；复杂/高风险镜再据此导出三状态关键帧。字段包含 `visual_intent/composition_hierarchy/light_design/color_grade/lens_rendering/depth_atmosphere/material_anchor/signature_frame/aesthetic_exclusions`。每句光影设计都要说明光源、方向、受光面与阴影后果；焦段、色温、景深要有可见结果；第一视觉落点只能有一个，第二视觉层最多一个。它先生成好看的静态构图，再与人物、道具、功能面、透视和支撑硬事实合并，不能用内部合同词替代具体可见关系。
 - `dynamic_aesthetic_contract` 用于 T2V 状态转换，包含 `motion_thesis/start_state/trigger/primary_subject_motion/secondary_environment_motion/camera_path/focus_behavior/material_motion/atmosphere_motion/tempo_easing/end_state/stability_fallback`。每镜最多一个主要人物动作、一个摄影机路径或固定机位、一条因果响应链和一次焦点交接；低风险镜的响应链最多包含两个共享动力源的低幅响应，长对白、多人、道具转移、复杂支撑或腾空镜只保留一个响应，不得形成第二独立动作链。非刻意静止镜的 `primary_subject_motion` 必须是身体/视线/重心/道具可执行动作，并写先后、延迟、余波、减速或稳定落幅之一。摄影机路径必须有剧情动机、起幅、触发、缓急、停点和不漂移锚点。导出编译器会保护一条动态主链和一个静态光影/材质锚点；预算不足时阻断，不静默删除。失稳时先去掉摄影机运动，再去掉第二响应和次要环境运动，不得删除剧情节拍或物理终态。
 - `aesthetic_priority` 每镜必填：`visual_thesis/primary_eye_target/secondary_visual_layer/must_preserve/degrade_first`。它与 `prompt_information_budget` 一起决定 direct-copy 取舍：先保硬事实、唯一视觉论点和第一视觉落点，再压缩重复技术词与次要环境层。不得因为合同完整而生成均匀照明、平均构图、多个抢焦点或没有记忆帧的安全画面。
-- `editorial_mode` 必须从 Director 逐字继承；它决定本镜执行一条连续轨迹，或一组由表演重音触发的镜头响应。
-- `camera_beat_map` 与 `sequence_context` 也必须从 Director 逐字继承。前者不得由 Composer 重新发明；后者要求连续拆分从上一段状态起演而非重置。
-- `shot_group` 的每个镜头节拍都写明 `time_range/focus_owner/focus_subject/framing/trigger/camera_response/camera_position/camera_movement/transition_type/screen_lock/axis_relation/axis_carryover/carryover/end_frame`；Composer 将这些信息落到主镜头连续规则与子镜头组，不增加未声明的切换。子镜组是同一 `narrative_beat_id` 的视觉覆盖，不能把两个可独立复述的剧情动作或动作—反应结论并成一个主镜。
-- `quality_contract` 由子镜类型确定并从 Director 锁定继承。它适用于任何生成模型：环境镜也必须证明叙事功能、视觉锚点、空间光线和转场承接；物件镜证明道具状态与焦点；人物镜证明对应的动作、台词或表演因果。不得因为某项分析被跳过而省略合同要求。
-- `ai_model_readiness_score` 是风险触发的 AI 视频大模型可执行性自检，不投喂模型。多人、道具/站位变化、`shot_group`、长台词、`rising/peak` 或高抽卡镜必须逐项给 1–10 整数分；环境、物件、单人稳定低风险镜可省略或保持空对象。风险层级只能由 packet 中已锁定的源镜事实计算，绝不能因 Agent 写入的 `qa_metadata` 在回验时升级，保证派发提示和验证门禁一致。启用时用一句具体可见依据或风险解释：场景空间、穿帮风险、情绪可读、张力压迫、运镜服务情绪、道具连续、画面美感、overall。不得全部给 9 分以上，也不得只写“很好、稳定、清晰、有张力、画面好看”等空泛好评。`overall.weakest_point` 必须指出本镜最可能失败的一项，`overall.first_pass_check` 必须写人工首轮优先检查什么，例如人物左右是否镜像、药瓶是否仍在桌角、非说话人口型是否闭合、运镜是否越过轴线或落幅是否继承上一状态。
+- `editorial_mode` 必须从锁定 shot plan 逐字继承；它决定本镜执行一条连续轨迹，或一组由表演重音触发的镜头响应。
+- `camera_beat_map` 与 `sequence_context` 也必须从锁定 shot plan 逐字继承。前者不得由 Master Production 重新发明；后者要求连续拆分从上一段状态起演而非重置。
+- `shot_group` 的每个镜头节拍都写明 `time_range/focus_owner/focus_subject/framing/trigger/camera_response/camera_position/camera_movement/transition_type/screen_lock/axis_relation/axis_carryover/carryover/end_frame`；Master Production 将这些信息落到主镜头连续规则与子镜头组，不增加未声明的切换。子镜组是同一 `narrative_beat_id` 的视觉覆盖，不能把两个可独立复述的剧情动作或动作—反应结论并成一个主镜。
+- `quality_contract` 由子镜类型确定并从锁定 shot plan 继承。它适用于任何生成模型：环境镜也必须证明叙事功能、视觉锚点、空间光线和转场承接；物件镜证明道具状态与焦点；人物镜证明对应的动作、台词或表演因果。不得因为某项分析被跳过而省略合同要求。
+- `ai_model_readiness_score` 是风险触发的 AI 视频大模型可执行性自检，不投喂模型。多人、道具/站位变化、`shot_group`、长台词、`rising/peak` 或高抽卡镜必须逐项给 1–10 整数分；环境、物件、单人稳定低风险镜的 scaffold 不提供此字段，输出必须省略。风险层级只能由 packet 中已锁定的源镜事实计算，绝不能因 Agent 写入的 `qa_metadata` 在回验时升级，保证派发提示和验证门禁一致。启用时用一句具体可见依据或风险解释：场景空间、穿帮风险、情绪可读、张力压迫、运镜服务情绪、道具连续、画面美感、overall。不得全部给 9 分以上，也不得只写“很好、稳定、清晰、有张力、画面好看”等空泛好评。`overall.weakest_point` 必须指出本镜最可能失败的一项，`overall.first_pass_check` 必须写人工首轮优先检查什么，例如人物左右是否镜像、药瓶是否仍在桌角、非说话人口型是否闭合、运镜是否越过轴线或落幅是否继承上一状态。
 - `pressure_release_design` 是压迫感制造与释放合同，不投喂模型但必须落地到 `full_prompt`。`rising/peak` 人物镜必须填写：压力来源、唯一压力物或压力机制、1–2 个可见升级点、释放触发、释放方式、释放结果和拆镜阈值。制造压迫时只选一个主压力物，优先使用源文已有道具、门、声音、倒计时、距离或未完成动作；若把普通道具升级为叙事压力物，必须是可见且低抽卡的状态变化，如封条裂口、瓶盖未拧开、杯沿将落未落、屏幕亮起，不得新增无来源的复杂设定。释放压迫不是“气氛缓和”，而是动作完成、被打断、注意力转移、代价揭示、延迟悬置或拆到下一镜。若同一主镜同时需要“拿起道具”和“转向新威胁/门口”，优先按 `split_release` 拆成连续两镜：第一镜完成道具状态转移，第二镜继承落幅后处理转向或新威胁。
 - `performance_priority` 覆盖全部可见人物且不能重叠。
 - `performance_priority` 只能来自当前镜头的 `visible_characters`：`primary + supporting + background` 的并集必须等于本镜可见人物集合，且三层之间不得重叠。禁止把同场景但本镜不可见的人、画外说话者、上一镜人物或全角色名单写入优先级；画外/非实体声音只进入 `dialogue_events.speaker_visibility`，不进入可见表演优先级。
@@ -714,7 +490,7 @@ Export 也可从已验证的主镜和连续性合同自动派生“人物站位�
 - `pressure_release_design.release_trigger` 必须落成 `full_prompt` 中可看/可听/可承接的具体触发物：如手腕被挡住、脚步制动、文件袋压低、门缝停住、呼吸断半拍、道具落到谁手里或落幅空间距离变化；不得只写“压力释放、气氛缓和、节奏放松”。
 - `action_budget` 使用非负整数并满足 B4 上限。
 - `start_state` / `end_state` 写可见状态。
-- `dialogue_refs` 与 Director 完全一致。
+- `dialogue_refs` 与锁定 shot plan 完全一致。
 - `dialogue_events` 与 `dialogue_refs` 按相同顺序一一对应；无台词/OS/OV时输出空数组。每项结构固定：
 
 ```json
@@ -738,7 +514,7 @@ Export 也可从已验证的主镜和连续性合同自动派生“人物站位�
 }
 ```
 
-- `ref/kind/speaker/text` 是确定性锁定字段；Composer 不得改变顺序、人物、类型、文字或标点。
+- `ref/kind/speaker/text` 是确定性锁定字段；Master 不得改变顺序、人物、类型、文字或标点。
 - `time_range` 必须位于本镜时长内。`facial_state/body_state/delivery` 必须非空；可见人物的神态与身体状态必须落实到子镜头组。
 - `dialogue_timing.py` 是对白自然时长与口型窗计算的机器唯一来源；Orchestrator、Composer validator、全集导演审计和 Export 检查必须消费同一计算，不得各自维护语速常量。
 - `speaker_visibility=visible` 时人物必须在本镜可见；`offscreen/nonphysical` 时 `facial_state/body_state` 明确写 `N/A` 及不可见原因，不伪造表演。
@@ -763,7 +539,7 @@ Export 也可从已验证的主镜和连续性合同自动派生“人物站位�
 - `tension_intent` 只能五选一，描述本镜功能而非统一追求高强度。
 - `response_order` 必须是非空有序数组；只记录景别可见、对戏剧目标必要的阶段，不为凑数增加微动作。
 - 其余字段必须是非空可执行说明，不得只写“紧张、震惊、停住、自然反应、保持状态”等抽象结果。
-- `performance_causality` 是 QA/导演元数据，不得拼入 `full_prompt`；Composer 根据它把必要的可见结果落实到子镜头组，Editor Pass 2 复核语义真实性。
+- `performance_causality` 是 QA/导演元数据，不得拼入 `full_prompt`；Master 根据它把必要的可见结果落实到子镜头组，Editor Pass 2 复核语义真实性。
 - 有可见物理角色时必须增加 `performance_contract`，它是“人物表情 + 身体动作 + 运镜压力 + 场景压力”的统一张力骨架，必须先于 `full_prompt` 生成：
 
 ```json

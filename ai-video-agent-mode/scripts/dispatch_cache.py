@@ -27,7 +27,7 @@ from context_budget import check as check_context_budget
 from batch_planner import analysis_chunks as _analysis_chunks, batch_risk as _batch_risk
 from batch_planner import dynamic_master_chunks as _plan_dynamic_master_chunks
 from batch_planner import editor_review_chunks as _editor_review_chunks
-from contract_registry import PROMPT_CONTRACT_VERSION
+from contract_registry import PROMPT_CONTRACT_VERSION, RISK_GATED_QA_FIELDS
 from scene_motion_plan import build as build_scene_motion_plan
 from scene_texture_plan import build as build_scene_texture_plan, contract_for_scene
 
@@ -191,7 +191,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
                     "packet.items[].execution_hints",
                 ],
                 "history_policy": "Do not read full source history by default. Use scene locks plus packet items; cross-shot continuity must come from packet sequence_context, continuity fields, and scaffold locks.",
-                "quality_policy": "Execution hints are speed aids only. They cannot remove required qa_metadata fields, Composer validation, provenance, Editor passes, final validation, or export checks.",
+                "quality_policy": "Fill core fields and scaffold-present risk fields only. Do not recreate omissions; all gates remain mandatory.",
             }
             packet["instruction"] += (
                 " Composer batch output top-level must be exactly {\"shots\": [...]}; "
@@ -632,6 +632,14 @@ def _phase_contract_slice_text(skill_dir, phase):
         relative = os.path.join("references", "contracts", filename)
         text = _read_text_if_exists(os.path.join(skill_dir, relative))
         if text:
+            if filename == "direct_copy_contract.md":
+                # §B0 is already included verbatim. Keep this sidecar a locator
+                # for the fast contract instead of duplicating its full prose.
+                text = (
+                    "# 快速直投合同定位\n\n"
+                    "直投正文由 direct_prompt_compiler.py 从同一事实源编译；必须保留可见构图、单一路径运镜、"
+                    "对白口型、光影材质和最后20%终端锁定，不写内部合同名或负向概念；详规见本文件。\n"
+                )
             parts.append("# Included Contract Slice: %s\n\n%s" % (relative, text))
     return "\n\n".join(parts).rstrip() + ("\n" if parts else "")
 
@@ -1025,6 +1033,11 @@ def _write_composer_scaffold(
                 for child in item.get("source_subshots", [item])
             ],
         })
+        profile = validation_profile(item)
+        metadata = shots[-1]["qa_metadata"]
+        for field, profile_key in RISK_GATED_QA_FIELDS.items():
+            if not profile.get(profile_key, False):
+                metadata.pop(field, None)
         if functional_surface_risk(item):
             shots[-1]["qa_metadata"]["prop_functional_surface_contract"] = {
                 "applicable": True,
@@ -1279,12 +1292,6 @@ def _compact_execution_hints(hints):
         # enforced locally; do not duplicate its long name in every packet item.
         "required_contracts": required_contracts,
     }
-    risk_gated = {
-        key: value for key, value in dict(hints.get("risk_gated_contracts", {}) or {}).items()
-        if value
-    }
-    if risk_gated:
-        compacted["risk_gated_contracts"] = risk_gated
     return compacted
 
 
@@ -1360,8 +1367,8 @@ def _composer_execution_hints(item):
 def _risk_gated_contracts(item, visible, dialogue_events, reasons, editorial_mode):
     profile = validation_profile(item, item.get("qa_metadata", {}), visible)
     return {
-        "ai_model_readiness_score": profile["ai_model_readiness_score"],
-        "pressure_release_design": profile["pressure_release_design"],
+        field: bool(profile.get(profile_key, False))
+        for field, profile_key in RISK_GATED_QA_FIELDS.items()
     }
 
 

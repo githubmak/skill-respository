@@ -53,10 +53,15 @@ description: >
 - 每个主镜只服务一个 `narrative_beat_id`；回切、第二目标、第二独立动作链或容量不足时拆镜。
 - Scene Lock 是空间、服装、道具活动区、光源与影调事实的唯一来源；后续阶段只消费，不重写。
 - `full_prompt` 只写当前可见、可执行画面事实。QA、负面词、工程数据、风险与分析标签留在独立字段。
+- 最终完整 Markdown 必须包含项目级 `## 制作质量总控` 和逐镜 `【本镜制作控制】`，把画面质感、光效与曝光、动态美学、表演与情绪、穿帮控制、抽卡策略、蒙太奇与剪辑转译为用户可见的执行摘要；不得只存在于 `qa_metadata`、validator 或 engineering 视图。
 - Master Production 内部按 `visual_bible → aesthetic_director → continuity_compiler → full_prompt`
   接力；这些是同一任务内字段，不是额外 Agent 阶段。
+- 每场先冻结 `camera_variation_plan`，每镜选择一个有源文依据的构图骨架和一个运镜家族；
+  连续三镜不得重复“景别+角度+构图+运镜”组合，除非明确是情绪冻结镜。
+- 每镜建立 `terminal_frame_contract`，并把最后20%的可见人数、固定槽位、脸/手/肢体分离、
+  道具归属、支撑接触、摄影机停稳、光曝锁定和“不新增/不重复主体”编译进 `full_prompt`。
 - 直投正文只由 `direct_prompt_compiler.py` 编译：保护源文与硬事实，只整句压缩，超过 700 字
-  且无法无损压缩时阻断；180–500 字导演卡使用同一事实源，不静默截断或用空话补齐。
+  且无法无损压缩时阻断；导演卡使用同一事实源，最多 500 字、不设最低字数，不静默截断或用空话补齐。
 - 复杂度和风险只改变批次与专项合同，不降低 direct-copy、连续性、口型、审美或导出门槛。
 - 只有用户提供真实候选并明确要求视觉复核时才记录候选评分；不得用 Golden 或提示词推测成片。
 
@@ -71,8 +76,9 @@ description: >
 - 当前 Agent 指令：`references/dispatch/*.md`
 - 运行状态与门禁：`scripts/pipeline_state.py`、`scripts/pipeline_templates.py`
 
-历史 `references/agents/*.md` 仅为归档指针，不得派发。当前实现不兼容旧 Emotion、Camera、
-Director 或 Composer 独立阶段。
+旧 Emotion、Camera、Director 或 Composer 独立阶段及其归档指针已从技能表面移除。当前只派发
+`scene_lock/master_production/editor_pass2`；专业能力按风险进入 Master 字段，不恢复旧阶段。
+历史 `composer` 脚本名与 `.cache/composer/` 路径仅是稳定产物接口，不表示存在独立 Composer Agent。
 
 ## 验证
 
@@ -80,6 +86,7 @@ Director 或 Composer 独立阶段。
 
 ```bash
 python3 scripts/check_rule_consistency.py
+python3 scripts/audit_skill_surface.py
 python3 scripts/test_current_pipeline.py
 python3 scripts/test_quality_upgrades.py
 python3 scripts/test_production_intelligence.py

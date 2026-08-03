@@ -10,6 +10,7 @@ from contract_registry import (
     PIPELINE_PHASES, PROMPT_CONTRACT_VERSION, machine_contract_issues,
     pipeline_gates,
 )
+from audit_skill_surface import audit as audit_skill_surface
 from pipeline_templates import GATES
 from route_task import ROUTES as TASK_ROUTES
 
@@ -28,6 +29,31 @@ RULES = {
             "scripts/route_task.py": (
                 '"context_plan"', '"read_first"', '"read_on_demand"',
                 '"run_only"', '"preload_full_contracts": False',
+            ),
+        },
+    },
+    "risk_gated_qa_scaffolds": {
+        "label": "风险专项合同按需脚手架",
+        "checks": {
+            "SKILL.md": ("专业能力按风险进入 Master 字段", "稳定产物接口"),
+            "references/format_constraints.md": (
+                "scaffold 缺席即不适用", "不得补回空对象", "输出必须省略",
+            ),
+            "references/dispatch/master_production_note.md": (
+                "缺席即不适用", "不得补回",
+            ),
+            "scripts/contract_registry.py": (
+                "RISK_GATED_QA_FIELDS", "core and risk-gated QA fields overlap",
+            ),
+            "scripts/dispatch_cache.py": (
+                "RISK_GATED_QA_FIELDS.items()", "metadata.pop(field, None)",
+                "scaffold-present risk fields only",
+            ),
+            "scripts/test_current_pipeline.py": (
+                "all(field not in light_scaffold_metadata", "high_scaffold_profile",
+            ),
+            "scripts/run_regression_suite.py": (
+                '"skill_surface"', '"audit_skill_surface.py"',
             ),
         },
     },
@@ -250,11 +276,11 @@ RULES = {
         },
     },
     "direct_prompt_density_floor": {
-        "label": "直投质量密度底线",
+        "label": "直投必要语义底线",
         "checks": {
-            "references/format_constraints.md": ("复杂度分档只减少内部合同", "低于 180"),
-            "references/contracts/direct_copy_contract.md": ("低于 180", "画面描述｜直接复制"),
-            "references/dispatch/master_production_note.md": ("复杂度分档只减少内部合同", "低于180"),
+            "references/format_constraints.md": ("复杂度分档只减少内部合同", "不设最低字数"),
+            "references/contracts/direct_copy_contract.md": ("不设最低字数", "画面描述｜直接复制"),
+            "references/dispatch/master_production_note.md": ("复杂度分档只减少内部合同", "不设最低字数"),
             "scripts/golden_jimeng_check.py": ("performance_baseline_cold_restraint",),
         },
     },
@@ -409,6 +435,7 @@ RULES = {
 def check(skill_root):
     issues = []
     issues.extend("机器契约：" + issue for issue in machine_contract_issues())
+    issues.extend("技能表面：" + issue for issue in audit_skill_surface(skill_root))
     if tuple(GATES) != PIPELINE_PHASES:
         issues.append("pipeline_templates.GATES顺序必须由机器契约生成")
     if GATES != pipeline_gates():
@@ -451,27 +478,16 @@ def check(skill_root):
         issues.append("Scene Lock sidecar仍可能注入归档§A合同")
     if '"editor_pass2": ()' not in dispatch:
         issues.append("Editor Pass 2 sidecar仍在加载Master Production大合同")
-    archived_agent_targets = {
-        "01_orchestrator_storyboard_agent.md": "scripts/contract_registry.py",
-        "02_director_enhancement_agent.md": "dispatch/master_production_note.md",
-        "02_scene_lock_agent.md": "dispatch/scene_lock_note.md",
-        "03_master_production_agent.md": "dispatch/master_production_note.md",
-        "04_qa_review_agent.md": "dispatch/editor_pass2_note.md",
-    }
-    for filename, target in archived_agent_targets.items():
-        text = _read(os.path.join(skill_root, "references", "agents", filename)) or ""
-        if "# Archived" not in text or target not in text:
-            issues.append("旧Agent路径%s必须仅保留指向%s的归档说明" % (filename, target))
     scripts_dir = os.path.join(skill_root, "scripts")
     for filename in sorted(os.listdir(scripts_dir)):
         if not filename.endswith(".py") or filename in {
-            "contract_registry.py", "check_rule_consistency.py",
+            "contract_registry.py", "check_rule_consistency.py", "audit_skill_surface.py",
         }:
             continue
         text = _read(os.path.join(scripts_dir, filename)) or ""
         if PROMPT_CONTRACT_VERSION in text:
             issues.append("%s复制了PROMPT_CONTRACT_VERSION字面量" % filename)
-        if filename != "modec_v4.py" and "modec_v4" in text:
+        if "modec_v4" in text:
             issues.append("%s仍依赖废弃的modec_v4模块名" % filename)
         if "[EXPORT V4]" in text or "pre-v4" in text:
             issues.append("%s仍包含误导性的V4代际文本" % filename)

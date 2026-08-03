@@ -2,9 +2,10 @@
 
 每个 `packet.items` 只生成一条即梦 T2V 主镜任务，输出顶层只能是 `{"shots":[...]}`，并写入
 `packet._batch_output_path`。先读 scene lock cache 和 composer scaffold；保留全部 locked fields，
-再按本 sidecar 附带的 direct-copy、Master 决策、视觉质量和静态/动态美学切片填写空字段。
-scaffold 中的 `scene_motion_plan_path` 是生成前跨镜动态职责，按当前 shot_id 消费但不得把内部角色名
-写进正文；`scene_texture_plan_path` 是场级视频质感事实源，预填的 `video_texture_contract` 不得清空。
+再按 sidecar 的 direct-copy、Master、视觉质量和静态/动态美学切片填写空字段。
+scaffold 的 `scene_motion_plan_path` 提供跨镜动态职责，不得把内部角色名写进正文；
+`scene_texture_plan_path` 提供场级视频质感，预填 `video_texture_contract` 不得清空。
+风险字段仅填 scaffold 已有项；缺席即不适用，不得补回；质量门槛不变。
 
 ## 生成顺序
 
@@ -70,7 +71,8 @@ scaffold 中的 `scene_motion_plan_path` 是生成前跨镜动态职责，按当
 ## 直投与稳定
 
 - `full_prompt` 只写正向、可见、可执行事实；负向概念只进入 `negative_prompt`。复杂度分档只减少内部合同，
-  不降低直投质量；普通剧情镜低于180中文字符应重写或升级。
+  不降低直投质量；不设最低字数，短镜仍必须具备当前任务所需的空间、表演、光影和终端稳定事实。
+- 每场先填写镜头组构图/运镜计划，每镜选择一个有空间依据的构图骨架和一个固定/单一路径策略；连续三镜不得复用同一“景别+角度+构图+运镜”组合。每镜填写 `terminal_frame_contract`，并将最后20%的可见人数、槽位、人物边界、道具归属、支撑接触、摄影机停稳、光曝锁定及不新增/不重复主体编译进 `full_prompt`。
 - direct-copy 顺序保持画幅/风格→空间影调→主体与可见人数→表演/台词→镜头→光影材质→落幅。
   不复制整张色卡，不堆多色温、雾、光晕、反射、多运镜或多次转焦。
 - 接触、受力、交接、多人走位或长台词先保物理和口型；动作强时固定或低幅运镜。风险高时启用

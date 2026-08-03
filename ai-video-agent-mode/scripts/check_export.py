@@ -42,6 +42,7 @@ from prompt_contract import (
     jimeng_shot_group_issues,
     split_sections,
     tension_curve_role_issues,
+    terminal_frame_contract_issues,
     timeline_issues,
     timeline_ranges,
     visibility_issues,
@@ -58,7 +59,7 @@ from production_intelligence import (
     visual_prior_risk_issues,
 )
 from contract_registry import PROMPT_CONTRACT_VERSION, QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
-from shot_semantics import validation_profile as derive_validation_profile
+from shot_semantics import validation_profile as derive_validation_profile, disabled_risk_gated_fields
 
 
 FORBIDDEN_ENGINES = ["C4D", "Octane", "Blender", "Redshift", "Arnold", "Unreal Engine"]
@@ -189,12 +190,15 @@ def check_export(md_path, run_dir, quality_mode=False):
             + cinematic_image_contract_issues(metadata, full_prompt)
             + video_texture_contract_issues(metadata, full_prompt)
             + aesthetic_directing_contract_issues(metadata, full_prompt)
+            + terminal_frame_contract_issues(metadata, full_prompt)
         )
         if metadata_semantic_issues:
             metadata_missing += 1
         plan_item = plan_map.get(sid, {})
         visible = _as_list(plan_item.get("visible_characters", plan_item.get("characters", [])))
         validation_profile = derive_validation_profile(plan_item, metadata, visible)
+        for field in disabled_risk_gated_fields(plan_item, metadata, visible):
+            issues.append(prefix + "不适用的风险字段不得由Agent重新注入：qa_metadata." + field)
         production_issues = (
             visual_prior_risk_issues(full_prompt, json.dumps(plan_item, ensure_ascii=False))
             + multi_person_attention_budget_issues(metadata, full_prompt, visible)
@@ -395,6 +399,7 @@ def _export_check(md_path, quality_mode, expected_ids):
     required_sections = (
         "## 使用说明",
         "## 全局锁定",
+        "## 制作质量总控",
         "## 通用负面提示词｜直接复制",
         "## 场景状态表",
         "## 分镜投喂卡",
@@ -405,6 +410,7 @@ def _export_check(md_path, quality_mode, expected_ids):
         "【负面提示词｜直接复制】",
         "【表演与声音】",
         "【状态继承】",
+        "【本镜制作控制】",
     )
     forbidden_sections = ("QA元数据", "qa_metadata", "生成控制", "generation_control")
     direct_blocks = _direct_export_blocks(text)
@@ -413,16 +419,22 @@ def _export_check(md_path, quality_mode, expected_ids):
         for block in direct_blocks
         for issue in direct_copy_prompt_issues(block, max_chars=700, require_visual_texture=True)
     ]
+    production_control_issues = _production_control_export_issues(text)
     separated = (
         all(label in text for label in required_sections)
         and direct_blocks
         and not direct_issues
+        and not production_control_issues
         and not any(label in text for label in forbidden_sections)
     )
     title_ok = not bool(INTERNAL_TITLE_LEAK.search(text))
     no_grid_section = "自动九宫格剧情包" not in text
     xlsx_path = os.path.splitext(md_path)[0] + ".xlsx"
-    direct_detail = "direct_blocks=%d%s" % (len(direct_blocks), (", direct_issues=" + str(len(direct_issues))) if direct_issues else "")
+    direct_detail = "direct_blocks=%d%s%s" % (
+        len(direct_blocks),
+        (", direct_issues=" + str(len(direct_issues))) if direct_issues else "",
+        (", production_control_issues=" + str(len(production_control_issues))) if production_control_issues else "",
+    )
     return ids_ok and separated and title_ok and no_grid_section and os.path.exists(xlsx_path), f"ids={ids_ok}, separated={separated}, {direct_detail}, title={title_ok}, no_grid={no_grid_section}, xlsx={os.path.exists(xlsx_path)}"
 
 
@@ -434,11 +446,50 @@ def _direct_export_blocks(markdown_text):
     text = str(markdown_text or "")
     blocks = [match.group(1).strip() for match in fenced_pattern.finditer(text)]
     card_pattern = re.compile(
-        r"【画面描述｜直接复制】\s*\n+(.*?)(?=\n+【(?:画面参数|运镜描述|光影描述|负面提示词｜直接复制|表演与声音|状态继承|剪辑衔接|本镜必要约束｜直接复制|本镜补充负面提示词｜直接复制|内部溯源|关键帧生图提示|空间与道具锁定)[^】]*】|\n+#### |\n+---|\Z)",
+        r"【画面描述｜直接复制】\s*\n+(.*?)(?=\n+【(?:导演卡｜直接复制｜(?:180-500|≤500)字|画面参数|运镜描述|光影描述|负面提示词｜直接复制|表演与声音|状态继承|剪辑衔接|本镜制作控制|本镜必要约束｜直接复制|本镜补充负面提示词｜直接复制|内部溯源|关键帧生图提示|空间与道具锁定)[^】]*】|\n+#### |\n+---|\Z)",
         re.S,
     )
     blocks.extend(match.group(1).strip() for match in card_pattern.finditer(text))
     return [block for block in blocks if block]
+
+
+def _production_control_export_issues(markdown_text):
+    text = str(markdown_text or "")
+    issues = []
+    global_match = re.search(r"## 制作质量总控\s*\n(.*?)(?=\n##\s|\Z)", text, re.S)
+    global_text = global_match.group(1) if global_match else ""
+    global_labels = (
+        "画面质感基线", "光效与曝光连续", "动态美学基线",
+        "表演与情绪基线", "蒙太奇与剪辑基线", "穿帮与抽卡总控",
+    )
+    for label in global_labels:
+        match = re.search(re.escape(label) + r"[：:]\s*([^\n]+)", global_text)
+        value = match.group(1).strip() if match else ""
+        if len(value) < 8:
+            issues.append("制作质量总控缺少可执行" + label)
+        elif any(term in value for term in ("已检查", "按合同", "见内部", "待定", "TBD")):
+            issues.append("制作质量总控包含内部占位：" + label)
+
+    shot_blocks = [
+        match.group(1).strip()
+        for match in re.finditer(r"【本镜制作控制】\s*\n+(.*?)(?=\n+【|\n+#### |\n+---|\Z)", text, re.S)
+    ]
+    if not shot_blocks:
+        issues.append("缺少本镜制作控制块")
+        return issues
+    shot_labels = (
+        "画面质感", "光效与曝光", "动态美学", "表演与情绪",
+        "穿帮控制", "抽卡策略", "蒙太奇与剪辑",
+    )
+    for index, block in enumerate(shot_blocks, start=1):
+        for label in shot_labels:
+            match = re.search(r"(?:^|\n)" + re.escape(label) + r"[：:]\s*([^\n]+)", block)
+            value = match.group(1).strip() if match else ""
+            if len(value) < 6:
+                issues.append("本镜制作控制%d缺少%s" % (index, label))
+            elif any(term in value for term in ("已检查", "按合同", "见内部", "待定", "TBD")):
+                issues.append("本镜制作控制%d包含内部占位：%s" % (index, label))
+    return issues
 
 
 def _load(path):

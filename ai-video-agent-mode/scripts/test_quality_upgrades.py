@@ -2,15 +2,22 @@
 """Focused regression tests for direct-copy and episode-level quality upgrades."""
 
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from dialogue_timing import analyze_dialogue_timing
 from direct_prompt_compiler import compile_direct_prompt, compile_director_card
+from check_export import _production_control_export_issues
 from episode_director_audit import analyze_package
 from export_with_validation import (
     _build_direct_copy_prompt,
+    _composition_direct_clause,
     _dynamic_motion_anchor,
     _global_lock_lines,
     _global_negative_prompt,
+    _global_quality_control_lines,
+    _shot_production_control,
+    _terminal_frame_direct_clause,
+    _write_master_markdown,
 )
 from negative_prompts import build_negative_prompt_for_item, support_mode_for_text
 from generate_shotplan import (
@@ -104,6 +111,31 @@ def run():
     assert any("至少两类材质" in issue for issue in weak_issues)
     assert any("光源、方向、受光面和阴影结果" in issue for issue in weak_issues)
     export_task = {"full_prompt": aesthetic_prompt, "qa_metadata": aesthetic_metadata, "shot_id": "A1", "subshot_id": "A1-1"}
+    global_quality = "\n".join(_global_quality_control_lines({"shots": [export_task]}))
+    for label in ("画面质感基线", "光效与曝光连续", "动态美学基线", "表演与情绪基线", "蒙太奇与剪辑基线", "穿帮与抽卡总控"):
+        assert label in global_quality, label
+    shot_control = _shot_production_control(export_task)
+    for label in ("画面质感", "光效与曝光", "动态美学", "表演与情绪", "穿帮控制", "抽卡策略", "蒙太奇与剪辑"):
+        assert label + "：" in shot_control, label
+    assert "门打开" in shot_control and "最终角色A右手仍压住桌沿并停稳" in shot_control
+    assert "最终最终" not in shot_control and "起幅起幅" not in shot_control
+    with TemporaryDirectory(prefix="quality-markdown-") as temp_dir:
+        markdown_path = Path(temp_dir) / "quality.md"
+        markdown_task = dict(export_task, duration=4, negative_prompt="五官漂移", source_subshot_ids=["A1-1"])
+        _write_master_markdown(
+            str(markdown_path),
+            {"shots": [markdown_task]},
+            {"project_name": "质量可见性", "canvas": "16:9", "visual_style": "写实电影短片", "shots": [{"shot_id": "A1", "scene": "室内"}]},
+            [],
+        )
+        markdown = markdown_path.read_text(encoding="utf-8")
+        assert "## 制作质量总控" in markdown
+        assert "【本镜制作控制】" in markdown
+        for label in ("画面质感", "光效与曝光", "动态美学", "表演与情绪", "穿帮控制", "抽卡策略", "蒙太奇与剪辑"):
+            assert label + "：" in markdown, label
+        assert not _production_control_export_issues(markdown)
+        placeholder_markdown = markdown.replace("画面质感：门口变化打破防御", "画面质感：已检查，按合同执行")
+        assert any("内部占位" in issue for issue in _production_control_export_issues(placeholder_markdown))
     compile_reports = []
     direct_aesthetic = _build_direct_copy_prompt(
         export_task,
@@ -249,7 +281,25 @@ def run():
         {"kind": "light", "text": "窗边冷光勾勒肩线，面部保持中性肤色，暖色只落在站牌和湿地反光，雨雾空气层轻微流动。"},
     ], ["我只是想把事情说清楚"], {})
     assert not director_card["issues"], director_card["issues"]
-    assert 180 <= len(director_card["text"]) <= 500
+    assert 0 < len(director_card["text"]) <= 500
+
+    terminal_metadata = {
+        "static_aesthetic_contract": {
+            "composition_hierarchy": "门框前景形成框景，角色A为主焦点，角色B弱化在右后方"
+        },
+        "terminal_frame_contract": {
+            "visible_count": "2人", "final_slot_map": "角色A左侧，角色B右后方",
+            "identity_visibility": "两人身份清楚", "face_and_limb_separation": "脸、手和四肢边界分开",
+            "prop_and_garment_state": "文件仍归角色A", "support_and_contact": "两人双脚接地",
+            "camera_lock": "摄影机减速停稳", "light_exposure_lock": "左侧窗光和曝光保持",
+            "no_new_entrant": "不新增人物", "no_duplicate_subject": "不产生重复人物",
+            "final_hold": "保持到结束",
+        },
+    }
+    assert _composition_direct_clause(terminal_metadata).startswith("构图骨架：门框前景")
+    terminal_clause = _terminal_frame_direct_clause(terminal_metadata)
+    for fact in ("最后20%只保留2人", "脸、手和四肢边界分开", "摄影机减速停稳", "不产生重复人物"):
+        assert fact in terminal_clause, terminal_clause
 
     valid_episode = {"shots": [
         _shot("S1", "setup", "全景", "角色A呼吸放慢", "角色A双手垂在身侧"),

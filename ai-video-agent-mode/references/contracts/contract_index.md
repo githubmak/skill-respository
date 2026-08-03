@@ -9,7 +9,8 @@ schema、validator、Golden 与 rule consistency。
 | 触发问题 | 快速切片 | 权威锚点 | 验证/实现 |
 |---|---|---|---|
 | 即梦直投正文、700字上限、元叙述清除 | `direct_copy_contract.md` | `format_constraints.md` §B0/§B2/§B6 | `direct_copy_prompt_issues`、`jimeng_feed_prompt`、`golden_jimeng_check.py` |
-| 180–500字导演卡、双视图、整句压缩与台词保护 | `direct_copy_contract.md` | `format_constraints.md` §B0/§B2 | `direct_prompt_compiler.py`、`compile_director_card`、`export_with_validation.py` |
+| 至多500字导演卡、双视图、整句压缩与台词保护 | `direct_copy_contract.md` | `format_constraints.md` §B0/§B2 | `direct_prompt_compiler.py`、`compile_director_card`、`export_with_validation.py` |
+| 镜头组构图/运镜变化与终端帧稳定 | `aesthetic_directing_contract.md`、`direct_copy_contract.md` | `format_constraints.md` §B0/§B7 | `terminal_frame_contract_issues`、`export_with_validation.py` |
 | 派发与字段修复 | packet `constraints_path/retry_context_path` | `references/dispatch/*.md`、`dispatch_cache.py` | sidecar assertions、provenance validator |
 
 ## 表演、对白与序列
