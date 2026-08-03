@@ -193,8 +193,12 @@ def _audit_completed_artifacts(run_dir, state, issues):
         result_path = os.path.join(run_dir, ".cache", "export", "result.json")
         result = _load_required(result_path, issues, "export result")
         if isinstance(result, dict):
-            markdown_path = str(result.get("markdown_path", "") or "")
-            if not result.get("pass") or not markdown_path or not os.path.isfile(markdown_path):
+            markdown_paths = result.get("markdown_paths") if isinstance(result.get("markdown_paths"), dict) else {}
+            candidates = list(markdown_paths.values()) if markdown_paths else [result.get("markdown_path", "")]
+            index_path = str(result.get("index_markdown_path", "") or "")
+            if index_path:
+                candidates.append(index_path)
+            if not result.get("pass") or not candidates or any(not str(path).strip() or not os.path.isfile(str(path)) for path in candidates):
                 issues.append("export已完成但export result未指向有效Markdown产物")
 
 

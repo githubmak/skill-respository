@@ -198,7 +198,7 @@ def finalize_case(review_path, sealed_path, out_path, analyzer=None, sample_coun
         raise CalibrationError("；".join(issues))
 
     neutral_paths = [sealed["media"][label]["neutral_path"] for label in ("a", "b")]
-    analyzer = analyzer or _run_swift_analyzer
+    analyzer = analyzer or _run_visual_analyzer
     objective_rows = analyzer(neutral_paths, sample_count)
     if not isinstance(objective_rows, list) or len(objective_rows) != 2:
         raise CalibrationError("客观分析器必须返回两个视频的指标")
@@ -465,9 +465,9 @@ def _check_evidence_file(issues, label, path, expected_sha):
         issues.append("%s证据SHA256不匹配" % label)
 
 
-def _run_swift_analyzer(paths, sample_count):
-    script = os.path.join(os.path.dirname(__file__), "visual_metrics.swift")
-    command = ["/usr/bin/swift", script, "--samples", str(sample_count)] + list(paths)
+def _run_visual_analyzer(paths, sample_count):
+    script = os.path.join(os.path.dirname(__file__), "visual_metrics.py")
+    command = [sys.executable, script, "--samples", str(sample_count)] + list(paths)
     proc = subprocess.run(command, text=True, capture_output=True)
     if proc.returncode != 0:
         raise CalibrationError("视频指标分析失败：%s" % (proc.stderr.strip() or proc.stdout.strip()))

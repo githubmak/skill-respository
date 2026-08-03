@@ -38,6 +38,7 @@ from record_batch_provenance import verify as verify_provenance
 from pipeline_runtime import atomic_json
 from production_intelligence import build_sentence_provenance, predict_action_failure
 from contract_registry import PROMPT_CONTRACT_VERSION
+from seedance_target import TARGET_LABELS, adapt_lighting_text, adapt_visual_prefix, normalize_target, variant_paths
 
 
 CHECK_EXPORT = os.path.join(os.path.dirname(__file__), "check_export.py")
@@ -77,33 +78,58 @@ def export_with_validation(md_path, run_dir):
         return quality.returncode
     package = _load(package_path)
     plan = _load(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"))
+    config = _load(os.path.join(run_dir, "project_config.json"))
+    seedance_target = normalize_target(config.get("seedance_target", "auto"))
+    feed_paths, index_path = variant_paths(md_path, seedance_target)
     destination_dir = os.path.dirname(os.path.abspath(md_path))
     temp_dir = tempfile.mkdtemp(prefix=".jimeng-export-", dir=destination_dir)
-    temporary_md = os.path.join(temp_dir, os.path.basename(md_path))
+    temporary_feeds = {
+        target: os.path.join(temp_dir, os.path.basename(path))
+        for target, path in feed_paths.items()
+    }
     temporary_xlsx = os.path.join(temp_dir, os.path.basename(os.path.splitext(md_path)[0]) + ".xlsx")
     temporary_concise = os.path.join(temp_dir, os.path.basename(os.path.splitext(md_path)[0]) + ".concise.md")
     temporary_engineering = os.path.join(temp_dir, os.path.basename(os.path.splitext(md_path)[0]) + ".engineering.md")
     compile_reports = []
     try:
-        _write_master_markdown(temporary_md, master_package, plan, compile_reports)
-        _write_concise_markdown(temporary_concise, master_package, plan)
-        _write_engineering_review(temporary_engineering, master_package, plan, compile_reports)
+        for target, temporary_md in temporary_feeds.items():
+            target_reports = []
+            _write_master_markdown(temporary_md, master_package, plan, target_reports, target)
+            compile_reports.extend(target_reports)
         xlsx_written = _write_workbook(temporary_xlsx, package, plan, {})
-        result = subprocess.run(
-            [sys.executable, CHECK_EXPORT, temporary_md, run_dir], text=True, capture_output=True,
-        )
-        if result.stdout:
-            print(result.stdout, end="")
-        if result.stderr:
-            print(result.stderr, file=sys.stderr, end="")
-        if result.returncode:
-            print("[EXPORT] DELIVERY BLOCKED - temporary deliverables discarded")
-            return result.returncode
-        os.replace(temporary_md, md_path)
-        concise_path = os.path.splitext(md_path)[0] + ".concise.md"
-        engineering_path = os.path.splitext(md_path)[0] + ".engineering.md"
-        os.replace(temporary_concise, concise_path)
-        os.replace(temporary_engineering, engineering_path)
+        if xlsx_written:
+            for temporary_md in temporary_feeds.values():
+                validation_xlsx = os.path.splitext(temporary_md)[0] + ".xlsx"
+                if os.path.abspath(validation_xlsx) != os.path.abspath(temporary_xlsx):
+                    shutil.copyfile(temporary_xlsx, validation_xlsx)
+        for target, temporary_md in temporary_feeds.items():
+            result = subprocess.run(
+                [sys.executable, CHECK_EXPORT, temporary_md, run_dir], text=True, capture_output=True,
+            )
+            if result.stdout:
+                print(result.stdout, end="")
+            if result.stderr:
+                print(result.stderr, file=sys.stderr, end="")
+            if result.returncode:
+                print("[EXPORT] DELIVERY BLOCKED - temporary deliverables discarded")
+                return result.returncode
+        if seedance_target != "both":
+            only_target = next(iter(feed_paths))
+            _write_concise_markdown(temporary_concise, master_package, plan, only_target)
+            _write_engineering_review(temporary_engineering, master_package, plan, compile_reports)
+        temporary_index = ""
+        if seedance_target == "both":
+            temporary_index = os.path.join(temp_dir, os.path.basename(index_path))
+            _write_target_index(temporary_index, plan, feed_paths)
+        for target, destination in feed_paths.items():
+            os.replace(temporary_feeds[target], destination)
+        if seedance_target == "both":
+            os.replace(temporary_index, index_path)
+        else:
+            concise_path = os.path.splitext(md_path)[0] + ".concise.md"
+            engineering_path = os.path.splitext(md_path)[0] + ".engineering.md"
+            os.replace(temporary_concise, concise_path)
+            os.replace(temporary_engineering, engineering_path)
         if xlsx_written:
             os.replace(temporary_xlsx, os.path.splitext(md_path)[0] + ".xlsx")
     finally:
@@ -115,11 +141,15 @@ def export_with_validation(md_path, run_dir):
         "shot_count": len(compile_reports),
         "shots": compile_reports,
     })
-    _record_export_result(run_dir, md_path, compile_report_path)
+    _record_export_result(run_dir, md_path, compile_report_path, seedance_target, feed_paths, index_path)
     print("[EXPORT] DELIVERY APPROVED")
-    print("[EXPORT] Markdown: " + md_path)
-    print("[EXPORT] Concise director cards: " + os.path.splitext(md_path)[0] + ".concise.md")
-    print("[EXPORT] Engineering review: " + os.path.splitext(md_path)[0] + ".engineering.md")
+    for target, path in feed_paths.items():
+        print("[EXPORT] Markdown %s: %s" % (TARGET_LABELS[target], path))
+    if index_path:
+        print("[EXPORT] Non-feed index: " + index_path)
+    else:
+        print("[EXPORT] Concise director cards: " + os.path.splitext(md_path)[0] + ".concise.md")
+        print("[EXPORT] Engineering review: " + os.path.splitext(md_path)[0] + ".engineering.md")
     print("[EXPORT] Master tasks: " + master_path)
     if xlsx_written:
         print("[EXPORT] XLSX: " + os.path.splitext(md_path)[0] + ".xlsx")
@@ -128,20 +158,26 @@ def export_with_validation(md_path, run_dir):
     return 0
 
 
-def _record_export_result(run_dir, md_path, compile_report_path=""):
+def _record_export_result(run_dir, md_path, compile_report_path="", seedance_target="auto", feed_paths=None, index_path=""):
     package_path = _find_package(run_dir)
     if not package_path:
         return
     destination = os.path.abspath(md_path)
+    feed_paths = {key: os.path.abspath(value) for key, value in (feed_paths or {seedance_target: destination}).items()}
+    primary_path = next(iter(feed_paths.values())) if len(feed_paths) == 1 else os.path.abspath(index_path)
     atomic_json(os.path.join(run_dir, ".cache", "export", "result.json"), {
         "pass": True,
         "exported_at": time.time(),
-        "markdown_path": destination,
-        "markdown_sha256": _sha256(destination),
+        "seedance_target": seedance_target,
+        "markdown_path": primary_path,
+        "markdown_sha256": _sha256(primary_path),
+        "markdown_paths": feed_paths,
+        "markdown_sha256_by_target": {key: _sha256(value) for key, value in feed_paths.items()},
+        "index_markdown_path": os.path.abspath(index_path) if index_path else "",
         "package_sha256": _sha256(package_path),
         "xlsx_path": os.path.splitext(destination)[0] + ".xlsx",
-        "concise_markdown_path": os.path.splitext(destination)[0] + ".concise.md",
-        "engineering_markdown_path": os.path.splitext(destination)[0] + ".engineering.md",
+        "concise_markdown_path": os.path.splitext(destination)[0] + ".concise.md" if seedance_target != "both" else "",
+        "engineering_markdown_path": os.path.splitext(destination)[0] + ".engineering.md" if seedance_target != "both" else "",
         "direct_prompt_compile_report": os.path.abspath(compile_report_path) if compile_report_path else "",
     })
 
@@ -199,16 +235,17 @@ def _record_normalization_provenance(package_path, source_sha256):
     atomic_json(manifest_path, manifest)
 
 
-def _write_master_markdown(path, master_package, plan, compile_reports=None):
+def _write_master_markdown(path, master_package, plan, compile_reports=None, seedance_target="auto"):
     """Write the user-facing delivery from canonical main-shot tasks."""
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     masters = {item.get("shot_id", ""): item for item in master_package.get("shots", []) if isinstance(item, dict)}
     lines = [
-        f"# {plan.get('project_name', '')} 即梦投喂分镜", "",
+        f"# {plan.get('project_name', '')} 即梦投喂分镜｜{TARGET_LABELS[seedance_target]}", "",
         "## 使用说明", "",
         "- `【画面描述｜直接复制】` 是每个主镜头推荐复制到即梦正文框的正向提示词。", "",
         "- `【负面提示词｜直接复制】` 可直接复制到负面词框；高风险镜头会额外给出本镜必要约束和补充负面词。", "",
         "- `【画面参数】`、`【运镜描述】`、`【光影描述】` 用于人工复核画幅、影调、色卡、镜头路径和光影质感，不是额外提示词段落。", "",
+        f"- Seedance 目标：`{seedance_target}`；本文件可独立投喂，不与另一版本拼接。", "",
         "## 全局锁定", "",
         f"- 全局风格：{plan.get('canvas', '')}画幅，{plan.get('visual_style', '')}，即梦 T2V。", "",
     ]
@@ -252,13 +289,13 @@ def _write_master_markdown(path, master_package, plan, compile_reports=None):
             "【画面参数】", "",
             _picture_parameter_line(task, plan), "",
             "【画面描述｜直接复制】", "",
-            _build_direct_copy_prompt(task, plan, compile_reports), "",
+            _build_direct_copy_prompt(task, plan, compile_reports, seedance_target), "",
             "【导演卡｜直接复制｜≤500字】", "",
-            _build_director_card(task, plan, compile_reports), "",
+            _build_director_card(task, plan, compile_reports, seedance_target), "",
             "【运镜描述】", "",
             _camera_description(camera_beats, task), "",
             "【光影描述】", "",
-            _lighting_description(task), "",
+            adapt_lighting_text(_lighting_description(task), seedance_target), "",
             "【负面提示词｜直接复制】", "",
             str(task.get("negative_prompt", "") or ""), "",
             "【表演与声音】", "",
@@ -333,7 +370,7 @@ def _write_master_markdown(path, master_package, plan, compile_reports=None):
         handle.write("\n".join(lines))
 
 
-def _write_concise_markdown(path, master_package, plan):
+def _write_concise_markdown(path, master_package, plan, seedance_target="auto"):
     """Write only compact copy cards and basic shot identity."""
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     masters = {item.get("shot_id", ""): item for item in master_package.get("shots", []) if isinstance(item, dict)}
@@ -350,12 +387,32 @@ def _write_concise_markdown(path, master_package, plan):
         task = masters.get(planned.get("shot_id", ""))
         if not task:
             continue
-        card = _build_director_card(task, plan)
+        card = _build_director_card(task, plan, seedance_target=seedance_target)
         lines.extend([
             "### %s｜%ss" % (task.get("shot_id", ""), float(task.get("duration", 0) or 0)), "",
             "【导演卡｜直接复制｜≤500字】", "", card, "",
             "【负面提示词｜直接复制】", "", str(task.get("negative_prompt", "") or ""), "", "---", "",
         ])
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines))
+
+
+def _write_target_index(path, plan, feed_paths):
+    """Write a human-facing comparison entry point; never use it as a feed prompt."""
+    lines = [
+        "# 双版本索引｜%s" % plan.get("project_name", "即梦分镜"), "",
+        "> 本文件只用于选择版本和核对合同，不要复制到即梦。两份分镜来自同一份镜头、台词、人物、空间、道具与时长合同。", "",
+        "## 可投喂文件", "",
+        "| 目标 | 文件 | 光影适配 | 使用场景 |", "|---|---|---|---|",
+        "| Seedance 2.0 | `%s` | 简洁动机光，浅至中等阴影，面部可读性优先 | 稳定兼容、对白和低风险动作 |" % os.path.basename(feed_paths["2.0"]),
+        "| Seedance 2.5 | `%s` | 更完整的动机光、明暗层次、局部环境色与高光滚降 | 需要更强光影表现时 |" % os.path.basename(feed_paths["2.5"]),
+        "", "## 不变合同", "",
+        "- 镜号、镜头顺序、时长、台词/OS/OV 原文、人物、空间锚点、道具归属和剧情因果保持一致。",
+        "- 两份文件都可独立投喂；不要把两份正文拼接后投喂。",
+        "- `seedance_target=both` 的触发点是项目配置确认时选择 `both`，随后照常完成一次管线运行并在导出阶段自动生成本表和两份版本。",
+        "",
+    ]
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("\n".join(lines))
 
@@ -490,9 +547,9 @@ def _write_markdown(path, package, plan, director):
         handle.write("\n".join(lines))
 
 
-def _build_direct_copy_prompt(task, plan, compile_reports=None):
+def _build_direct_copy_prompt(task, plan, compile_reports=None, seedance_target="auto"):
     """Build a compact Jimeng copy block from the canonical five-section prompt."""
-    segments, required_fragments, information_budget = _direct_prompt_inputs(task, plan)
+    segments, required_fragments, information_budget = _direct_prompt_inputs(task, plan, seedance_target)
     compiled = compile_direct_prompt(
         segments, required_fragments, max_chars=700, information_budget=information_budget
     )
@@ -523,8 +580,8 @@ def _build_direct_copy_prompt(task, plan, compile_reports=None):
     return _clean_export_direct_text(compiled["text"])
 
 
-def _build_director_card(task, plan, compile_reports=None):
-    segments, required_fragments, information_budget = _direct_prompt_inputs(task, plan)
+def _build_director_card(task, plan, compile_reports=None, seedance_target="auto"):
+    segments, required_fragments, information_budget = _direct_prompt_inputs(task, plan, seedance_target)
     # The compact card keeps dialogue, hard facts, and the dynamic action rail;
     # the full direct-copy block is the canonical place for the static material anchor.
     card_required = _dialogue_required_fragments(task) + _budget_render_units(information_budget)
@@ -546,7 +603,7 @@ def _build_director_card(task, plan, compile_reports=None):
     return _clean_export_direct_text(compiled["text"])
 
 
-def _direct_prompt_inputs(task, plan):
+def _direct_prompt_inputs(task, plan, seedance_target="auto"):
     metadata = task.get("qa_metadata", {}) if isinstance(task.get("qa_metadata"), dict) else {}
     palette = metadata.get("scene_tone_palette", {}) if isinstance(metadata.get("scene_tone_palette"), dict) else {}
     budget = metadata.get("prompt_information_budget", {}) if isinstance(metadata.get("prompt_information_budget"), dict) else {}
@@ -560,7 +617,7 @@ def _direct_prompt_inputs(task, plan):
             cinematic = ""
         else:
             video_texture = ""
-    prefix = _compact(palette.get("visual_scene_prefix", ""))
+    prefix = adapt_visual_prefix(_compact(palette.get("visual_scene_prefix", "")), seedance_target)
     style_parts = [
         "%s画幅" % plan.get("canvas", "") if plan.get("canvas", "") else "",
         str(plan.get("visual_style", "") or "").strip("，。 "),
@@ -582,7 +639,7 @@ def _direct_prompt_inputs(task, plan):
             {"kind": "space", "text": space_text},
             {"kind": "continuity", "text": continuity_text},
             {"kind": "performance", "text": _strip_inner_shot_headings(sections.get("子镜头组", ""))},
-            {"kind": "light", "text": sections.get("光照、声音与稳定约束", "")},
+            {"kind": "light", "text": adapt_lighting_text(sections.get("光照、声音与稳定约束", ""), seedance_target)},
             {"kind": "video_texture", "text": video_texture},
             {"kind": "cinematic", "text": cinematic},
         ]
@@ -595,6 +652,7 @@ def _direct_prompt_inputs(task, plan):
         segments = [
             {"kind": "visual_prefix", "text": style_prefix},
             {"kind": "performance", "text": direct_fallback},
+            {"kind": "light", "text": adapt_lighting_text("", seedance_target) if seedance_target != "auto" else ""},
             {"kind": "video_texture", "text": video_texture},
             {"kind": "cinematic", "text": cinematic},
         ]

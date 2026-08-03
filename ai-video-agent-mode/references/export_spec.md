@@ -87,7 +87,11 @@ Markdown 只导出直接投喂和人工操作所需内容，禁止出现 QA 元�
 
 复杂/高风险镜使用与 Jimeng 相同的最终字段 `【关键帧生图提示】` 和 `【即梦视频提示｜配合关键帧】`。前者依次包含起始状态关键帧、戏眼关键帧、结束状态关键帧；后者按时间段连接三帧。随后输出人物/道具状态差异表、关键帧连续性检查和关键帧/T2V事实一致性检查。它们是前期稳定参考，不是九宫格、P01-P09、多格漫画、I2V 声明或已上传的首尾帧槽位。
 
-成功导出还会在确认目录生成同名 `.concise.md` 与 `.engineering.md`：简洁视图只提供每镜不超过500字且无最低字数的导演卡和负面词；工程视图提供句级来源、Scene Lock、合同字段、动作失败预测和压缩差异。两者与完整 Markdown/XLSX 来源相同，不产生第二套剧情事实。
+成功导出通常还会在确认目录生成同名 `.concise.md` 与 `.engineering.md`。当
+`seedance_target=both` 时，主交付改为两份独立可投喂 Markdown（`*_Seedance2.0.md`、
+`*_Seedance2.5.md`）和一份 `00_双版本索引.md`；索引只用于比较，不投喂。两版来自同一镜头、台词、
+人物、空间、道具与时长合同，差异仅限模型适配的光影精度与动态复杂度措辞。XLSX 仍从同一 canonical
+package 写出，便于逐镜核对。
 
 下一镜转场提示词由导出脚本根据当前镜 `continuity_contract.next_carryover/end_anchor` 与下一镜 `continuity_contract.start_anchor` 自动生成，只用于连续生成和剪辑操作，不写入 `full_prompt`，不得新增剧情、服装、对白或人物动作。最后一镜写 `无，段落结束。`
 
@@ -106,6 +110,10 @@ Markdown 只导出直接投喂和人工操作所需内容，禁止出现 QA 元�
 ## 文件命名约定
 
 - Markdown: 使用配置确认阶段一次确认并锁定在 `project_config.json` 的 `delivery.markdown_path`。
+- Seedance 目标：配置确认阶段填写 `seedance_target`，可选 `auto`、`2.0`、`2.5`、`both`；
+  `both` 的触发点就是这一次确认，不在导出阶段二次询问。
 - Excel: 与 Markdown 同目录、同文件名，扩展名为 `.xlsx`。
 - 简洁视图：同名 `.concise.md`；工程审查视图：同名 `.engineering.md`。
+- `both` 主 Markdown：配置路径的 stem 加 `_Seedance2.0.md` 和 `_Seedance2.5.md`；索引固定为
+  `00_双版本索引.md`。
 - 以上文件只能写入用户本次明确确认并记录在 `project_config.json` 的 `export_base`。缺失时 blocking，不允许回退到 run_dir、当前目录或源文件目录。

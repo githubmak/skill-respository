@@ -13,7 +13,9 @@ description: >
 
 ## 执行
 
-1. 先运行 `python3 scripts/route_task.py <route> --run-dir <run_dir> --intent <intent>`。
+1. 先按平台运行路由：Windows 使用
+   `powershell -ExecutionPolicy Bypass -File scripts/run_skill_tool.ps1 scripts/route_task.py <route> --run-dir <run_dir> --intent <intent>`；
+   macOS 使用 `python3 scripts/route_task.py <route> --run-dir <run_dir> --intent <intent>`。
 2. 只读取返回的 `context_plan.read_first`；只有当前错误或任务明确命中时，才读取
    `read_on_demand`。`run_only` 中的脚本直接运行，不预读源码。
 3. 新任务默认使用 `full --intent new` 和新的空 `run_dir`。只有用户明确要求续跑时使用
@@ -25,7 +27,9 @@ description: >
    packet：注册 Agent、至少一次心跳、等待 batch、记录 provenance，然后立即继续 supervisor。
 6. Agent 只能写 `packet._batch_output_path`。合并必须使用 provenance 门禁；失败只修 validator
    点名字段，第二次重试缩为单主镜。
-7. Validate 全部通过后，才调用 `export_with_validation.py` 写入配置中已确认的交付路径。
+7. Validate 全部通过后，才调用 `export_with_validation.py` 写入配置中已确认的交付路径；导出目标由确认过的
+   `seedance_target: auto | 2.0 | 2.5 | both` 决定。`auto` 生成一份 dual-safe 文件，`2.0`/`2.5`
+   生成单一优化文件，`both` 从同一份合同原子生成两份可独立投喂 Markdown 和一个非投喂索引。
 
 ## 上下文预算
 
@@ -49,6 +53,9 @@ description: >
 ## 不可破坏约束
 
 - 仅支持即梦 `t2v`。禁止 I2V、R2V、参考素材槽位或动作素材路径；三状态关键帧只是前期参考。
+- `seedance_target` 是模型适配层，不是第二套剧情事实：`auto` 采用两版共同可读的光影与动作语法；
+  `both` 必须保持镜号、时长、台词/OS/OV、人物、空间、道具、轴线和终态一致，只允许调整光影精度、
+  高光/黑位控制和动态复杂度措辞。共享镜头时长仍按15秒以内的跨版本安全上限执行。
 - 台词、OS、OV 按 `ref/kind/speaker/text` 逐字锁定；OS/OV 无口型，无源文不得新增人声。
 - 每个主镜只服务一个 `narrative_beat_id`；回切、第二目标、第二独立动作链或容量不足时拆镜。
 - Scene Lock 是空间、服装、道具活动区、光源与影调事实的唯一来源；后续阶段只消费，不重写。
@@ -65,6 +72,11 @@ description: >
   且无法无损压缩时阻断；导演卡使用同一事实源，最多 500 字、不设最低字数，不静默截断或用空话补齐。
 - 复杂度和风险只改变批次与专项合同，不降低 direct-copy、连续性、口型、审美或导出门槛。
 - 只有用户提供真实候选并明确要求视觉复核时才记录候选评分；不得用 Golden 或提示词推测成片。
+- 光影适配：`2.0` 使用简洁动机光、浅至中等阴影和清晰面部受光；`auto` 使用主受光面清晰、背光侧
+  中等层次阴影的 dual-safe 规则；`2.5` 可表达更完整的动机光、中深明暗层次、局部环境色、稳定黑位和
+  高光滚降。三者都禁止无来源的正面均匀补光。
+- Windows 与 macOS 必须执行同一合同和验证门槛：状态写入使用跨平台锁，packet 中的本地命令使用
+  当前 Python 解释器；真实视频校准统一使用 FFmpeg/FFprobe 指标后端，不得按平台跳过指标或降低阈值。
 
 ## 权威来源
 
@@ -85,19 +97,11 @@ description: >
 
 修改技能后运行：
 
-```bash
-python3 scripts/check_rule_consistency.py
-python3 scripts/audit_skill_surface.py
-python3 scripts/test_current_pipeline.py
-python3 scripts/test_quality_upgrades.py
-python3 scripts/test_production_intelligence.py
-python3 scripts/test_keyframe_pipeline.py
-python3 scripts/golden_jimeng_check.py
-python3 scripts/test_fast_start.py
-```
+macOS 运行 `python3 scripts/run_regression_suite.py`；Windows 运行
+`powershell -ExecutionPolicy Bypass -File scripts/run_skill_tool.ps1 scripts/run_regression_suite.py`。两端必须执行同一回归套件。
 
 真实源文使用 `test_source_smoke.py`；真实已完成运行使用 `test_completed_e2e_run.py`；真实成片
 A/B 只用 `validate_visual_ab_review.py`。benchmark fixture 只证明机制可复跑，不代表真实 SLO。
 
-Windows 只把短参数与路径传给 `scripts/run_skill_tool.ps1`；不要把 JSON、提示词或 here-string
-拼入 shell 命令。
+Windows 只把短参数与路径传给 `scripts/run_skill_tool.ps1`；macOS 使用当前 `python3` 解释器直接
+运行脚本。两端都不要把 JSON、提示词或多行文本拼入 shell 命令。

@@ -139,19 +139,28 @@ def _check_export_result(package_path, export_result, config, issues):
     if not isinstance(export_result, dict):
         return ""
     markdown_path = str(export_result.get("markdown_path", "") or "").strip()
+    markdown_paths = export_result.get("markdown_paths") if isinstance(export_result.get("markdown_paths"), dict) else {}
+    feed_paths = [str(path).strip() for path in markdown_paths.values() if str(path).strip()] or ([markdown_path] if markdown_path else [])
+    index_path = str(export_result.get("index_markdown_path", "") or "").strip()
     configured_path = str(((config or {}).get("delivery") or {}).get("markdown_path", "") or "").strip()
     if export_result.get("pass") is not True:
         issues.append("export result pass is not true")
-    if configured_path and os.path.abspath(configured_path) != os.path.abspath(markdown_path):
+    if configured_path and not markdown_paths and os.path.abspath(configured_path) != os.path.abspath(markdown_path):
         issues.append("export markdown_path differs from confirmed delivery path")
-    if not markdown_path or not os.path.isfile(markdown_path):
+    if not feed_paths or any(not os.path.isfile(path) for path in feed_paths) or (index_path and not os.path.isfile(index_path)):
         issues.append("exported markdown missing")
         return markdown_path
-    if export_result.get("markdown_sha256") != _sha256(markdown_path):
+    if markdown_paths:
+        expected_hashes = export_result.get("markdown_sha256_by_target", {})
+        for target_path in feed_paths:
+            target = next((key for key, value in markdown_paths.items() if os.path.abspath(str(value)) == os.path.abspath(target_path)), "")
+            if target and expected_hashes.get(target) != _sha256(target_path):
+                issues.append("export markdown_sha256_by_target is stale for " + target)
+    elif export_result.get("markdown_sha256") != _sha256(markdown_path):
         issues.append("export markdown_sha256 is stale")
     if os.path.isfile(package_path) and export_result.get("package_sha256") != _sha256(package_path):
         issues.append("export package_sha256 is stale")
-    xlsx_path = os.path.splitext(markdown_path)[0] + ".xlsx"
+    xlsx_path = os.path.splitext(((configured_path or markdown_path)))[0] + ".xlsx"
     if not os.path.isfile(xlsx_path):
         issues.append("exported xlsx missing")
     return markdown_path

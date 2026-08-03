@@ -4,6 +4,11 @@
 它是离线证据侧车，不属于生产工作流，不由 `route_task.py`、supervisor、dispatch 或标准回归加载，
 也不会自动修改提示词合同或策略。
 
+macOS 使用 `python3 scripts/calibration/visual_calibration_lab.py ...`；Windows 将命令入口替换为
+`powershell -ExecutionPolicy Bypass -File scripts/run_skill_tool.ps1 scripts/calibration/visual_calibration_lab.py ...`。
+完成报告前必须提供同一发行版的 FFmpeg 与 FFprobe：可加入 `PATH`，或分别设置
+`AI_VIDEO_FFMPEG`、`AI_VIDEO_FFPROBE` 为可执行文件绝对路径。任一工具缺失时硬失败，不跳过客观指标。
+
 ## 证据边界
 
 - before/after 必须使用相同剧本目标；生成模型与主要参数应可比。
@@ -48,7 +53,8 @@ python3 scripts/calibration/visual_calibration_lab.py finalize \
   --samples 18
 ```
 
-工具先验证视频、提示词、策略规格和封存映射 SHA，再用 macOS AVFoundation 均匀取帧。
+工具先验证视频、提示词、策略规格和封存映射 SHA，再用 Windows/macOS 共用的 FFmpeg RGB24
+后端均匀取帧。
 报告记录主观 before/after 差值、亮度/高光/暗部/红蓝平衡/细节/帧差，以及水平强边缘位置漂移
 代理值。客观指标只用于发现技术退化：不能识别人脸、骨骼、真实地平线，也不能单独证明审美、
 材质真实性或灵动性。
@@ -79,5 +85,5 @@ python3 scripts/calibration/visual_calibration_lab.py promote \
 python3 scripts/calibration/test_visual_calibration_lab.py
 ```
 
-该测试包含 Swift 指标内存自测、封存映射、评分缺失、候选篡改、报告篡改、成功准入和低胜率
-拒绝。它故意不加入 `run_regression_suite.py`，因此生产回归时没有 Swift 编译或视频分析成本。
+该测试包含跨平台指标内存自测、封存映射、评分缺失、候选篡改、报告篡改、成功准入和低胜率
+拒绝。它故意不加入 `run_regression_suite.py`，因此生产回归时没有真实视频解码成本。

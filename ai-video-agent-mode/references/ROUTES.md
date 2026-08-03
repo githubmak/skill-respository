@@ -30,11 +30,14 @@
 - 手动新调用默认 `full --intent new`，必须使用新的空 `run_dir`。
 - 只有用户明确要求继续时使用 `full --intent resume`。
 - 参数不完整时按 `resolve_run_mode.py` 返回的 `next_fields` 逐轮确认。
-- 高质量快速模式要求同次提供全部八个基础字段配置和源文件，可用
+- 高质量快速模式要求同次提供全部九个基础字段配置和源文件，可用
   `--config ... --source ... --auto-start`；缺字段、
   路径越界、源文件缺失或非空 run_dir 必须原子失败。
 - `audit`、`compose`、`single-repair` 复用已确认配置；`export --intent reexport` 使用锁定的
   `delivery.markdown_path`。
+- 目标模型在配置确认阶段触发：`seedance_target=auto`（默认）只导出 dual-safe 文件；
+  `2.0` 或 `2.5` 导出对应单版本；`both` 导出 `*_Seedance2.0.md`、`*_Seedance2.5.md` 和
+  `00_双版本索引.md`。不需要另起一次管线。
 
 ## Supervisor 循环
 

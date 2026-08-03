@@ -4,8 +4,9 @@
 import json
 import os
 import shutil
-import subprocess
+import sys
 import tempfile
+from unittest import mock
 
 from visual_calibration_lab import (
     CalibrationError,
@@ -14,6 +15,8 @@ from visual_calibration_lab import (
     prepare_case,
     promote_reports,
 )
+import visual_metrics
+from visual_metrics import self_test
 
 
 def _read(path):
@@ -74,6 +77,32 @@ def _make_source_files(root):
     return paths
 
 
+def _test_analyzer_contract(root):
+    video_path = os.path.join(root, "metric-contract.mp4")
+    with open(video_path, "wb") as handle:
+        handle.write(b"metric-contract-placeholder")
+    frames = []
+    for value in (0.2, 0.4, 0.6, 0.8):
+        frames.append({
+            "width": 2,
+            "height": 2,
+            "luminance": [value] * 4,
+            "red_blue_balance": 0.0,
+        })
+    with mock.patch.object(visual_metrics, "_probe_video", return_value=(4.0, 1920, 1080)), mock.patch.object(
+        visual_metrics, "_decode_frame", side_effect=frames
+    ):
+        result = visual_metrics.analyze_video(
+            video_path,
+            samples=4,
+            tools=("ffmpeg", "ffprobe"),
+        )
+    metrics = result["metrics"]
+    assert metrics["sample_count"] == 4
+    assert metrics["source_width"] == 1920 and metrics["source_height"] == 1080
+    assert set(metrics) == set(_metrics(video_path)["metrics"])
+
+
 def _complete_case(root, sources, index, winner_generation="after"):
     case_dir = os.path.join(root, "case-%02d" % index)
     result = prepare_case(
@@ -117,16 +146,11 @@ def _complete_case(root, sources, index, winner_generation="after"):
 
 
 def main():
-    swift_path = os.path.join(os.path.dirname(__file__), "visual_metrics.swift")
-    swift = subprocess.run(
-        ["/usr/bin/swift", swift_path, "--self-test"],
-        text=True,
-        capture_output=True,
-    )
-    assert swift.returncode == 0, swift.stderr
-    assert json.loads(swift.stdout)["pass"] is True
+    assert self_test()["pass"] is True
+    assert sys.executable
 
     with tempfile.TemporaryDirectory(prefix="visual-calibration-") as root:
+        _test_analyzer_contract(root)
         sources = _make_source_files(root)
         first, first_report = _complete_case(root, sources, 1)
 

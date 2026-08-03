@@ -23,6 +23,8 @@
   "output_type": "动态视频",
   "target_platform": "",
   "_target_platform_desc": "当前契约仅支持即梦。提示词使用即梦可执行的可见构图、时间窗和稳定性控制；不得把示例题材或画风写成默认。",
+  "seedance_target": "auto",
+  "_seedance_target_desc": "auto 输出一份兼容 Seedance 2.0/2.5 的 dual-safe Markdown；2.0 或 2.5 输出单一模型优化版；both 从同一镜头、台词和连续性合同原子导出两份独立可投喂 Markdown，并生成 00_双版本索引.md。both 不改变镜号、台词、时长、人物、空间、道具或剧情事实，只改变模型适配的光影精度与动态复杂度措辞。",
   "generation_control": {
     "mode": "t2v",
     "audio_enabled": true,
@@ -45,13 +47,13 @@
   },
   "_delivery_desc": "本次运行开始时由用户一次确认的最终 Markdown 交付绝对路径。路径必须位于 export_base 内；通过全部验证后，自动同时写出同名 XLSX，不再在导出阶段重复询问。",
   "confirmation": {
-    "config_version": 3,
+    "config_version": 4,
     "confirmed_at": "",
     "confirmed_fields": [],
     "confirmed_values": {},
     "confirmed_values_sha256": ""
   },
-  "_confirmation_desc": "模板值不等于用户确认。逐项 Wizard 完成，或用户通过高质量快速模式一次明确提交全部八个基础字段后，才写入 confirmed_at，并在 confirmed_fields 中列出 export_base、canvas、visual_style、max_shot_duration、target_platform、generation_control.mode、generation_control.audio_enabled、delivery.markdown_path；同时写入 confirmed_values 及其哈希。快速模式必须丢弃输入文件中的旧 confirmation 元数据。任一确认值变更时必须回到对应确认流程。没有此记录不得续跑、合成、修复或导出。",
+  "_confirmation_desc": "模板值不等于用户确认。逐项 Wizard 完成，或用户通过高质量快速模式一次明确提交全部九个基础字段后，才写入 confirmed_at，并在 confirmed_fields 中列出 export_base、canvas、visual_style、max_shot_duration、target_platform、seedance_target、generation_control.mode、generation_control.audio_enabled、delivery.markdown_path；同时写入 confirmed_values 及其哈希。快速模式必须丢弃输入文件中的旧 confirmation 元数据。任一确认值变更时必须回到对应确认流程。没有此记录不得续跑、合成、修复或导出。",
   "run_timestamp": "",
   "character_list": [],
   "global_negative_prompt": "",

@@ -12,13 +12,14 @@ import os
 import sys
 
 
-CONFIG_VERSION = 3
+CONFIG_VERSION = 4
 BASE_FIELDS = (
     "export_base",
     "canvas",
     "visual_style",
     "max_shot_duration",
     "target_platform",
+    "seedance_target",
     "generation_control.mode",
     "generation_control.audio_enabled",
     "delivery.markdown_path",
@@ -31,6 +32,7 @@ CONFIG_GROUPS = (
     ("export_base",),
     ("canvas", "visual_style"),
     ("max_shot_duration", "target_platform"),
+    ("seedance_target",),
     ("generation_control.audio_enabled",),
     ("delivery.markdown_path",),
 )
@@ -49,6 +51,7 @@ FIELD_PROMPTS = {
     "visual_style": "请输入本项目的视觉风格描述。",
     "max_shot_duration": "请输入单条生成片段的最大时长（秒，不能超过平台能力）。",
     "target_platform": "请输入目标生成平台；当前合同仅支持即梦 T2V。",
+    "seedance_target": "请选择 Seedance 目标：auto、2.0、2.5 或 both。默认 auto；需要两个独立优化版本时选 both。",
     "generation_control.audio_enabled": "是否启用原生音频？默认 true；请输入 true 或 false。",
     "delivery.markdown_path": "请输入本次交付 Markdown 的绝对路径；后续将自动导出到此位置。",
 }
@@ -86,6 +89,8 @@ def _value_is_present(field, value):
         return isinstance(value, str) and bool(value.strip()) and os.path.isabs(value)
     if field == "export_base":
         return isinstance(value, str) and bool(value.strip()) and os.path.isabs(value)
+    if field == "seedance_target":
+        return str(value or "").strip().lower() in {"auto", "2.0", "2.5", "both"}
     return isinstance(value, str) and bool(value.strip())
 
 
@@ -126,6 +131,10 @@ def config_issues(config, run_dir=None, require_confirmation=True):
     platform = _get(config, "target_platform")
     if _value_is_present("target_platform", platform) and not _supported_target_platform(platform):
         issues.append("target_platform must be 即梦 for the current T2V contract")
+    seedance_target = str(_get(config, "seedance_target") or "").strip().lower()
+    max_duration = _get(config, "max_shot_duration")
+    if seedance_target in {"auto", "2.0", "both"} and isinstance(max_duration, (int, float)) and max_duration > 15:
+        issues.append("max_shot_duration must be <=15 for Seedance auto, 2.0, or both")
     prompt_limits = config.get("prompt_limits", {})
     if not isinstance(prompt_limits, dict):
         issues.append("prompt_limits")

@@ -162,11 +162,16 @@ def execute_local_phase(run_dir, phase, source_path=None):
             raise ValueError("export validation failed")
         path = os.path.join(run_dir, ".cache", "export", "result.json")
         destination = os.path.abspath(destination)
-        atomic_json(path, {"pass": True, "exported_at": time.time(), "markdown_path": destination,
-                           "markdown_sha256": _sha256(destination),
-                           "package_sha256": _sha256(os.path.join(run_dir, ".cache", "composer", "merged.prompt_package.json"))})
+        export_result = _load_json(path) if os.path.exists(path) else {}
+        export_result.update({"pass": True, "exported_at": time.time(),
+                              "package_sha256": _sha256(os.path.join(run_dir, ".cache", "composer", "merged.prompt_package.json"))})
+        if not export_result.get("markdown_path"):
+            export_result.update({"markdown_path": destination, "markdown_sha256": _sha256(destination)})
+        atomic_json(path, export_result)
         _write_delivery_status(run_dir, destination, "approved")
-        return {"result_path": path, "markdown_path": os.path.abspath(destination)}
+        return {"result_path": path, "markdown_path": export_result.get("markdown_path", destination),
+                "markdown_paths": export_result.get("markdown_paths", {}),
+                "index_markdown_path": export_result.get("index_markdown_path", "")}
     raise ValueError("no local executor for phase: " + phase)
 
 

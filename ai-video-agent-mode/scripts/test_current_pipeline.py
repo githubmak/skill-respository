@@ -1,6 +1,7 @@
 """Deterministic contract regression for the current pipeline's file boundaries."""
 import json
 import os
+import sys
 import tempfile
 import hashlib
 
@@ -172,6 +173,7 @@ def run():
         packet = _read(packet_paths[0])
         assert packet.get("source_sha256")
         assert "local_validation_command" in packet and packet["local_validation_command"][-2] == "--run-dir"
+        assert os.path.abspath(packet["local_validation_command"][0]) == os.path.abspath(sys.executable)
         assert packet.get("context_policy", {}).get("quality_policy", "").startswith("Fill core fields")
         assert all("execution_hints" in item for item in packet.get("items", []))
         with open(packet["constraints_path"], encoding="utf-8") as handle:

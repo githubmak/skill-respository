@@ -170,7 +170,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
         }
         if phase == "master_production":
             packet["local_validation_command"] = [
-                "python3",
+                sys.executable,
                 os.path.join(os.path.dirname(__file__), "validate_composer_output.py"),
                 batch_output,
                 "--run-dir",

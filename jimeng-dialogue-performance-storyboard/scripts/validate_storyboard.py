@@ -10,6 +10,7 @@ from pathlib import Path
 
 
 QUALITY_CONTROL_FIELD = "【本镜制作控制】"
+SEEDANCE_TARGETS = {"auto", "2.0", "2.5", "both"}
 CHILD_FIELDS = ["【镜号】", "【画面描述｜直接复制】", "【表演与声音】", "【状态继承】", QUALITY_CONTROL_FIELD]
 KEYFRAME_IMAGE_FIELD = "【关键帧生图提示】"
 KEYFRAME_VIDEO_FIELD = "【即梦视频提示｜配合关键帧】"
@@ -1590,10 +1591,16 @@ def posture_support_jump(prev_state: str, next_direct: str) -> bool:
     return False
 
 
-def validate(path: Path, text: str | None = None) -> list[str]:
+def validate(path: Path, text: str | None = None, seedance_target: str = "auto") -> list[str]:
     if text is None:
         text = path.read_text(encoding="utf-8")
     issues: list[str] = []
+    if seedance_target not in SEEDANCE_TARGETS:
+        issues.append(f"unsupported seedance_target: {seedance_target}")
+    elif seedance_target != "auto":
+        marker = f"Seedance 目标：{seedance_target}"
+        if marker not in text and f"seedance_target={seedance_target}" not in text:
+            issues.append(f"missing explicit {marker} marker in ## 使用说明")
     raw_group_headings = re.findall(r"^####\s+([^\n]*镜头组总时长[^\n]*)$", text, re.M)
     valid_group_heading = re.compile(r"S\d+-\d+｜镜头组总时长：\d+(?:\.\d+)?s")
     for raw_heading in raw_group_headings:
@@ -1684,6 +1691,9 @@ def validate(path: Path, text: str | None = None) -> list[str]:
             issues.append(f"{group_id}: no child shots found")
         for expected_number, child in enumerate(children, start=1):
             child_count += 1
+            duration_match = re.search(r"，\s*(\d+(?:\.\d+)?)s\s*，", child.group(1))
+            if duration_match and float(duration_match.group(1)) > 15.0:
+                issues.append(f"{group_id}-{expected_number}: Seedance dual-safe shot duration cannot exceed 15s")
             validate_child(group_id, expected_number, child.group(1).strip(), child.group(0), cast_names, issues)
         child_directs = [
             direct_prompt(child.group(0))
@@ -1840,23 +1850,85 @@ def bundle_contract_issues(items: list[tuple[Path, str]]) -> list[str]:
     return issues
 
 
+def _seedance_shot_signature(text: str) -> tuple[list[str], list[str], list[str]]:
+    groups = [match.group(1) for match in iter_groups(text)]
+    headers = []
+    for match in iter_groups(text):
+        headers.extend(child.group(1).strip() for child in iter_children(match.group(0)))
+    dialogue = re.findall(r"“[^”]+”", text)
+    return groups, headers, dialogue
+
+
+def seedance_pair_issues(items: list[tuple[Path, str]]) -> list[str]:
+    """Validate the aligned, independently feedable 2.0/2.5 pair."""
+    feeds = [(path, text) for path, text in items if "00_双版本索引" not in path.name]
+    issues: list[str] = []
+    by_target = {}
+    for path, text in feeds:
+        name = path.name.lower()
+        target = "2.0" if "seedance2.0" in name else "2.5" if "seedance2.5" in name else ""
+        if target:
+            by_target[target] = (path, text)
+    if set(by_target) != {"2.0", "2.5"}:
+        return ["seedance_target=both requires exactly one *_Seedance2.0.md and one *_Seedance2.5.md"]
+    first_path, first_text = by_target["2.0"]
+    second_path, second_text = by_target["2.5"]
+    first_sig = _seedance_shot_signature(first_text)
+    second_sig = _seedance_shot_signature(second_text)
+    if first_sig[0] != second_sig[0]:
+        issues.append(f"{second_path}: shot group IDs differ from {first_path}")
+    if first_sig[1] != second_sig[1]:
+        issues.append(f"{second_path}: shot durations or child numbering differ from {first_path}")
+    if first_sig[2] != second_sig[2]:
+        issues.append(f"{second_path}: dialogue/OS/OV quoted text differs from {first_path}")
+    if "Seedance 目标：2.0" not in first_text:
+        issues.append(f"{first_path}: missing Seedance 2.0 target marker")
+    if "Seedance 目标：2.5" not in second_text:
+        issues.append(f"{second_path}: missing Seedance 2.5 target marker")
+    return issues
+
+
 def main(argv: list[str]) -> int:
     shadow_report = "--shadow-report" in argv[1:]
-    raw_paths = [arg for arg in argv[1:] if arg != "--shadow-report"]
+    seedance_target = "auto"
+    args = [arg for arg in argv[1:] if arg != "--shadow-report"]
+    if "--seedance-target" in args:
+        index = args.index("--seedance-target")
+        if index + 1 >= len(args):
+            print("--seedance-target requires auto|2.0|2.5|both", file=sys.stderr)
+            return 2
+        seedance_target = args[index + 1]
+        args = args[:index] + args[index + 2:]
+    else:
+        for index, arg in enumerate(args):
+            if arg.startswith("--seedance-target="):
+                seedance_target = arg.split("=", 1)[1]
+                args = args[:index] + args[index + 1:]
+                break
+    raw_paths = args
     unknown_options = [arg for arg in raw_paths if arg.startswith("-")]
     if not raw_paths or unknown_options:
-        print("usage: validate_storyboard.py [--shadow-report] <file.md> [more.md ...]", file=sys.stderr)
+        print("usage: validate_storyboard.py [--shadow-report] [--seedance-target auto|2.0|2.5|both] <file.md> [more.md ...]", file=sys.stderr)
         return 2
     failed = False
     items = [(Path(raw), Path(raw).read_text(encoding="utf-8")) for raw in raw_paths]
-    bundle_issues = bundle_contract_issues(items)
+    feed_items = [(path, text) for path, text in items if "00_双版本索引" not in path.name]
+    bundle_issues = bundle_contract_issues(feed_items)
+    if seedance_target == "both":
+        bundle_issues.extend(seedance_pair_issues(items))
     if bundle_issues:
         print("PROJECT: FAIL")
         for issue in bundle_issues:
             print(f"  - {issue}")
         failed = True
     for path, text in items:
-        issues = validate(path, text)
+        if "00_双版本索引" in path.name:
+            print(f"{path}: SKIP (non-feed comparison index)")
+            continue
+        per_target = seedance_target
+        if seedance_target == "both":
+            per_target = "2.0" if "seedance2.0" in path.name.lower() else "2.5" if "seedance2.5" in path.name.lower() else "auto"
+        issues = validate(path, text, per_target)
         print(f"{path}: {'OK' if not issues else 'FAIL'}")
         for issue in issues:
             print(f"  - {issue}")

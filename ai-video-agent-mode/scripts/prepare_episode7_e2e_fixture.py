@@ -41,6 +41,7 @@ def prepare(source_path, run_dir):
     start(run_dir, export_base)
     answer(run_dir, ["canvas", "visual_style"], ["\"9:16\"", "\"现代都市短剧，克制表演\""])
     answer(run_dir, ["max_shot_duration", "target_platform"], ["15", "\"即梦\""])
+    answer(run_dir, ["seedance_target"], ["\"auto\""])
     answer(run_dir, ["generation_control.audio_enabled"], ["true"])
     answer(run_dir, ["delivery.markdown_path"], [json.dumps(os.path.join(run_dir, "episode7_8shot_jimeng.md"), ensure_ascii=False)])
 

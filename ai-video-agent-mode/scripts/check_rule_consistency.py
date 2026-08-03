@@ -194,7 +194,7 @@ RULES = {
     "high_quality_fast_mode": {
         "label": "高质量快速模式",
         "checks": {
-            "references/ROUTES.md": ("高质量快速模式", "--auto-start", "全部八个基础字段"),
+            "references/ROUTES.md": ("高质量快速模式", "--auto-start", "全部九个基础字段", "seedance_target"),
             "references/project_config.template.json": ("高质量快速模式", "模板值不等于用户确认"),
             "scripts/configuration_wizard.py": ("def confirm_all", "batch config must explicitly provide"),
             "scripts/route_task.py": ("def high_quality_fast_start", "quality_pipeline_preserved", "skipped_phases"),

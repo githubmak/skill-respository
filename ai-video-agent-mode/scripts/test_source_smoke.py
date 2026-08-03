@@ -35,6 +35,7 @@ def run(source_path, min_shots=1):
         start(run_dir, root)
         answer(run_dir, ["canvas", "visual_style"], ["\"9:16\"", "\"smoke-test\""])
         answer(run_dir, ["max_shot_duration", "target_platform"], ["15", "\"即梦\""])
+        answer(run_dir, ["seedance_target"], ["\"auto\""])
         answer(run_dir, ["generation_control.audio_enabled"], ["true"])
         answer(run_dir, ["delivery.markdown_path"], [json.dumps(os.path.join(root, "delivery.md"), ensure_ascii=False)])
 

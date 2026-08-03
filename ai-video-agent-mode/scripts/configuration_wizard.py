@@ -27,6 +27,12 @@ MODE_ALIASES = {
 PLATFORM_ALIASES = {
     "jimeng": "即梦", "seedance": "即梦", "即梦": "即梦",
 }
+SEEDANCE_TARGET_ALIASES = {
+    "自动": "auto", "兼容": "auto", "auto": "auto",
+    "2": "2.0", "2.0": "2.0", "seedance2.0": "2.0", "seedance 2.0": "2.0",
+    "2.5": "2.5", "seedance2.5": "2.5", "seedance 2.5": "2.5",
+    "both": "both", "双版本": "both", "两个": "both", "2.0+2.5": "both",
+}
 
 
 def _load(path):
@@ -95,6 +101,9 @@ def _normalize_value(field, value):
     if field == "target_platform" and isinstance(value, str):
         text = value.strip()
         return PLATFORM_ALIASES.get(text.lower(), PLATFORM_ALIASES.get(text, text))
+    if field == "seedance_target" and isinstance(value, str):
+        text = value.strip()
+        return SEEDANCE_TARGET_ALIASES.get(text.lower(), SEEDANCE_TARGET_ALIASES.get(text, text.lower()))
     return value
 
 

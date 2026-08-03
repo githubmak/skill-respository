@@ -44,6 +44,7 @@ def _config(root):
         "visual_style": "写实电影级动态漫短剧",
         "max_shot_duration": 15,
         "target_platform": "即梦",
+        "seedance_target": "auto",
         "generation_control": {
             "mode": "t2v",
             "audio_enabled": True,
@@ -87,7 +88,9 @@ def run():
         assert saved["source_rules"]["style_evidence"]["routing_only"] is True
         assert "scene_receipts" not in saved["source_rules"]["style_evidence"]
         assert saved["source_rules"]["style_evidence"]["scene_receipt_count"] >= 1
-        assert saved["source_rules"]["source_gate_report"].endswith(".cache/preflight/source_gate.json")
+        assert os.path.normpath(saved["source_rules"]["source_gate_report"]) == os.path.normpath(
+            os.path.join(run_dir, ".cache", "preflight", "source_gate.json")
+        )
         state = _read(os.path.join(run_dir, ".cache", "pipeline_state.json"))
         assert state["phases"]["user_confirm"]["status"] == "done"
         assert state["phases"]["orchestrator"]["status"] == "done"
@@ -148,6 +151,7 @@ def run():
         start(run_dir, root)
         answer(run_dir, ["canvas", "visual_style"], ["\"16:9\"", "\"动态漫\""])
         answer(run_dir, ["max_shot_duration", "target_platform"], ["15", "\"即梦\""])
+        answer(run_dir, ["seedance_target"], ["\"auto\""])
         answer(run_dir, ["generation_control.audio_enabled"], ["true"])
         result = answer(run_dir, ["delivery.markdown_path"], [json.dumps(os.path.join(root, "delivery.md"), ensure_ascii=False)])
         assert result["pass"] is True
