@@ -2444,6 +2444,91 @@ def terminal_frame_contract_issues(metadata, full_prompt=""):
     return issues
 
 
+def production_control_grounding_report(metadata, direct_prompt=""):
+    """Map renderable production-control dimensions to facts visible in direct-copy text."""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    text = str(direct_prompt or "")
+
+    def values(contract_name, fields):
+        contract = metadata.get(contract_name, {})
+        if not isinstance(contract, dict):
+            return []
+        return [
+            str(contract.get(field, "") or "").strip()
+            for field in fields
+            if str(contract.get(field, "") or "").strip()
+        ]
+
+    visual = (
+        values("aesthetic_priority", ("primary_eye_target", "secondary_visual_layer", "must_preserve"))
+        + values("static_aesthetic_contract", ("composition_hierarchy", "material_anchor", "signature_frame"))
+        + values("cinematic_image_contract", ("composition_anchor", "material_response", "depth_atmosphere"))
+    )
+    light = (
+        values("lighting_topology_contract", ("motivated_source", "source_direction", "face_light_layer", "shadow_exposure_policy"))
+        + values("static_aesthetic_contract", ("light_design",))
+        + values("video_texture_contract", ("exposure_policy", "continuity_carryover"))
+    )
+    dynamic = values(
+        "dynamic_aesthetic_contract",
+        ("primary_subject_motion", "secondary_environment_motion", "camera_path", "focus_behavior", "tempo_easing", "end_state"),
+    )
+    performance = (
+        values("performance_contract", ("trigger_event", "mask_leak", "primary_body_action", "eye_focus", "end_residue"))
+        + values("relationship_emotion_arc", ("turn_trigger", "visible_tactic", "shared_residue"))
+    )
+    continuity = (
+        values("continuity_contract", ("position_continuity", "eyeline_continuity", "prop_state", "end_anchor"))
+        + values("prop_lifecycle_contract", ("contact_mode", "motion_path", "end_location", "end_orientation"))
+        + values("perspective_scale_contract", ("support_plane", "body_ratio_lock", "grounding_evidence"))
+        + values("terminal_frame_contract", ("final_slot_map", "face_and_limb_separation", "prop_and_garment_state", "support_and_contact", "camera_lock", "light_exposure_lock", "final_hold"))
+    )
+
+    reroll = metadata.get("reroll_control", {}) if isinstance(metadata.get("reroll_control"), dict) else {}
+    mitigation_steps = reroll.get("mitigation_steps", []) if isinstance(reroll.get("mitigation_steps"), list) else []
+    production_only_terms = ("人工", "检查", "复核", "抽卡", "重试", "失败", "后期", "拆镜", "关键帧", "风险")
+    reroll_visible = [
+        str(step).strip() for step in mitigation_steps
+        if str(step).strip() and not any(term in str(step) for term in production_only_terms)
+    ]
+
+    temporal = metadata.get("temporal_transition_contract", {}) if isinstance(metadata.get("temporal_transition_contract"), dict) else {}
+    montage = []
+    if temporal.get("enabled") is True:
+        montage.extend(values("temporal_transition_contract", ("prompt_anchor", "audio_bridge", "from_state", "to_state")))
+
+    candidates = {
+        "画面质感": visual,
+        "光效与曝光": light,
+        "动态美学": dynamic,
+        "表演与情绪": performance,
+        "穿帮控制": continuity,
+        "抽卡策略的可见降级结果": reroll_visible,
+        "蒙太奇与剪辑的可见结果": montage,
+    }
+    report = {}
+    for dimension, facts in candidates.items():
+        unique_facts = list(dict.fromkeys(fact for fact in facts if fact))
+        grounded = [fact for fact in unique_facts if _fragment_grounded(fact, text)]
+        report[dimension] = {
+            "applicable": bool(unique_facts),
+            "grounded": bool(grounded),
+            "candidate_facts": unique_facts,
+            "grounded_facts": grounded,
+        }
+    return report
+
+
+def production_control_grounding_issues(metadata, direct_prompt=""):
+    """Block export when an applicable visible production-control dimension is absent."""
+    report = production_control_grounding_report(metadata, direct_prompt)
+    return [
+        f"本镜制作控制.{dimension}未转译进画面描述｜直接复制"
+        for dimension, state in report.items()
+        if state["applicable"] and not state["grounded"]
+    ]
+
+
 def _active_causal_response(value):
     text = str(value or "")
     if re.search(r"保持(?:稳定|静止|不变)|无额外|不增加|固定|静止|不动", text):

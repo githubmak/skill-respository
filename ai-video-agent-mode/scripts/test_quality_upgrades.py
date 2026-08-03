@@ -35,6 +35,8 @@ from prompt_contract import (
     prop_functional_surface_contract_issues,
     skin_tone_protection_contract_issues,
     prompt_information_budget_issues,
+    production_control_grounding_issues,
+    production_control_grounding_report,
     relationship_emotion_arc_issues,
     sequence_directing_plan_issues,
     sound_directing_plan_issues,
@@ -146,6 +148,25 @@ def run():
     assert motion_anchor in direct_aesthetic
     assert "粗糙木桌吸光" in direct_aesthetic and "不均匀反光" in direct_aesthetic
     assert compile_reports and motion_anchor in compile_reports[0]["protected_required_fragments"]
+    grounding_report = compile_reports[0]["production_control_grounding"]
+    for dimension in ("画面质感", "光效与曝光", "动态美学"):
+        assert grounding_report[dimension]["grounded"] is True, (dimension, grounding_report[dimension])
+
+    missing_grounding_metadata = {
+        "static_aesthetic_contract": {"composition_hierarchy": "门框压住左侧，角色A位于右侧中景"},
+        "reroll_control": {
+            "mitigation_steps": ["需要人工首轮检查", "失败后拆镜重试"],
+        },
+    }
+    missing_grounding = production_control_grounding_issues(
+        missing_grounding_metadata, "角色A站在房间里，镜头固定。"
+    )
+    assert any("画面质感" in issue for issue in missing_grounding), missing_grounding
+    assert not any("抽卡策略" in issue for issue in missing_grounding), missing_grounding
+    grounded = production_control_grounding_report(
+        missing_grounding_metadata, "门框压住左侧，角色A位于右侧中景，镜头固定。"
+    )
+    assert grounded["画面质感"]["grounded"] is True
 
     weak_motion = {key: dict(value) for key, value in aesthetic_metadata.items()}
     weak_motion["dynamic_aesthetic_contract"]["primary_subject_motion"] = "灵动地表现情绪"

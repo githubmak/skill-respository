@@ -1033,6 +1033,31 @@ def quality_control_issues(control: str, direct: str) -> list[str]:
             and any(term in light for term in ("边界", "止于", "不越过", "衰减", "稳定", "持续"))
         ):
             issues.append(f"{QUALITY_CONTROL_FIELD}.光效与曝光必须写光源、方向、受光面和时间/空间边界")
+
+    grounding_rules = {
+        "画面质感": ("构图", "焦点", "实焦", "景深", "前景", "中景", "后景", "材质", "纹理", "划痕", "反光"),
+        "光效与曝光": ("光", "照亮", "受光", "阴影", "曝光", "高光", "黑位", "色温"),
+        "动态美学": ("镜头固定", "摄影机固定", "推近", "拉远", "横移", "跟拍", "转焦", "停稳", "落幅", "保持到结束"),
+        "穿帮控制": ("可见人数", "左侧", "右侧", "中间", "前景", "中景", "后景", "手中", "桌面", "接触", "支撑", "归属", "槽位", "边界分开"),
+    }
+    if has_visible_person:
+        grounding_rules["表演与情绪"] = (
+            "眼", "嘴角", "下颌", "呼吸", "手指", "肩", "重心", "视线", "闭口", "屏息", "停顿",
+        )
+    for label, terms in grounding_rules.items():
+        if values.get(label) and not any(term in direct for term in terms):
+            issues.append(f"{QUALITY_CONTROL_FIELD}.{label}未转译进【画面描述｜直接复制】")
+
+    reroll_visible_terms = [
+        term for term in ("固定机位", "低幅", "单一路径", "单一动作", "人数固定", "槽位固定", "保持静止")
+        if term in values.get("抽卡策略", "")
+    ]
+    if reroll_visible_terms and not any(term in direct for term in reroll_visible_terms):
+        issues.append(f"{QUALITY_CONTROL_FIELD}.抽卡策略的可见降级结果未转译进【画面描述｜直接复制】")
+    if detect_shot_type(direct) == "montage_fragment" and montage:
+        montage_terms = ("固定锚点", "重复锚点", "匹配", "状态增量", "数量变化", "阶段变化", "声桥", "现实锚点")
+        if not any(term in direct for term in montage_terms):
+            issues.append(f"{QUALITY_CONTROL_FIELD}.蒙太奇与剪辑的可见结果未转译进【画面描述｜直接复制】")
     return issues
 
 

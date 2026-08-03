@@ -54,6 +54,7 @@ description: >
 - Scene Lock 是空间、服装、道具活动区、光源与影调事实的唯一来源；后续阶段只消费，不重写。
 - `full_prompt` 只写当前可见、可执行画面事实。QA、负面词、工程数据、风险与分析标签留在独立字段。
 - 最终完整 Markdown 必须包含项目级 `## 制作质量总控` 和逐镜 `【本镜制作控制】`，把画面质感、光效与曝光、动态美学、表演与情绪、穿帮控制、抽卡策略、蒙太奇与剪辑转译为用户可见的执行摘要；不得只存在于 `qa_metadata`、validator 或 engineering 视图。
+- `【本镜制作控制】` 不是第二套事实：七项中的可见执行事实必须逐项在 `【画面描述｜直接复制】` 获得语义落地；风险等级、人工检查、失败重试、后期和拆镜决定保留在制作控制。Export 生成逐项 grounding 报告，任一适用可见维度未落地即阻断。
 - Master Production 内部按 `visual_bible → aesthetic_director → continuity_compiler → full_prompt`
   接力；这些是同一任务内字段，不是额外 Agent 阶段。
 - 每场先冻结 `camera_variation_plan`，每镜选择一个有源文依据的构图骨架和一个运镜家族；

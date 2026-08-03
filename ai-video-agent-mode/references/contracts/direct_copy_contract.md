@@ -21,6 +21,7 @@
 - 直投正文必须把终端帧合同编译为自然中文，至少写出最后20%的摄影机停稳、可见人数/槽位、人物边界或道具归属保持，以及不新增/不重复主体；不得只把 `end_state` 留在 QA 元数据。
 - 功能面道具风险镜必须保留“功能面朝使用者、摄影机实际可见面、握持/接触、操作证据、方向终态”这些可见事实；不得泄漏 `prop_functional_surface_contract/content_visibility/camera_half_space` 字段名。需要读清内容时使用肩后/过肩/俯拍/斜上方同侧机位或拆镜，不把手机屏幕、照片正面、书页或表盘转向观众。
 - 高风险镜才追加 `本镜必要约束｜直接复制` 与 `本镜补充负面提示词｜直接复制`。
+- `【本镜制作控制】` 的画面质感、光效与曝光、动态美学、表演与情绪、穿帮控制、抽卡策略中的可见降级结果、蒙太奇/剪辑中的可见结果，必须逐项在直投正文中有语义证据。风险等级、人工复核、失败重试、后期与拆镜决定属于纯生产信息，不得为通过校验塞入模型正文。导出报告记录每项 `applicable/grounded/candidate_facts/grounded_facts`，适用项未落地时阻断。
 
 导出统一由 `scripts/direct_prompt_compiler.py` 结构化编译，顺序固定为：
 `visual_prefix → space → continuity → performance → light → video_texture → cinematic`。

@@ -721,7 +721,13 @@ def run():
         bad_video_texture_metadata["video_texture_contract"]["camera_stability_policy"] = ""
         assert video_texture_contract_issues(bad_video_texture_metadata, video_texture_prompt)
         direct_task = {
-            "full_prompt": grounded_visual_prompt,
+            "full_prompt": grounded_visual_prompt.replace(
+                "主体与空间锁定：空间",
+                "主体与空间锁定：甲在画面左侧，乙在画面右侧，手机起幅在桌右前角",
+            ).replace(
+                "主镜头连续规则：规则",
+                "主镜头连续规则：锁定甲左乙右；手机始终只在桌右前角，未被触碰，落幅位置不变",
+            ),
             "negative_prompt": "肢体畸形，手指错误，屏幕文字漂移，光影突变",
             "qa_metadata": dict(
                 formal_metadata,

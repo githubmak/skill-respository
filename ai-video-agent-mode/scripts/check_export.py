@@ -30,6 +30,7 @@ from prompt_contract import (
     performance_contract_issues,
     physical_transition_chain_issues,
     pressure_release_issues,
+    production_control_grounding_issues,
     prompt_length_issues,
     reroll_control_issues,
     role_partition_issues,
@@ -191,6 +192,7 @@ def check_export(md_path, run_dir, quality_mode=False):
             + video_texture_contract_issues(metadata, full_prompt)
             + aesthetic_directing_contract_issues(metadata, full_prompt)
             + terminal_frame_contract_issues(metadata, full_prompt)
+            + production_control_grounding_issues(metadata, full_prompt)
         )
         if metadata_semantic_issues:
             metadata_missing += 1

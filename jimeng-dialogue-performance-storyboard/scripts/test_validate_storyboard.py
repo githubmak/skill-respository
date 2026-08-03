@@ -150,8 +150,29 @@ class OutputFormatTests(unittest.TestCase):
             "抽卡策略：中风险，手部接触与抬眼竞争；固定机位，人工首轮检查。\n"
             "蒙太奇与剪辑：非蒙太奇；保持镜头让抬眼产生信息增量，环境声连续。"
         )
-        direct = "16:9写实电影短片，50mm平视近景，人物身体面向门口，镜头固定。"
+        direct = (
+            "16:9写实电影短片，50mm平视近景，人物位于画面右侧实焦，木桌细划痕清楚；"
+            "左侧窗光照亮脸和手，阴影保留细节，高光稳定。人物身体面向门口，右手持续接触桌沿，"
+            "双脚接地，道具仍在桌面右侧；听见开门声后抬眼，呼吸停顿，眼神停在门口形成余波。"
+            "固定机位记录这一低幅反应，落幅停稳。"
+        )
         self.assertEqual([], validator.quality_control_issues(control, direct))
+
+    def test_shot_quality_control_rejects_visible_fact_missing_from_direct_prompt(self) -> None:
+        control = (
+            "画面质感：门框形成前景框景，木桌保留细划痕。\n"
+            "光效与曝光：左侧窗光照亮脸和手，阴影可读。\n"
+            "动态美学：起幅稳定，开门声触发抬眼，固定机位，落幅停稳。\n"
+            "表演与情绪：听见开门声触发戒备，眼神泄露，余波停在门口。\n"
+            "穿帮控制：右手接触桌沿，双脚接地，道具仍在桌面右侧。\n"
+            "抽卡策略：中风险；固定机位，人工首轮检查。\n"
+            "蒙太奇与剪辑：非蒙太奇；保持当前连续镜头。"
+        )
+        issues = validator.quality_control_issues(
+            control, "16:9写实电影短片，人物站在房间中央。"
+        )
+        for label in ("画面质感", "光效与曝光", "动态美学", "表演与情绪", "穿帮控制"):
+            self.assertTrue(any(label in issue and "未转译" in issue for issue in issues), (label, issues))
 
     def test_shot_quality_control_rejects_internal_placeholders(self) -> None:
         control = "\n".join(f"{label}：已检查，按合同执行。" for label in validator.SHOT_QUALITY_LABELS)

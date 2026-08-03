@@ -22,7 +22,11 @@ sys.path.insert(0, os.path.dirname(__file__))
 from normalize_prompt_package import normalize_package
 from materialize_master_tasks import materialize as materialize_master_tasks
 from validate_master_tasks import validate as validate_master_tasks
-from prompt_contract import jimeng_feed_prompt
+from prompt_contract import (
+    jimeng_feed_prompt,
+    production_control_grounding_issues,
+    production_control_grounding_report,
+)
 from direct_prompt_compiler import compile_direct_prompt, compile_director_card
 from spatial_storyboard import build_spatial_storyboard_reference
 from current_keyframe import build_keyframe_sequence
@@ -494,6 +498,11 @@ def _build_direct_copy_prompt(task, plan, compile_reports=None):
     )
     if compiled["issues"]:
         raise ValueError("；".join(compiled["issues"]))
+    metadata = task.get("qa_metadata", {}) if isinstance(task.get("qa_metadata"), dict) else {}
+    grounding_report = production_control_grounding_report(metadata, compiled["text"])
+    grounding_issues = production_control_grounding_issues(metadata, compiled["text"])
+    if grounding_issues:
+        raise ValueError("；".join(grounding_issues))
     if isinstance(compile_reports, list):
         compile_reports.append({
             "shot_id": str(task.get("shot_id", "") or ""),
@@ -509,6 +518,7 @@ def _build_direct_copy_prompt(task, plan, compile_reports=None):
             "active_visual_enhancers": compiled["active_visual_enhancers"],
             "sentence_provenance": build_sentence_provenance(task, compiled["text"]),
             "action_failure_prediction": predict_action_failure(task),
+            "production_control_grounding": grounding_report,
         })
     return _clean_export_direct_text(compiled["text"])
 
