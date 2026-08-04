@@ -57,6 +57,7 @@ from production_intelligence import (
     physical_stability_issues,
     perspective_scale_contract_issues,
     prop_lifecycle_contract_issues,
+    spatial_facing_issues,
     visual_prior_risk_issues,
 )
 from contract_registry import PROMPT_CONTRACT_VERSION, QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
@@ -204,6 +205,7 @@ def check_export(md_path, run_dir, quality_mode=False):
         production_issues = (
             visual_prior_risk_issues(full_prompt, json.dumps(plan_item, ensure_ascii=False))
             + multi_person_attention_budget_issues(metadata, full_prompt, visible)
+            + spatial_facing_issues(metadata, full_prompt, visible)
             + prop_lifecycle_contract_issues(metadata, full_prompt, validation_profile["prop_lifecycle_contract"])
             + perspective_scale_contract_issues(metadata, full_prompt, visible, validation_profile["perspective_scale_contract"])
             + lighting_topology_contract_issues(metadata, full_prompt, validation_profile["lighting_topology_contract"])

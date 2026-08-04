@@ -13,6 +13,7 @@ from production_intelligence import (
     perspective_scale_contract_issues,
     predict_action_failure,
     prop_lifecycle_contract_issues,
+    spatial_facing_issues,
 )
 
 
@@ -21,6 +22,7 @@ def main():
     _test_multi_person_attention()
     _test_prop_and_action_contracts()
     _test_perspective_and_lighting()
+    _test_spatial_facing()
     _test_sequence_emotion_provenance_and_repair()
     print("[PRODUCTION INTELLIGENCE] PASS")
 
@@ -111,6 +113,36 @@ def _test_perspective_and_lighting():
     }
     lighting_prompt = "窗外日光来自画面左前方，主光5200K、室内环境光3800K；面部中性补光保护肤色与眼窝层次，暖色只落在木墙与桌面，鼻翼阴影保留细节不过曝；丁达尔光束只穿过后景薄雾，不扫过脸。"
     assert not lighting_topology_contract_issues({"lighting_topology_contract": lighting}, lighting_prompt, True)
+
+
+def _test_spatial_facing():
+    valid = (
+        "摄影机位于门外院地，朝屋内拍摄。沈青乔站在门槛外侧前景，背对摄影机，"
+        "身体、胸口和脚尖面向卫景耘；卫景耘始终站在门槛内侧后景，身体和正面朝向沈青乔，"
+        "正面和双肩可见。二人相互面对。沈青乔背影只遮挡卫景耘左侧下半身，"
+        "卫景耘脸、双手和木棍仍可见，中央留出视觉通道。"
+    )
+    assert not spatial_facing_issues({}, valid, ["沈青乔", "卫景耘"])
+    invalid = "摄影机在门槛外侧，甲在门槛外侧前景，乙在门槛内侧后景，两人对峙并面向镜头，门外夜光留在背景。"
+    issues = spatial_facing_issues({}, invalid, ["甲", "乙"])
+    assert any("分别写A身体面向B" in issue for issue in issues)
+    assert any("不得用面向/正对镜头" in issue for issue in issues)
+    assert any("门外夜色" in issue for issue in issues)
+    assert spatial_facing_issues({}, "女主回家后直接站在门槛内侧。", ["女主"])
+    assert spatial_facing_issues({}, "甲和乙各提竹篮，双竹篮归属固定。", ["甲", "乙"])
+    authorized = (
+        "甲身体、胸口和脚尖面向乙，乙身体、胸口和脚尖面向甲，两人对峙。"
+        "源文为打破第四面墙表演，2.0-3.0秒仅甲短暂直视镜头，甲身体仍面向乙；"
+        "乙视线始终落在甲身上，3.0秒后甲视线回到乙。"
+    )
+    assert not spatial_facing_issues({}, authorized, ["甲", "乙"])
+    multiple = (
+        "甲身体面向乙，乙身体面向甲，两人对峙。打破第四面墙，2.0-3.0秒甲直视镜头，"
+        "乙也直视镜头，两人保持直视镜头到结束。"
+    )
+    assert any("只能有一名人物" in issue for issue in spatial_facing_issues({}, multiple, ["甲", "乙"]))
+    no_end = "甲身体面向乙，乙身体面向甲，两人对峙。打破第四面墙，2.0-3.0秒仅甲短暂直视镜头，甲身体仍面向乙。"
+    assert any("结束状态" in issue for issue in spatial_facing_issues({}, no_end, ["甲", "乙"]))
 
 
 def _test_sequence_emotion_provenance_and_repair():

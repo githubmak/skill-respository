@@ -49,6 +49,7 @@ from production_intelligence import (
     multi_person_attention_budget_issues,
     perspective_scale_contract_issues,
     prop_lifecycle_contract_issues,
+    spatial_facing_issues,
     visual_prior_risk_issues,
 )
 from contract_registry import PROMPT_CONTRACT_VERSION, QA_REQUIRED_FIELDS
@@ -199,6 +200,8 @@ def main(run_dir):
         for issue in visual_prior_risk_issues(full_prompt, json.dumps(plan_item, ensure_ascii=False)):
             errors.append(prefix + issue)
         for issue in multi_person_attention_budget_issues(metadata, full_prompt, visible):
+            errors.append(prefix + issue)
+        for issue in spatial_facing_issues(metadata, full_prompt, visible):
             errors.append(prefix + issue)
         if validation_profile["prop_lifecycle_contract"] or "prop_lifecycle_contract" in metadata:
             for issue in prop_lifecycle_contract_issues(metadata, full_prompt, validation_profile["prop_lifecycle_contract"]):

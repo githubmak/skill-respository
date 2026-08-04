@@ -266,6 +266,34 @@ TOWARD_CAMERA_TERMS = ("走向镜头", "朝镜头走", "走近镜头", "靠近�
 AWAY_FROM_CAMERA_TERMS = ("远离镜头", "背向镜头走远", "向画面深处走", "沿纵深走远")
 CONTINUOUS_GROWTH_TERMS = ("画面占比连续增大", "投影尺度连续增大", "画面投影连续增大")
 CONTINUOUS_SHRINK_TERMS = ("画面占比连续减小", "投影尺度连续减小", "画面投影连续减小")
+FACE_TO_FACE_TERMS = ("对峙", "面对面", "相互面对", "彼此面对", "对望", "看见彼此", "四目相对")
+CAMERA_FACING_TERMS = (
+    "面向镜头", "朝向镜头", "正对镜头", "面对镜头", "面向摄影机", "正对摄影机",
+    "看向镜头", "望向镜头", "直视镜头", "看向摄影机", "直视摄影机",
+)
+DIRECT_ADDRESS_AUTH_TERMS = (
+    "打破第四面墙", "对镜口播", "对观众说话", "向观众独白", "直面观众表演",
+    "主观视角", "第一人称视角", "POV", "摄影机代表对手视线", "摄影机代表观众视线",
+)
+DIRECT_ADDRESS_TIMING_TERMS = ("短暂", "随后", "期间", "说完后", "台词期间", "独白期间")
+DIRECT_ADDRESS_END_TERMS = (
+    "视线回到", "视线重新落在", "恢复看向", "重新看向", "重新面向",
+    "保持直视镜头到结束", "直视镜头保持到结束", "落幅仍直视镜头", "直视观众保持到结束",
+)
+CAMERA_VISIBLE_PLANE_TERMS = (
+    "正面可见", "正脸可见", "正面和双肩可见", "背面可见", "背影可见", "后脑可见",
+    "背对摄影机", "背对镜头", "侧面可见", "侧脸可见", "三分之二侧面可见",
+)
+DOORWAY_EVENT_TERMS = ("回家", "进门", "走进", "进入屋内", "跨过门槛", "跨进门槛", "迈过门槛")
+THRESHOLD_SIDE_TERMS = ("门槛外侧", "门槛内侧", "屋外一侧", "屋内一侧", "门外院地", "屋内土面")
+OCCLUSION_RESULT_TERMS = (
+    "仍可见", "保持可见", "清晰可见", "不被遮住", "露出", "视觉通道", "视线通道", "中央空隙",
+)
+SIMILAR_PROP_GROUP_RE = re.compile(r"(?:双|两个|两只|两件)(?:鱼篓|竹篓|菜篓|竹篮|菜篮|篮子|背篓|木棍|拐杖)")
+PROP_DISTINCTION_TERMS = (
+    "不同", "区分", "圆口", "方口", "深色", "浅色", "宽", "窄", "高筒", "矮筒", "鱼", "菜",
+    "布盖", "藤编", "竹编", "粗编", "细编", "形状", "颜色", "内容物", "尺寸差",
+)
 SHOT_TYPE_GUIDANCE = {
     "dialogue_performance": ("对白表演", 200, 320),
     "multi_character_relationship": ("多人关系", 200, 340),
@@ -937,6 +965,110 @@ def perspective_scale_issues(direct: str, cast_names: list[str]) -> list[str]:
     return issues
 
 
+def _actor_faces_target(text: str, actor: str, target: str) -> bool:
+    actor_re = re.escape(actor)
+    target_re = re.escape(target)
+    patterns = (
+        rf"{actor_re}[^。；;\n]{{0,42}}(?:身体|胸口|肩线|脚尖|正面)[^。；;\n]{{0,12}}(?:面向|朝向|正对|转向)[^。；;\n]{{0,16}}{target_re}",
+        rf"{actor_re}[^。；;\n]{{0,42}}(?:面向|朝向|正对)[^。；;\n]{{0,16}}{target_re}",
+        rf"{target_re}[^。；;\n]{{0,16}}(?:正对|对面)[^。；;\n]{{0,42}}{actor_re}",
+    )
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
+def _name_has_threshold_side(text: str, name: str) -> bool:
+    name_re = re.escape(name)
+    side = r"(?:门槛|房门)(?:内侧|外侧)|(?:屋内|门内|屋外|门外)(?:一侧|区域|土面|院地)?"
+    return bool(
+        re.search(rf"{name_re}[^。；;\n]{{0,36}}{side}", text)
+        or re.search(rf"{side}[^。；;\n]{{0,24}}{name_re}", text)
+    )
+
+
+def _actor_camera_facing(text: str, actor: str) -> bool:
+    actor_re = re.escape(actor)
+    camera_terms = "|".join(re.escape(term) for term in CAMERA_FACING_TERMS)
+    return bool(re.search(rf"{actor_re}[^。；;\n]{{0,18}}(?:{camera_terms})", text))
+
+
+def _direct_address_has_timing(text: str) -> bool:
+    return any(term in text for term in DIRECT_ADDRESS_TIMING_TERMS) or bool(
+        re.search(r"\d+(?:\.\d+)?\s*[-–—至]\s*\d+(?:\.\d+)?\s*(?:s|秒)", text)
+    )
+
+
+def spatial_facing_issues(direct: str, cast_names: list[str]) -> list[str]:
+    """Validate actor-to-actor facing independently from the plane visible to camera."""
+    text = strip_quoted_content(direct)
+    visible = [name for name in cast_names if name in text]
+    issues: list[str] = []
+    relational = len(visible) >= 2 and any(term in text for term in FACE_TO_FACE_TERMS)
+    reverse_or_plane = len(visible) >= 2 and (
+        has_reverse_shot(text)
+        or any(term in text for term in ("背对镜头", "背对摄影机", "正面可见", "正脸可见", "背影"))
+    )
+
+    if relational or reverse_or_plane:
+        reciprocal_pairs = [
+            (first, second)
+            for first in visible
+            for second in visible
+            if first < second
+            and _actor_faces_target(text, first, second)
+            and _actor_faces_target(text, second, first)
+        ]
+        if not reciprocal_pairs:
+            issues.append("双人对峙/正背关系必须分别写A身体面向B、B身体面向A，不能只写对望、面对面或前后景")
+        if any(term in text for term in CAMERA_FACING_TERMS):
+            authorized = any(term in text for term in DIRECT_ADDRESS_AUTH_TERMS)
+            camera_facing_actors = [name for name in visible if _actor_camera_facing(text, name)]
+            if not authorized:
+                issues.append("双人关系镜不得用面向/正对镜头代替人物关系；只有源文明示的POV、口播或打破第四面墙可授权直视镜头")
+            else:
+                if len(camera_facing_actors) != 1:
+                    issues.append("授权直面镜头必须明确且只能有一名人物直视摄影机，其他人物继续看向场内目标")
+                if not _direct_address_has_timing(text):
+                    issues.append("授权直面镜头必须写开始/结束时间窗或短暂触发时点")
+                if not any(term in text for term in DIRECT_ADDRESS_END_TERMS):
+                    issues.append("授权直面镜头必须写视线回到对手或保持直视到落幅的结束状态")
+                if any(term in text for term in ("面向镜头", "朝向镜头", "正对镜头", "面对镜头", "面向摄影机", "正对摄影机")) and not any(
+                    term in text for term in ("转向镜头", "转向摄影机", "转身面向镜头", "肩线转向镜头", "身体仍面向")
+                ):
+                    issues.append("授权人物若身体转向镜头，必须写从原关系到直面镜头的可见转向；仅眼神直视时写身体仍面向对手")
+
+    if reverse_or_plane and not any(term in text for term in CAMERA_VISIBLE_PLANE_TERMS):
+        issues.append("正背/肩后关系必须另写摄影机看到每人的正面、背面或侧面，不得让可见面暗示人物转向镜头")
+
+    doorway = "门槛" in text and any(term in text for term in ("门外", "门内", "屋外", "屋内", "门框"))
+    if doorway and len(visible) >= 2:
+        missing_sides = [name for name in visible if not _name_has_threshold_side(text, name)]
+        if missing_sides:
+            issues.append("门槛关系镜必须逐人绑定门槛内/外侧 -> " + "、".join(missing_sides))
+    camera_outside = bool(re.search(r"(?:摄影机|镜头|机位)[^。；;\n]{0,24}(?:门槛外侧|门外|院中|院地)", text))
+    looks_inside = bool(re.search(r"(?:朝|拍向|对准|看向)[^。；;\n]{0,10}(?:屋内|门内|室内)", text))
+    if camera_outside and doorway and not looks_inside:
+        issues.append("门外门槛机位必须声明摄影机朝屋内或朝门外的拍摄方向，并给出该方向真实可见的背景锚点")
+    if camera_outside and re.search(r"门外[^。；;\n]{0,12}(?:留在|位于|作为)[^。；;\n]{0,8}(?:背景|后景)", text):
+        issues.append("摄影机在门外朝屋内拍摄时，画面后景应是屋内墙面/灯/家具；门外夜色在摄影机身后，不能同时写成后景")
+
+    if any(term in text for term in DOORWAY_EVENT_TERMS):
+        has_start = any(term in text for term in ("起点在门外", "从门外", "门槛外侧起步", "屋外起步"))
+        has_cross = any(term in text for term in ("跨过门槛", "跨进门槛", "迈过门槛", "脚掌越过门槛"))
+        has_end = any(term in text for term in ("停在门槛内侧", "进入屋内", "最终站在屋内", "双脚落在屋内"))
+        if not (has_start and has_cross and has_end):
+            issues.append("回家/进门必须写门外起点 -> 跨过门槛 -> 屋内终点的完整可见动作链")
+
+    contexts = named_person_contexts(text, visible)
+    depth = person_depth_labels(contexts)
+    if any("near" in labels for labels in depth.values()) and any("far" in labels for labels in depth.values()):
+        if "遮挡" not in text or not any(term in text for term in OCCLUSION_RESULT_TERMS):
+            issues.append("具名前后景人物必须写允许遮挡的部位及后景脸/手/关键道具的可见结果，前后景和占比只能作辅助")
+
+    if SIMILAR_PROP_GROUP_RE.search(text) and not any(term in text for term in PROP_DISTINCTION_TERMS):
+        issues.append("同类道具同时入画必须用持有人加形状/颜色/内容物至少一项区分，不能只写双篓/双篮/双棍")
+    return issues
+
+
 def iter_groups(text: str):
     header = r"^####\s+(S\d+-\d+)(?:｜镜头组总时长：(\d+(?:\.\d+)?)s)?\s*$"
     pattern = re.compile(
@@ -1338,6 +1470,8 @@ def validate_child(
         issues.append(f"{sid}: 环境色污染肤色风险 -> {issue}")
     for issue in perspective_scale_issues(direct, cast_names):
         issues.append(f"{sid}: 人物透视比例风险 -> {issue}")
+    for issue in spatial_facing_issues(direct, cast_names):
+        issues.append(f"{sid}: 空间面向风险 -> {issue}")
     if post_text_inside_direct(direct):
         issues.append(f"{sid}: 后期叠字的具体文字不要写进直接提示词；只预留安全区，具体文字写到【表演与声音】中的后期文字句")
     if "后期叠字" in direct and not any(term in direct for term in ("安全区", "画面左侧", "画面右侧", "贴合屏幕平面", "预留")):

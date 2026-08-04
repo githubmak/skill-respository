@@ -61,6 +61,64 @@ class SemanticCollisionTests(unittest.TestCase):
         self.assertTrue(validator.has_camera_state("35mm低位机位轻微手持中景。"))
         self.assertTrue(validator.has_camera_state("镜头保持轻微手持感但主体稳定。"))
 
+
+class SpatialFacingContractTests(unittest.TestCase):
+    def test_doorway_back_front_relationship_is_valid(self) -> None:
+        prompt = (
+            "摄影机位于门外院地，朝屋内拍摄。沈青乔站在门槛外侧前景，背对摄影机，"
+            "身体、胸口和脚尖面向卫景耘；卫景耘始终站在门槛内侧后景，身体和正面朝向沈青乔，"
+            "正面和双肩可见。二人相互面对。沈青乔背影只遮挡卫景耘左侧下半身，"
+            "卫景耘脸、双手和木棍仍可见，中央留出视觉通道。"
+        )
+        self.assertEqual([], validator.spatial_facing_issues(prompt, ["沈青乔", "卫景耘"]))
+
+    def test_abstract_confrontation_without_reciprocal_facing_fails(self) -> None:
+        prompt = "甲在画面左侧，乙在画面右侧，两人对峙并看向镜头。"
+        issues = validator.spatial_facing_issues(prompt, ["甲", "乙"])
+        self.assertTrue(any("分别写A身体面向B" in issue for issue in issues), issues)
+        self.assertTrue(any("不得用面向/正对镜头" in issue for issue in issues), issues)
+
+    def test_source_authorized_fourth_wall_gaze_is_valid(self) -> None:
+        prompt = (
+            "甲身体、胸口和脚尖面向乙，乙身体、胸口和脚尖面向甲，两人对峙。"
+            "源文为打破第四面墙表演，2.0-3.0秒仅甲短暂直视镜头，甲身体仍面向乙；"
+            "乙视线始终落在甲身上，3.0秒后甲视线回到乙。"
+        )
+        self.assertEqual([], validator.spatial_facing_issues(prompt, ["甲", "乙"]))
+
+    def test_authorized_direct_address_rejects_multiple_camera_gazes(self) -> None:
+        prompt = (
+            "甲身体面向乙，乙身体面向甲，两人对峙。打破第四面墙，2.0-3.0秒甲直视镜头，"
+            "乙也直视镜头，两人保持直视镜头到结束。"
+        )
+        issues = validator.spatial_facing_issues(prompt, ["甲", "乙"])
+        self.assertTrue(any("只能有一名人物" in issue for issue in issues), issues)
+
+    def test_authorized_direct_address_requires_end_state(self) -> None:
+        prompt = (
+            "甲身体面向乙，乙身体面向甲，两人对峙。打破第四面墙，"
+            "2.0-3.0秒仅甲短暂直视镜头，甲身体仍面向乙。"
+        )
+        issues = validator.spatial_facing_issues(prompt, ["甲", "乙"])
+        self.assertTrue(any("结束状态" in issue for issue in issues), issues)
+
+    def test_camera_outside_cannot_put_outdoor_night_in_background(self) -> None:
+        prompt = (
+            "摄影机固定在门槛外侧，沈青乔站在门槛外侧，卫景耘站在门槛内侧，"
+            "门外夜光留在背景，两人对望。"
+        )
+        issues = validator.spatial_facing_issues(prompt, ["沈青乔", "卫景耘"])
+        self.assertTrue(any("门外夜色" in issue for issue in issues), issues)
+
+    def test_return_home_requires_threshold_crossing_chain(self) -> None:
+        prompt = "沈青乔回家，直接停在门槛内侧。"
+        issues = validator.spatial_facing_issues(prompt, ["沈青乔"])
+        self.assertTrue(any("完整可见动作链" in issue for issue in issues), issues)
+
+    def test_similar_props_require_visible_distinction(self) -> None:
+        issues = validator.spatial_facing_issues("沈青乔和阿丰各提一个竹篮，双竹篮归属固定。", ["沈青乔", "阿丰"])
+        self.assertTrue(any("同类道具" in issue for issue in issues), issues)
+
     def test_camera_signature_distinguishes_angle(self) -> None:
         overhead = validator.camera_signature("俯视近景，镜头固定。")
         oblique = validator.camera_signature("斜俯近景，镜头固定。")

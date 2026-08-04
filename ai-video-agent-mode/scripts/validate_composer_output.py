@@ -69,6 +69,7 @@ from production_intelligence import (
     physical_stability_issues,
     perspective_scale_contract_issues,
     prop_lifecycle_contract_issues,
+    spatial_facing_issues,
     visual_prior_risk_issues,
 )
 from shot_semantics import (
@@ -282,6 +283,8 @@ def validate_composer_output(
         for problem in visual_prior_risk_issues(full_prompt, json.dumps(plan_item, ensure_ascii=False)):
             issues.append(prefix + problem)
         for problem in multi_person_attention_budget_issues(metadata, full_prompt, visible):
+            issues.append(prefix + problem)
+        for problem in spatial_facing_issues(metadata, full_prompt, visible):
             issues.append(prefix + problem)
         if validation_profile["prop_lifecycle_contract"] or "prop_lifecycle_contract" in metadata:
             for problem in prop_lifecycle_contract_issues(
