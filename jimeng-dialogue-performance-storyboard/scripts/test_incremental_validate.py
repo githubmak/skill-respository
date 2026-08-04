@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import unittest
 
-from incremental_validate import analyze
+from incremental_validate import _issue, analyze
 
 
 def _child(
@@ -42,6 +42,16 @@ def _direct(extra: str) -> str:
 
 
 class IncrementalValidationTests(unittest.TestCase):
+    def test_signature_core_position_is_scoped_to_shot_and_both_fields(self):
+        target = _issue(
+            "不可降级视觉核心必须在直接提示词前60%内完成",
+            "field",
+            ["S1-01-1"],
+        )
+        self.assertEqual("MEMORY_ANCHOR_DENSITY", target["code"])
+        self.assertEqual("shot", target["repair_scope"])
+        self.assertEqual(["【画面描述｜直接复制】", "【本镜制作控制】"], target["fields"])
+
     def test_missing_field_is_scoped_to_current_field(self):
         draft = "#### S1-01\n\n【出现人物】\n她\n\n" + _child(
             1, _direct("她发现漏水后转身按下阀门，水流停止；"),
@@ -65,6 +75,24 @@ class IncrementalValidationTests(unittest.TestCase):
         draft = "#### S1-01\n\n【出现人物】\n甲\n乙\n\n" + first + "\n" + second
         result = analyze(draft, "S1-01-2")
         target = next(item for item in result["issues"] if item["code"] == "PROP_CONTINUITY" and item["repair_scope"] == "pair")
+        self.assertEqual(["S1-01-1", "S1-01-2"], target["shot_ids"])
+
+    def test_physical_axis_flip_is_caught_during_incremental_validation(self):
+        previous = (
+            "摄影机位于长桌南侧，朝北拍摄，保持在甲与乙关系轴同一侧。"
+            "甲站在桌边，身体面向乙，侧面可见，视线落在乙；"
+            "乙站在桌对面，身体面向甲，侧面可见，视线落在甲。两人对峙。"
+        )
+        current = previous.replace("长桌南侧，朝北", "长桌北侧，朝南")
+        draft = (
+            "#### S1-01\n\n【出现人物】\n甲\n乙\n\n"
+            + _child(1, previous, "甲乙仍隔桌对峙。")
+            + "\n"
+            + _child(2, current, "甲乙仍隔桌对峙。")
+        )
+        result = analyze(draft, "S1-01-2")
+        target = next(item for item in result["issues"] if item["code"] == "AXIS_CONTINUITY")
+        self.assertEqual("pair", target["repair_scope"])
         self.assertEqual(["S1-01-1", "S1-01-2"], target["shot_ids"])
 
     def test_full_validation_remains_mandatory(self):
@@ -95,15 +123,21 @@ class IncrementalValidationTests(unittest.TestCase):
     def test_fifth_shot_accepts_valid_memory_anchor_in_window(self):
         anchor = (
             "记忆锚点：墙角水阀把人物和扩散积水连成斜线；"
+            "第一眼焦点：水阀锈斑；"
             "成立原因：水阀与积水边缘同时呈现原因和后果；"
-            "关系/认知变化：观众看清人物由迟疑转为决定。"
+            "情绪载体：人物按住水阀的指节发白；"
+            "关系/认知变化：人物由迟疑转为决定；"
+            "相邻差异：观众位置贴近地面，信息显露从积水转到水阀，视觉载体从杯子转为锈斑；"
+            "不可降级核心：水阀、发白指节与停止扩散的积水同时入画。"
         )
         children = [
             _child(
                 index,
                 _direct(
-                    "墙角水阀把人物和扩散积水连成斜线，"
-                    "水阀与积水边缘同时呈现原因和后果，人物由迟疑转为决定；"
+                    "水阀、发白指节与停止扩散的积水同时入画，墙角水阀把人物和扩散积水连成斜线，"
+                    "前景积水倒影映出水阀锈斑，第一眼落在水阀锈斑，人物按住水阀的指节发白，"
+                    "水阀与积水边缘同时呈现原因和后果，人物由迟疑转为决定，"
+                    "积水边缘停在人物脚前；"
                     if index == 3 else f"人物触碰第{index}只杯子后收回手；"
                 ),
                 "人物仍面向桌面。",

@@ -37,12 +37,37 @@ BANNED_DIRECT = [
     "当前主角", "当前对话者", "视情况", "出场人物", "所有人物", "全部人物", "所有出场人物",
 ]
 GLOBAL_SCALE_LOCK_TITLE = "全局比例与支撑锁定"
-GLOBAL_SCALE_LOCK_TERMS = (
-    "角色骨骼与头身比例恒定", "真实身高和体型尺寸固定", "四肢长度与关节比例稳定",
-    "地平线及消失关系稳定", "身体主支撑点持续贴合当前承载面", "站立时双脚接地",
-    "行走时步态交替接地", "坐卧时臀背或躯干贴合承载面", "腾空时保持起跳、空中与落地轨迹连续", "两人身高差",
-    "画面投影只随物理距离连续变化", "固定距离下画面占比保持稳定",
-)
+GLOBAL_SCALE_LOCK_CONCEPTS = {
+    "骨骼与头身比例稳定": (
+        r"(?:骨骼|骨架)[^。；;\n]{0,14}(?:恒定|固定|稳定|不变)",
+        r"头身(?:比例|比)[^。；;\n]{0,12}(?:恒定|固定|稳定|不变)",
+    ),
+    "真实身高与体型固定": (
+        r"(?:真实)?身高[^。；;\n]{0,12}(?:体型|尺寸)[^。；;\n]{0,12}(?:恒定|固定|稳定|不变)",
+        r"(?:体型|身体尺寸)[^。；;\n]{0,12}(?:恒定|固定|稳定|不变)",
+    ),
+    "四肢与关节比例稳定": (
+        r"(?:四肢|手臂|腿部)[^。；;\n]{0,12}(?:长度|比例)[^。；;\n]{0,12}(?:恒定|固定|稳定|不变)",
+        r"关节[^。；;\n]{0,12}(?:比例|位置)[^。；;\n]{0,12}(?:恒定|固定|稳定|不变)",
+    ),
+    "透视关系稳定": (
+        r"(?:地平线|消失点|消失关系|空间透视)[^。；;\n]{0,14}(?:恒定|固定|稳定|不变)",
+    ),
+    "身体支撑接触连续": (
+        r"(?:主支撑点|身体支撑|承重点)[^。；;\n]{0,18}(?:贴合|接触|落在|压在)[^。；;\n]{0,12}(?:承载面|支撑面|地面|座面)",
+    ),
+    "站立双脚接地": (r"站立[^。；;\n]{0,12}(?:双脚|脚底)[^。；;\n]{0,10}(?:接地|落地|贴地)",),
+    "行走交替接地": (r"(?:行走|步行|走动)[^。；;\n]{0,16}(?:交替接地|步态连续|落脚连续)",),
+    "坐卧支撑明确": (r"(?:坐卧|坐姿|躺卧)[^。；;\n]{0,18}(?:臀背|躯干|背部|身体)[^。；;\n]{0,12}(?:贴合|接触|压在|落在)[^。；;\n]{0,12}(?:承载面|支撑面|座面|床面)",),
+    "腾空轨迹连续": (r"腾空[^。；;\n]{0,24}(?:起跳|离地)[^。；;\n]{0,24}(?:空中|轨迹)[^。；;\n]{0,24}(?:落地|着地)",),
+    "人物相对尺寸稳定": (
+        r"(?:两人|人物|角色)[^。；;\n]{0,14}(?:身高差|相对尺寸|比例关系)[^。；;\n]{0,12}(?:恒定|固定|稳定|一致|不变)",
+    ),
+    "投影只随距离连续变化": (
+        r"(?:画面投影|投影尺度|画面占比)[^。；;\n]{0,18}(?:物理距离|镜头距离|景深距离)[^。；;\n]{0,16}(?:连续变化|平滑变化|对应变化)",
+        r"固定距离[^。；;\n]{0,18}(?:画面占比|投影尺度)[^。；;\n]{0,12}(?:恒定|固定|稳定|不变)",
+    ),
+}
 GLOBAL_SCALE_NEGATIVE_TERMS = (
     "人物忽高忽低", "体型动态变化", "腿部拉长缩短", "无因尺度跳变", "无因浮空",
     "透视错乱", "穿模", "肢体畸形", "广角畸变",
@@ -168,10 +193,10 @@ SIDE_OVERLAY_NEGATIVE_TERMS = ("聊天气泡贴手机", "文字贴手机壳", "�
 CROWD_RISK_TERMS = ("人群", "围观", "混混", "路人", "宾客", "群众")
 CROWD_STRUCTURE_TERMS = ("后方", "背景", "虚化", "不靠近", "不抢焦", "不产生可见口型", "远处")
 KEYFRAME_POSTURE_CHANGE_TERMS = ("翻身", "坐起", "起身", "摔倒", "倒向", "倒到", "扶住", "抱住", "搂住", "抱起", "背起", "亲密接触")
-KEYFRAME_PROP_TERMS = ("银行卡", "卡片", "手机", "签字笔", "外套", "包", "杯子", "证件")
 KEYFRAME_PROP_ACTION_TERMS = ("递", "递到", "交给", "接过", "接住", "塞给", "签字", "刷卡", "付款", "披", "穿上", "收起")
 KEYFRAME_UI_TERMS = ("绿色微信消息气泡", "绿色聊天气泡", "消息气泡", "来电", "转账", "聊天记录", "付款码", "屏幕显示")
 KEYFRAME_SPACE_TERMS = ("开门", "关门", "推门", "拉门", "开车门", "关车门", "下车", "上车", "电梯门")
+BOUNDARY_CROSS_ACTIONS = ("跨过", "跨越", "穿过", "穿越", "进入", "离开", "走进", "走出", "越过", "掀开")
 KEYFRAME_CAMERA_TERMS = (
     "环绕", "半弧环绕", "半弧移动", "希区柯克变焦", "多莉变焦",
     "闯入式镜头", "冲入画面", "时间断裂",
@@ -291,6 +316,38 @@ CAMERA_VISIBLE_PLANE_TERMS = (
 )
 DOORWAY_EVENT_TERMS = ("回家", "进门", "走进", "进入屋内", "跨过门槛", "跨进门槛", "迈过门槛")
 THRESHOLD_SIDE_TERMS = ("门槛外侧", "门槛内侧", "屋外一侧", "屋内一侧", "门外院地", "屋内土面")
+BOUNDARY_FAMILIES = {
+    "门槛": {
+        "markers": ("门槛", "门框", "房门"),
+        "inside": ("门槛内侧", "屋内", "门内", "室内"),
+        "outside": ("门槛外侧", "屋外", "门外", "院地", "院中"),
+    },
+    "舱门": {
+        "markers": ("舱门",),
+        "inside": ("舱门内侧", "舱内", "舱室内"),
+        "outside": ("舱门外侧", "舱外", "舱室外"),
+    },
+    "电梯边界": {
+        "markers": ("电梯门", "轿厢", "候梯厅"),
+        "inside": ("电梯门内侧", "轿厢内", "电梯内"),
+        "outside": ("电梯门外侧", "轿厢外", "候梯厅", "电梯厅"),
+    },
+    "车厢边界": {
+        "markers": ("车厢门", "车厢连接处", "车厢接口"),
+        "inside": ("车厢门内侧", "本节车厢", "车厢内"),
+        "outside": ("车厢门外侧", "相邻车厢", "车厢外", "连接处外侧"),
+    },
+    "帷幕边界": {
+        "markers": ("帷幕", "幕帘"),
+        "inside": ("帷幕内侧", "帷幕后", "幕帘后"),
+        "outside": ("帷幕外侧", "帷幕前", "幕帘前"),
+    },
+    "结界边界": {
+        "markers": ("结界",),
+        "inside": ("结界内侧", "结界内", "结界内部"),
+        "outside": ("结界外侧", "结界外", "结界外围"),
+    },
+}
 OCCLUSION_RESULT_TERMS = (
     "仍可见", "保持可见", "清晰可见", "不被遮住", "露出", "视觉通道", "视线通道", "中央空隙",
 )
@@ -325,7 +382,7 @@ CAMERA_LOCATION_TERMS = (
 CAMERA_DIRECTION_TERMS = ("朝", "拍向", "对准", "看向")
 CONTROL_SEMANTIC_SCAFFOLD_TERMS = (
     "画面质感", "光效与曝光", "动态美学", "表演与情绪", "穿帮控制", "本镜", "画面",
-    "记忆锚点", "成立原因", "关系/认知变化",
+    "记忆锚点", "第一眼焦点", "成立原因", "情绪载体", "关系/认知变化", "相邻差异", "不可降级核心",
     "唯一视觉落点", "第一视觉落点", "焦点锁定", "焦点锁", "焦点在", "焦点落在",
     "构图必要", "构图", "主光源", "主要光源", "主光", "光源", "受光面", "曝光",
     "稳定起幅", "固定起幅", "起幅", "触发", "稳定落幅", "落幅", "停稳", "稳定",
@@ -341,6 +398,19 @@ MEMORY_CHANGE_TERMS = (
     "反转", "立场", "权力", "主导", "压制", "距离", "靠近", "疏远", "隔开", "越过",
     "选择", "拒绝", "接受", "决定", "失去", "获得", "暴露", "隐瞒", "理解", "改变",
 )
+SIGNATURE_LABELS = (
+    "记忆锚点", "第一眼焦点", "成立原因", "情绪载体", "关系/认知变化", "相邻差异", "不可降级核心",
+)
+SIGNATURE_DIFFERENCE_DIMENSIONS = {
+    "观众位置": ("观众位置", "观看位置", "机位", "视点", "主观", "旁观"),
+    "信息显露": ("信息", "显露", "揭示", "遮蔽", "先见", "后见", "认知"),
+    "关系几何": ("关系几何", "距离", "高低", "前后", "边界", "遮挡", "空位", "夹角"),
+    "视觉载体": ("视觉载体", "道具", "门框", "倒影", "影子", "光", "材质", "手", "物件"),
+    "运动机制": ("运动", "运镜", "静止", "路径", "转焦", "显现", "消失"),
+    "结束画面": ("结束画面", "落幅", "终态", "余波", "定格"),
+}
+SIGNATURE_MIN_NEIGHBOR_DIFFERENCES = 3
+SIGNATURE_CORE_MAX_POSITION_PERCENT = 60
 MEMORY_META_TERMS = ("观众看清", "观众看到", "观众意识到", "导演意图", "导演设计")
 CAMERA_MOTION_FAMILIES = {
     "static": ("固定机位", "摄影机固定", "镜头固定", "保持静止"),
@@ -388,7 +458,7 @@ MOTIVATED_LIGHT_SOURCE_TERMS = (
 )
 TIME_STATE_TERMS = (
     "清晨", "早晨", "上午", "正午", "午后", "下午", "傍晚", "黄昏", "夜晚", "夜间", "深夜", "凌晨",
-    "白天", "日间", "黎明", "同一夜晚", "同一白天",
+    "白天", "日间", "黎明", "同一夜晚", "同一白天", "子夜", "午夜", "入夜", "破晓", "拂晓", "暮色", "日暮",
 )
 TIME_CHANGE_AUTH_TERMS = (
     "时间流逝", "连续数日", "数日后", "次日", "翌日", "数小时后", "天色转为", "由白天转为夜晚",
@@ -412,6 +482,11 @@ LIGHT_SOURCE_FAMILIES = {
     "screen_light": ("屏幕光", "手机光"),
     "street_light": ("路灯", "灯牌", "门外光"),
 }
+PRIMARY_LIGHT_RELATION_RE = re.compile(
+    r"(?P<source>[\u4e00-\u9fffA-Za-z0-9_·]{1,18})"
+    r"(?:仍)?(?:是|作为|为|承担|提供|决定)(?:本镜|场景|室内|人物)?(?:唯一|主要)?"
+    r"(?:主光源|主光|唯一光源|主要光源|曝光)"
+)
 EXTERIOR_OPENING_TERMS = ("门外", "屋外", "窗外", "门框", "窗框", "院外")
 VISUAL_RESULT_TERMS = (
     "落在", "照在", "照亮", "扫过", "擦过", "映在", "投在", "进入", "勾亮", "压暗", "压在",
@@ -532,21 +607,28 @@ def has_scene_anchor(text: str) -> bool:
     return bool(
         re.search(
             r"[\u4e00-\u9fff]{1,12}(?:岸|溪|河|湖|海|滩|坡|路|巷|街|桥|屋|房|厅|室|院|楼|"
-            r"台|桌|柜|床|椅|门|窗|墙|栏|林|田|地|草|水面|石面|卵石|泥地)",
+            r"台|桌|柜|床|椅|门|窗|墙|栏|林|田|地|草|舱|窟|殿|站|塔|馆|岛|水面|石面|卵石|泥地)",
             prefix,
         )
+        or re.search(r"(?:场景|空间|地点)(?:位于|设在|为|是)[^，。；;\n]{2,24}", prefix)
     )
 
 
 def has_executable_visual_detail(text: str) -> bool:
     cleaned = strip_quoted_content(text)
-    has_light_relation = any(term in cleaned for term in MOTIVATED_LIGHT_SOURCE_TERMS) and any(
+    has_light_relation = bool(primary_light_sources(cleaned)) and any(
         term in cleaned for term in VISUAL_RESULT_TERMS
     )
     has_material_relation = any(
         term in cleaned for term in ("木纹", "石纹", "金属", "玻璃", "布料", "棉麻", "皮革", "纸面", "水面")
     ) and any(term in cleaned for term in VISUAL_RESULT_TERMS)
-    return has_light_relation or has_material_relation
+    has_open_material_relation = bool(
+        re.search(
+            r"[\u4e00-\u9fffA-Za-z0-9_·]{1,16}(?:纹理|反光|高光|哑光|粗糙|褶皱|磨损|颗粒)[^。；;\n]{0,18}",
+            cleaned,
+        )
+    )
+    return has_light_relation or has_material_relation or has_open_material_relation
 
 
 def has_end_state(text: str) -> bool:
@@ -1096,13 +1178,22 @@ def _positive_term_present(text: str, term: str) -> bool:
     return False
 
 
+def missing_global_scale_concepts(text: str) -> list[str]:
+    """Validate scale/grounding meaning while allowing natural equivalent wording."""
+    return [
+        label
+        for label, patterns in GLOBAL_SCALE_LOCK_CONCEPTS.items()
+        if not any(re.search(pattern, text) for pattern in patterns)
+    ]
+
+
 def time_state_signature(text: str) -> set[str]:
     cleaned = strip_quoted_content(text)
     groups = {
-        "night": ("夜晚", "夜间", "深夜", "凌晨", "夜色", "月色"),
-        "day": ("白天", "日间", "上午", "正午", "午后", "下午", "日光", "阳光"),
-        "dawn": ("黎明", "清晨", "早晨"),
-        "dusk": ("傍晚", "黄昏"),
+        "night": ("夜晚", "夜间", "深夜", "凌晨", "夜色", "月色", "子夜", "午夜", "入夜"),
+        "day": ("白天", "日间", "上午", "正午", "午后", "下午"),
+        "dawn": ("黎明", "清晨", "早晨", "破晓", "拂晓"),
+        "dusk": ("傍晚", "黄昏", "暮色", "日暮"),
     }
     return {
         label
@@ -1111,18 +1202,27 @@ def time_state_signature(text: str) -> set[str]:
     }
 
 
+def _normalized_open_light_source(source: str) -> str:
+    normalized = source.strip()
+    normalized = re.sub(
+        r"^(?:同一|当前|本镜|场景|室内|屋内|画面|人物|来自|由|右侧|左侧|上方|下方|前方|后方)+",
+        "",
+        normalized,
+    )
+    normalized = re.sub(r"(?:发出的|投下的|形成的|持续的|稳定的|可见的|物理|仍)$", "", normalized)
+    for family, terms in LIGHT_SOURCE_FAMILIES.items():
+        if any(term in normalized for term in terms):
+            return family
+    return "source:" + normalized if normalized else ""
+
+
 def primary_light_sources(text: str) -> set[str]:
     cleaned = strip_quoted_content(text)
     sources: set[str] = set()
-    for family, terms in LIGHT_SOURCE_FAMILIES.items():
-        for term in terms:
-            for match in re.finditer(re.escape(term), cleaned):
-                context = cleaned[max(0, match.start() - 22):min(len(cleaned), match.end() + 22)]
-                if any(marker in context for marker in ("主光", "唯一光源", "主要光源", "决定室内曝光")):
-                    sources.add(family)
-                    break
-            if family in sources:
-                break
+    for match in PRIMARY_LIGHT_RELATION_RE.finditer(cleaned):
+        source = _normalized_open_light_source(match.group("source"))
+        if source:
+            sources.add(source)
     return sources
 
 
@@ -1131,12 +1231,11 @@ def temporal_lighting_issues(direct: str) -> list[str]:
     cleaned = strip_quoted_content(direct)
     prefix = cleaned[:190]
     issues: list[str] = []
-    if not any(_positive_term_present(prefix, term) for term in TIME_STATE_TERMS):
+    if not time_state_signature(prefix):
         issues.append("直接提示词前缀缺少明确时段；写清白天/黄昏/夜晚等当前可见时间事实")
-    source_terms = MOTIVATED_LIGHT_SOURCE_TERMS + ("油灯", "蜡烛", "阳光", "手机光")
-    if not any(_positive_term_present(prefix, term) for term in source_terms):
+    if not primary_light_sources(prefix):
         issues.append("直接提示词前缀缺少可见主光物理来源")
-    if not any(term in prefix for term in ("主光", "唯一光源", "主要光源", "决定室内曝光")):
+    if not any(term in prefix for term in ("主光", "唯一光源", "主要光源", "决定室内曝光", "决定曝光")):
         issues.append("直接提示词前缀必须指定哪一物理光源承担主光，不能只写暖褐/冷白氛围")
     if any(term in cleaned for term in EXTERIOR_OPENING_TERMS) and not any(
         term in cleaned for term in EXTERIOR_BRIGHTNESS_TERMS
@@ -1188,13 +1287,28 @@ def _actor_faces_target(text: str, actor: str, target: str) -> bool:
     return any(re.search(pattern, text) for pattern in patterns)
 
 
+def _actor_backs_target(text: str, actor: str, target: str) -> bool:
+    target_re = re.escape(target)
+    context = _actor_local_context(text, actor)
+    return bool(re.search(rf"(?:背对|背向)[^，,。；;\n]{{0,8}}{target_re}", context))
+
+
+def _active_boundary_families(text: str) -> list[tuple[str, dict[str, tuple[str, ...]]]]:
+    return [
+        (label, family)
+        for label, family in BOUNDARY_FAMILIES.items()
+        if any(marker in text for marker in family["markers"])
+        and any(term in text for term in family["inside"] + family["outside"])
+    ]
+
+
+def _name_has_boundary_side(text: str, name: str, family: dict[str, tuple[str, ...]]) -> bool:
+    context = _actor_local_context(text, name)
+    return any(term in context for term in family["inside"] + family["outside"])
+
+
 def _name_has_threshold_side(text: str, name: str) -> bool:
-    name_re = re.escape(name)
-    side = r"(?:门槛|房门)(?:内侧|外侧)|(?:屋内|门内|屋外|门外)(?:一侧|区域|土面|院地)?"
-    return bool(
-        re.search(rf"{name_re}[^。；;\n]{{0,36}}{side}", text)
-        or re.search(rf"{side}[^。；;\n]{{0,24}}{name_re}", text)
-    )
+    return _name_has_boundary_side(text, name, BOUNDARY_FAMILIES["门槛"])
 
 
 def _actor_camera_facing(text: str, actor: str) -> bool:
@@ -1243,6 +1357,29 @@ def _actor_screen_side(context: str) -> str:
     if right and not left:
         return "right"
     return ""
+
+
+def actor_internal_spatial_issues(text: str, actor: str, visible: list[str]) -> list[str]:
+    """Reject mutually exclusive facts before reducing them to a spatial contract."""
+    context = _actor_local_context(text, actor, visible)
+    issues: list[str] = []
+    has_left = bool(re.search(r"画面(?:左侧|左边|左位|左[前后]?|左\s*[1一]/?3)", context))
+    has_right = bool(re.search(r"画面(?:右侧|右边|右位|右[前后]?|右\s*[1一]/?3)", context))
+    if has_left and has_right and not any(term in context for term in ("从画面左", "由画面左", "移到画面右", "移动到画面右")):
+        issues.append(f"{actor}同时占据画面左侧和右侧，必须写可见移动路径或唯一终态槽位")
+    front = any(term in context for term in ("正面可见", "正脸可见", "正面和双肩可见"))
+    back = any(term in context for term in ("背面可见", "背影可见", "后脑可见"))
+    if front and back and not any(term in context for term in ("转身", "转向", "回身", "环绕")):
+        issues.append(f"{actor}同时声明正面和背面可见，但没有人物转身或摄影机环绕过程")
+    for target in visible:
+        if target != actor and _actor_faces_target(text, actor, target) and _actor_backs_target(text, actor, target):
+            issues.append(f"{actor}同时面向并背对{target}，必须保留唯一身体朝向或写完整转身链")
+    for label, family in _active_boundary_families(text):
+        inside = any(term in context for term in family["inside"])
+        outside = any(term in context for term in family["outside"])
+        if inside and outside and not any(action in context for action in BOUNDARY_CROSS_ACTIONS):
+            issues.append(f"{actor}同时位于{label}两侧，但没有可见跨越过程")
+    return issues
 
 
 def _camera_contract_flags(text: str) -> tuple[bool, bool]:
@@ -1329,20 +1466,25 @@ def spatial_contract_issues(contract: ShotSpatialContract) -> list[str]:
 
 def _actor_threshold_side(text: str, actor: str, visible_names: list[str] | None = None) -> str:
     context = _actor_local_context(text, actor, visible_names)
-    inside = any(term in context for term in ("门槛内侧", "屋内", "门内", "室内"))
-    outside = any(term in context for term in ("门槛外侧", "屋外", "门外", "院地", "院中"))
-    if inside and not outside:
-        return "inside"
-    if outside and not inside:
-        return "outside"
+    for _, family in _active_boundary_families(text):
+        inside = any(term in context for term in family["inside"])
+        outside = any(term in context for term in family["outside"])
+        if inside and not outside:
+            return "inside"
+        if outside and not inside:
+            return "outside"
     return ""
 
 
 def camera_position_facing_issues(text: str, visible: list[str]) -> list[str]:
     issues: list[str] = []
+    physical_sides = camera_physical_side_signature(text)
+    if {"north", "south"} <= physical_sides or {"east", "west"} <= physical_sides:
+        issues.append("同一镜头把摄影机同时放在互为对侧的物理机位")
     camera_location = r"(?:摄影机|镜头|机位)(?:位于|设在|固定在|放在|在)\s*[^，。；;\n]{0,14}"
-    camera_outside = bool(re.search(camera_location + r"(?:门槛外侧|门外|屋外|院中|院地)", text))
-    camera_inside = bool(re.search(camera_location + r"(?:门槛内侧|门内|屋内|室内)", text))
+    doorway_active = any(label == "门槛" for label, _ in _active_boundary_families(text))
+    camera_outside = doorway_active and bool(re.search(camera_location + r"(?:门槛外侧|门外|屋外|院中|院地)", text))
+    camera_inside = doorway_active and bool(re.search(camera_location + r"(?:门槛内侧|门内|屋内|室内)", text))
     looks_inside = bool(re.search(r"(?:朝|拍向|对准|看向)[^。；;\n]{0,10}(?:屋内|门内|室内)", text))
     looks_outside = bool(re.search(r"(?:朝|拍向|对准|看向)[^。；;\n]{0,10}(?:屋外|门外|院中|院地)", text))
     if camera_outside and camera_inside:
@@ -1396,6 +1538,84 @@ def camera_position_facing_issues(text: str, visible: list[str]) -> list[str]:
     return issues
 
 
+def generic_boundary_issues(text: str, visible: list[str]) -> list[str]:
+    """Apply the doorway topology contract to other explicit two-sided boundaries."""
+    issues: list[str] = []
+    camera_location_re = re.compile(
+        r"(?:摄影机|镜头|机位)(?:位于|设在|固定在|放在|在)\s*(?P<context>[^，。；;\n]{1,24})"
+    )
+    camera_context = " ".join(match.group("context") for match in camera_location_re.finditer(text))
+    direction_matches = re.findall(
+        r"(?:摄影机|镜头|机位)[^。；;\n]{0,42}(?:朝|拍向|对准|看向)(?P<context>[^，。；;\n]{1,24})",
+        text,
+    )
+    direction_context = " ".join(direction_matches)
+
+    def side_is_background(terms: tuple[str, ...]) -> bool:
+        return any(
+            re.search(re.escape(term) + r"[^。；;\n]{0,16}(?:作为|留在|位于)[^。；;\n]{0,8}(?:背景|后景)", text)
+            or re.search(r"(?:背景|后景)[^。；;\n]{0,12}" + re.escape(term), text)
+            for term in terms
+        )
+
+    for label, family in _active_boundary_families(text):
+        if label == "门槛":
+            continue
+        if len(visible) >= 2:
+            missing = [name for name in visible if not _name_has_boundary_side(text, name, family)]
+            if missing:
+                issues.append(f"{label}关系镜必须逐人绑定边界两侧 -> " + "、".join(missing))
+        camera_inside = any(term in camera_context for term in family["inside"])
+        camera_outside = any(term in camera_context for term in family["outside"])
+        looks_inside = any(term in direction_context for term in family["inside"])
+        looks_outside = any(term in direction_context for term in family["outside"])
+        if camera_inside and camera_outside:
+            issues.append(f"同一镜头把摄影机同时放在{label}两侧")
+        if camera_outside and looks_inside and side_is_background(family["outside"]):
+            issues.append(f"摄影机位于{label}外侧并朝内侧拍摄时，外侧空间在摄影机身后，不能写成背景/后景")
+        if camera_inside and looks_outside and side_is_background(family["inside"]):
+            issues.append(f"摄影机位于{label}内侧并朝外侧拍摄时，内侧空间在摄影机身后，不能写成背景/后景")
+        sides: dict[str, str] = {}
+        for actor in visible:
+            context = _actor_local_context(text, actor, visible)
+            inside = any(term in context for term in family["inside"])
+            outside = any(term in context for term in family["outside"])
+            sides[actor] = "inside" if inside and not outside else "outside" if outside and not inside else ""
+        for actor in visible:
+            actor_side = sides.get(actor, "")
+            context = _actor_local_context(text, actor, visible)
+            for target in visible:
+                if actor == target or not _actor_faces_target(text, actor, target):
+                    continue
+                target_side = sides.get(target, "")
+                same_side = (camera_inside and actor_side == "inside") or (camera_outside and actor_side == "outside")
+                if same_side and actor_side and target_side and actor_side != target_side and any(
+                    term in context for term in ("正面可见", "正脸可见", "正面和双肩可见")
+                ):
+                    issues.append(
+                        f"{actor}与摄影机位于{label}同侧且身体面向另一侧人物，摄影机应看到背面/侧背，不能声明正面可见"
+                    )
+        for actor in visible:
+            context = _actor_local_context(text, actor, visible)
+            has_crossing_event = any(action in context for action in BOUNDARY_CROSS_ACTIONS) and any(
+                term in context for term in family["markers"] + family["inside"] + family["outside"]
+            )
+            if not has_crossing_event:
+                continue
+            has_start_side = any(term in context for term in family["inside"] + family["outside"])
+            has_both_sides = any(term in context for term in family["inside"]) and any(
+                term in context for term in family["outside"]
+            )
+            has_boundary_cross = any(
+                re.search(r"(?:跨过|跨越|穿过|穿越|越过|掀开)[^。；;\n]{0,10}" + re.escape(marker), context)
+                or re.search(re.escape(marker) + r"[^。；;\n]{0,10}(?:跨过|跨越|穿过|穿越|越过|掀开)", context)
+                for marker in family["markers"]
+            )
+            if not (has_start_side and has_both_sides and has_boundary_cross):
+                issues.append(f"{actor}穿越{label}必须写A侧起点 -> 接触/跨越边界 -> B侧终点的完整可见动作链")
+    return issues
+
+
 def _direct_address_has_timing(text: str) -> bool:
     return any(term in text for term in DIRECT_ADDRESS_TIMING_TERMS) or bool(
         re.search(r"\d+(?:\.\d+)?\s*[-–—至]\s*\d+(?:\.\d+)?\s*(?:s|秒)", text)
@@ -1408,6 +1628,8 @@ def spatial_facing_issues(direct: str, cast_names: list[str]) -> list[str]:
     contract = build_spatial_contract(text, cast_names)
     visible = list(contract.visible_names)
     issues: list[str] = spatial_contract_issues(contract)
+    for actor in visible:
+        issues.extend(actor_internal_spatial_issues(text, actor, visible))
     relational = len(visible) >= 2 and any(term in text for term in FACE_TO_FACE_TERMS)
     reverse_or_plane = len(visible) >= 2 and (
         has_reverse_shot(text)
@@ -1450,6 +1672,7 @@ def spatial_facing_issues(direct: str, cast_names: list[str]) -> list[str]:
         missing_sides = [name for name in visible if not _name_has_threshold_side(text, name)]
         if missing_sides:
             issues.append("门槛关系镜必须逐人绑定门槛内/外侧 -> " + "、".join(missing_sides))
+    issues.extend(generic_boundary_issues(text, visible))
     camera_outside = bool(re.search(
         r"(?:摄影机|镜头|机位)(?:位于|设在|固定在|放在|在)\s*[^，。；;\n]{0,14}(?:门槛外侧|门外|屋外|院中|院地)",
         text,
@@ -1487,6 +1710,21 @@ def spatial_facing_issues(direct: str, cast_names: list[str]) -> list[str]:
     return issues
 
 
+def camera_physical_side_signature(text: str) -> set[str]:
+    contexts = re.findall(
+        r"(?:摄影机|镜头|机位)(?:位于|设在|固定在|放在|在|从)\s*([^，。；;\n]{1,28})",
+        strip_quoted_content(text),
+    )
+    combined = " ".join(contexts)
+    families = {
+        "north": ("北侧", "北面", "北端"),
+        "south": ("南侧", "南面", "南端"),
+        "east": ("东侧", "东面", "东端"),
+        "west": ("西侧", "西面", "西端"),
+    }
+    return {name for name, terms in families.items() if any(term in combined for term in terms)}
+
+
 def axis_continuity_issues(previous: str, current: str, cast_names: list[str]) -> list[str]:
     """Reject unexplained 180-degree line crossings between adjacent relationship shots."""
     previous_text = strip_quoted_content(previous)
@@ -1501,6 +1739,18 @@ def axis_continuity_issues(previous: str, current: str, cast_names: list[str]) -
     previous_contract = build_spatial_contract(previous_text, cast_names)
     current_contract = build_spatial_contract(current_text, cast_names)
     issues: list[str] = []
+    previous_camera_sides = camera_physical_side_signature(previous_text)
+    current_camera_sides = camera_physical_side_signature(current_text)
+    opposite_pairs = ({"north", "south"}, {"east", "west"})
+    if previous_contract.relationship_shot and current_contract.relationship_shot and any(
+        pair & previous_camera_sides and pair & current_camera_sides
+        and (pair & previous_camera_sides) != (pair & current_camera_sides)
+        for pair in opposite_pairs
+    ):
+        issues.append(
+            "相邻关系镜摄影机从人物关系轴一侧跳到物理对侧，但没有中性机位或连续越轴过程 -> "
+            + "/".join(sorted(previous_camera_sides)) + " -> " + "/".join(sorted(current_camera_sides))
+        )
     flipped: list[str] = []
     for name in cast_names:
         before = previous_contract.actor(name)
@@ -1614,28 +1864,59 @@ def _memory_value_is_specific(value: str) -> bool:
 
 
 def memory_anchor_contract_issues(control: str, direct: str) -> list[str]:
-    """Validate an explicitly designated memory shot without judging taste by keywords."""
+    """Validate the inline signature-shot contract carried by a designated memory anchor."""
     if "记忆锚点" not in control:
         return []
     issues: list[str] = []
     quality = labeled_control_value(control, "画面质感")
     if not quality or "记忆锚点" not in quality:
         return ["记忆锚点声明只能写在画面质感行"]
-    anchor = _inline_labeled_value(quality, "记忆锚点", ("成立原因", "关系/认知变化"))
-    reason = _inline_labeled_value(quality, "成立原因", ("关系/认知变化",))
-    change = _inline_labeled_value(quality, "关系/认知变化", ())
-    for label, value in (("记忆锚点", anchor), ("成立原因", reason), ("关系/认知变化", change)):
+    values: dict[str, str] = {}
+    for index, label in enumerate(SIGNATURE_LABELS):
+        values[label] = _inline_labeled_value(quality, label, SIGNATURE_LABELS[index + 1:])
+    for label, value in values.items():
         if not value:
-            issues.append(f"记忆锚点声明缺少{label}")
+            issues.append(f"签名镜头合同缺少{label}")
         elif not _memory_value_is_specific(value):
-            issues.append(f"记忆锚点声明的{label}过于空泛")
-    if anchor and not _chunk_covered(anchor, strip_quoted_content(direct)):
-        issues.append("记忆锚点的可见主体与关系事实未转译进直接提示词")
+            issues.append(f"签名镜头合同的{label}过于空泛")
+    anchor = values.get("记忆锚点", "")
+    focus = values.get("第一眼焦点", "")
+    emotion = values.get("情绪载体", "")
+    change = values.get("关系/认知变化", "")
+    core = values.get("不可降级核心", "")
+    cleaned_direct = strip_quoted_content(direct)
+    for label, value in (
+        ("记忆锚点", anchor),
+        ("第一眼焦点", focus),
+        ("情绪载体", emotion),
+        ("关系/认知变化", change),
+        ("不可降级核心", core),
+    ):
+        if value and not _chunk_covered(value, cleaned_direct):
+            issues.append(f"签名镜头的{label}未转译进直接提示词")
     has_state_transition = bool(re.search(r"由[^，。；;]{1,16}(?:转为|变为|变成|转向|到)[^，。；;]{1,16}", change))
     if change and not (any(term in change for term in MEMORY_CHANGE_TERMS) or has_state_transition):
         issues.append("关系/认知变化必须写明具体信息、距离、权力、立场或决定变化")
-    if "记忆锚点" in direct or "成立原因" in direct or "关系/认知变化" in direct:
-        issues.append("记忆锚点制作标记不得进入即梦直接提示词")
+    difference = values.get("相邻差异", "")
+    difference_dimensions = [
+        name for name, terms in SIGNATURE_DIFFERENCE_DIMENSIONS.items()
+        if any(term in difference for term in terms)
+    ]
+    if difference and len(difference_dimensions) < 3:
+        issues.append("签名镜头的相邻差异必须明确至少三个维度：观众位置/信息显露/关系几何/视觉载体/运动机制/结束画面")
+    terminal_positions = [cleaned_direct.find(term) for term in TERMINAL_STABILITY_TERMS if term in cleaned_direct]
+    terminal_start = min(terminal_positions) if terminal_positions else len(cleaned_direct)
+    if core and not _chunk_covered(core, cleaned_direct[:terminal_start]):
+        issues.append("不可降级视觉核心必须在终端稳定句之前成为主体画面，不能只塞进结尾锁定")
+    core_window_end = max(
+        1,
+        (len(cleaned_direct) * SIGNATURE_CORE_MAX_POSITION_PERCENT + 99) // 100,
+    )
+    if core and not _chunk_covered(core, cleaned_direct[:core_window_end]):
+        issues.append("不可降级视觉核心必须在直接提示词前60%内完成，不能被工程事实挤到后段")
+    direct_signature_labels = [label for label in SIGNATURE_LABELS if f"{label}：" in direct or f"{label}:" in direct]
+    if direct_signature_labels:
+        issues.append("签名镜头制作标记不得进入即梦直接提示词 -> " + "/".join(direct_signature_labels))
     if any(term in direct for term in MEMORY_META_TERMS):
         issues.append("记忆锚点的制作意图必须改写为直接提示词中的可见画面事实")
     return issues
@@ -1643,6 +1924,61 @@ def memory_anchor_contract_issues(control: str, direct: str) -> list[str]:
 
 def is_valid_memory_anchor(control: str, direct: str) -> bool:
     return "记忆锚点" in control and not memory_anchor_contract_issues(control, direct)
+
+
+def _explicit_focus_signature(text: str) -> str:
+    cleaned = strip_quoted_content(text)
+    patterns = (
+        r"(?:第一眼|焦点)(?:先)?(?:落在|落向|锁在|锁住|是|为|在)\s*([^，。；;\n]{1,20})",
+        r"唯一视觉落点(?:是|为|在|落在)\s*([^，。；;\n]{1,20})",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, cleaned)
+        if match:
+            return re.sub(r"\s+", "", match.group(1))
+    return ""
+
+
+def _visual_mechanism_families(text: str) -> set[str]:
+    cleaned = strip_quoted_content(text)
+    families = {
+        "boundary": ("门槛", "门框", "舱门", "轿厢", "帷幕", "结界", "边界"),
+        "occlusion": ("遮挡", "挡住", "露出", "缝隙", "框住", "视觉通道"),
+        "reflection": ("倒影", "镜面", "反射", "玻璃映出", "水面映出"),
+        "empty_space": ("留白", "空位", "空椅", "无人区域", "负空间"),
+        "depth": ("前景", "中景", "后景", "纵深", "近端", "远端"),
+        "light_reveal": ("亮起", "熄灭", "扫过", "显现", "压暗", "光影变化"),
+        "sound_picture": ("声桥", "画外声音", "先听见", "声音触发", "回声", "脚步声"),
+        "screen_text": ("安全区", "二维框", "屏幕", "投影", "后期文字"),
+        "distance_change": ("靠近", "退开", "拉开距离", "缩短距离", "隔开", "越过"),
+    }
+    result = {name for name, terms in families.items() if any(term in cleaned for term in terms)}
+    if _physical_object_anchors(cleaned):
+        result.add("physical_prop")
+    return result
+
+
+def _signature_prompt_fingerprint(text: str) -> dict[str, object]:
+    return {
+        "camera": camera_signature(text),
+        "composition": composition_family(text),
+        "focus": _explicit_focus_signature(text),
+        "mechanisms": _visual_mechanism_families(text),
+    }
+
+
+def signature_neighbor_difference_count(signature: str, neighbor: str) -> int:
+    current = _signature_prompt_fingerprint(signature)
+    adjacent = _signature_prompt_fingerprint(neighbor)
+    differences = 0
+    for field in ("camera", "composition", "focus"):
+        left = current[field]
+        right = adjacent[field]
+        if (left or right) and left != right:
+            differences += 1
+    if current["mechanisms"] != adjacent["mechanisms"]:
+        differences += 1
+    return differences
 
 
 def memory_anchor_density_issues(
@@ -1659,9 +1995,23 @@ def memory_anchor_density_issues(
             count = sum(is_valid_memory_anchor(control, direct) for _, direct, control in window)
             if count == 0:
                 issues.append(
-                    f"{window[0][0]}~{window[-1][0]}: 连续五镜缺少有效记忆锚点；"
-                    "至少一镜需在画面质感行写完整记忆锚点/成立原因/关系或认知变化，并把可见事实写入直接提示词"
+                    f"{window[0][0]}~{window[-1][0]}: 连续五镜缺少有效签名镜头；"
+                    "至少一镜需在画面质感行写完整七项签名合同，并把第一眼焦点、情绪载体和不可降级核心写入直接提示词"
                 )
+        for index, (sid, direct, control) in enumerate(shots):
+            if not is_valid_memory_anchor(control, direct):
+                continue
+            neighbors = [
+                shots[position]
+                for position in (index - 1, index + 1)
+                if 0 <= position < len(shots)
+            ]
+            for neighbor_sid, neighbor_direct, _ in neighbors:
+                if signature_neighbor_difference_count(direct, neighbor_direct) < SIGNATURE_MIN_NEIGHBOR_DIFFERENCES:
+                    issues.append(
+                        f"{sid}: 签名镜与相邻镜{neighbor_sid}的直接提示词实际差异不足三类；"
+                        "不能只在相邻差异自述中声明变化"
+                    )
     return issues
 
 
@@ -1725,6 +2075,27 @@ def _physical_object_anchors(text: str) -> tuple[str, ...]:
             )
             phrase = re.sub(r"^(?:两根|两只|两个|一根|一只|一个|粗|细|旧|新)+", "", phrase)
             phrase = re.sub(r"(?:的|了|并|且|及|与|和)+$", "", phrase.strip())
+            if 1 <= len(phrase) <= 12:
+                anchors.append(phrase)
+    return tuple(dict.fromkeys(anchors))
+
+
+def _transferred_object_anchors(text: str) -> tuple[str, ...]:
+    """Extract the object in a visible transfer without requiring an object dictionary."""
+    cleaned = strip_quoted_content(text)
+    object_token = r"[\u4e00-\u9fffA-Za-z0-9_·]{1,12}"
+    action = r"递给|递到|递出|交给|塞给|接过|接住|拿出|取出|放下|放到|收起|披在|穿上"
+    patterns = (
+        rf"(?:把|将)(?P<object>{object_token})(?:{action})",
+        rf"(?P<object>{object_token})(?:被)?(?:递给|递到|交给|塞给|接过|接住|放到|收起)",
+        rf"(?:递出|接过|接住|拿出|取出|放下|收起|披上|穿上)(?P<object>{object_token})",
+    )
+    anchors: list[str] = []
+    for pattern in patterns:
+        for match in re.finditer(pattern, cleaned):
+            phrase = match.group("object")
+            phrase = re.sub(r"^(?:一把|一枚|一只|一件|一个|一张|一部|一根|两把|两枚|两只|两个|旧|新|那|这)+", "", phrase)
+            phrase = re.sub(r"(?:给|到|向|被|由|在|了)$", "", phrase.strip())
             if 1 <= len(phrase) <= 12:
                 anchors.append(phrase)
     return tuple(dict.fromkeys(anchors))
@@ -2022,11 +2393,16 @@ def keyframe_trigger_reasons(direct: str, header: str) -> list[str]:
     )
     if has_support_change:
         reasons.append("人体支撑/姿态变化")
-    if any(prop in direct for prop in KEYFRAME_PROP_TERMS) and any(action in direct for action in KEYFRAME_PROP_ACTION_TERMS):
+    transfer_objects = set(_physical_object_anchors(direct)) | set(_transferred_object_anchors(direct))
+    intrinsic_object_change = any(action in direct for action in ("签字", "刷卡", "付款"))
+    if (transfer_objects and any(action in direct for action in KEYFRAME_PROP_ACTION_TERMS)) or intrinsic_object_change:
         reasons.append("道具/衣物转移或签字付款")
     if any(term in direct for term in KEYFRAME_UI_TERMS):
         reasons.append("UI/屏幕/绿色气泡")
-    if any(term in direct for term in KEYFRAME_SPACE_TERMS):
+    boundary_crossing = bool(_active_boundary_families(direct)) and any(
+        action in direct for action in BOUNDARY_CROSS_ACTIONS
+    )
+    if any(term in direct for term in KEYFRAME_SPACE_TERMS) or boundary_crossing:
         reasons.append("门车门/电梯空间穿越")
     if has_reverse_shot(direct) and "复杂" in header:
         reasons.append("复杂正反打")
@@ -2546,9 +2922,9 @@ def validate(path: Path, text: str | None = None, seedance_target: str = "auto")
     if GLOBAL_SCALE_LOCK_TITLE not in global_section:
         issues.append(f"## 全局锁定 missing {GLOBAL_SCALE_LOCK_TITLE}")
     else:
-        missing_scale_terms = [term for term in GLOBAL_SCALE_LOCK_TERMS if term not in global_section]
-        if missing_scale_terms:
-            issues.append(f"{GLOBAL_SCALE_LOCK_TITLE} lacks scale/grounding facts -> {','.join(missing_scale_terms)}")
+        missing_scale_concepts = missing_global_scale_concepts(global_section)
+        if missing_scale_concepts:
+            issues.append(f"{GLOBAL_SCALE_LOCK_TITLE} lacks scale/grounding concepts -> {','.join(missing_scale_concepts)}")
     missing_scale_negatives = [term for term in GLOBAL_SCALE_NEGATIVE_TERMS if term not in global_negative_section]
     if missing_scale_negatives:
         issues.append("## 通用负面提示词 missing scale/perspective risks -> " + ",".join(missing_scale_negatives))

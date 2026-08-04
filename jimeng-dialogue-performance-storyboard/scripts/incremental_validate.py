@@ -65,6 +65,12 @@ def analyze(text: str, current_shot: str | None = None) -> dict:
                     f'{current["shot_id"]}: 同场时空光照连续性失败 -> {message}',
                     "pair", [previous["shot_id"], current["shot_id"]],
                 ))
+            pair_cast = list(dict.fromkeys(previous["cast_names"] + current["cast_names"]))
+            for message in validator.axis_continuity_issues(previous["direct"], current["direct"], pair_cast):
+                issues.append(_issue(
+                    f'{current["shot_id"]}: 同场人物关系轴连续性失败 -> {message}',
+                    "pair", [previous["shot_id"], current["shot_id"]],
+                ))
             if validator.orientation_jump(previous["state"], current["direct"]):
                 issues.append(_issue(
                     f'{current["shot_id"]}: 上一镜状态与当前镜头朝向跳变；先写转身、肩线转正或双脚停稳',
@@ -90,9 +96,24 @@ def analyze(text: str, current_shot: str | None = None) -> dict:
             if anchor_count == 0:
                 shot_ids = [item["shot_id"] for item in window]
                 issues.append(_issue(
-                    f'{shot_ids[0]}~{shot_ids[-1]}: 连续五镜缺少有效记忆锚点',
+                    f'{shot_ids[0]}~{shot_ids[-1]}: 连续五镜缺少有效签名镜头',
                     "window", shot_ids,
                 ))
+        for index, record in enumerate(scene_records):
+            if not validator.is_valid_memory_anchor(record["quality_control"], record["direct"]):
+                continue
+            for neighbor_index in (index - 1, index + 1):
+                if not 0 <= neighbor_index < len(scene_records):
+                    continue
+                neighbor = scene_records[neighbor_index]
+                if (
+                    validator.signature_neighbor_difference_count(record["direct"], neighbor["direct"])
+                    < validator.SIGNATURE_MIN_NEIGHBOR_DIFFERENCES
+                ):
+                    issues.append(_issue(
+                        f'{record["shot_id"]}: 签名镜与相邻镜{neighbor["shot_id"]}的直接提示词实际差异不足三类',
+                        "pair", [neighbor["shot_id"], record["shot_id"]],
+                    ))
 
     for group_records in by_group.values():
         for index in range(2, len(group_records)):
@@ -187,6 +208,8 @@ def _repair_scope(message: str, default_scope: str) -> str:
         return "pair"
     if any(term in message for term in ("连续三镜", "three consecutive", "连续五镜")):
         return "window"
+    if any(term in message for term in ("签名镜头", "记忆锚点", "不可降级视觉核心", "前60%")):
+        return "shot"
     if any(term in message for term in ("overload", "任务过载", "split", "拆镜", "long action chain")):
         return "shot"
     return default_scope
@@ -199,12 +222,13 @@ def _issue_code(message: str) -> str:
         (("OS/OV/系统音", "OS说话人", "口型", "visible dialogue"), "SPEECH_CONTRACT"),
         (("时空光照", "时段", "主光源", "外部亮度", "天空黑位"), "TEMPORAL_LIGHTING_CONTINUITY"),
         (("关键帧", "KEYFRAME"), "KEYFRAME_CONTRACT"),
+        (("记忆锚点", "签名镜头", "不可降级视觉核心", "连续五镜"), "MEMORY_ANCHOR_DENSITY"),
         (("制作控制", "未转译", "quality"), "QUALITY_GROUNDING"),
         (("物品状态", "prop transfer", "holder", "道具"), "PROP_CONTINUITY"),
         (("朝向", "orientation", "body-facing"), "ORIENTATION_CONTINUITY"),
+        (("关系轴", "物理对侧", "越轴"), "AXIS_CONTINUITY"),
         (("支撑", "posture"), "SUPPORT_CONTINUITY"),
         (("连续三镜", "three consecutive", "肩后镜"), "CAMERA_VARIETY"),
-        (("记忆锚点", "连续五镜"), "MEMORY_ANCHOR_DENSITY"),
         (("可选字段功能超过预算",), "OPTIONAL_FIELD_BUDGET"),
         (("semantic contract incomplete",), "SEMANTIC_COMPLETENESS"),
     )
@@ -219,9 +243,9 @@ def _repair_fields(message: str, scope: str) -> list[str]:
     if not fields:
         if any(term in message for term in ("口型", "台词", "OS/OV/系统音", "OS说话人", "声音")):
             fields = ["【画面描述｜直接复制】", "【表演与声音】"]
-        elif any(term in message for term in ("物品状态", "支撑点", "朝向", "上一镜", "时空光照", "主光源")):
+        elif any(term in message for term in ("物品状态", "支撑点", "朝向", "关系轴", "物理对侧", "上一镜", "时空光照", "主光源")):
             fields = ["【画面描述｜直接复制】", "【状态继承】"]
-        elif "制作控制" in message or "未转译" in message or "记忆锚点" in message:
+        elif any(term in message for term in ("制作控制", "未转译", "记忆锚点", "签名镜头", "不可降级视觉核心", "前60%")):
             fields = ["【画面描述｜直接复制】", "【本镜制作控制】"]
         elif "镜号" in message:
             fields = ["【镜号】"]

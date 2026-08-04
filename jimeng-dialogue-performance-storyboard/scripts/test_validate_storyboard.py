@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Regression tests for storyboard validation and shadow semantic profiling."""
 
+import re
 import unittest
 from pathlib import Path
 
@@ -219,6 +220,68 @@ class SpatialFacingContractTests(unittest.TestCase):
         issues = validator.spatial_facing_issues(prompt, ["沈青乔"])
         self.assertTrue(any("屋内位于摄影机身后" in issue for issue in issues), issues)
 
+    def test_hatch_boundary_uses_same_side_visible_plane_contract(self) -> None:
+        prompt = (
+            "摄影机位于舱门外侧，朝舱内拍摄，保持在甲与乙关系轴同一侧。"
+            "甲站在舱门外侧，身体、胸口和脚尖面向乙，正面可见，视线落在乙；"
+            "乙站在舱门内侧，身体、胸口和脚尖面向甲，正面可见，视线落在甲。两人对峙。"
+        )
+        issues = validator.spatial_facing_issues(prompt, ["甲", "乙"])
+        self.assertTrue(any("舱门同侧" in issue and "正面可见" in issue for issue in issues), issues)
+        self.assertFalse(any("门槛同侧" in issue for issue in issues), issues)
+
+    def test_elevator_boundary_requires_each_actor_side(self) -> None:
+        prompt = (
+            "摄影机位于候梯厅，朝轿厢内拍摄，保持在甲与乙关系轴同一侧。"
+            "甲站在候梯厅，身体面向乙，背面可见，视线落在乙；"
+            "乙站在画面右侧，身体面向甲，正面可见，视线落在甲。两人对峙。"
+        )
+        issues = validator.spatial_facing_issues(prompt, ["甲", "乙"])
+        self.assertTrue(any("电梯边界关系镜" in issue and "乙" in issue for issue in issues), issues)
+
+    def test_actor_cannot_occupy_both_boundary_sides_without_crossing(self) -> None:
+        prompt = (
+            "摄影机位于舱门外侧，朝舱内拍摄，保持在甲与乙关系轴同一侧。"
+            "甲同时站在舱门内侧和舱门外侧，身体面向乙，侧面可见，视线落在乙；"
+            "乙站在舱门内侧，身体面向甲，正面可见，视线落在甲。两人对峙。"
+        )
+        issues = validator.spatial_facing_issues(prompt, ["甲", "乙"])
+        self.assertTrue(any("甲同时位于舱门两侧" in issue for issue in issues), issues)
+
+    def test_actor_cannot_have_mutually_exclusive_screen_or_plane_facts(self) -> None:
+        base = "摄影机位于长桌南侧，朝北拍摄，保持在甲与乙关系轴同一侧。"
+        tail = "乙站在画面右侧，身体面向甲，侧面可见，视线落在甲。两人对峙。"
+        plane = base + "甲站在画面左侧，身体面向乙，正面可见且背面可见，视线落在乙；" + tail
+        side = base + "甲同时站在画面左侧和画面右侧，身体面向乙，侧面可见，视线落在乙；" + tail
+        self.assertTrue(any("正面和背面" in issue for issue in validator.spatial_facing_issues(plane, ["甲", "乙"])))
+        self.assertTrue(any("画面左侧和右侧" in issue for issue in validator.spatial_facing_issues(side, ["甲", "乙"])))
+
+    def test_actor_cannot_face_and_turn_back_to_same_person(self) -> None:
+        prompt = (
+            "摄影机位于长桌南侧，朝北拍摄，保持在甲与乙关系轴同一侧。"
+            "甲站在画面左侧，身体面向乙并背对乙，侧面可见，视线落在乙；"
+            "乙站在画面右侧，身体面向甲，侧面可见，视线落在甲。两人对峙。"
+        )
+        issues = validator.spatial_facing_issues(prompt, ["甲", "乙"])
+        self.assertTrue(any("同时面向并背对乙" in issue for issue in issues), issues)
+
+    def test_generic_boundary_background_must_match_camera_direction(self) -> None:
+        prompt = (
+            "摄影机位于舱门外侧，朝舱内拍摄，保持在甲与乙关系轴同一侧。"
+            "甲站在舱门外侧，身体面向乙，背面可见，视线落在乙；"
+            "乙站在舱门内侧，身体面向甲，正面可见，视线落在甲。"
+            "舱外星空作为后景，两人对峙。"
+        )
+        issues = validator.spatial_facing_issues(prompt, ["甲", "乙"])
+        self.assertTrue(any("外侧空间在摄影机身后" in issue for issue in issues), issues)
+
+    def test_generic_boundary_crossing_requires_start_cross_and_end(self) -> None:
+        malformed = "甲进入舱内，直接停在舱门内侧，身体面向舱内。"
+        issues = validator.spatial_facing_issues(malformed, ["甲"])
+        self.assertTrue(any("完整可见动作链" in issue for issue in issues), issues)
+        valid = "甲从舱门外侧起步，跨过舱门进入舱门内侧，最终停在舱内，身体面向舱内。"
+        self.assertEqual([], validator.spatial_facing_issues(valid, ["甲"]))
+
     def test_return_home_requires_threshold_crossing_chain(self) -> None:
         prompt = "沈青乔回家，直接停在门槛内侧。"
         issues = validator.spatial_facing_issues(prompt, ["沈青乔"])
@@ -266,6 +329,16 @@ class SpatialFacingContractTests(unittest.TestCase):
             "画面连续展示甲乙屏幕方向交换。"
         )
         self.assertEqual([], validator.axis_continuity_issues(previous, current, ["甲", "乙"]))
+
+    def test_physical_camera_side_flip_is_rejected_without_screen_side_labels(self) -> None:
+        previous = (
+            "摄影机位于长桌南侧，朝北拍摄，保持在甲与乙关系轴同一侧。"
+            "甲站在桌边，身体面向乙，侧面可见，视线落在乙；"
+            "乙站在桌对面，身体面向甲，侧面可见，视线落在甲。两人对峙。"
+        )
+        current = previous.replace("长桌南侧，朝北", "长桌北侧，朝南")
+        issues = validator.axis_continuity_issues(previous, current, ["甲", "乙"])
+        self.assertTrue(any("物理对侧" in issue for issue in issues), issues)
 
 
 class CameraVariationAndTerminalTests(unittest.TestCase):
@@ -338,19 +411,56 @@ class TemporalLightingContractTests(unittest.TestCase):
         current = "同一夜晚，门外保持深蓝黑位，右侧油灯仍是主光源，主光方向和曝光保持到结束。"
         self.assertEqual([], validator.temporal_lighting_continuity_issues(previous, current))
 
+    def test_time_aliases_are_normalized(self) -> None:
+        self.assertEqual({"night"}, validator.time_state_signature("子夜洞窟"))
+        self.assertEqual({"dawn"}, validator.time_state_signature("破晓山门"))
+        self.assertEqual({"dusk"}, validator.time_state_signature("暮色庭院"))
+
+    def test_unlisted_physical_light_source_is_accepted_and_tracked(self) -> None:
+        prompt = (
+            "子夜洞窟，无可见天光，熔岩为唯一主光源，红光照亮岩壁和人物侧脸；"
+            "最后20%背景亮度、主光方向、色温和曝光保持到结束。"
+        )
+        self.assertEqual([], validator.temporal_lighting_issues(prompt))
+        self.assertIn("source:熔岩", validator.primary_light_sources(prompt))
+        issues = validator.temporal_lighting_continuity_issues(
+            prompt,
+            "子夜洞窟，无可见天光，荧光植物为唯一主光源，曝光保持到结束。",
+        )
+        self.assertTrue(any("主光源冲突" in issue for issue in issues), issues)
+
+    def test_generic_prop_transfer_triggers_keyframes(self) -> None:
+        for prop in ("铜铃", "纸伞", "玉佩"):
+            reasons = validator.keyframe_trigger_reasons(f"甲把{prop}递给乙。", "1，5s，普通。")
+            self.assertIn("道具/衣物转移或签字付款", reasons, prop)
+
+    def test_unlisted_light_and_material_count_as_executable_visual_detail(self) -> None:
+        self.assertTrue(validator.has_executable_visual_detail("熔岩承担主光，红光照亮岩壁裂纹。"))
+        self.assertTrue(validator.has_executable_visual_detail("玉石表面哑光磨损清晰可见。"))
+
+    def test_unlisted_boundary_crossing_triggers_keyframes(self) -> None:
+        reasons = validator.keyframe_trigger_reasons(
+            "甲从结界外侧穿过结界进入结界内侧。", "1，5s，普通。"
+        )
+        self.assertIn("门车门/电梯空间穿越", reasons)
+
 
 class OutputFormatTests(unittest.TestCase):
     @staticmethod
     def _memory_anchor_fixture() -> tuple[str, str]:
         direct = (
-            "门框把甲与乙分在门外和门内，甲手里的旧钥匙停在两人之间；"
-            "焦点先落在旧钥匙，再落到二人被门槛隔开的距离，二人由试探转为对峙。"
+            "门框隔开两人且旧钥匙停在中间，门框把甲与乙分在门外和门内；"
+            "第一眼落在旧钥匙裂纹，甲握紧旧钥匙的指节发白，二人由试探转为对峙。"
         )
         control = (
             "画面质感：门框分割构图，焦点在旧钥匙与二人距离；"
-            "记忆锚点：门框把甲与乙分在门外和门内；"
+            "记忆锚点：门框把甲与乙分在门外和门内，旧钥匙停在两人之间；"
+            "第一眼焦点：旧钥匙裂纹；"
             "成立原因：门框和旧钥匙同时把进入与拒绝变成可见关系；"
-            "关系/认知变化：二人由试探转为对峙。"
+            "情绪载体：甲握紧旧钥匙的指节发白；"
+            "关系/认知变化：二人由试探转为对峙；"
+            "相邻差异：观众位置改为门外受阻视点，关系几何由同侧变成门框两侧，视觉载体由人物脸转为旧钥匙；"
+            "不可降级核心：门框隔开两人且旧钥匙停在中间。"
         )
         return direct, control
 
@@ -360,7 +470,17 @@ class OutputFormatTests(unittest.TestCase):
         malformed = "画面质感：记忆锚点：很震撼；成立原因：高级感。"
         issues = validator.memory_anchor_contract_issues(malformed, direct)
         self.assertTrue(any("过于空泛" in issue for issue in issues), issues)
-        self.assertTrue(any("缺少关系/认知变化" in issue for issue in issues), issues)
+        self.assertTrue(any("合同缺少关系/认知变化" in issue for issue in issues), issues)
+
+    def test_signature_shot_requires_three_adjacent_difference_dimensions(self) -> None:
+        direct, control = self._memory_anchor_fixture()
+        weak = re.sub(
+            r"相邻差异：.*?；不可降级核心：",
+            "相邻差异：只改变机位；不可降级核心：",
+            control,
+        )
+        issues = validator.memory_anchor_contract_issues(weak, direct)
+        self.assertTrue(any("至少三个维度" in issue for issue in issues), issues)
 
     def test_memory_anchor_visible_fact_must_reach_direct_prompt(self) -> None:
         _, control = self._memory_anchor_fixture()
@@ -368,6 +488,23 @@ class OutputFormatTests(unittest.TestCase):
             control, "普通平视中景，甲与乙站立交谈。"
         )
         self.assertTrue(any("未转译进直接提示词" in issue for issue in issues), issues)
+
+    def test_signature_relationship_change_must_reach_direct_prompt(self) -> None:
+        direct, control = self._memory_anchor_fixture()
+        without_change = direct.replace("二人由试探转为对峙。", "二人隔门站定。")
+        issues = validator.memory_anchor_contract_issues(control, without_change)
+        self.assertTrue(any("关系/认知变化未转译" in issue for issue in issues), issues)
+
+    def test_signature_core_must_finish_in_first_sixty_percent(self) -> None:
+        direct, control = self._memory_anchor_fixture()
+        core = "门框隔开两人且旧钥匙停在中间"
+        late = direct.replace(core + "，", "")
+        late = late.replace(
+            "二人由试探转为对峙。",
+            "二人由试探转为对峙，土墙、门板、衣褶、地面和背景保持清晰稳定；" + core + "。",
+        )
+        issues = validator.memory_anchor_contract_issues(control, late)
+        self.assertTrue(any("前60%" in issue for issue in issues), issues)
 
     def test_memory_anchor_rejects_production_meta_language_in_direct_prompt(self) -> None:
         direct, control = self._memory_anchor_fixture()
@@ -380,11 +517,26 @@ class OutputFormatTests(unittest.TestCase):
         direct, control = self._memory_anchor_fixture()
         no_anchor = [(1, f"S1-0{i + 1}-1", "普通镜头", "") for i in range(5)]
         issues = validator.memory_anchor_density_issues(no_anchor)
-        self.assertTrue(any("连续五镜缺少有效记忆锚点" in issue for issue in issues), issues)
+        self.assertTrue(any("连续五镜缺少有效签名镜头" in issue for issue in issues), issues)
 
         one_anchor = list(no_anchor)
         one_anchor[2] = (1, "S1-03-1", direct, control)
         self.assertEqual([], validator.memory_anchor_density_issues(one_anchor))
+
+    def test_signature_claim_cannot_hide_an_unchanged_adjacent_prompt(self) -> None:
+        direct, control = self._memory_anchor_fixture()
+        records = [(1, f"S1-0{i + 1}-1", direct, control if i == 2 else "") for i in range(5)]
+        issues = validator.memory_anchor_density_issues(records)
+        self.assertTrue(any("实际差异不足三类" in issue for issue in issues), issues)
+
+    def test_signature_actual_neighbor_difference_requires_three_categories(self) -> None:
+        signature = "50mm平视中近景，三角构图，焦点落在甲双眼，摄影机固定。"
+        neighbor = "50mm平视中近景，中央构图，焦点落在甲双眼，摄影机缓慢推近。"
+        self.assertEqual(2, validator.signature_neighbor_difference_count(signature, neighbor))
+        self.assertLess(
+            validator.signature_neighbor_difference_count(signature, neighbor),
+            validator.SIGNATURE_MIN_NEIGHBOR_DIFFERENCES,
+        )
 
     def test_anchor_spacing_must_cover_all_rolling_windows(self) -> None:
         direct, control = self._memory_anchor_fixture()
@@ -438,6 +590,15 @@ class OutputFormatTests(unittest.TestCase):
         )
         self.assertFalse(any("全局比例与支撑锁定" in issue for issue in issues), issues)
         self.assertFalse(any("scale/perspective risks" in issue for issue in issues), issues)
+
+    def test_global_scale_gate_accepts_semantic_equivalents(self) -> None:
+        wording = (
+            "人物骨架保持稳定，真实身高与体型固定；四肢长度全程不变，关节位置稳定；"
+            "空间透视和消失点固定；身体支撑持续接触承载面；站立时脚底落地，"
+            "行走时步态连续，坐姿时臀背接触座面；腾空保持离地、空中轨迹到着地连续；"
+            "人物身高差与相对尺寸一致；画面占比随物理距离平滑变化，固定距离时投影尺度不变。"
+        )
+        self.assertEqual([], validator.missing_global_scale_concepts(wording))
 
     def test_shot_quality_control_requires_visible_execution_dimensions(self) -> None:
         control = (

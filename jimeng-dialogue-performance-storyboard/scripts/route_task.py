@@ -19,9 +19,15 @@ RISK_REFERENCES = {
     "lighting_change": "references/visual-attraction-rules.md",
 }
 NARRATIVE_TERMS = re.compile(r"悬疑|误会|喜剧|惊吓|威胁|蒙太奇|闪回|梦境|追逐|无台词")
+NARRATIVE_STRUCTURE = re.compile(
+    r"(?:直到|却发现|原来|没想到|与此同时|多年后|片刻后|忽然|骤然|真相|秘密|误认|反转|循环|倒叙)"
+)
 COMPLEX_CAMERA_TERMS = re.compile(
     r"环绕|多莉变焦|希区柯克|闯入式|甩镜|强运镜|正反打|"
     r"(?:摄影机|镜头|机位)[^。；;\n]{0,12}(?:快速|急速|突然)?(?:左摇|右摇|摇镜|拉开|拉远|横移)"
+)
+COMPLEX_CAMERA_STRUCTURE = re.compile(
+    r"(?:摄影机|镜头|机位)[^。；;\n]{0,24}(?:越过|绕到|穿过|贴近|跟随|升起|下降|俯冲|后撤|甩向|掠过)"
 )
 
 
@@ -57,12 +63,17 @@ def route(mode, source=None):
             on_demand.append(reference)
             reasons.setdefault(reference, []).append(flag)
     text = intake.pop("_source_text", "")
-    if NARRATIVE_TERMS.search(text):
+    narrative_reason = ""
+    if NARRATIVE_TERMS.search(text) or NARRATIVE_STRUCTURE.search(text):
+        narrative_reason = "narrative mode or information-order signal"
+    elif any(item.get("code") == "NO_EXPLICIT_BEAT" for item in intake.get("advisories", [])):
+        narrative_reason = "unlabeled prose requires conservative beat routing"
+    if narrative_reason:
         on_demand.append("references/narrative-mode-routing.md")
-        reasons["references/narrative-mode-routing.md"] = ["non-default narrative mode"]
-    if COMPLEX_CAMERA_TERMS.search(text):
+        reasons["references/narrative-mode-routing.md"] = [narrative_reason]
+    if COMPLEX_CAMERA_TERMS.search(text) or COMPLEX_CAMERA_STRUCTURE.search(text):
         on_demand.append("references/cinematic-grammar-library.md")
-        reasons["references/cinematic-grammar-library.md"] = ["complex camera request"]
+        reasons["references/cinematic-grammar-library.md"] = ["complex camera path or viewpoint change"]
     if intake.get("stats", {}).get("speaker_count", 0) >= 3:
         on_demand.append("references/prompt-performance-rules.md")
         reasons["references/prompt-performance-rules.md"] = ["three or more speaking roles"]
