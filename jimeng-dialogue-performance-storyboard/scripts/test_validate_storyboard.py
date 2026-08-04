@@ -12,7 +12,70 @@ class SemanticCollisionTests(unittest.TestCase):
         for malformed in ("OS: 我没事。", "系统音：闸机已锁定。", "OV - 快走。"):
             with self.subTest(malformed=malformed):
                 self.assertEqual([malformed], validator.post_audio_format_issues(malformed))
-        self.assertEqual([], validator.post_audio_format_issues("OS：“我没事。”"))
+        self.assertEqual([], validator.post_audio_format_issues("沈星雨OS：“我没事。”"))
+
+    def test_os_requires_named_speaker(self) -> None:
+        issues = validator.os_speaker_binding_issues("OS：“我没事。”", ["沈星雨"])
+        self.assertTrue(any("缺少人物名" in issue for issue in issues), issues)
+        self.assertEqual([], validator.os_speaker_binding_issues("沈星雨OS：“我没事。”", ["沈星雨"]))
+
+    def test_os_rejects_pronoun_or_generic_speaker(self) -> None:
+        for malformed in ("她OS：“我没事。”", "角色AOS：“我没事。”", "主角OS：“我没事。”"):
+            with self.subTest(malformed=malformed):
+                issues = validator.os_speaker_binding_issues(malformed, ["沈星雨"])
+                self.assertTrue(any("代词或泛称" in issue for issue in issues), issues)
+
+    def test_os_speaker_must_match_voice_lock(self) -> None:
+        issues = validator.os_speaker_binding_issues("陌生人OS：“我没事。”", ["沈星雨"])
+        self.assertTrue(any("不在本集角色声音锁定表" in issue for issue in issues), issues)
+
+    def test_non_os_post_audio_labels_are_unaffected(self) -> None:
+        text = "OV：“快走。” 系统音：“闸机已锁定。” 内心独白：“别回头。” 旁白：“天亮了。”"
+        self.assertEqual([], validator.os_speaker_binding_issues(text, ["沈星雨"]))
+
+    def test_voice_lock_names_supports_markdown_table_rows(self) -> None:
+        global_section = """本集角色声音锁定表
+| 人物 | 声音年龄感 | 音色 |
+| --- | --- | --- |
+| 沈星雨 | 青年 | 清冷 |
+林默 | 中年 | 低沉
+
+状态锁定：手机归沈星雨。
+"""
+        self.assertEqual(["沈星雨", "林默"], validator.voice_lock_names(global_section))
+
+    def test_validate_child_enforces_os_binding_in_all_sound_fields(self) -> None:
+        block = """【镜号】
+1，3s，普通。
+
+【画面描述｜直接复制】
+16:9，3D写实，蓝灰主色冷白侧光，中景平视固定镜头。沈星雨闭口；OS：“我没事。”
+
+【表演与声音】
+她OS：“我没事。”
+
+【状态继承】
+沈星雨站位稳定。
+
+【本镜制作控制】
+画面质感：脸部冷白侧光和手机反光。
+光效与曝光：冷白侧光照亮右脸，浅阴影稳定。
+动态美学：固定起幅，呼吸响应，稳定落幅。
+表演与情绪：闭口压住情绪，指尖停顿。
+穿帮控制：人物站位和手机归属固定。
+抽卡策略：低风险，保持单人固定镜头。
+蒙太奇与剪辑：非蒙太奇，声音结束后切出。
+
+【口型分窗】
+优先级：口型 > 听者反应 > 运镜。陌生人OS：“我没事。”
+"""
+        issues: list[str] = []
+        validator.validate_child(
+            "S1-01", 1, "1，3s，普通。", block, ["沈星雨"], issues, ["沈星雨"]
+        )
+        self.assertTrue(any("【画面描述｜直接复制】 OS说话人绑定失败" in issue for issue in issues), issues)
+        self.assertTrue(any("【表演与声音】 OS说话人绑定失败" in issue for issue in issues), issues)
+        self.assertTrue(any("【口型分窗】 OS说话人绑定失败" in issue for issue in issues), issues)
 
     def test_environment_water_ripple_is_not_cutaway(self) -> None:
         prompt = "人物站在溪边，后景溪水泛起细小水纹，镜头固定。"
@@ -110,6 +173,29 @@ class SpatialFacingContractTests(unittest.TestCase):
         issues = validator.spatial_facing_issues(prompt, ["沈青乔", "卫景耘"])
         self.assertTrue(any("门外夜色" in issue for issue in issues), issues)
 
+    def test_actor_cannot_face_and_turn_back_to_same_exterior(self) -> None:
+        prompt = "沈青乔站在屋内，身体面向门外，同时背对屋外，摄影机固定在屋内。"
+        issues = validator.spatial_facing_issues(prompt, ["沈青乔"])
+        self.assertTrue(any("同时背对并面向屋外" in issue for issue in issues), issues)
+
+    def test_actor_back_to_camera_cannot_have_front_visible(self) -> None:
+        prompt = "摄影机固定在门外朝屋内拍摄，沈青乔站在门槛外侧，背对摄影机，正面和双肩可见。"
+        issues = validator.spatial_facing_issues(prompt, ["沈青乔"])
+        self.assertTrue(any("背对摄影机却同时声明正面" in issue for issue in issues), issues)
+
+    def test_camera_side_and_visible_plane_must_agree(self) -> None:
+        prompt = (
+            "摄影机位于门外院地，朝屋内拍摄。沈青乔站在门槛外侧，身体面向卫景耘，正面可见；"
+            "卫景耘站在门槛内侧，身体面向沈青乔，正面可见。两人相互面对。"
+        )
+        issues = validator.spatial_facing_issues(prompt, ["沈青乔", "卫景耘"])
+        self.assertTrue(any("与摄影机位于门槛同侧" in issue for issue in issues), issues)
+
+    def test_camera_inside_looking_outside_cannot_put_interior_in_background(self) -> None:
+        prompt = "摄影机位于屋内，朝门外拍摄，屋内墙面作为后景，沈青乔站在门槛外侧。"
+        issues = validator.spatial_facing_issues(prompt, ["沈青乔"])
+        self.assertTrue(any("屋内位于摄影机身后" in issue for issue in issues), issues)
+
     def test_return_home_requires_threshold_crossing_chain(self) -> None:
         prompt = "沈青乔回家，直接停在门槛内侧。"
         issues = validator.spatial_facing_issues(prompt, ["沈青乔"])
@@ -155,6 +241,45 @@ class CameraVariationAndTerminalTests(unittest.TestCase):
             "本镜画面内可见人数：2人，角色A和角色B继续向门口走。", "S1-03", 1
         )
         self.assertTrue(any("终端稳定事实" in issue for issue in issues), issues)
+
+
+class TemporalLightingContractTests(unittest.TestCase):
+    def test_user_oil_lamp_prompt_fails_without_explicit_time_contract(self) -> None:
+        prompt = (
+            "16:9，3D精致国风CG，小院屋内暖褐主色，右侧油灯灯光照亮沈青乔主要受光面，"
+            "卫景耘侧影留在后景。50mm平视中近景，前景门框构图，摄影机固定；"
+            "最后20%摄影机停稳，灯光曝光固定。"
+        )
+        issues = validator.temporal_lighting_issues(prompt)
+        self.assertTrue(any("缺少明确时段" in issue for issue in issues), issues)
+        self.assertTrue(any("承担主光" in issue for issue in issues), issues)
+        self.assertTrue(any("亮度" in issue for issue in issues), issues)
+
+    def test_complete_night_oil_lamp_contract_passes(self) -> None:
+        prompt = (
+            "16:9，3D精致国风CG，同一夜晚的小院屋内，门外保持深蓝黑位，天空亮度稳定，"
+            "右侧油灯是唯一主光源，暖褐灯光照亮沈青乔右脸。50mm平视中近景，前景门框构图，"
+            "摄影机固定；最后20%背景亮度、主光方向、色温和曝光保持到结束。"
+        )
+        self.assertEqual([], validator.temporal_lighting_issues(prompt))
+
+    def test_adjacent_shots_reject_night_to_day_and_primary_light_change(self) -> None:
+        previous = (
+            "同一夜晚的小院屋内，门外保持深蓝黑位，右侧油灯是唯一主光源，"
+            "最后20%曝光保持到结束。"
+        )
+        current = (
+            "白天的小院屋内，窗外保持明亮，左侧日光是唯一主光源，"
+            "最后20%曝光保持到结束。"
+        )
+        issues = validator.temporal_lighting_continuity_issues(previous, current)
+        self.assertTrue(any("时段冲突" in issue for issue in issues), issues)
+        self.assertTrue(any("主光源冲突" in issue for issue in issues), issues)
+
+    def test_adjacent_shots_keep_same_night_and_oil_lamp(self) -> None:
+        previous = "同一夜晚，门外保持深蓝黑位，右侧油灯是唯一主光源，曝光保持到结束。"
+        current = "同一夜晚，门外保持深蓝黑位，右侧油灯仍是主光源，主光方向和曝光保持到结束。"
+        self.assertEqual([], validator.temporal_lighting_continuity_issues(previous, current))
 
 
 class OutputFormatTests(unittest.TestCase):

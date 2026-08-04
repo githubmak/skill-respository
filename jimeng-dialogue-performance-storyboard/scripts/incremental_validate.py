@@ -37,6 +37,8 @@ FIELD_LABELS = (
 
 def analyze(text: str, current_shot: str | None = None) -> dict:
     records = _shot_records(text)
+    global_section = validator.extract_top_section(text, "## 全局锁定")
+    voice_names = validator.voice_lock_names(global_section) or None
     issues: list[dict] = []
     by_scene: dict[int, list[dict]] = {}
     by_group: dict[str, list[dict]] = {}
@@ -46,7 +48,7 @@ def analyze(text: str, current_shot: str | None = None) -> dict:
         local: list[str] = []
         validator.validate_child(
             record["group_id"], record["number"], record["header"],
-            record["block"], record["cast_names"], local,
+            record["block"], record["cast_names"], local, voice_names,
         )
         for message in local:
             issues.append(_issue(message, "field", [record["shot_id"]]))
@@ -58,6 +60,11 @@ def analyze(text: str, current_shot: str | None = None) -> dict:
 
     for scene_records in by_scene.values():
         for previous, current in zip(scene_records, scene_records[1:]):
+            for message in validator.temporal_lighting_continuity_issues(previous["direct"], current["direct"]):
+                issues.append(_issue(
+                    f'{current["shot_id"]}: 同场时空光照连续性失败 -> {message}',
+                    "pair", [previous["shot_id"], current["shot_id"]],
+                ))
             if validator.orientation_jump(previous["state"], current["direct"]):
                 issues.append(_issue(
                     f'{current["shot_id"]}: 上一镜状态与当前镜头朝向跳变；先写转身、肩线转正或双脚停稳',
@@ -176,7 +183,8 @@ def _issue_code(message: str) -> str:
     rules = (
         (("missing 【", "镜号应为"), "FIELD_STRUCTURE"),
         (("over 500",), "DIRECT_PROMPT_LENGTH"),
-        (("OS/OV/系统音", "口型", "visible dialogue"), "SPEECH_CONTRACT"),
+        (("OS/OV/系统音", "OS说话人", "口型", "visible dialogue"), "SPEECH_CONTRACT"),
+        (("时空光照", "时段", "主光源", "外部亮度", "天空黑位"), "TEMPORAL_LIGHTING_CONTINUITY"),
         (("关键帧", "KEYFRAME"), "KEYFRAME_CONTRACT"),
         (("制作控制", "未转译", "quality"), "QUALITY_GROUNDING"),
         (("物品状态", "prop transfer", "holder", "道具"), "PROP_CONTINUITY"),
@@ -195,9 +203,9 @@ def _issue_code(message: str) -> str:
 def _repair_fields(message: str, scope: str) -> list[str]:
     fields = [label for label in FIELD_LABELS if label in message]
     if not fields:
-        if any(term in message for term in ("口型", "台词", "OS/OV/系统音", "声音")):
+        if any(term in message for term in ("口型", "台词", "OS/OV/系统音", "OS说话人", "声音")):
             fields = ["【画面描述｜直接复制】", "【表演与声音】"]
-        elif any(term in message for term in ("物品状态", "支撑点", "朝向", "上一镜")):
+        elif any(term in message for term in ("物品状态", "支撑点", "朝向", "上一镜", "时空光照", "主光源")):
             fields = ["【画面描述｜直接复制】", "【状态继承】"]
         elif "制作控制" in message or "未转译" in message:
             fields = ["【画面描述｜直接复制】", "【本镜制作控制】"]

@@ -102,6 +102,12 @@ OFFSCREEN_MARKERS = ("不入画", "不出镜", "画外", "不出现身体", "不
 VISIBLE_COUNT_RE = re.compile(r"(?:本镜)?(?:画面内|视线内|镜头内)?可见人数[：:]\s*[一二三四五六七八九十\d]+人|入画人数[：:]\s*[一二三四五六七八九十\d]+人")
 POST_AUDIO_TERMS = ("OS", "OV", "系统音", "内心独白", "画外", "后期", "配音", "旁白")
 POST_AUDIO_LABEL_TERMS = ("OS", "OV", "系统音", "内心独白", "旁白")
+OS_TEXT_RE = re.compile(r"OS\s*[：:]\s*[“\"][^”\"]+[”\"]")
+OS_SPEAKER_RE = re.compile(r"(?<![A-Za-z0-9_\u4e00-\u9fff·])(?P<speaker>[A-Za-z\u4e00-\u9fff][A-Za-z0-9_\u4e00-\u9fff·]{0,19})\s*$")
+GENERIC_OS_SPEAKER_RE = re.compile(
+    r"^(?:我|你|他|她|它|其|TA|ta|我们|你们|他们|她们|角色(?:[A-Za-z0-9一二三四五六七八九十]*)?|"
+    r"人物(?:[A-Za-z0-9一二三四五六七八九十]*)?|说话者|角色名|人物名|某人|旁人|主角|男主|女主)$"
+)
 VISIBLE_SPEECH_TERMS = ("可见口型", "可见说话者", "开口", "说：", "说:", "说“", "问：", "问:", "喊：", "喊:", "低语", "回应", "反问")
 BLAND_EXPRESSION_TERMS = ("眼神复杂", "神色复杂", "表情平淡", "神色变化", "微微皱眉", "闭口看着")
 FACIAL_DETAIL_TERMS = ("眼睑", "睫毛", "眉尾", "嘴角", "下颌", "喉咙", "呼吸", "唇", "屏息")
@@ -315,8 +321,35 @@ LIGHTING_MATERIAL_TERMS = (
 )
 MOTIVATED_LIGHT_SOURCE_TERMS = (
     "窗光", "顶光", "台灯", "灯光", "日光", "自然光", "壁灯", "路灯", "灯牌", "吊灯", "落地灯",
-    "屏幕光", "车灯", "店招", "天光", "月光", "烛火", "火光", "火盆", "门外光",
+    "屏幕光", "车灯", "店招", "天光", "月光", "油灯", "烛火", "火光", "火盆", "门外光",
 )
+TIME_STATE_TERMS = (
+    "清晨", "早晨", "上午", "正午", "午后", "下午", "傍晚", "黄昏", "夜晚", "夜间", "深夜", "凌晨",
+    "白天", "日间", "黎明", "同一夜晚", "同一白天",
+)
+TIME_CHANGE_AUTH_TERMS = (
+    "时间流逝", "连续数日", "数日后", "次日", "翌日", "数小时后", "天色转为", "由白天转为夜晚",
+    "由夜晚转为白天", "时间跳转", "时段变化", "进入闪回", "回到现实",
+)
+EXTERIOR_BRIGHTNESS_TERMS = (
+    "门外夜色", "窗外夜色", "深蓝黑位", "深蓝夜色", "夜色保持", "天空亮度", "外部亮度", "门外亮度",
+    "窗外亮度", "门外保持暗", "窗外保持暗", "门外保持明亮", "窗外保持明亮", "无可见天光",
+)
+LIGHT_CONTINUITY_TERMS = (
+    "唯一主光源", "唯一主光", "主要主光源", "主光源", "主光方向", "光线曝光固定", "曝光保持",
+    "曝光不变", "黑位保持", "背景亮度保持", "色温保持", "受光方向保持", "光照方向保持",
+)
+LIGHT_SOURCE_FAMILIES = {
+    "oil_lamp": ("油灯", "油灯光"),
+    "candle_fire": ("烛火", "蜡烛", "火光", "火盆"),
+    "daylight": ("日光", "自然光", "天光", "窗外阳光", "阳光"),
+    "moonlight": ("月光", "月色"),
+    "window_light": ("窗光", "窗边光"),
+    "electric_light": ("顶光", "台灯", "壁灯", "吊灯", "落地灯", "灯光"),
+    "screen_light": ("屏幕光", "手机光"),
+    "street_light": ("路灯", "灯牌", "门外光"),
+}
+EXTERIOR_OPENING_TERMS = ("门外", "屋外", "窗外", "门框", "窗框", "院外")
 VISUAL_RESULT_TERMS = (
     "落在", "照在", "照亮", "扫过", "擦过", "映在", "投在", "进入", "勾亮", "压暗", "压在",
     "受光", "反光", "高光", "阴影", "明暗", "纹理", "褶皱", "磨损", "虚化", "衰减",
@@ -965,6 +998,95 @@ def perspective_scale_issues(direct: str, cast_names: list[str]) -> list[str]:
     return issues
 
 
+def _positive_term_present(text: str, term: str) -> bool:
+    for match in re.finditer(re.escape(term), text):
+        prefix = text[max(0, match.start() - 6):match.start()]
+        if not any(marker in prefix for marker in ("不出现", "没有", "无可见", "排除", "禁止")):
+            return True
+    return False
+
+
+def time_state_signature(text: str) -> set[str]:
+    cleaned = strip_quoted_content(text)
+    groups = {
+        "night": ("夜晚", "夜间", "深夜", "凌晨", "夜色", "月色"),
+        "day": ("白天", "日间", "上午", "正午", "午后", "下午", "日光", "阳光"),
+        "dawn": ("黎明", "清晨", "早晨"),
+        "dusk": ("傍晚", "黄昏"),
+    }
+    return {
+        label
+        for label, terms in groups.items()
+        if any(_positive_term_present(cleaned, term) for term in terms)
+    }
+
+
+def primary_light_sources(text: str) -> set[str]:
+    cleaned = strip_quoted_content(text)
+    sources: set[str] = set()
+    for family, terms in LIGHT_SOURCE_FAMILIES.items():
+        for term in terms:
+            for match in re.finditer(re.escape(term), cleaned):
+                context = cleaned[max(0, match.start() - 22):min(len(cleaned), match.end() + 22)]
+                if any(marker in context for marker in ("主光", "唯一光源", "主要光源", "决定室内曝光")):
+                    sources.add(family)
+                    break
+            if family in sources:
+                break
+    return sources
+
+
+def temporal_lighting_issues(direct: str) -> list[str]:
+    """Require a self-contained time, exterior-brightness and motivated-light contract."""
+    cleaned = strip_quoted_content(direct)
+    prefix = cleaned[:190]
+    issues: list[str] = []
+    if not any(_positive_term_present(prefix, term) for term in TIME_STATE_TERMS):
+        issues.append("直接提示词前缀缺少明确时段；写清白天/黄昏/夜晚等当前可见时间事实")
+    source_terms = MOTIVATED_LIGHT_SOURCE_TERMS + ("油灯", "蜡烛", "阳光", "手机光")
+    if not any(_positive_term_present(prefix, term) for term in source_terms):
+        issues.append("直接提示词前缀缺少可见主光物理来源")
+    if not any(term in prefix for term in ("主光", "唯一光源", "主要光源", "决定室内曝光")):
+        issues.append("直接提示词前缀必须指定哪一物理光源承担主光，不能只写暖褐/冷白氛围")
+    if any(term in cleaned for term in EXTERIOR_OPENING_TERMS) and not any(
+        term in cleaned for term in EXTERIOR_BRIGHTNESS_TERMS
+    ):
+        issues.append("门窗/屋外进入画面时必须写门外或窗外亮度、天空黑位/天光状态")
+    if not any(term in cleaned for term in LIGHT_CONTINUITY_TERMS):
+        issues.append("缺少时段与光照终态锁；写清背景亮度、主光方向、色温或曝光保持到结束")
+    signature = time_state_signature(cleaned)
+    if "night" in signature and "day" in signature and not any(term in cleaned for term in TIME_CHANGE_AUTH_TERMS):
+        issues.append("同一直接提示词同时出现夜晚与白天/日光事实，但没有可见时间变化依据")
+    return issues
+
+
+def temporal_lighting_continuity_issues(previous: str, current: str) -> list[str]:
+    """Compare adjacent prompts in one scene without relying on model memory."""
+    combined = strip_quoted_content(previous + "\n" + current)
+    if any(term in combined for term in TIME_CHANGE_AUTH_TERMS):
+        return []
+    issues: list[str] = []
+    previous_time = time_state_signature(previous)
+    current_time = time_state_signature(current)
+    if previous_time and current_time and previous_time.isdisjoint(current_time):
+        issues.append(
+            "同场相邻镜头时段冲突 -> "
+            + "/".join(sorted(previous_time))
+            + " -> "
+            + "/".join(sorted(current_time))
+        )
+    previous_sources = primary_light_sources(previous)
+    current_sources = primary_light_sources(current)
+    if previous_sources and current_sources and previous_sources.isdisjoint(current_sources):
+        issues.append(
+            "同场相邻镜头主光源冲突 -> "
+            + "/".join(sorted(previous_sources))
+            + " -> "
+            + "/".join(sorted(current_sources))
+        )
+    return issues
+
+
 def _actor_faces_target(text: str, actor: str, target: str) -> bool:
     actor_re = re.escape(actor)
     target_re = re.escape(target)
@@ -989,6 +1111,89 @@ def _actor_camera_facing(text: str, actor: str) -> bool:
     actor_re = re.escape(actor)
     camera_terms = "|".join(re.escape(term) for term in CAMERA_FACING_TERMS)
     return bool(re.search(rf"{actor_re}[^。；;\n]{{0,18}}(?:{camera_terms})", text))
+
+
+def _actor_local_context(text: str, actor: str, visible_names: list[str] | None = None) -> str:
+    parts: list[str] = []
+    for match in re.finditer(re.escape(actor), text):
+        clause_start = max(text.rfind(mark, 0, match.start()) for mark in ("。", "；", ";", "\n", "，")) + 1
+        prefix = text[clause_start:match.start()]
+        if re.search(r"(?:面向|朝向|正对|看向|望向|盯着|背对)\s*$", prefix):
+            continue
+        boundaries = [text.find(mark, match.end()) for mark in ("。", "；", ";", "\n")]
+        positive_boundaries = [value for value in boundaries if value >= 0]
+        end = min(positive_boundaries) if positive_boundaries else len(text)
+        parts.append(text[match.start():end])
+    return "；".join(parts)
+
+
+def _actor_threshold_side(text: str, actor: str, visible_names: list[str] | None = None) -> str:
+    context = _actor_local_context(text, actor, visible_names)
+    inside = any(term in context for term in ("门槛内侧", "屋内", "门内", "室内"))
+    outside = any(term in context for term in ("门槛外侧", "屋外", "门外", "院地", "院中"))
+    if inside and not outside:
+        return "inside"
+    if outside and not inside:
+        return "outside"
+    return ""
+
+
+def camera_position_facing_issues(text: str, visible: list[str]) -> list[str]:
+    issues: list[str] = []
+    camera_location = r"(?:摄影机|镜头|机位)(?:位于|设在|固定在|放在|在)\s*[^，。；;\n]{0,14}"
+    camera_outside = bool(re.search(camera_location + r"(?:门槛外侧|门外|屋外|院中|院地)", text))
+    camera_inside = bool(re.search(camera_location + r"(?:门槛内侧|门内|屋内|室内)", text))
+    looks_inside = bool(re.search(r"(?:朝|拍向|对准|看向)[^。；;\n]{0,10}(?:屋内|门内|室内)", text))
+    looks_outside = bool(re.search(r"(?:朝|拍向|对准|看向)[^。；;\n]{0,10}(?:屋外|门外|院中|院地)", text))
+    if camera_outside and camera_inside:
+        issues.append("同一镜头把摄影机同时放在门内和门外")
+    if looks_inside and looks_outside and not any(term in text for term in ("转身", "环绕", "横移越过门槛")):
+        issues.append("同一固定机位同时声明朝屋内和朝屋外拍摄")
+    if camera_inside and looks_outside and re.search(r"屋内[^。；;\n]{0,12}(?:留在|位于|作为)[^。；;\n]{0,8}(?:背景|后景)", text):
+        issues.append("摄影机在屋内朝屋外拍摄时，屋内位于摄影机身后，不能同时写成后景")
+
+    for actor in visible:
+        context = _actor_local_context(text, actor, visible)
+        if any(term in context for term in ("背对屋外", "背向屋外", "背对门外")) and any(
+            term in context for term in ("面向屋外", "朝向屋外", "正对屋外", "面向门外", "朝向门外", "正对门外")
+        ):
+            issues.append(f"{actor}同时背对并面向屋外/门外")
+        if any(term in context for term in ("背对屋内", "背向屋内", "背对门内")) and any(
+            term in context for term in ("面向屋内", "朝向屋内", "正对屋内", "面向门内", "朝向门内", "正对门内")
+        ):
+            issues.append(f"{actor}同时背对并面向屋内/门内")
+        if any(term in context for term in ("背对摄影机", "背对镜头")) and any(
+            term in context for term in ("正面可见", "正脸可见", "正面和双肩可见")
+        ):
+            issues.append(f"{actor}背对摄影机却同时声明正面/正脸可见")
+        if any(term in context for term in ("面向摄影机", "正对摄影机", "面向镜头", "正对镜头")) and any(
+            term in context for term in ("背面可见", "背影可见", "后脑可见")
+        ):
+            issues.append(f"{actor}面向摄影机却同时声明背面/背影可见")
+
+    sides = {actor: _actor_threshold_side(text, actor, visible) for actor in visible}
+    for actor in visible:
+        actor_side = sides.get(actor, "")
+        for target in visible:
+            if actor == target or not _actor_faces_target(text, actor, target):
+                continue
+            target_side = sides.get(target, "")
+            context = _actor_local_context(text, actor, visible)
+            if actor_side == "inside" and target_side == "outside" and any(
+                term in context for term in ("背对屋外", "背对门外")
+            ):
+                issues.append(f"{actor}位于屋内并面向屋外的{target}，不能同时背对屋外")
+            if actor_side == "outside" and target_side == "inside" and any(
+                term in context for term in ("背对屋内", "背对门内")
+            ):
+                issues.append(f"{actor}位于屋外并面向屋内的{target}，不能同时背对屋内")
+            same_side_as_camera = (camera_outside and actor_side == "outside") or (camera_inside and actor_side == "inside")
+            target_across_threshold = actor_side and target_side and actor_side != target_side
+            if same_side_as_camera and target_across_threshold and any(
+                term in context for term in ("正面可见", "正脸可见", "正面和双肩可见")
+            ):
+                issues.append(f"{actor}与摄影机位于门槛同侧且身体面向另一侧人物，摄影机应看到背面/侧背，不能声明正面可见")
+    return issues
 
 
 def _direct_address_has_timing(text: str) -> bool:
@@ -1044,12 +1249,16 @@ def spatial_facing_issues(direct: str, cast_names: list[str]) -> list[str]:
         missing_sides = [name for name in visible if not _name_has_threshold_side(text, name)]
         if missing_sides:
             issues.append("门槛关系镜必须逐人绑定门槛内/外侧 -> " + "、".join(missing_sides))
-    camera_outside = bool(re.search(r"(?:摄影机|镜头|机位)[^。；;\n]{0,24}(?:门槛外侧|门外|院中|院地)", text))
+    camera_outside = bool(re.search(
+        r"(?:摄影机|镜头|机位)(?:位于|设在|固定在|放在|在)\s*[^，。；;\n]{0,14}(?:门槛外侧|门外|屋外|院中|院地)",
+        text,
+    ))
     looks_inside = bool(re.search(r"(?:朝|拍向|对准|看向)[^。；;\n]{0,10}(?:屋内|门内|室内)", text))
     if camera_outside and doorway and not looks_inside:
         issues.append("门外门槛机位必须声明摄影机朝屋内或朝门外的拍摄方向，并给出该方向真实可见的背景锚点")
     if camera_outside and re.search(r"门外[^。；;\n]{0,12}(?:留在|位于|作为)[^。；;\n]{0,8}(?:背景|后景)", text):
         issues.append("摄影机在门外朝屋内拍摄时，画面后景应是屋内墙面/灯/家具；门外夜色在摄影机身后，不能同时写成后景")
+    issues.extend(camera_position_facing_issues(text, visible))
 
     if any(term in text for term in DOORWAY_EVENT_TERMS):
         has_start = any(term in text for term in ("起点在门外", "从门外", "门槛外侧起步", "屋外起步"))
@@ -1114,6 +1323,35 @@ def extract_optional_field(block: str, field: str) -> str:
 def extract_top_section(text: str, heading: str) -> str:
     m = re.search(re.escape(heading) + r"\n([\s\S]*?)(?=\n##\s|\Z)", text)
     return m.group(1).strip() if m else ""
+
+
+def voice_lock_names(global_section: str) -> list[str]:
+    """Extract canonical character names from the voice-lock Markdown table."""
+    title_match = re.search(re.escape(VOICE_LOCK_TITLE) + r"[^\n]*\n?", global_section)
+    if not title_match:
+        return []
+    names: list[str] = []
+    table_started = False
+    for raw_line in global_section[title_match.end():].splitlines():
+        line = re.sub(r"^\s*[-*]\s*", "", raw_line.strip()).strip("`")
+        if "|" not in line:
+            if table_started and names:
+                break
+            continue
+        cells = [cell.strip().strip("*_`") for cell in line.strip("|").split("|")]
+        if len(cells) < 2:
+            continue
+        first = cells[0]
+        if first in ("人物", "角色", "人物名", "角色名") or re.fullmatch(r":?-{2,}:?", first):
+            table_started = True
+            continue
+        if not re.fullmatch(r"[A-Za-z\u4e00-\u9fff][A-Za-z0-9_\u4e00-\u9fff·]{0,19}", first):
+            if table_started and names:
+                break
+            continue
+        table_started = True
+        names.append(first)
+    return list(dict.fromkeys(names))
 
 
 def labeled_control_value(text: str, label: str) -> str:
@@ -1268,6 +1506,26 @@ def post_audio_format_issues(text: str) -> list[str]:
     return issues
 
 
+def os_speaker_binding_issues(text: str, voice_names: list[str] | None = None) -> list[str]:
+    """Require each quoted OS line to bind a canonical voice-lock character."""
+    issues: list[str] = []
+    allowed = set(voice_names or [])
+    for match in OS_TEXT_RE.finditer(text):
+        prefix = text[:match.start()]
+        speaker_match = OS_SPEAKER_RE.search(prefix)
+        excerpt = match.group(0)
+        if not speaker_match:
+            issues.append(f"缺少人物名 -> {excerpt}")
+            continue
+        speaker = speaker_match.group("speaker")
+        if GENERIC_OS_SPEAKER_RE.fullmatch(speaker):
+            issues.append(f"不得用代词或泛称作为OS说话人 -> {speaker}OS")
+            continue
+        if allowed and speaker not in allowed:
+            issues.append(f"说话人不在本集角色声音锁定表 -> {speaker}OS")
+    return issues
+
+
 def is_screen_invisible_to_camera(text: str) -> bool:
     if any(term in text for term in SCREEN_INVISIBLE_TERMS):
         return True
@@ -1345,6 +1603,7 @@ def validate_child(
     block: str,
     cast_names: list[str],
     issues: list[str],
+    voice_names: list[str] | None = None,
 ) -> None:
     sid = f"{group_id}-{number}"
     if not re.match(rf"^{number}\s*，\s*\d+(?:\.\d+)?s\s*，\s*(普通|复杂)。?$", header):
@@ -1472,6 +1731,8 @@ def validate_child(
         issues.append(f"{sid}: 人物透视比例风险 -> {issue}")
     for issue in spatial_facing_issues(direct, cast_names):
         issues.append(f"{sid}: 空间面向风险 -> {issue}")
+    for issue in temporal_lighting_issues(direct):
+        issues.append(f"{sid}: 时空光照合同失败 -> {issue}")
     if post_text_inside_direct(direct):
         issues.append(f"{sid}: 后期叠字的具体文字不要写进直接提示词；只预留安全区，具体文字写到【表演与声音】中的后期文字句")
     if "后期叠字" in direct and not any(term in direct for term in ("安全区", "画面左侧", "画面右侧", "贴合屏幕平面", "预留")):
@@ -1534,8 +1795,15 @@ def validate_child(
     for line in visible_dialogue_quotes(performance) + visible_dialogue_quotes(mouth_window):
         if line not in direct_quotes:
             issues.append(f"{sid}: visible dialogue must appear in direct prompt by default -> “{line}”")
-    for line in post_audio_format_issues(performance) + post_audio_format_issues(mouth_window):
+    for line in post_audio_format_issues(direct) + post_audio_format_issues(performance) + post_audio_format_issues(mouth_window):
         issues.append(f"{sid}: OS/OV/系统音文本必须使用 标签：“...” 格式 -> {line}")
+    for field_name, field_text in (
+        ("【画面描述｜直接复制】", direct),
+        ("【表演与声音】", performance),
+        ("【口型分窗】", mouth_window),
+    ):
+        for issue in os_speaker_binding_issues(field_text, voice_names):
+            issues.append(f"{sid}: {field_name} OS说话人绑定失败 -> {issue}")
     if is_standalone_cutaway(direct):
         handoff = extract_optional_field(block, "【剪辑衔接】")
         in_place_focus = any(word in direct for word in ("焦点从", "焦点落到", "拉焦", "转焦"))
@@ -1748,6 +2016,7 @@ def validate(path: Path, text: str | None = None, seedance_target: str = "auto")
     if internal_hits:
         issues.append("final output should not expose internal scene-preset terms -> " + ",".join(internal_hits))
     global_section = extract_top_section(text, "## 全局锁定")
+    voice_names = voice_lock_names(global_section)
     quality_section = extract_top_section(text, "## 制作质量总控")
     global_negative_section = extract_top_section(text, "## 通用负面提示词｜直接复制")
     scene_state_section = extract_top_section(text, "## 场景状态表")
@@ -1783,6 +2052,8 @@ def validate(path: Path, text: str | None = None, seedance_target: str = "auto")
             missing_voice_terms = [term for term in VOICE_LOCK_REQUIRED_TERMS if term not in global_section]
             if missing_voice_terms:
                 issues.append(f"{VOICE_LOCK_TITLE} lacks voice identity fields -> {','.join(missing_voice_terms)}")
+            if not voice_names:
+                issues.append(f"{VOICE_LOCK_TITLE} must contain a parseable Markdown table with character names")
         if "角色声音使用" not in scene_state_section:
             issues.append("## 场景状态表 missing 角色声音使用 for this scene")
 
@@ -1792,6 +2063,7 @@ def validate(path: Path, text: str | None = None, seedance_target: str = "auto")
     previous_group_last_state = ""
     previous_group_scene: int | None = None
     scene_group_records: list[tuple[int, str, list[str]]] = []
+    scene_shot_records: list[tuple[int, str, str]] = []
     for match in groups:
         group_count += 1
         group_id, group_total, block = match.group(1), match.group(2), match.group(3)
@@ -1826,12 +2098,18 @@ def validate(path: Path, text: str | None = None, seedance_target: str = "auto")
             duration_match = re.search(r"，\s*(\d+(?:\.\d+)?)s\s*，", child.group(1))
             if duration_match and float(duration_match.group(1)) > 15.0:
                 issues.append(f"{group_id}-{expected_number}: Seedance dual-safe shot duration cannot exceed 15s")
-            validate_child(group_id, expected_number, child.group(1).strip(), child.group(0), cast_names, issues)
+            validate_child(
+                group_id, expected_number, child.group(1).strip(), child.group(0), cast_names, issues, voice_names
+            )
         child_directs = [
             direct_prompt(child.group(0))
             for child in children
         ]
         scene_group_records.append((scene_number, group_id, child_directs))
+        scene_shot_records.extend(
+            (scene_number, f"{group_id}-{index}", direct)
+            for index, direct in enumerate(child_directs, start=1)
+        )
         child_states = [
             extract(child.group(0), "【状态继承】")
             for child in children
@@ -1891,6 +2169,14 @@ def validate(path: Path, text: str | None = None, seedance_target: str = "auto")
         for index in range(1, len(shoulder_actors)):
             if shoulder_actors[index - 1] and shoulder_actors[index] and shoulder_actors[index - 1] == shoulder_actors[index]:
                 issues.append(f"{group_id}: consecutive shoulder shots use same shoulder actor; reverse shot should swap foreground shoulder")
+
+    for previous, current in zip(scene_shot_records, scene_shot_records[1:]):
+        previous_scene, _, previous_direct = previous
+        current_scene, current_sid, current_direct = current
+        if previous_scene != current_scene:
+            continue
+        for issue in temporal_lighting_continuity_issues(previous_direct, current_direct):
+            issues.append(f"{current_sid}: 同场时空光照连续性失败 -> {issue}")
 
     # Scene-level camera variety: compare the first child of adjacent groups so a
     # sequence cannot hide three repeated compositions behind different group headings.
