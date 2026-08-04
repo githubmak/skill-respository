@@ -21,7 +21,12 @@ class RuntimeToolTests(unittest.TestCase):
         self.assertEqual(result["read_first"], ["references/runtime-core.md", "references/output-template.md"])
         self.assertEqual(result["read_on_demand"], [])
         self.assertEqual(result["run_during_generation"][0]["after"], "each_shot")
-        self.assertIn("incremental_validate.py", result["run_during_generation"][0]["command"])
+        self.assertEqual(result["run_during_generation"][0]["script"], "scripts/incremental_validate.py")
+        self.assertEqual(
+            result["run_during_generation"][0]["arguments"],
+            ["<scene_draft.md>", "--current-shot", "<shot_id>"],
+        )
+        self.assertNotIn("command", result["run_during_generation"][0])
 
     def test_risks_load_only_specialist_references(self):
         with tempfile.TemporaryDirectory() as root:

@@ -78,7 +78,8 @@ def route(mode, source=None):
         "run_before_generation": ["scripts/source_gate.py"],
         "run_during_generation": [{
             "after": "each_shot",
-            "command": "python3 scripts/incremental_validate.py <scene_draft.md> --current-shot <shot_id>",
+            "script": "scripts/incremental_validate.py",
+            "arguments": ["<scene_draft.md>", "--current-shot", "<shot_id>"],
             "max_local_repair_attempts": 2,
             "scope_order": ["field", "shot", "pair", "window", "scene"],
         }],

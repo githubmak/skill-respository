@@ -8,7 +8,13 @@ import unittest
 from incremental_validate import analyze
 
 
-def _child(number: int, direct: str, state: str, include_performance: bool = True) -> str:
+def _child(
+    number: int,
+    direct: str,
+    state: str,
+    include_performance: bool = True,
+    memory_anchor: str = "",
+) -> str:
     performance = "【表演与声音】\n无台词。\n\n" if include_performance else ""
     return (
         f"【镜号】\n{number}，3s，普通。\n\n"
@@ -16,12 +22,12 @@ def _child(number: int, direct: str, state: str, include_performance: bool = Tru
         f"{performance}"
         f"【状态继承】\n{state}\n\n"
         "【本镜制作控制】\n"
-        "画面质感：人物实焦，木桌划痕是材质锚点。\n"
+        "画面质感：人物实焦，木桌划痕是材质锚点。" + memory_anchor + "\n"
         "光效与曝光：左侧窗光照亮脸和手，暗部可读。\n"
         "动态美学：稳定起幅，动作发生后落幅停稳。\n"
         "表演与情绪：环境触发抬眼，肩背泄露紧张，余波停在门口。\n"
         "穿帮控制：双脚接地，人物边界和道具归属保持。\n"
-        "抽卡策略：低风险，固定机位，人工首轮检查。\n"
+        "抽卡策略：低风险，固定机位，自动首轮检查。\n"
         "蒙太奇与剪辑：非蒙太奇，保持连续因果。\n"
     )
 
@@ -69,6 +75,45 @@ class IncrementalValidationTests(unittest.TestCase):
         result = analyze(draft, "S1-01-1")
         self.assertTrue(result["final_full_validation_required"])
         self.assertFalse(result["primary_output_modified"])
+
+    def test_fifth_shot_without_memory_anchor_returns_window_scope(self):
+        children = [
+            _child(
+                index,
+                _direct(f"人物触碰第{index}只杯子后收回手；"),
+                "人物仍面向桌面。",
+            )
+            for index in range(1, 6)
+        ]
+        draft = "#### S1-01\n\n【出现人物】\n人物\n\n" + "\n".join(children)
+        result = analyze(draft, "S1-01-5")
+        target = next(item for item in result["issues"] if item["code"] == "MEMORY_ANCHOR_DENSITY")
+        self.assertEqual("window", target["repair_scope"])
+        self.assertEqual([f"S1-01-{index}" for index in range(1, 6)], target["shot_ids"])
+        self.assertEqual(["【画面描述｜直接复制】", "【本镜制作控制】"], target["fields"])
+
+    def test_fifth_shot_accepts_valid_memory_anchor_in_window(self):
+        anchor = (
+            "记忆锚点：墙角水阀把人物和扩散积水连成斜线；"
+            "成立原因：水阀与积水边缘同时呈现原因和后果；"
+            "关系/认知变化：观众看清人物由迟疑转为决定。"
+        )
+        children = [
+            _child(
+                index,
+                _direct(
+                    "墙角水阀把人物和扩散积水连成斜线，"
+                    "水阀与积水边缘同时呈现原因和后果，人物由迟疑转为决定；"
+                    if index == 3 else f"人物触碰第{index}只杯子后收回手；"
+                ),
+                "人物仍面向桌面。",
+                memory_anchor=anchor if index == 3 else "",
+            )
+            for index in range(1, 6)
+        ]
+        draft = "#### S1-01\n\n【出现人物】\n人物\n\n" + "\n".join(children)
+        result = analyze(draft, "S1-01-5")
+        self.assertFalse(any(item["code"] == "MEMORY_ANCHOR_DENSITY" for item in result["issues"]), result)
 
 
 if __name__ == "__main__":

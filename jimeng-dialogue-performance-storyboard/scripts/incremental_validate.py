@@ -81,6 +81,18 @@ def analyze(text: str, current_shot: str | None = None) -> dict:
                     f'{current["shot_id"]}: 上一镜人体支撑点未在当前镜头重写',
                     "pair", [previous["shot_id"], current["shot_id"]],
                 ))
+        for index in range(4, len(scene_records)):
+            window = scene_records[index - 4:index + 1]
+            anchor_count = sum(
+                validator.is_valid_memory_anchor(item["quality_control"], item["direct"])
+                for item in window
+            )
+            if anchor_count == 0:
+                shot_ids = [item["shot_id"] for item in window]
+                issues.append(_issue(
+                    f'{shot_ids[0]}~{shot_ids[-1]}: 连续五镜缺少有效记忆锚点',
+                    "window", shot_ids,
+                ))
 
     for group_records in by_group.values():
         for index in range(2, len(group_records)):
@@ -154,6 +166,7 @@ def _shot_records(text: str) -> list[dict]:
                 "cast": cast,
                 "direct": validator.direct_prompt(child_block),
                 "state": validator.extract_optional_field(child_block, "【状态继承】"),
+                "quality_control": validator.extract_optional_field(child_block, validator.QUALITY_CONTROL_FIELD),
             })
     return records
 
@@ -172,7 +185,7 @@ def _issue(message: str, default_scope: str, shot_ids: list[str]) -> dict:
 def _repair_scope(message: str, default_scope: str) -> str:
     if any(term in message for term in ("上一镜", "跨镜头组", "物品状态", "支撑点", "连续肩后镜")):
         return "pair"
-    if any(term in message for term in ("连续三镜", "three consecutive")):
+    if any(term in message for term in ("连续三镜", "three consecutive", "连续五镜")):
         return "window"
     if any(term in message for term in ("overload", "任务过载", "split", "拆镜", "long action chain")):
         return "shot"
@@ -191,6 +204,7 @@ def _issue_code(message: str) -> str:
         (("朝向", "orientation", "body-facing"), "ORIENTATION_CONTINUITY"),
         (("支撑", "posture"), "SUPPORT_CONTINUITY"),
         (("连续三镜", "three consecutive", "肩后镜"), "CAMERA_VARIETY"),
+        (("记忆锚点", "连续五镜"), "MEMORY_ANCHOR_DENSITY"),
         (("可选字段功能超过预算",), "OPTIONAL_FIELD_BUDGET"),
         (("semantic contract incomplete",), "SEMANTIC_COMPLETENESS"),
     )
@@ -207,7 +221,7 @@ def _repair_fields(message: str, scope: str) -> list[str]:
             fields = ["【画面描述｜直接复制】", "【表演与声音】"]
         elif any(term in message for term in ("物品状态", "支撑点", "朝向", "上一镜", "时空光照", "主光源")):
             fields = ["【画面描述｜直接复制】", "【状态继承】"]
-        elif "制作控制" in message or "未转译" in message:
+        elif "制作控制" in message or "未转译" in message or "记忆锚点" in message:
             fields = ["【画面描述｜直接复制】", "【本镜制作控制】"]
         elif "镜号" in message:
             fields = ["【镜号】"]

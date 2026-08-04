@@ -126,11 +126,32 @@ class SemanticCollisionTests(unittest.TestCase):
 
 
 class SpatialFacingContractTests(unittest.TestCase):
+    def test_each_visible_actor_requires_a_complete_spatial_contract(self) -> None:
+        prompt = (
+            "摄影机位于长桌南侧，朝桌北侧拍摄，保持在二人关系轴同一侧。"
+            "沈青乔站在画面左侧，身体面向卫景耘，侧面可见，视线落在卫景耘脸上；"
+            "卫景耘站在画面右侧，闭口不动。"
+        )
+        issues = validator.spatial_facing_issues(prompt, ["沈青乔", "卫景耘"])
+        self.assertTrue(any("卫景耘缺少身体面向" in issue for issue in issues), issues)
+        self.assertTrue(any("卫景耘缺少摄影机可见面" in issue for issue in issues), issues)
+        self.assertTrue(any("卫景耘缺少视线目标" in issue for issue in issues), issues)
+
+    def test_complete_two_person_spatial_contract_passes(self) -> None:
+        prompt = (
+            "摄影机位于长桌南侧，朝桌北侧拍摄，保持在沈青乔与卫景耘关系轴同一侧。"
+            "沈青乔站在画面左侧，身体面向卫景耘，三分之二侧面可见，视线落在卫景耘脸上；"
+            "卫景耘站在画面右侧，身体面向沈青乔，三分之二侧面可见，视线落在沈青乔脸上。"
+        )
+        self.assertEqual([], validator.spatial_facing_issues(prompt, ["沈青乔", "卫景耘"]))
+
     def test_doorway_back_front_relationship_is_valid(self) -> None:
         prompt = (
-            "摄影机位于门外院地，朝屋内拍摄。沈青乔站在门槛外侧前景，背对摄影机，"
+            "摄影机位于门外院地，朝屋内拍摄，保持在沈青乔与卫景耘关系轴同一侧。"
+            "沈青乔站在门槛外侧前景，背对摄影机，"
             "身体、胸口和脚尖面向卫景耘；卫景耘始终站在门槛内侧后景，身体和正面朝向沈青乔，"
-            "正面和双肩可见。二人相互面对。沈青乔背影只遮挡卫景耘左侧下半身，"
+            "正面和双肩可见。沈青乔视线落在卫景耘脸上，卫景耘视线落在沈青乔脸上。"
+            "二人相互面对。沈青乔背影只遮挡卫景耘左侧下半身，"
             "卫景耘脸、双手和木棍仍可见，中央留出视觉通道。"
         )
         self.assertEqual([], validator.spatial_facing_issues(prompt, ["沈青乔", "卫景耘"]))
@@ -143,7 +164,9 @@ class SpatialFacingContractTests(unittest.TestCase):
 
     def test_source_authorized_fourth_wall_gaze_is_valid(self) -> None:
         prompt = (
-            "甲身体、胸口和脚尖面向乙，乙身体、胸口和脚尖面向甲，两人对峙。"
+            "摄影机位于二人南侧，朝北拍摄，保持在甲与乙关系轴同一侧。"
+            "甲站在画面左侧，身体、胸口和脚尖面向乙，三分之二侧面可见；"
+            "乙站在画面右侧，身体、胸口和脚尖面向甲，三分之二侧面可见，两人对峙。"
             "源文为打破第四面墙表演，2.0-3.0秒仅甲短暂直视镜头，甲身体仍面向乙；"
             "乙视线始终落在甲身上，3.0秒后甲视线回到乙。"
         )
@@ -205,10 +228,44 @@ class SpatialFacingContractTests(unittest.TestCase):
         issues = validator.spatial_facing_issues("沈青乔和阿丰各提一个竹篮，双竹篮归属固定。", ["沈青乔", "阿丰"])
         self.assertTrue(any("同类道具" in issue for issue in issues), issues)
 
+    def test_unlisted_similar_props_use_generic_detection(self) -> None:
+        issues = validator.spatial_facing_issues("甲和乙各持一把纸伞，两把纸伞归属固定。", ["甲", "乙"])
+        self.assertTrue(any("同类道具" in issue for issue in issues), issues)
+
+    def test_unlisted_prop_state_is_tracked_without_a_prop_dictionary(self) -> None:
+        previous = "铜铃停在甲右手，甲站在门边。"
+        current = "铜铃放在桌面，甲仍站在门边。"
+        self.assertEqual(["铜铃"], validator.prop_state_jump(previous, current))
+
     def test_camera_signature_distinguishes_angle(self) -> None:
         overhead = validator.camera_signature("俯视近景，镜头固定。")
         oblique = validator.camera_signature("斜俯近景，镜头固定。")
         self.assertNotEqual(overhead, oblique)
+
+    def test_adjacent_relation_shots_reject_unexplained_screen_side_flip(self) -> None:
+        previous = (
+            "摄影机位于长桌南侧，朝桌北侧拍摄，保持在甲与乙关系轴同一侧。"
+            "甲站在画面左侧，身体面向乙，侧面可见，视线落在乙；"
+            "乙站在画面右侧，身体面向甲，侧面可见，视线落在甲。"
+        )
+        current = (
+            "摄影机位于长桌北侧，朝桌南侧拍摄。"
+            "甲站在画面右侧，身体面向乙，侧面可见，视线落在乙；"
+            "乙站在画面左侧，身体面向甲，侧面可见，视线落在甲。"
+        )
+        issues = validator.axis_continuity_issues(previous, current, ["甲", "乙"])
+        self.assertTrue(any("屏幕方向翻转" in issue for issue in issues), issues)
+
+    def test_axis_crossing_requires_visible_neutral_transition(self) -> None:
+        previous = (
+            "摄影机位于长桌南侧，朝桌北侧拍摄，保持在甲与乙关系轴同一侧。"
+            "甲在画面左侧，乙在画面右侧。"
+        )
+        current = (
+            "摄影机从长桌南侧横移越过甲乙关系轴到北侧，经过二人正侧面的中性机位，"
+            "画面连续展示甲乙屏幕方向交换。"
+        )
+        self.assertEqual([], validator.axis_continuity_issues(previous, current, ["甲", "乙"]))
 
 
 class CameraVariationAndTerminalTests(unittest.TestCase):
@@ -284,6 +341,59 @@ class TemporalLightingContractTests(unittest.TestCase):
 
 class OutputFormatTests(unittest.TestCase):
     @staticmethod
+    def _memory_anchor_fixture() -> tuple[str, str]:
+        direct = (
+            "门框把甲与乙分在门外和门内，甲手里的旧钥匙停在两人之间；"
+            "焦点先落在旧钥匙，再落到二人被门槛隔开的距离，二人由试探转为对峙。"
+        )
+        control = (
+            "画面质感：门框分割构图，焦点在旧钥匙与二人距离；"
+            "记忆锚点：门框把甲与乙分在门外和门内；"
+            "成立原因：门框和旧钥匙同时把进入与拒绝变成可见关系；"
+            "关系/认知变化：二人由试探转为对峙。"
+        )
+        return direct, control
+
+    def test_memory_anchor_requires_complete_specific_contract(self) -> None:
+        direct, control = self._memory_anchor_fixture()
+        self.assertEqual([], validator.memory_anchor_contract_issues(control, direct))
+        malformed = "画面质感：记忆锚点：很震撼；成立原因：高级感。"
+        issues = validator.memory_anchor_contract_issues(malformed, direct)
+        self.assertTrue(any("过于空泛" in issue for issue in issues), issues)
+        self.assertTrue(any("缺少关系/认知变化" in issue for issue in issues), issues)
+
+    def test_memory_anchor_visible_fact_must_reach_direct_prompt(self) -> None:
+        _, control = self._memory_anchor_fixture()
+        issues = validator.memory_anchor_contract_issues(
+            control, "普通平视中景，甲与乙站立交谈。"
+        )
+        self.assertTrue(any("未转译进直接提示词" in issue for issue in issues), issues)
+
+    def test_memory_anchor_rejects_production_meta_language_in_direct_prompt(self) -> None:
+        direct, control = self._memory_anchor_fixture()
+        issues = validator.memory_anchor_contract_issues(
+            control, direct + "观众看清两人关系。"
+        )
+        self.assertTrue(any("制作意图" in issue for issue in issues), issues)
+
+    def test_every_rolling_five_shot_window_requires_an_anchor(self) -> None:
+        direct, control = self._memory_anchor_fixture()
+        no_anchor = [(1, f"S1-0{i + 1}-1", "普通镜头", "") for i in range(5)]
+        issues = validator.memory_anchor_density_issues(no_anchor)
+        self.assertTrue(any("连续五镜缺少有效记忆锚点" in issue for issue in issues), issues)
+
+        one_anchor = list(no_anchor)
+        one_anchor[2] = (1, "S1-03-1", direct, control)
+        self.assertEqual([], validator.memory_anchor_density_issues(one_anchor))
+
+    def test_anchor_spacing_must_cover_all_rolling_windows(self) -> None:
+        direct, control = self._memory_anchor_fixture()
+        records = [(1, f"S1-{i + 1:02d}-1", "普通镜头", "") for i in range(6)]
+        records[0] = (1, "S1-01-1", direct, control)
+        issues = validator.memory_anchor_density_issues(records)
+        self.assertTrue(any("S1-02-1~S1-06-1" in issue for issue in issues), issues)
+
+    @staticmethod
     def _global_scale_fixture(include_positive: bool, include_negative: bool) -> str:
         positive = (
             "- 全局比例与支撑锁定：全程角色骨骼与头身比例恒定，人物真实身高和体型尺寸固定；"
@@ -341,8 +451,9 @@ class OutputFormatTests(unittest.TestCase):
         )
         direct = (
             "16:9写实电影短片，50mm平视近景，人物位于画面右侧实焦，木桌细划痕清楚；"
-            "左侧窗光照亮脸和手，阴影保留细节，高光稳定。人物身体面向门口，右手持续接触桌沿，"
-            "双脚接地，道具仍在桌面右侧；听见开门声后抬眼，呼吸停顿，眼神停在门口形成余波。"
+            "左侧窗光照亮脸和手，阴影保留细节，高光稳定。人物身体面向门口，右手压住桌沿，"
+            "双脚接地，道具仍在桌面右侧；听见开门声后保持戒备但对外平静，随后抬眼，"
+            "呼吸停顿，眼神停在门口形成余波。"
             "固定机位记录这一低幅反应，落幅停稳。"
         )
         self.assertEqual([], validator.quality_control_issues(control, direct))
@@ -362,6 +473,45 @@ class OutputFormatTests(unittest.TestCase):
         )
         for label in ("画面质感", "光效与曝光", "动态美学", "表演与情绪", "穿帮控制"):
             self.assertTrue(any(label in issue and "未转译" in issue for issue in issues), (label, issues))
+
+    def test_shot_quality_control_rejects_semantic_subject_and_target_mismatch(self) -> None:
+        control = (
+            "画面质感：门框构图，焦点锁甲右脸、铜铃裂纹和墙面纹理。\n"
+            "光效与曝光：右侧壁灯为主光，照亮甲右脸和铜铃裂纹，曝光稳定。\n"
+            "动态美学：固定起幅，相见触发二人停步，固定机位稳定落幅。\n"
+            "表演与情绪：看见来人触发甲指节压紧铜铃提环，余波停在门内距离。\n"
+            "穿帮控制：可见人数2人，铜铃归甲，脚底保持支撑。\n"
+            "抽卡策略：高风险，固定机位，自动首轮检查。\n"
+            "蒙太奇与剪辑：非蒙太奇，以脚步声停止为切点。"
+        )
+        direct = (
+            "门框构图，焦点在乙双眼，右侧壁灯为主光并照亮乙脸部；"
+            "二人看见彼此后停步，乙肩背僵住。固定机位稳定落幅，"
+            "可见人数2人，人物槽位、道具归属和脚底支撑固定。"
+        )
+        issues = validator.quality_control_issues(control, direct, ["甲", "乙"])
+        self.assertTrue(any("画面质感" in issue and "甲" in issue for issue in issues), issues)
+        self.assertTrue(any("光效与曝光" in issue and "铜铃" in issue for issue in issues), issues)
+        self.assertTrue(any("表演与情绪" in issue and "铜铃提环" in issue for issue in issues), issues)
+
+    def test_keyframe_contract_rejects_time_light_and_spatial_drift(self) -> None:
+        direct = (
+            "夜晚小院屋内，右侧油灯为主光源并承担曝光，门外保持深蓝黑位。"
+            "摄影机位于门槛外侧朝屋内拍摄，保持在沈青乔与卫景耘关系轴同一侧。"
+            "本镜画面内可见人数：2人。沈青乔站在门槛外侧画面左侧，身体面向卫景耘，"
+            "背面可见，视线落在卫景耘；卫景耘站在门槛内侧画面右侧，身体面向沈青乔，"
+            "正面可见，视线落在沈青乔。"
+        )
+        keyframes = (
+            "首帧：白天小院，日光为主光，沈青乔站在门槛内侧，卫景耘站在门外。\n"
+            "尾帧：同一机位，二人停住。"
+        )
+        issues = validator.keyframe_contract_issues(
+            keyframes, direct, ["沈青乔", "卫景耘"]
+        )
+        self.assertTrue(any("时段" in issue for issue in issues), issues)
+        self.assertTrue(any("主光源" in issue for issue in issues), issues)
+        self.assertTrue(any("空间合同" in issue for issue in issues), issues)
 
     def test_shot_quality_control_rejects_internal_placeholders(self) -> None:
         control = "\n".join(f"{label}：已检查，按合同执行。" for label in validator.SHOT_QUALITY_LABELS)

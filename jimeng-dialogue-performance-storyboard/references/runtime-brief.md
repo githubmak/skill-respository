@@ -147,4 +147,4 @@
 - 文件名使用 `[标题或集数]_S序号_[场景名]_即梦投喂分镜.md`；场景名压缩到4-8个中文字符并去除非法字符。
 - 生成新文件只读取源文和当前规则。修订任务读取用户指定的现有分镜，并对受影响场景整体重写。
 - 保存后运行 `scripts/validate_storyboard.py --shadow-report <output.md>`。硬错误按镜号回到底图重写；`SHADOW` 只用于分类校准。
-- 脚本通过后，只有复杂物理/空间歧义才读取 `validation-checklist.md` 人工复核。
+- 脚本通过后，只有复杂物理/空间歧义才读取 `validation-checklist.md` 做自动设计/视觉复核。

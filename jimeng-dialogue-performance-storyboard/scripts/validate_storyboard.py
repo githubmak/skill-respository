@@ -121,7 +121,6 @@ REVERSE_SHOT_RE = re.compile(
 )
 ORIENTATION_LOCK_TERMS = ("背向", "背对", "侧身", "身体面向柜台", "身体面向入口", "身体面向出口", "身体面向道路", "身体面向门口", "身体面向车门", "身体面向手机", "身体面向屏幕", "身体面向签字台", "身体面向缴费台")
 ORIENTATION_TURN_TERMS = ("转身", "转向", "回身", "侧身转正", "肩线转正", "双脚停稳", "身体从")
-TRACKED_PROPS = ("手机", "银行卡", "卡片", "卡", "杯子", "茶盏", "瓷盏", "笔", "签字笔", "文件", "外套", "手包", "包", "钥匙", "餐盘", "照片", "纸")
 PROP_STATE_HINTS = ("右手", "左手", "手中", "掌中", "包内", "口袋", "外袋", "胸前", "腰侧", "桌面", "台面", "签字台", "柜台", "手边")
 STRONG_PROP_STATE_HINTS = ("右手", "左手", "包内", "口袋", "外袋", "胸前", "腰侧", "桌面", "台面", "签字台", "柜台", "掌中", "手中")
 PROP_TRANSFER_CHAIN_TERMS = ("取出", "拿出", "拿起", "递", "递到", "交给", "接触", "接过", "接住", "握住", "松手", "放下", "放到", "移动")
@@ -159,7 +158,7 @@ UI_RISK_TERMS = ("来电", "转账", "聊天记录", "付款码", "屏幕显示"
 UI_STRUCTURE_TERMS = ("后期叠字", "安全区", "模糊", "不生成清晰文字", "斜向", "正对", "屏幕")
 SCREEN_INVISIBLE_TERMS = (
     "手机背面朝向镜头", "屏幕完全不可见", "屏幕不可见", "屏幕朝向持机者本人",
-    "屏幕朝向人物本人", "屏幕朝向A本人", "屏幕朝向B本人", "屏幕朝向她本人", "屏幕朝向他本人",
+    "屏幕朝向人物本人", "屏幕朝向使用者本人",
 )
 SCREEN_UI_CONTENT_TERMS = ("屏幕显示", "模糊微信聊天界面", "微信聊天界面", "聊天界面", "屏幕文字", "屏幕光照出文字", "屏幕光照出")
 AI_SIDE_BUBBLE_TERMS = ("绿色微信消息气泡", "绿色聊天气泡", "消息气泡", "字幕浮层", "气泡浮层", "二维绿色")
@@ -295,11 +294,75 @@ THRESHOLD_SIDE_TERMS = ("门槛外侧", "门槛内侧", "屋外一侧", "屋内�
 OCCLUSION_RESULT_TERMS = (
     "仍可见", "保持可见", "清晰可见", "不被遮住", "露出", "视觉通道", "视线通道", "中央空隙",
 )
-SIMILAR_PROP_GROUP_RE = re.compile(r"(?:双|两个|两只|两件)(?:鱼篓|竹篓|菜篓|竹篮|菜篮|篮子|背篓|木棍|拐杖)")
+SIMILAR_PROP_GROUP_RE = re.compile(
+    r"(?:双|两个|两只|两件|两根|两把|两盏|两部|两台)(?P<object>[\u4e00-\u9fffA-Za-z0-9_·]{1,10})"
+)
+NON_PROP_PAIRED_OBJECTS = ("手", "脚", "眼", "耳", "臂", "腿", "肩", "膝", "人", "人物", "孩子", "男女")
 PROP_DISTINCTION_TERMS = (
     "不同", "区分", "圆口", "方口", "深色", "浅色", "宽", "窄", "高筒", "矮筒", "鱼", "菜",
     "布盖", "藤编", "竹编", "粗编", "细编", "形状", "颜色", "内容物", "尺寸差",
 )
+POSITION_ANCHOR_TERMS = (
+    "位于", "站在", "坐在", "停在", "靠在", "蹲在", "跪在", "躺在",
+    "画面左", "画面右", "画面中", "前景", "中景", "后景", "门槛内侧", "门槛外侧",
+    "屋内", "屋外", "门内", "门外", "桌内侧", "桌外侧", "柜台内侧", "柜台外侧",
+    "车内", "车外", "床边", "墙边", "窗边", "入口", "出口", "槽位", "站位",
+)
+EYELINE_TERMS = ("视线", "目光", "眼睛", "看向", "望向", "盯着", "凝视", "注视")
+AXIS_LOCK_TERMS = (
+    "关系轴同一侧", "二人连线同一侧", "人物连线同一侧", "轴线同一侧",
+    "不跨越关系轴", "不越过关系轴", "不跨轴", "不越轴", "保持轴线",
+)
+AXIS_CROSS_TERMS = ("跨过关系轴", "越过关系轴", "跨越关系轴", "越轴", "跨轴")
+AXIS_TRANSITION_TERMS = (
+    "中性机位", "正侧面", "正面中性镜头", "画面连续展示", "屏幕方向交换",
+    "连续经过轴线", "拍出越轴过程",
+)
+CAMERA_LOCATION_TERMS = (
+    "摄影机位于", "摄影机设在", "摄影机固定在", "摄影机放在", "摄影机从", "摄影机靠近",
+    "镜头位于", "镜头设在", "镜头固定在", "镜头从", "机位位于", "机位设在", "机位固定在",
+)
+CAMERA_DIRECTION_TERMS = ("朝", "拍向", "对准", "看向")
+CONTROL_SEMANTIC_SCAFFOLD_TERMS = (
+    "画面质感", "光效与曝光", "动态美学", "表演与情绪", "穿帮控制", "本镜", "画面",
+    "记忆锚点", "成立原因", "关系/认知变化",
+    "唯一视觉落点", "第一视觉落点", "焦点锁定", "焦点锁", "焦点在", "焦点落在",
+    "构图必要", "构图", "主光源", "主要光源", "主光", "光源", "受光面", "曝光",
+    "稳定起幅", "固定起幅", "起幅", "触发", "稳定落幅", "落幅", "停稳", "稳定",
+    "表演", "情绪", "泄露", "余波停在", "余波", "可见", "保持", "固定", "不新增",
+    "人物", "道具", "镜头", "摄影机", "机位", "归属", "边界分开", "边界", "自动首轮检查",
+)
+MEMORY_ANCHOR_GENERIC_TERMS = (
+    "高级", "高级感", "电影感", "氛围", "氛围感", "唯美", "震撼", "惊艳", "亮眼",
+    "有记忆点", "令人难忘", "视觉冲击", "很特别", "独特", "漂亮", "好看",
+)
+MEMORY_CHANGE_TERMS = (
+    "关系", "认知", "信息", "揭示", "发现", "看见", "看清", "确认", "意识", "误会",
+    "反转", "立场", "权力", "主导", "压制", "距离", "靠近", "疏远", "隔开", "越过",
+    "选择", "拒绝", "接受", "决定", "失去", "获得", "暴露", "隐瞒", "理解", "改变",
+)
+MEMORY_META_TERMS = ("观众看清", "观众看到", "观众意识到", "导演意图", "导演设计")
+CAMERA_MOTION_FAMILIES = {
+    "static": ("固定机位", "摄影机固定", "镜头固定", "保持静止"),
+    "push": ("推近", "推进", "轻推"),
+    "pull": ("拉远", "拉开", "后退"),
+    "track": ("跟拍", "侧跟", "平行跟"),
+    "pan": ("左摇", "右摇", "摇镜"),
+    "arc": ("弧移", "环绕"),
+    "rack_focus": ("转焦", "拉焦"),
+    "lateral": ("横移", "侧移"),
+}
+PERFORMANCE_ACTION_FAMILIES = {
+    "tighten": ("压紧", "收紧", "攥紧", "绷紧", "握紧"),
+    "release": ("放松", "松开", "松下", "舒展"),
+    "stop": ("停步", "停住", "停下", "僵住"),
+    "raise_gaze": ("抬眼", "抬眸", "视线抬起", "眼睛轻抬"),
+    "lower_gaze": ("垂眸", "垂眼", "视线落下", "低头"),
+    "breath": ("屏息", "呼吸停", "呼吸轻动", "呼吸加重"),
+    "brow": ("眉尾收紧", "眉心收紧", "皱眉", "眉尾稍松"),
+    "turn": ("转身", "转向", "回身", "肩线转正"),
+    "step": ("迈步", "前移脚步", "后退", "跨过", "走近"),
+}
 SHOT_TYPE_GUIDANCE = {
     "dialogue_performance": ("对白表演", 200, 320),
     "multi_character_relationship": ("多人关系", 200, 340),
@@ -399,6 +462,33 @@ LISTENER_REACTION_TERMS = (
     "探出", "眨眼", "抓住", "抓衣", "放松", "观察", "抬头", "停住",
 )
 INTERPERSON_PROP_TRANSFER_TERMS = ("递", "交给", "接过", "接住", "塞给")
+
+
+@dataclass(frozen=True)
+class ActorSpatialFact:
+    name: str
+    context: str
+    has_position: bool
+    has_facing: bool
+    facing_targets: tuple[str, ...]
+    has_visible_plane: bool
+    has_eyeline: bool
+    eyeline_targets: tuple[str, ...]
+    screen_side: str
+    threshold_side: str
+
+
+@dataclass(frozen=True)
+class ShotSpatialContract:
+    visible_names: tuple[str, ...]
+    actors: tuple[ActorSpatialFact, ...]
+    camera_has_location: bool
+    camera_has_direction: bool
+    relationship_shot: bool
+    axis_locked: bool
+
+    def actor(self, name: str) -> ActorSpatialFact | None:
+        return next((fact for fact in self.actors if fact.name == name), None)
 
 
 @dataclass(frozen=True)
@@ -1127,6 +1217,116 @@ def _actor_local_context(text: str, actor: str, visible_names: list[str] | None 
     return "；".join(parts)
 
 
+def _actor_eyeline_targets(text: str, actor: str, visible: list[str]) -> tuple[str, ...]:
+    actor_re = re.escape(actor)
+    targets: list[str] = []
+    for target in visible:
+        if target == actor:
+            continue
+        target_re = re.escape(target)
+        patterns = (
+            rf"{actor_re}[^。；;\n]{{0,48}}(?:视线|目光|眼睛|看向|望向|盯着|凝视|注视)"
+            rf"[^。；;\n]{{0,18}}{target_re}",
+            rf"{actor_re}[^。；;\n]{{0,48}}(?:视线|目光)[^。；;\n]{{0,12}}(?:落在|落向|停在|锁住)"
+            rf"[^。；;\n]{{0,18}}{target_re}",
+        )
+        if any(re.search(pattern, text) for pattern in patterns):
+            targets.append(target)
+    return tuple(targets)
+
+
+def _actor_screen_side(context: str) -> str:
+    left = bool(re.search(r"画面(?:左侧|左边|左位|左[前后]?|左\s*[1一]/?3)", context))
+    right = bool(re.search(r"画面(?:右侧|右边|右位|右[前后]?|右\s*[1一]/?3)", context))
+    if left and not right:
+        return "left"
+    if right and not left:
+        return "right"
+    return ""
+
+
+def _camera_contract_flags(text: str) -> tuple[bool, bool]:
+    has_location = any(term in text for term in CAMERA_LOCATION_TERMS)
+    has_direction = bool(
+        re.search(
+            r"(?:摄影机|镜头|机位)[^。；;\n]{0,42}(?:朝|拍向|对准|看向)[^。；;\n]{1,24}(?:拍摄|记录|取景|构图)?",
+            text,
+        )
+    )
+    return has_location, has_direction
+
+
+def build_spatial_contract(direct: str, cast_names: list[str]) -> ShotSpatialContract:
+    """Compile a deterministic spatial fact graph from one positive prompt."""
+    text = strip_quoted_content(direct)
+    excluded = offscreen_names(text)
+    visible = [name for name in cast_names if name in text and name not in excluded]
+    actors: list[ActorSpatialFact] = []
+    for name in visible:
+        context = _actor_local_context(text, name, visible)
+        facing_targets = tuple(
+            target for target in visible if target != name and _actor_faces_target(text, name, target)
+        )
+        eyeline_targets = _actor_eyeline_targets(text, name, visible)
+        shared_eyeline = bool(
+            re.search(r"(?:二人|两人|双方)[^。；;\n]{0,12}(?:视线|目光)[^。；;\n]{0,16}(?:相接|交汇|相向)", text)
+        )
+        actors.append(
+            ActorSpatialFact(
+                name=name,
+                context=context,
+                has_position=any(term in context for term in POSITION_ANCHOR_TERMS),
+                has_facing=bool(facing_targets) or any(term in context for term in FACING_TERMS),
+                facing_targets=facing_targets,
+                has_visible_plane=any(term in context for term in CAMERA_VISIBLE_PLANE_TERMS),
+                has_eyeline=bool(eyeline_targets) or shared_eyeline or any(term in context for term in EYELINE_TERMS),
+                eyeline_targets=eyeline_targets,
+                screen_side=_actor_screen_side(context),
+                threshold_side=_actor_threshold_side(text, name, visible),
+            )
+        )
+    relationship = len(visible) >= 2 and (
+        any(term in text for term in FACE_TO_FACE_TERMS)
+        or has_reverse_shot(text)
+        or any(fact.facing_targets for fact in actors)
+        or any(term in text for term in CAMERA_VISIBLE_PLANE_TERMS)
+    )
+    camera_has_location, camera_has_direction = _camera_contract_flags(text)
+    return ShotSpatialContract(
+        visible_names=tuple(visible),
+        actors=tuple(actors),
+        camera_has_location=camera_has_location,
+        camera_has_direction=camera_has_direction,
+        relationship_shot=relationship,
+        axis_locked=any(term in text for term in AXIS_LOCK_TERMS),
+    )
+
+
+def spatial_contract_issues(contract: ShotSpatialContract) -> list[str]:
+    issues: list[str] = []
+    for actor in contract.actors:
+        if not actor.has_position:
+            issues.append(f"{actor.name}缺少带坐标基准的物理位置/槽位")
+        if not actor.has_facing:
+            issues.append(f"{actor.name}缺少身体面向目标")
+    if not contract.relationship_shot:
+        return issues
+    if not contract.camera_has_location:
+        issues.append("关系镜缺少摄影机所在侧/物理位置")
+    if not contract.camera_has_direction:
+        issues.append("关系镜缺少摄影机拍摄方向")
+    if not contract.axis_locked:
+        issues.append("关系镜缺少人物关系轴同侧锁定；写明摄影机保持在人物连线同一侧")
+    for actor in contract.actors:
+        if not actor.facing_targets:
+            issues.append(f"{actor.name}缺少身体面向的具名关系目标")
+        if not actor.has_visible_plane:
+            issues.append(f"{actor.name}缺少摄影机可见面（正面/背面/侧面）")
+        if not actor.has_eyeline:
+            issues.append(f"{actor.name}缺少视线目标")
+    return issues
+
+
 def _actor_threshold_side(text: str, actor: str, visible_names: list[str] | None = None) -> str:
     context = _actor_local_context(text, actor, visible_names)
     inside = any(term in context for term in ("门槛内侧", "屋内", "门内", "室内"))
@@ -1205,8 +1405,9 @@ def _direct_address_has_timing(text: str) -> bool:
 def spatial_facing_issues(direct: str, cast_names: list[str]) -> list[str]:
     """Validate actor-to-actor facing independently from the plane visible to camera."""
     text = strip_quoted_content(direct)
-    visible = [name for name in cast_names if name in text]
-    issues: list[str] = []
+    contract = build_spatial_contract(text, cast_names)
+    visible = list(contract.visible_names)
+    issues: list[str] = spatial_contract_issues(contract)
     relational = len(visible) >= 2 and any(term in text for term in FACE_TO_FACE_TERMS)
     reverse_or_plane = len(visible) >= 2 and (
         has_reverse_shot(text)
@@ -1273,8 +1474,45 @@ def spatial_facing_issues(direct: str, cast_names: list[str]) -> list[str]:
         if "遮挡" not in text or not any(term in text for term in OCCLUSION_RESULT_TERMS):
             issues.append("具名前后景人物必须写允许遮挡的部位及后景脸/手/关键道具的可见结果，前后景和占比只能作辅助")
 
-    if SIMILAR_PROP_GROUP_RE.search(text) and not any(term in text for term in PROP_DISTINCTION_TERMS):
-        issues.append("同类道具同时入画必须用持有人加形状/颜色/内容物至少一项区分，不能只写双篓/双篮/双棍")
+    similar_group = next(
+        (
+            match.group("object")
+            for match in SIMILAR_PROP_GROUP_RE.finditer(text)
+            if not any(match.group("object").startswith(term) for term in NON_PROP_PAIRED_OBJECTS)
+        ),
+        "",
+    )
+    if similar_group and not any(term in text for term in PROP_DISTINCTION_TERMS):
+        issues.append("同类道具同时入画必须用持有人加形状/颜色/内容物至少一项区分，不能只写数量和同类名称")
+    return issues
+
+
+def axis_continuity_issues(previous: str, current: str, cast_names: list[str]) -> list[str]:
+    """Reject unexplained 180-degree line crossings between adjacent relationship shots."""
+    previous_text = strip_quoted_content(previous)
+    current_text = strip_quoted_content(current)
+    crosses_axis = any(term in current_text for term in AXIS_CROSS_TERMS)
+    has_transition = any(term in current_text for term in AXIS_TRANSITION_TERMS)
+    if crosses_axis and not has_transition:
+        return ["摄影机跨越人物关系轴但没有拍出中性机位或连续越轴过程"]
+    if crosses_axis and has_transition:
+        return []
+
+    previous_contract = build_spatial_contract(previous_text, cast_names)
+    current_contract = build_spatial_contract(current_text, cast_names)
+    issues: list[str] = []
+    flipped: list[str] = []
+    for name in cast_names:
+        before = previous_contract.actor(name)
+        after = current_contract.actor(name)
+        if not before or not after or not before.screen_side or not after.screen_side:
+            continue
+        if before.screen_side != after.screen_side:
+            flipped.append(name)
+    if flipped:
+        issues.append(
+            "相邻关系镜人物屏幕方向翻转且未展示越轴过程 -> " + "、".join(flipped)
+        )
     return issues
 
 
@@ -1359,7 +1597,222 @@ def labeled_control_value(text: str, label: str) -> str:
     return match.group(1).strip() if match else ""
 
 
-def quality_control_issues(control: str, direct: str) -> list[str]:
+def _inline_labeled_value(text: str, label: str, following: tuple[str, ...]) -> str:
+    boundaries = [r"[；;]\s*" + re.escape(item) + r"[：:]" for item in following]
+    lookahead = r"(?=" + "|".join(boundaries + [r"$"]) + r")"
+    pattern = re.escape(label) + r"[：:]\s*(.*?)" + lookahead
+    match = re.search(pattern, text)
+    return match.group(1).strip(" ；;") if match else ""
+
+
+def _memory_value_is_specific(value: str) -> bool:
+    cleaned = value
+    for term in sorted(MEMORY_ANCHOR_GENERIC_TERMS, key=len, reverse=True):
+        cleaned = cleaned.replace(term, "")
+    cleaned = re.sub(r"[\s，。；;：:、/|的了是很更最]+", "", cleaned)
+    return len(cleaned) >= 4
+
+
+def memory_anchor_contract_issues(control: str, direct: str) -> list[str]:
+    """Validate an explicitly designated memory shot without judging taste by keywords."""
+    if "记忆锚点" not in control:
+        return []
+    issues: list[str] = []
+    quality = labeled_control_value(control, "画面质感")
+    if not quality or "记忆锚点" not in quality:
+        return ["记忆锚点声明只能写在画面质感行"]
+    anchor = _inline_labeled_value(quality, "记忆锚点", ("成立原因", "关系/认知变化"))
+    reason = _inline_labeled_value(quality, "成立原因", ("关系/认知变化",))
+    change = _inline_labeled_value(quality, "关系/认知变化", ())
+    for label, value in (("记忆锚点", anchor), ("成立原因", reason), ("关系/认知变化", change)):
+        if not value:
+            issues.append(f"记忆锚点声明缺少{label}")
+        elif not _memory_value_is_specific(value):
+            issues.append(f"记忆锚点声明的{label}过于空泛")
+    if anchor and not _chunk_covered(anchor, strip_quoted_content(direct)):
+        issues.append("记忆锚点的可见主体与关系事实未转译进直接提示词")
+    has_state_transition = bool(re.search(r"由[^，。；;]{1,16}(?:转为|变为|变成|转向|到)[^，。；;]{1,16}", change))
+    if change and not (any(term in change for term in MEMORY_CHANGE_TERMS) or has_state_transition):
+        issues.append("关系/认知变化必须写明具体信息、距离、权力、立场或决定变化")
+    if "记忆锚点" in direct or "成立原因" in direct or "关系/认知变化" in direct:
+        issues.append("记忆锚点制作标记不得进入即梦直接提示词")
+    if any(term in direct for term in MEMORY_META_TERMS):
+        issues.append("记忆锚点的制作意图必须改写为直接提示词中的可见画面事实")
+    return issues
+
+
+def is_valid_memory_anchor(control: str, direct: str) -> bool:
+    return "记忆锚点" in control and not memory_anchor_contract_issues(control, direct)
+
+
+def memory_anchor_density_issues(
+    records: list[tuple[int, str, str, str]], window_size: int = 5
+) -> list[str]:
+    """Require at least one valid memory anchor in every rolling same-scene window."""
+    by_scene: dict[int, list[tuple[str, str, str]]] = {}
+    for scene, sid, direct, control in records:
+        by_scene.setdefault(scene, []).append((sid, direct, control))
+    issues: list[str] = []
+    for shots in by_scene.values():
+        for start in range(0, len(shots) - window_size + 1):
+            window = shots[start:start + window_size]
+            count = sum(is_valid_memory_anchor(control, direct) for _, direct, control in window)
+            if count == 0:
+                issues.append(
+                    f"{window[0][0]}~{window[-1][0]}: 连续五镜缺少有效记忆锚点；"
+                    "至少一镜需在画面质感行写完整记忆锚点/成立原因/关系或认知变化，并把可见事实写入直接提示词"
+                )
+    return issues
+
+
+def _semantic_chunks(text: str) -> tuple[str, ...]:
+    """Extract case-agnostic fact phrases after removing production-control scaffolding."""
+    cleaned = strip_quoted_content(text)
+    for term in sorted(CONTROL_SEMANTIC_SCAFFOLD_TERMS, key=len, reverse=True):
+        cleaned = cleaned.replace(term, " ")
+    cleaned = re.sub(
+        r"(?:低风险|中风险|高风险|前后槽位|左右槽位|当前|主要|其中|以及|并且|仍然|同时|"
+        r"一个|一次|低幅|高幅|结果|策略|原因)",
+        " ",
+        cleaned,
+    )
+    chunks: list[str] = []
+    for raw in re.split(r"[，。；;：:\n、/|]+", cleaned):
+        chunk = re.sub(r"\s+", "", raw)
+        chunk = re.sub(r"^(?:由|以|在|为|将|让|使|且|并)+", "", chunk)
+        chunk = re.sub(r"(?:为|在|的|了|并|且|及|与|和)+$", "", chunk)
+        if 2 <= len(chunk) <= 32 and not re.fullmatch(r"[\d.%-]+", chunk):
+            chunks.append(chunk)
+    return tuple(dict.fromkeys(chunks))
+
+
+def _chunk_covered(chunk: str, direct: str) -> bool:
+    if chunk in direct:
+        return True
+    if len(chunk) < 3:
+        return chunk in direct
+    grams = {chunk[index:index + 2] for index in range(len(chunk) - 1)}
+    if not grams:
+        return False
+    direct_grams = {direct[index:index + 2] for index in range(max(0, len(direct) - 1))}
+    return len(grams & direct_grams) / len(grams) >= 0.72
+
+
+def _physical_object_anchors(text: str) -> tuple[str, ...]:
+    """Extract manipulated or supported object phrases without a title-specific object list."""
+    cleaned = strip_quoted_content(text)
+    anchors: list[str] = []
+    patterns = (
+        r"(?:提着?|握住|拿着?|压住|扶住|接触|支撑|踩住|倚着|靠住|放下|递出|接过)"
+        r"(?P<object>[^，。；;\n]{1,14})",
+        r"(?P<object>[^，。；;\n]{1,14})(?:归属(?:于)?|归于|停在|落在|固定在)"
+        r"(?:[^，。；;\n]{0,12})",
+        r"(?P<object>[\u4e00-\u9fffA-Za-z0-9_·]{1,12})(?:位于|放在|留在)"
+        r"[^，。；;\n]{0,10}(?:右手|左手|双手|手中|掌中|包内|口袋|桌面|台面|柜台|手边)",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, cleaned):
+            phrase = match.group("object")
+            phrase = re.split(
+                r"(?:停在|落在|放在|位于|留在|看向|望向|面向|朝向|并|且|同时|随后|最后|保持|固定|不变)",
+                phrase,
+            )[0]
+            phrase = re.sub(
+                r"^.*(?:右手|左手|双手|手中|掌中|包内|口袋|桌面|台面|柜台|"
+                r"提着?|握住|拿着?|压住|扶住|接触|支撑|递出|接过)",
+                "",
+                phrase,
+            )
+            phrase = re.sub(r"^(?:两根|两只|两个|一根|一只|一个|粗|细|旧|新)+", "", phrase)
+            phrase = re.sub(r"(?:的|了|并|且|及|与|和)+$", "", phrase.strip())
+            if 1 <= len(phrase) <= 12:
+                anchors.append(phrase)
+    return tuple(dict.fromkeys(anchors))
+
+
+def _fact_families(text: str, families: dict[str, tuple[str, ...]]) -> set[str]:
+    return {family for family, terms in families.items() if any(term in text for term in terms)}
+
+
+def _light_source_families(text: str) -> set[str]:
+    return {
+        family
+        for family, terms in LIGHT_SOURCE_FAMILIES.items()
+        if any(term in text for term in terms)
+    }
+
+
+def _visible_count_value(text: str) -> str:
+    match = re.search(r"(?:可见人数|入画人数)[：:]?\s*([一二三四五六七八九十\d]+)人", text)
+    return match.group(1) if match else ""
+
+
+def control_fact_coverage_issues(
+    values: dict[str, str], direct: str, cast_names: list[str] | None = None
+) -> list[str]:
+    """Compare concrete control facts with the direct prompt, not just category words."""
+    direct_clean = strip_quoted_content(direct)
+    cast_names = cast_names or []
+    issues: list[str] = []
+    visible_labels = ("画面质感", "光效与曝光", "动态美学", "表演与情绪", "穿帮控制")
+    for label in visible_labels:
+        value = values.get(label, "")
+        if not value:
+            continue
+        missing_actors = [name for name in cast_names if name in value and name not in direct_clean]
+        if missing_actors:
+            issues.append(
+                f"{QUALITY_CONTROL_FIELD}.{label}主体未逐事实转译 -> " + "、".join(missing_actors)
+            )
+
+        chunks = _semantic_chunks(value)
+        missing_chunks = [chunk for chunk in chunks if not _chunk_covered(chunk, direct_clean)]
+        allowed_missing = 0 if len(chunks) <= 2 else max(1, len(chunks) // 4)
+        if len(missing_chunks) > allowed_missing:
+            issues.append(
+                f"{QUALITY_CONTROL_FIELD}.{label}语义事实覆盖不足 -> "
+                + "、".join(missing_chunks[:5])
+            )
+
+        if label == "光效与曝光":
+            control_sources = _light_source_families(value)
+            direct_sources = _light_source_families(direct_clean)
+            missing_sources = sorted(control_sources - direct_sources)
+            if missing_sources:
+                issues.append(
+                    f"{QUALITY_CONTROL_FIELD}.{label}主光源事实不一致 -> " + "/".join(missing_sources)
+                )
+        if label == "动态美学":
+            missing_motion = sorted(
+                _fact_families(value, CAMERA_MOTION_FAMILIES)
+                - _fact_families(direct_clean, CAMERA_MOTION_FAMILIES)
+            )
+            if missing_motion:
+                issues.append(
+                    f"{QUALITY_CONTROL_FIELD}.{label}摄影机运动事实不一致 -> " + "/".join(missing_motion)
+                )
+        if label == "表演与情绪":
+            missing_actions = sorted(
+                _fact_families(value, PERFORMANCE_ACTION_FAMILIES)
+                - _fact_families(direct_clean, PERFORMANCE_ACTION_FAMILIES)
+            )
+            if missing_actions:
+                issues.append(
+                    f"{QUALITY_CONTROL_FIELD}.{label}表演动作事实不一致 -> " + "/".join(missing_actions)
+                )
+        if label == "穿帮控制":
+            expected_count = _visible_count_value(value)
+            actual_count = _visible_count_value(direct_clean)
+            if expected_count and expected_count != actual_count:
+                issues.append(
+                    f"{QUALITY_CONTROL_FIELD}.{label}可见人数不一致 -> {expected_count}/{actual_count or '缺失'}"
+                )
+    return issues
+
+
+def quality_control_issues(
+    control: str, direct: str, cast_names: list[str] | None = None
+) -> list[str]:
     issues: list[str] = []
     if not control.strip():
         return [f"missing {QUALITY_CONTROL_FIELD}"]
@@ -1429,6 +1882,8 @@ def quality_control_issues(control: str, direct: str) -> list[str]:
         montage_terms = ("固定锚点", "重复锚点", "匹配", "状态增量", "数量变化", "阶段变化", "声桥", "现实锚点")
         if not any(term in direct for term in montage_terms):
             issues.append(f"{QUALITY_CONTROL_FIELD}.蒙太奇与剪辑的可见结果未转译进【画面描述｜直接复制】")
+    issues.extend(control_fact_coverage_issues(values, direct, cast_names))
+    issues.extend(memory_anchor_contract_issues(control, direct))
     return issues
 
 
@@ -1527,7 +1982,7 @@ def os_speaker_binding_issues(text: str, voice_names: list[str] | None = None) -
 
 
 def is_screen_invisible_to_camera(text: str) -> bool:
-    if any(term in text for term in SCREEN_INVISIBLE_TERMS):
+    if any(term in text for term in SCREEN_INVISIBLE_TERMS) or phone_screen_faces_user(text):
         return True
     if re.search(r"手机背面[^，。；;]{0,12}镜头", text):
         return True
@@ -1580,6 +2035,70 @@ def keyframe_trigger_reasons(direct: str, header: str) -> list[str]:
     return reasons
 
 
+def _keyframe_segments(text: str) -> list[tuple[str, str]]:
+    label = r"(?:首帧|尾帧|中间帧|关键帧\s*\d+|第\s*\d+\s*帧)(?:\s*｜\s*[^：:\n]+)?"
+    pattern = re.compile(
+        rf"(?P<label>{label})\s*[：:]\s*(?P<body>[\s\S]*?)(?=(?:{label})\s*[：:]|\Z)"
+    )
+    return [(match.group("label").strip(), match.group("body").strip()) for match in pattern.finditer(text)]
+
+
+def keyframe_contract_issues(
+    keyframe_text: str, direct: str, cast_names: list[str]
+) -> list[str]:
+    """Apply the direct prompt's time, light and spatial contract to every static keyframe."""
+    if not keyframe_text.strip():
+        return []
+    segments = _keyframe_segments(keyframe_text)
+    if not segments:
+        segments = [("关键帧", keyframe_text.strip())]
+    direct_time = time_state_signature(direct)
+    direct_light = primary_light_sources(direct) or _light_source_families(direct)
+    direct_contract = build_spatial_contract(direct, cast_names)
+    direct_count = _visible_count_value(direct)
+    direct_props = _physical_object_anchors(direct)
+    issues: list[str] = []
+    for label, frame in segments:
+        frame_time = time_state_signature(frame)
+        if direct_time and not frame_time:
+            issues.append(f"{label}缺少与直接提示词一致的时段")
+        elif direct_time and frame_time and direct_time.isdisjoint(frame_time):
+            issues.append(
+                f"{label}时段与直接提示词冲突 -> {'/'.join(sorted(direct_time))} vs {'/'.join(sorted(frame_time))}"
+            )
+        frame_light = primary_light_sources(frame) or _light_source_families(frame)
+        if direct_light and not frame_light:
+            issues.append(f"{label}缺少与直接提示词一致的主光源")
+        elif direct_light and frame_light and direct_light.isdisjoint(frame_light):
+            issues.append(
+                f"{label}主光源与直接提示词冲突 -> {'/'.join(sorted(direct_light))} vs {'/'.join(sorted(frame_light))}"
+            )
+        missing_names = [name for name in direct_contract.visible_names if name not in frame]
+        if missing_names:
+            issues.append(f"{label}空间合同缺少入画人物 -> " + "、".join(missing_names))
+        frame_count = _visible_count_value(frame)
+        if direct_count and direct_count != frame_count:
+            issues.append(f"{label}空间合同可见人数不一致 -> {direct_count}/{frame_count or '缺失'}")
+        missing_props = [prop for prop in direct_props if not _chunk_covered(prop, frame)]
+        if missing_props:
+            issues.append(f"{label}空间合同缺少道具/固定物 -> " + "、".join(missing_props))
+        if direct_contract.relationship_shot and not missing_names:
+            frame_contract = build_spatial_contract(frame, list(direct_contract.visible_names))
+            frame_spatial = spatial_contract_issues(frame_contract)
+            if frame_spatial:
+                issues.append(f"{label}空间合同不完整 -> " + "；".join(frame_spatial))
+            for name in direct_contract.visible_names:
+                before = direct_contract.actor(name)
+                after = frame_contract.actor(name)
+                if not before or not after:
+                    continue
+                if before.threshold_side and after.threshold_side and before.threshold_side != after.threshold_side:
+                    issues.append(f"{label}空间合同中{name}门槛侧发生漂移")
+                if before.screen_side and after.screen_side and before.screen_side != after.screen_side:
+                    issues.append(f"{label}空间合同中{name}屏幕侧发生漂移")
+    return issues
+
+
 def optional_function_count(block: str) -> int:
     single_fields = (
         "【空间与道具锁定】",
@@ -1626,7 +2145,7 @@ def validate_child(
     negative = extract_optional_field(block, "【本镜补充负面提示词｜直接复制】")
     keyframe_image = extract_optional_field(block, KEYFRAME_IMAGE_FIELD)
     keyframe_video = extract_optional_field(block, KEYFRAME_VIDEO_FIELD)
-    for issue in quality_control_issues(quality_control, direct):
+    for issue in quality_control_issues(quality_control, direct, cast_names):
         issues.append(f"{sid}: {issue}")
     optional_count = optional_function_count(block)
     optional_limit = 3 if "复杂" in header else 1
@@ -1643,6 +2162,8 @@ def validate_child(
         issues.append(f"{sid}: {KEYFRAME_VIDEO_FIELD} requires {KEYFRAME_IMAGE_FIELD}")
     if keyframe_image and not any(label in keyframe_image for label in ("首帧", "尾帧")):
         issues.append(f"{sid}: {KEYFRAME_IMAGE_FIELD} should include static frame labels such as 首帧/尾帧")
+    for issue in keyframe_contract_issues(keyframe_image, direct, cast_names):
+        issues.append(f"{sid}: {KEYFRAME_IMAGE_FIELD}事实合同失败 -> {issue}")
     keyframe_reasons = keyframe_trigger_reasons(direct, header)
     if keyframe_reasons and not (keyframe_image and keyframe_video):
         issues.append(
@@ -1922,11 +2443,7 @@ def orientation_jump(prev_state: str, next_direct: str) -> bool:
 
 def prop_contexts(text: str) -> dict[str, str]:
     contexts: dict[str, str] = {}
-    for prop in TRACKED_PROPS:
-        if prop == "卡" and any(longer in text for longer in ("银行卡", "卡片")):
-            continue
-        if prop not in text:
-            continue
+    for prop in _physical_object_anchors(text):
         for match in re.finditer(re.escape(prop), text):
             start = max(0, match.start() - 18)
             end = min(len(text), match.end() + 22)
@@ -2063,7 +2580,8 @@ def validate(path: Path, text: str | None = None, seedance_target: str = "auto")
     previous_group_last_state = ""
     previous_group_scene: int | None = None
     scene_group_records: list[tuple[int, str, list[str]]] = []
-    scene_shot_records: list[tuple[int, str, str]] = []
+    scene_shot_records: list[tuple[int, str, str, list[str]]] = []
+    scene_memory_records: list[tuple[int, str, str, str]] = []
     for match in groups:
         group_count += 1
         group_id, group_total, block = match.group(1), match.group(2), match.group(3)
@@ -2107,8 +2625,17 @@ def validate(path: Path, text: str | None = None, seedance_target: str = "auto")
         ]
         scene_group_records.append((scene_number, group_id, child_directs))
         scene_shot_records.extend(
-            (scene_number, f"{group_id}-{index}", direct)
+            (scene_number, f"{group_id}-{index}", direct, list(cast_names))
             for index, direct in enumerate(child_directs, start=1)
+        )
+        scene_memory_records.extend(
+            (
+                scene_number,
+                f"{group_id}-{index}",
+                direct_prompt(child.group(0)),
+                extract_optional_field(child.group(0), QUALITY_CONTROL_FIELD),
+            )
+            for index, child in enumerate(children, start=1)
         )
         child_states = [
             extract(child.group(0), "【状态继承】")
@@ -2171,12 +2698,17 @@ def validate(path: Path, text: str | None = None, seedance_target: str = "auto")
                 issues.append(f"{group_id}: consecutive shoulder shots use same shoulder actor; reverse shot should swap foreground shoulder")
 
     for previous, current in zip(scene_shot_records, scene_shot_records[1:]):
-        previous_scene, _, previous_direct = previous
-        current_scene, current_sid, current_direct = current
+        previous_scene, _, previous_direct, previous_cast = previous
+        current_scene, current_sid, current_direct, current_cast = current
         if previous_scene != current_scene:
             continue
         for issue in temporal_lighting_continuity_issues(previous_direct, current_direct):
             issues.append(f"{current_sid}: 同场时空光照连续性失败 -> {issue}")
+        pair_cast = list(dict.fromkeys(previous_cast + current_cast))
+        for issue in axis_continuity_issues(previous_direct, current_direct, pair_cast):
+            issues.append(f"{current_sid}: 同场人物关系轴连续性失败 -> {issue}")
+
+    issues.extend(memory_anchor_density_issues(scene_memory_records))
 
     # Scene-level camera variety: compare the first child of adjacent groups so a
     # sequence cannot hide three repeated compositions behind different group headings.
@@ -2215,8 +2747,10 @@ def shadow_validate(path: Path, text: str | None = None) -> list[str]:
     if text is None:
         text = path.read_text(encoding="utf-8")
     diagnostics: list[str] = []
+    memory_records: list[tuple[int, str, str, str]] = []
     for match in iter_groups(text):
         group_id, block = match.group(1), match.group(3)
+        scene_number = int(group_id[1:].split("-")[0])
         before_first_child = block.split("【镜号】", 1)[0]
         cast_names = group_cast_names(extract_optional_field(before_first_child, "【出现人物】"))
         group_directs: list[str] = []
@@ -2225,6 +2759,9 @@ def shadow_validate(path: Path, text: str | None = None) -> list[str]:
             direct = direct_prompt(child_block)
             if not direct:
                 continue
+            memory_records.append(
+                (scene_number, f"{group_id}-{number}", direct, extract_optional_field(child_block, QUALITY_CONTROL_FIELD))
+            )
             group_directs.append(direct)
             report = build_semantic_report(
                 direct=direct,
@@ -2246,6 +2783,21 @@ def shadow_validate(path: Path, text: str | None = None) -> list[str]:
                 diagnostics.append(
                     f"SHADOW {group_id}: liveness_family_repeat={family}/{count}; "
                     "replace repeated decoration with source-driven action, light, material, or environment response"
+                )
+    by_scene: dict[int, list[tuple[str, str, str]]] = {}
+    for scene, sid, direct, control in memory_records:
+        by_scene.setdefault(scene, []).append((sid, direct, control))
+    for shots in by_scene.values():
+        for start in range(0, len(shots) - 4):
+            window = shots[start:start + 5]
+            count = sum(is_valid_memory_anchor(control, direct) for _, direct, control in window)
+            if count == 1:
+                diagnostics.append(
+                    f"SHADOW {window[0][0]}~{window[-1][0]}: memory_anchor_density=1/5; target=2 when the second anchor uses a distinct dramatic mechanism"
+                )
+            elif count > 2:
+                diagnostics.append(
+                    f"SHADOW {window[0][0]}~{window[-1][0]}: memory_anchor_density={count}/5; possible intensity overload, keep support shots quieter"
                 )
     return diagnostics
 
