@@ -11,6 +11,7 @@ from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_pr
 block_source_pycache_until_run_dir()
 from validate_durations import validate as validate_durations
 from shot_semantics import is_declared_non_action, is_implicit_character_action, render_anchor, requires_base_action, requires_characters
+from speech_events import NONPHYSICAL_SPEECH_KINDS, SPEECH_KINDS
 
 
 ALLOWED_VISUAL_PUNCTUATION = {
@@ -108,13 +109,13 @@ def run(run_dir):
             if not base_action and requires_base_action(ss):
                 issues.append(_issue(ssid, "BASE_ACTION_MISSING", "base_action required for character/action/dialogue shots; use visual_intent/shot_type for true non-action shots"))
             if not characters and requires_characters(base_action, dialogue_refs, shot_size, shot_type):
-                ov_only = bool(dialogue_refs) and all(
+                nonphysical_only = bool(dialogue_refs) and all(
                     isinstance(dialogue_events.get(ref), dict)
-                    and dialogue_events[ref].get("kind") == "OV"
+                    and dialogue_events[ref].get("kind") in NONPHYSICAL_SPEECH_KINDS
                     for ref in dialogue_refs
                 )
-                if not ov_only:
-                    issues.append(_issue(ssid, "CHARACTERS_MISSING", "characters required for dialogue/action/performance shots; OV-only shots may keep an empty visible-character list"))
+                if not nonphysical_only:
+                    issues.append(_issue(ssid, "CHARACTERS_MISSING", "characters required for dialogue/action/performance shots; OV-only shots and system-audio-only shots may keep an empty visible-character list"))
             for ref in dialogue_refs:
                 if ref not in dialogue_map:
                     issues.append(_issue(ssid, "DIALOGUE_REF_MISSING", "%s not found in dialogue_map" % ref))
@@ -128,10 +129,12 @@ def run(run_dir):
                         issues.append(_issue(ssid, "DIALOGUE_EVENT_FIELD", "%s.%s is required" % (ref, field)))
                 if event.get("ref") != ref:
                     issues.append(_issue(ssid, "DIALOGUE_EVENT_REF", "%s ref mismatch" % ref))
-                if event.get("kind") not in ("台词", "OS", "OV"):
-                    issues.append(_issue(ssid, "DIALOGUE_EVENT_KIND", "%s kind must be 台词/OS/OV" % ref))
+                if event.get("kind") not in SPEECH_KINDS:
+                    issues.append(_issue(ssid, "DIALOGUE_EVENT_KIND", "%s kind must be 台词/OS/OV/系统音" % ref))
                 if event.get("kind") == "OV" and str(event.get("speaker", "") or "").strip() in characters:
                     issues.append(_issue(ssid, "OV_SPEAKER_VISIBLE_LOCK", "%s is OV and must not be locked as a visible character" % ref))
+                if event.get("kind") == "系统音" and str(event.get("speaker", "") or "").strip() in characters:
+                    issues.append(_issue(ssid, "SYSTEM_SOUND_VISIBLE_LOCK", "%s is system audio and must not be locked as a visible character" % ref))
 
     source_ledger_path = os.path.join(run_dir, ".cache", "orchestrator", "source_ledger.json")
     beat_ledger_path = os.path.join(run_dir, ".cache", "orchestrator", "dramatic_beat_ledger.json")

@@ -13,6 +13,7 @@ if not os.environ.get("PYTHONPYCACHEPREFIX") and not getattr(sys, "pycache_prefi
     sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(__file__))
 from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_prefix
+from speech_events import SPEECH_KINDS
 
 block_source_pycache_until_run_dir()
 
@@ -127,7 +128,7 @@ def _validate_dialogue_refs(plan):
                     continue
                 if event.get("ref") != ref:
                     malformed.append("%s:%s ref mismatch" % (ss.get("subshot_id", "?"), ref))
-                if event.get("kind") not in ("台词", "OS", "OV"):
+                if event.get("kind") not in SPEECH_KINDS:
                     malformed.append("%s:%s invalid kind" % (ss.get("subshot_id", "?"), ref))
                 if not str(event.get("speaker", "") or "").strip():
                     malformed.append("%s:%s missing speaker" % (ss.get("subshot_id", "?"), ref))

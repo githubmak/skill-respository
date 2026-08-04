@@ -1,4 +1,4 @@
 interface:
   display_name: "AI Video Agent Mode"
-  short_description: "兼顾静态关键帧与动态镜头美学的AI视频提示词管线"
-  default_prompt: "Use $ai-video-agent-mode to turn my script into a continuity-controlled AI video prompt package with a visual bible, static keyframe aesthetics, dynamic motion direction, dramatic beats, and generation-risk controls."
+  short_description: "带连续性、表演、系统音和可复用校验的AI视频提示词管线"
+  default_prompt: "Use $ai-video-agent-mode to turn my script into a continuity-controlled AI video prompt package with visual and motion direction, dialogue/OS/OV/system-audio locks, dramatic beats, and generation-risk controls."

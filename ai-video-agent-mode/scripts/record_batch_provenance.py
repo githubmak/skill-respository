@@ -65,6 +65,9 @@ def record(packet_path, allow_partial=False):
     )
     validated_subshot_ids = []
     failed_subshot_ids = []
+    repair_scope = "field"
+    repair_targets = []
+    partial_reuse_safe = False
     validation_mode = "full"
     if phase == "master_production":
         batch_data = _load(batch_path)
@@ -77,10 +80,13 @@ def record(packet_path, allow_partial=False):
             failed_subshot_ids = [
                 sid for sid in report.get("failed_subshot_ids", []) if sid in all_subshot_ids
             ]
+            repair_scope = str(report.get("repair_scope", "field") or "field")
+            repair_targets = report.get("repair_targets", []) if isinstance(report.get("repair_targets"), list) else []
+            partial_reuse_safe = report.get("partial_reuse_safe") is True
         if not validation_pass and not failed_subshot_ids:
             failed_subshot_ids = list(all_subshot_ids)
         validated_subshot_ids = [sid for sid in all_subshot_ids if sid not in failed_subshot_ids]
-        if not validation_pass and allow_partial and validated_subshot_ids:
+        if not validation_pass and (allow_partial or partial_reuse_safe) and validated_subshot_ids:
             validation_mode = "partial"
         elif not validation_pass:
             raise SystemExit("Batch validation failed; provenance not recorded")
@@ -106,6 +112,9 @@ def record(packet_path, allow_partial=False):
         "validation_mode": validation_mode,
         "validated_subshot_ids": validated_subshot_ids,
         "failed_subshot_ids": failed_subshot_ids,
+        "repair_scope": repair_scope,
+        "repair_targets": repair_targets,
+        "partial_reuse_safe": partial_reuse_safe,
         "validation_report_path": validation_report_path if os.path.exists(validation_report_path) else None,
         "rejection_seal_path": rejection_path if rejection else None,
         "dispatch_receipt_path": receipt_path,
@@ -123,7 +132,18 @@ def record(packet_path, allow_partial=False):
     _mark_dispatch_recorded(run_dir, phase, packet["dispatch_id"], validation_mode)
     cache_artifact(run_dir, phase, manifest, {"packet": packet.get("dispatch_id")})
     if failed_subshot_ids:
-        record_issues(run_dir, phase, [{"subshot_id": sid, "message": "composer validation failed"} for sid in failed_subshot_ids], manifest["sha256"])
+        target_by_shot = {
+            str(target.get("shot_id", "")): target for target in repair_targets if isinstance(target, dict)
+        }
+        record_issues(run_dir, phase, [
+            {
+                "subshot_id": sid,
+                "message": "composer validation failed",
+                "repair_scope": (target_by_shot.get(sid) or {}).get("repair_scope", repair_scope),
+                "fields": (target_by_shot.get(sid) or {}).get("fields", []),
+            }
+            for sid in failed_subshot_ids
+        ], manifest["sha256"])
     label = "PARTIAL" if validation_mode == "partial" else "PASS"
     print("[PROVENANCE] %s %s %s %s" % (label, phase, agent_id, manifest["sha256"]))
     print(sidecar)

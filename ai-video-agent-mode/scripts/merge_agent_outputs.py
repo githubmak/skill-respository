@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from record_batch_provenance import verify as verify_provenance
 from pipeline_runtime import patch_only
 from contract_registry import PROMPT_CONTRACT_VERSION
+from incremental_validation import ALL_MUTABLE_FIELDS
 
 def merge_agent_outputs(output_path, *input_paths, require_provenance=True):
     """Merge only receipt-verified worker outputs into one public artifact."""
@@ -62,7 +63,10 @@ def merge_agent_outputs(output_path, *input_paths, require_provenance=True):
                 # verified replacement, rather than silently restoring stale work.
                 stats['duplicates'] += 1
                 fields = fields_by_main_shot.get(str(item.get('shot_id') or sid))
-                all_items[seen[sid]] = patch_only(all_items[seen[sid]], item, fields) if fields else item
+                all_items[seen[sid]] = (
+                    item if fields and ALL_MUTABLE_FIELDS in fields
+                    else patch_only(all_items[seen[sid]], item, fields) if fields else item
+                )
                 continue
             seen[sid] = len(all_items)
             all_items.append(item)
@@ -131,6 +135,8 @@ def _normalize_retry_patch_fields(fields):
         text = str(field or "").strip()
         if not text:
             continue
+        if text == ALL_MUTABLE_FIELDS:
+            return [ALL_MUTABLE_FIELDS]
         if text.startswith("full_prompt."):
             text = "full_prompt"
         if text not in normalized:

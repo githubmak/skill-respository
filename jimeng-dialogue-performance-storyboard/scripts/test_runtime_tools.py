@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""Regression checks for compact routing and companion output."""
+
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from concise_storyboard import extract
+from route_task import route
+
+
+class RuntimeToolTests(unittest.TestCase):
+    def test_default_route_is_compact(self):
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root) / "source.txt"
+            source.write_text("SCENE 1 客厅\n甲：你回来了。", encoding="utf-8")
+            result = route("generate", str(source))
+        self.assertTrue(result["pass"])
+        self.assertEqual(result["read_first"], ["references/runtime-core.md", "references/output-template.md"])
+        self.assertEqual(result["read_on_demand"], [])
+        self.assertEqual(result["run_during_generation"][0]["after"], "each_shot")
+        self.assertIn("incremental_validate.py", result["run_during_generation"][0]["command"])
+
+    def test_risks_load_only_specialist_references(self):
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root) / "source.txt"
+            source.write_text("SCENE 1 电梯\n三人围在门边，甲把手机递给乙。", encoding="utf-8")
+            result = route("generate", str(source))
+        self.assertIn("references/physical-structure-continuity.md", result["read_on_demand"])
+        self.assertIn("references/spatial-camera-continuity.md", result["read_on_demand"])
+        self.assertIn("references/generation-risk-guards.md", result["read_on_demand"])
+
+    def test_natural_camera_language_and_three_speakers_route_specialists(self):
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root) / "source.txt"
+            source.write_text(
+                "SCENE 1 站厅\n摄影机沿中线缓慢拉开，再快速右摇落到出口。\n"
+                "甲：“走吧。”乙：“等一下。”丙：“闸机锁了。”",
+                encoding="utf-8",
+            )
+            result = route("generate", str(source))
+        self.assertIn("references/cinematic-grammar-library.md", result["read_on_demand"])
+        self.assertIn("references/prompt-performance-rules.md", result["read_on_demand"])
+        self.assertIn("references/spatial-camera-continuity.md", result["read_on_demand"])
+
+    def test_concise_view_preserves_direct_prompt(self):
+        source = "【镜号】\n1-1，4s，普通。\n\n【画面描述｜直接复制】\n原样提示词。\n\n【表演与声音】\n无台词。"
+        self.assertEqual(extract(source), [("1-1，4s，普通。", "原样提示词。")])
+
+
+if __name__ == "__main__":
+    unittest.main()

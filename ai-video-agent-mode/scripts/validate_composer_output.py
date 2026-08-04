@@ -77,6 +77,7 @@ from shot_semantics import (
     disabled_risk_gated_fields,
 )
 from contract_registry import PROMPT_CONTRACT_VERSION, QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
+from incremental_validation import build_repair_report
 
 
 FORBIDDEN_ENGINES = ["C4D", "Octane", "Blender", "Redshift", "Arnold", "Unreal Engine"]
@@ -89,7 +90,9 @@ DIRECT_TO_CAMERA_AUTH_PATTERNS = [
 ]
 
 
-def validate_composer_output(path, run_dir=None, report_path=None):
+def validate_composer_output(
+    path, run_dir=None, report_path=None, allow_incomplete=False, selected_shot_ids=None
+):
     with open(path, "r", encoding="utf-8-sig") as handle:
         data = json.load(handle)
     issues = []
@@ -99,9 +102,21 @@ def validate_composer_output(path, run_dir=None, report_path=None):
         issues.append("batch顶层只能包含shots，或contract_version与shots")
     if "contract_version" in data and data.get("contract_version") != PROMPT_CONTRACT_VERSION:
         issues.append("contract_version必须为%s" % PROMPT_CONTRACT_VERSION)
-    shots = data.get("shots", [])
-    if not isinstance(shots, list) or not shots:
+    all_shots = data.get("shots", [])
+    if not isinstance(all_shots, list) or not all_shots:
         issues.append("shots必须是非空数组")
+    selected = {str(value) for value in selected_shot_ids or [] if str(value).strip()}
+    shots = all_shots if isinstance(all_shots, list) else []
+    if selected:
+        shots = [
+            shot for shot in shots if isinstance(shot, dict)
+            and str(shot.get("subshot_id", "") or shot.get("shot_id", "")) in selected
+        ]
+        missing_selected = sorted(selected - {
+            str(shot.get("subshot_id", "") or shot.get("shot_id", "")) for shot in shots
+        })
+        for shot_id in missing_selected:
+            issues.append(f"{shot_id}: 增量校验目标不存在于batch输出")
 
     plan_map, director_map = _load_context(run_dir)
     main_plan = _load_main_plan(run_dir)
@@ -343,8 +358,8 @@ def validate_composer_output(path, run_dir=None, report_path=None):
         for problem in fight_transition_issues(previous_metadata, current_metadata):
             issues.append(f"{previous_id}→{current_id}: {problem}")
 
-    expected = set(main_plan) if main_plan else (set(plan_map) if plan_map else set())
-    if expected and seen != expected and len(expected) == len(shots):
+    expected = set(scaffold_map) or (set(main_plan) if main_plan else (set(plan_map) if plan_map else set()))
+    if expected and seen != expected and not allow_incomplete:
         missing = sorted(expected - seen)
         extra = sorted(seen - expected)
         if missing:
@@ -352,15 +367,22 @@ def validate_composer_output(path, run_dir=None, report_path=None):
         if extra:
             issues.append("batch含未派发subshot：" + "、".join(extra))
 
+    report_shots = shots
+    if expected and not allow_incomplete:
+        report_shots = [
+            scaffold_map.get(shot_id) or {"shot_id": shot_id, "subshot_id": shot_id}
+            for shot_id in sorted(expected)
+        ]
+
     if issues:
-        _write_report(report_path, path, issues)
+        _write_report(report_path, path, issues, report_shots)
         print(f"[VALIDATE COMPOSER] {len(issues)} issue(s):")
         for issue in issues[:80]:
             print("  - " + issue)
         for note in length_guidance[:20]:
             print("  [LENGTH GUIDANCE] " + note)
         return 1
-    _write_report(report_path, path, [])
+    _write_report(report_path, path, [], report_shots)
     print(f"[VALIDATE COMPOSER] PASS - {len(shots)} shots")
     for note in length_guidance[:20]:
         print("  [LENGTH GUIDANCE] " + note)
@@ -458,16 +480,10 @@ def _load_scaffold_for_batch(batch_path, run_dir):
     return {}
 
 
-def _write_report(report_path, batch_path, issues):
+def _write_report(report_path, batch_path, issues, shots):
     if not report_path:
         return
-    failed = []
-    for issue in issues:
-        prefix = str(issue).split(":", 1)[0]
-        ids = prefix.split("→") if "→" in prefix else [prefix]
-        for subshot_id in ids:
-            if re.match(r"^[A-Za-z0-9_-]+$", subshot_id) and subshot_id not in failed:
-                failed.append(subshot_id)
+    repair = build_repair_report(issues, shots)
     os.makedirs(os.path.dirname(os.path.abspath(report_path)), exist_ok=True)
     with open(report_path, "w", encoding="utf-8") as handle:
         json.dump({
@@ -475,8 +491,12 @@ def _write_report(report_path, batch_path, issues):
             "batch_path": os.path.abspath(batch_path),
             "batch_sha256": _sha256(batch_path),
             "pass": not issues,
-            "failed_subshot_ids": failed,
+            "failed_subshot_ids": repair["failed_subshot_ids"],
             "issues": issues,
+            "repair_scope": repair["repair_scope"],
+            "partial_reuse_safe": repair["partial_reuse_safe"],
+            "failures": repair["failures"],
+            "repair_targets": repair["repair_targets"],
         }, handle, ensure_ascii=False, indent=2)
 
 

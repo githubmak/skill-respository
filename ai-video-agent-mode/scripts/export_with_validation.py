@@ -39,6 +39,7 @@ from pipeline_runtime import atomic_json
 from production_intelligence import build_sentence_provenance, predict_action_failure
 from contract_registry import PROMPT_CONTRACT_VERSION
 from seedance_target import TARGET_LABELS, adapt_lighting_text, adapt_visual_prefix, normalize_target, variant_paths
+from validation_receipt import verify_receipt
 
 
 CHECK_EXPORT = os.path.join(os.path.dirname(__file__), "check_export.py")
@@ -56,26 +57,31 @@ def export_with_validation(md_path, run_dir):
     master_issues = validate_master_tasks(run_dir)
     if master_issues:
         raise SystemExit("Invalid main-shot delivery package: " + "; ".join(master_issues[:8]))
-    episode_graph, episode_graph_path = build_episode_state_graph(run_dir)
-    if not episode_graph.get("pass"):
-        print("[EXPORT] DELIVERY BLOCKED - episode state graph failed: " + episode_graph_path)
-        return 1
-    director_audit, director_audit_path = audit_episode_director(run_dir)
-    if not director_audit.get("pass"):
-        print("[EXPORT] DELIVERY BLOCKED - episode director audit failed: " + director_audit_path)
-        return 1
-    emotion_audit, emotion_audit_path = audit_emotion_camera(run_dir)
-    if not emotion_audit.get("pass"):
-        print("[EXPORT] DELIVERY BLOCKED - emotion/camera audit failed: " + emotion_audit_path)
-        return 1
-    quality = subprocess.run([sys.executable, CHECK_EXPORT, "--quality", run_dir], text=True, capture_output=True)
-    if quality.stdout:
-        print(quality.stdout, end="")
-    if quality.stderr:
-        print(quality.stderr, file=sys.stderr, end="")
-    if quality.returncode:
-        print("[EXPORT] DELIVERY BLOCKED - quality gate failed before writing deliverables")
-        return quality.returncode
+    receipt_ok, receipt_reason, _receipt = verify_receipt(run_dir, package_path)
+    if receipt_ok:
+        print("[EXPORT] verified validation receipt reused: " + receipt_reason)
+    else:
+        print("[EXPORT] validation receipt unavailable: %s; running full gates" % receipt_reason)
+        episode_graph, episode_graph_path = build_episode_state_graph(run_dir)
+        if not episode_graph.get("pass"):
+            print("[EXPORT] DELIVERY BLOCKED - episode state graph failed: " + episode_graph_path)
+            return 1
+        director_audit, director_audit_path = audit_episode_director(run_dir)
+        if not director_audit.get("pass"):
+            print("[EXPORT] DELIVERY BLOCKED - episode director audit failed: " + director_audit_path)
+            return 1
+        emotion_audit, emotion_audit_path = audit_emotion_camera(run_dir)
+        if not emotion_audit.get("pass"):
+            print("[EXPORT] DELIVERY BLOCKED - emotion/camera audit failed: " + emotion_audit_path)
+            return 1
+        quality = subprocess.run([sys.executable, CHECK_EXPORT, "--quality", run_dir], text=True, capture_output=True)
+        if quality.stdout:
+            print(quality.stdout, end="")
+        if quality.stderr:
+            print(quality.stderr, file=sys.stderr, end="")
+        if quality.returncode:
+            print("[EXPORT] DELIVERY BLOCKED - quality gate failed before writing deliverables")
+            return quality.returncode
     package = _load(package_path)
     plan = _load(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"))
     config = _load(os.path.join(run_dir, "project_config.json"))
@@ -399,6 +405,7 @@ def _write_concise_markdown(path, master_package, plan, seedance_target="auto"):
 
 def _write_target_index(path, plan, feed_paths):
     """Write a human-facing comparison entry point; never use it as a feed prompt."""
+    speech_contract = "台词/OS/OV/系统音" if _plan_has_system_sound(plan) else "台词/OS/OV"
     lines = [
         "# 双版本索引｜%s" % plan.get("project_name", "即梦分镜"), "",
         "> 本文件只用于选择版本和核对合同，不要复制到即梦。两份分镜来自同一份镜头、台词、人物、空间、道具与时长合同。", "",
@@ -407,7 +414,7 @@ def _write_target_index(path, plan, feed_paths):
         "| Seedance 2.0 | `%s` | 简洁动机光，浅至中等阴影，面部可读性优先 | 稳定兼容、对白和低风险动作 |" % os.path.basename(feed_paths["2.0"]),
         "| Seedance 2.5 | `%s` | 更完整的动机光、明暗层次、局部环境色与高光滚降 | 需要更强光影表现时 |" % os.path.basename(feed_paths["2.5"]),
         "", "## 不变合同", "",
-        "- 镜号、镜头顺序、时长、台词/OS/OV 原文、人物、空间锚点、道具归属和剧情因果保持一致。",
+        "- 镜号、镜头顺序、时长、%s 原文、人物、空间锚点、道具归属和剧情因果保持一致。" % speech_contract,
         "- 两份文件都可独立投喂；不要把两份正文拼接后投喂。",
         "- `seedance_target=both` 的触发点是项目配置确认时选择 `both`，随后照常完成一次管线运行并在导出阶段自动生成本表和两份版本。",
         "",
@@ -523,8 +530,11 @@ def _write_markdown(path, package, plan, director):
             ])
             _append_execution_beats(lines, director_map.get(shot.get("subshot_id", ""), {}))
             lines.extend(["**承接下一镜**", "", _build_transition_prompt(shot, next_shot), ""])
+            speech_heading = "**台词/OS/OV/系统音表演**" if any(
+                event.get("kind") == "系统音" for event in dialogue_events if isinstance(event, dict)
+            ) else "**台词/OS/OV表演**"
             lines.extend([
-                "**台词/OS/OV表演**",
+                speech_heading,
                 "",
             ])
             if dialogue_events:
@@ -545,6 +555,15 @@ def _write_markdown(path, package, plan, director):
         lines.extend(["---", ""])
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("\n".join(lines))
+
+
+def _plan_has_system_sound(plan):
+    events = plan.get("dialogue_events", {}) if isinstance(plan, dict) else {}
+    if isinstance(events, dict):
+        events = events.values()
+    elif not isinstance(events, list):
+        events = []
+    return any(isinstance(event, dict) and event.get("kind") == "系统音" for event in events)
 
 
 def _build_direct_copy_prompt(task, plan, compile_reports=None, seedance_target="auto"):

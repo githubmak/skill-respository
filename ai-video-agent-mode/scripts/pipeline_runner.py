@@ -18,6 +18,7 @@ from dispatch_queue import fill_slots, pending_packet_paths
 from merge_agent_outputs import merge_agent_outputs
 from record_batch_provenance import verify
 from contract_registry import PROMPT_CONTRACT_VERSION
+from pipeline_runtime import atomic_json
 
 
 def run(run_dir):
@@ -98,6 +99,43 @@ def run(run_dir):
             "automatic_resume": True,
             "next_action": "poll_pipeline_runner_after_worker_state_changes",
         }
+    if phase == "master_production":
+        retry = _prepare_incremental_master_retry(run_dir, verified)
+        if retry:
+            state = load_state(run_dir)
+            master_state = state["phases"]["master_production"]
+            master_state.update({
+                "status": "pending",
+                "agent_id": None,
+                "target_shot_ids": retry["target_shot_ids"],
+            })
+            state["current_phase"] = "master_production"
+            save_state(run_dir, state)
+            active_retry_packets = _phase_packet_paths(run_dir, "master_production")
+            ready = fill_slots(run_dir, "master_production", active_retry_packets)
+            if ready:
+                return {
+                    "action": "spawn",
+                    "phase": "master_production",
+                    "dispatch_packets": ready,
+                    "dispatch_packet": ready[0],
+                    "timeout": PHASE_TIMEOUT_SECONDS.get("master_production"),
+                    "target_shot_ids": retry["target_shot_ids"],
+                    "repair_scope": retry["repair_scope"],
+                    "automatic_resume": True,
+                    "requires_user_input": False,
+                    "after_spawn": "register_dispatch_agent_then_record_heartbeat_then_record_batch_provenance",
+                }
+            mark_waiting(run_dir, "master_production")
+            return {
+                "action": "wait_for_workers",
+                "phase": "master_production",
+                "verified_batches": len(verified),
+                "total_batches": len(active_retry_packets),
+                "worker_status": _worker_status(run_dir, "master_production", active_retry_packets),
+                "automatic_resume": True,
+                "requires_user_input": False,
+            }
     output = os.path.join(run_dir, gate["output"][0])
     _materialize(phase, output, verified)
     if phase == "editor_pass2":
@@ -148,6 +186,88 @@ def _verified_packets(run_dir, phase):
                 output,
             ))
     return [output for _is_retry, _created_at, _recorded_at, output in sorted(records)]
+
+
+def _prepare_incremental_master_retry(run_dir, verified_outputs):
+    """Redispatch only unresolved failed main shots from partial batches."""
+    latest = {}
+    latest_reports = {}
+    for output in verified_outputs:
+        manifest = _load(output + ".provenance.json")
+        if not manifest or manifest.get("phase") != "master_production":
+            continue
+        recorded_at = float(manifest.get("recorded_at") or 0)
+        for shot_id in manifest.get("validated_subshot_ids", []) or []:
+            shot_id = str(shot_id)
+            if recorded_at >= latest.get(shot_id, (-1, False))[0]:
+                latest[shot_id] = (recorded_at, True)
+        for shot_id in manifest.get("failed_subshot_ids", []) or []:
+            shot_id = str(shot_id)
+            if recorded_at >= latest.get(shot_id, (-1, False))[0]:
+                latest[shot_id] = (recorded_at, False)
+                report_path = manifest.get("validation_report_path")
+                report = _load(report_path) if report_path else {}
+                latest_reports[shot_id] = (recorded_at, report)
+    unresolved = sorted(shot_id for shot_id, value in latest.items() if not value[1])
+    if not unresolved:
+        return None
+    targets = []
+    seen_target_keys = set()
+    for shot_id in unresolved:
+        _timestamp, report = latest_reports.get(shot_id, (0, {}))
+        for target in report.get("repair_targets", []) if isinstance(report, dict) else []:
+            if not isinstance(target, dict):
+                continue
+            dependent = [str(value) for value in target.get("dependent_shot_ids", []) or []]
+            affected = [str(target.get("shot_id", "") or "")] + dependent
+            if not set(affected) & set(unresolved):
+                continue
+            key = (str(target.get("shot_id", "") or ""), tuple(sorted(affected)))
+            if key in seen_target_keys:
+                continue
+            seen_target_keys.add(key)
+            targets.append(target)
+    for shot_id in unresolved:
+        if not any(shot_id in [str(item.get("shot_id", ""))] + [str(value) for value in item.get("dependent_shot_ids", []) or []] for item in targets):
+            targets.append({
+                "shot_id": shot_id,
+                "fields": ["validator_reported_field"],
+                "repair_scope": "shot",
+                "reasons": ["incremental validation failed without a structured target"],
+            })
+    review_path = os.path.join(run_dir, ".cache", "review", "incremental_master_retry_review.json")
+    windows = []
+    for index, target in enumerate(targets, 1):
+        affected = [str(target.get("shot_id", "") or "")] + [
+            str(value) for value in target.get("dependent_shot_ids", []) or []
+        ]
+        affected = [value for value in affected if value]
+        blocking = [str(value) for value in target.get("reasons", []) or []]
+        windows.append({
+            "window_id": "INC_%03d" % index,
+            "pass": False,
+            "repair_scope": str(target.get("repair_scope", "field") or "field"),
+            "current": {"shot_id": affected[0]} if affected else {},
+            "blocking": blocking,
+            "repair_targets": [target],
+        })
+    review_data = {
+        "contract_version": PROMPT_CONTRACT_VERSION,
+        "source": "incremental_master_validation",
+        "repair_scope": max((window["repair_scope"] for window in windows), key=lambda value: {"field": 0, "shot": 1, "pair": 2, "window": 3, "scene": 4}.get(value, 0)),
+        "windows": windows,
+    }
+    atomic_json(review_path, review_data)
+    from prepare_master_retry import prepare
+    packets = prepare(run_dir, review_path)
+    if not packets:
+        return None
+    return {
+        "packets": packets,
+        "target_shot_ids": unresolved,
+        "repair_scope": str(review_data.get("repair_scope", "field")),
+        "review_path": review_path,
+    }
 
 
 def _phase_packet_paths(run_dir, phase):

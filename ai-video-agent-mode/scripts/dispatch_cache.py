@@ -176,6 +176,13 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
                 "--run-dir",
                 run_dir,
             ]
+            packet["incremental_validation_command"] = [
+                sys.executable,
+                os.path.join(os.path.dirname(__file__), "validate_main_shot_incremental.py"),
+                batch_output,
+                "--shot-id",
+                "{shot_id}",
+            ]
             packet["context_policy"] = {
                 "fixed_global_context": [
                     "project_config_path",
@@ -195,22 +202,16 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             }
             packet["instruction"] += (
                 " Composer batch output top-level must be exactly {\"shots\": [...]}; "
-                "do not include contract_version in the batch file. Hard validation notes: "
-                "qa_metadata.performance_priority must partition exactly the packet item visible_characters for that shot "
-                "(one visible primary, visible-only supporting/background, no offscreen character, no scene roster, no overlap); "
-                "negative words, negative headings, and negative instructions must stay only in negative_prompt and never appear in full_prompt; "
-                "relationship_blocking or movement_transition coverage cannot use a default fixed mid/mid-close setup unless full_prompt also gives a concrete screen-side, foreground-shoulder, or scene-anchor reason and a responsive camera behavior; "
-                "pressure_release_design.release_trigger and story_punch_contract audience question must be visible in full_prompt as a concrete object, action, sound, distance, or end-frame state; "
-                "insert shots are allowed only inside shot_group segments with an explicit insert function, never mixed into continuous_take. "
-                "Before final response, run the exact local_validation_command from this packet, including --run-dir. "
-                "If validation fails, patch only the reported fields and rerun until PASS; do not claim PASS from a partial or different command."
+                "omit contract_version. The scaffold, constraints sidecar and validator are authoritative; do not restate or weaken them. "
+                "After each main shot, run incremental_validation_command with its shot id and patch only the reported scope. "
+                "Then run the exact full-batch local_validation_command; it must PASS and cannot be replaced by an incremental PASS."
             )
         if retry_context_path:
             packet["retry_context_path"] = retry_context_path
             packet["is_retry"] = True
             packet["instruction"] += (
-                " This is a targeted retry: read retry_context_path, repair only its failing fields, "
-                "and preserve all locked fields and already-passing content."
+                " This is a targeted retry: read retry_context_path, repair only its authorized field/shot/window scope, "
+                "and preserve all locked fields and already-passing content outside that scope."
             )
             example_paths = _retry_examples(retry_context_path)
             if example_paths:

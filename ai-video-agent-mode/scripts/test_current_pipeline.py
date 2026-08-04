@@ -172,7 +172,8 @@ def run():
         assert active_packet_paths(run_dir, "master_production") == packet_paths
         packet = _read(packet_paths[0])
         assert packet.get("source_sha256")
-        assert "local_validation_command" in packet and packet["local_validation_command"][-2] == "--run-dir"
+        assert "local_validation_command" in packet and "--run-dir" in packet["local_validation_command"]
+        assert packet.get("incremental_validation_command", [])[-2] == "--shot-id"
         assert os.path.abspath(packet["local_validation_command"][0]) == os.path.abspath(sys.executable)
         assert packet.get("context_policy", {}).get("quality_policy", "").startswith("Fill core fields")
         assert all("execution_hints" in item for item in packet.get("items", []))

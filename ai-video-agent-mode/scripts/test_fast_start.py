@@ -88,7 +88,7 @@ def run():
         assert saved["source_rules"]["style_evidence"]["routing_only"] is True
         assert "scene_receipts" not in saved["source_rules"]["style_evidence"]
         assert saved["source_rules"]["style_evidence"]["scene_receipt_count"] >= 1
-        assert os.path.normpath(saved["source_rules"]["source_gate_report"]) == os.path.normpath(
+        assert os.path.realpath(saved["source_rules"]["source_gate_report"]) == os.path.realpath(
             os.path.join(run_dir, ".cache", "preflight", "source_gate.json")
         )
         state = _read(os.path.join(run_dir, ".cache", "pipeline_state.json"))

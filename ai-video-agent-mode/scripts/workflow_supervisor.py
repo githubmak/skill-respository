@@ -34,6 +34,7 @@ from pipeline_runner import run as pipeline_run
 from pipeline_runtime import atomic_json
 from pipeline_state import load_state, save_state
 from contract_registry import PROMPT_CONTRACT_VERSION
+from validation_receipt import create_receipt
 
 
 CONTROL_RELATIVE_PATH = ".cache/control/supervisor.json"
@@ -64,6 +65,14 @@ def run_until_pause(run_dir, source_path=None, max_ticks=24):
         if action == "wait_for_workers":
             return _result("waiting_for_workers", history, phase=outcome.get("phase"),
                            worker_status=outcome.get("worker_status", []))
+        if action == "field_patch_retry":
+            history.append({
+                "action": "targeted_retry_prepared",
+                "phase": outcome.get("phase"),
+                "target_shot_ids": outcome.get("target_shot_ids", []),
+                "dispatch_packets": outcome.get("dispatch_packets", []),
+            })
+            continue
         if action == "completed":
             return _result("completed", history)
         return _result(action or "blocked", history, phase=outcome.get("phase"),
@@ -139,10 +148,14 @@ def execute_local_phase(run_dir, phase, source_path=None):
         _passed, failed = check_export("", run_dir, quality_mode=True)
         if failed != 0:
             raise ValueError("quality gate failed")
+        receipt_path, _receipt = create_receipt(run_dir, package_path, (
+            episode_graph_path, director_audit_path, audit_path,
+        ))
         path = os.path.join(run_dir, ".cache", "validate", "result.json")
         atomic_json(path, {"pass": True, "validated_at": time.time(), "emotion_camera_audit": audit_path,
                            "episode_state_graph": episode_graph_path,
                            "episode_director_audit": director_audit_path,
+                           "validation_receipt": receipt_path,
                            "package_sha256": _sha256(package_path)})
         return {"result_path": path}
     if phase == "export":
@@ -187,12 +200,22 @@ def _prepare_pre_editor_retry(run_dir, gate_result):
     if not failed or not issues:
         return {}
     windows = []
+    structured_targets = [
+        item for item in report.get("repair_targets", []) if isinstance(item, dict)
+    ]
     for shot_id in failed:
         shot_issues = [issue for issue in issues if issue.startswith(shot_id + ":")]
-        targets = _repair_targets_from_pre_editor_issues(shot_id, shot_issues)
+        targets = [
+            dict(item, shot_id=shot_id)
+            for item in structured_targets
+            if str(item.get("shot_id", "")) == shot_id
+        ]
+        if not targets:
+            targets = _repair_targets_from_pre_editor_issues(shot_id, shot_issues)
         windows.append({
             "window_id": "PRE_" + shot_id,
             "pass": False,
+            "repair_scope": next((str(item.get("repair_scope", "field")) for item in targets if isinstance(item, dict)), "field"),
             "blocking": shot_issues,
             "repair_targets": targets or [{"shot_id": shot_id, "field_path": "validator_reported_field"}],
         })

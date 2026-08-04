@@ -16,6 +16,20 @@ from route_task import ROUTES as TASK_ROUTES
 
 
 RULES = {
+    "incremental_master_repair": {
+        "label": "主镜增量校验与最小范围修复",
+        "checks": {
+            "SKILL.md": ("incremental_validation_command", "partial provenance", "字段 → 主镜 → pair/window → scene"),
+            "references/dispatch/master_production_note.md": ("incremental_validation_command", "增量通过不能替代"),
+            "scripts/incremental_validation.py": ("partial_reuse_safe", "dependent_shot_ids", "ALL_MUTABLE_FIELDS"),
+            "scripts/validate_main_shot_incremental.py": ("allow_incomplete=True", "selected_shot_ids"),
+            "scripts/validate_composer_output.py": ("build_repair_report", "partial_reuse_safe"),
+            "scripts/record_batch_provenance.py": ("partial_reuse_safe", "repair_targets"),
+            "scripts/pipeline_runner.py": ("_prepare_incremental_master_retry", "incremental_master_retry_review.json"),
+            "scripts/test_incremental_master_validation.py": ("_effective_scope", "batch缺少subshot"),
+            "scripts/run_regression_suite.py": ("incremental_master_validation", "test_incremental_master_validation.py"),
+        },
+    },
     "skill_control_plane": {
         "label": "技能最小控制面与按需上下文",
         "checks": {

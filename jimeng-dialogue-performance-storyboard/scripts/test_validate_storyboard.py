@@ -8,6 +8,12 @@ import validate_storyboard as validator
 
 
 class SemanticCollisionTests(unittest.TestCase):
+    def test_post_audio_requires_label_colon_and_quoted_verbatim_text(self) -> None:
+        for malformed in ("OS: 我没事。", "系统音：闸机已锁定。", "OV - 快走。"):
+            with self.subTest(malformed=malformed):
+                self.assertEqual([malformed], validator.post_audio_format_issues(malformed))
+        self.assertEqual([], validator.post_audio_format_issues("OS：“我没事。”"))
+
     def test_environment_water_ripple_is_not_cutaway(self) -> None:
         prompt = "人物站在溪边，后景溪水泛起细小水纹，镜头固定。"
         self.assertFalse(validator.is_standalone_cutaway(prompt))

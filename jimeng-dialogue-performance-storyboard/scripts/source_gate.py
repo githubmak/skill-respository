@@ -16,6 +16,10 @@ from pathlib import Path
 
 SCENE_RE = re.compile(r"^(?:场景|地点)[：:]|^\d+-\d+\b|^SCENE\b", re.I)
 DIALOGUE_RE = re.compile(r"^([^：:]{1,24})(?:（[^）]*）)?[：:](.+)$")
+INLINE_SPEAKER_RE = re.compile(
+    r"(?:^|[\n。！？；;”’])\s*([\u4e00-\u9fffA-Za-z0-9_·]{1,12})(?:（[^）]*）)?[：:](?=\s*[“\"‘']|[^/\n]{2,})",
+    re.M,
+)
 ACTION_RE = re.compile(r"^(?:△|动作[：:])")
 RISK_TERMS = {
     "physical_support": ("躺", "坐", "靠", "抱", "扶", "摔", "起身", "翻身", "腾空"),
@@ -53,6 +57,10 @@ def inspect_text(text: str) -> dict:
     speakers = []
     for line in dialogue_lines:
         speaker = DIALOGUE_RE.match(line).group(1).strip()
+        if speaker not in speakers:
+            speakers.append(speaker)
+    for match in INLINE_SPEAKER_RE.finditer(text):
+        speaker = match.group(1).strip()
         if speaker not in speakers:
             speakers.append(speaker)
 
@@ -94,14 +102,17 @@ def inspect_text(text: str) -> dict:
     }
 
 
-def inspect_path(source_path: str, report_path: str | None = None) -> dict:
+def inspect_path(source_path: str, report_path: str | None = None, include_text: bool = False) -> dict:
     path = Path(source_path).expanduser()
     if not path.is_file():
         result = inspect_text("")
         result["blocking"] = [_issue("SOURCE_MISSING", "源文文件不存在或不可读")]
     else:
         try:
-            result = inspect_text(path.read_text(encoding="utf-8-sig"))
+            source_text = path.read_text(encoding="utf-8-sig")
+            result = inspect_text(source_text)
+            if include_text:
+                result["_source_text"] = source_text
         except (OSError, UnicodeDecodeError) as exc:
             result = inspect_text("")
             result["blocking"] = [_issue("SOURCE_READ", "读取源文失败：%s" % exc)]

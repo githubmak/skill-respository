@@ -181,7 +181,7 @@ def _high_priority(metadata, dramatic, pressure):
 def _reason(metadata, dramatic, pressure):
     reasons = []
     if metadata.get("dialogue_events"):
-        reasons.append("当前镜头含台词/OS/OV或听者反应，关键帧可锁定说话口型与反应层级")
+        reasons.append("当前镜头含台词/OS/OV/系统音或听者反应，关键帧可锁定说话口型、闭口边界与反应层级")
     if dramatic.get("information_gain"):
         reasons.append("当前镜头含新的观众认知或信息落点")
     if pressure:

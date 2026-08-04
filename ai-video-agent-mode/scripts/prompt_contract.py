@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 
 from dialogue_timing import analyze_dialogue_timing
+from speech_events import NON_LIP_SYNC_KINDS, SPEECH_KINDS
 
 
 # 即梦正文只使用可见、可执行的描述。子镜头置于同一个生成任务内，
@@ -116,7 +117,6 @@ TENSION_CURVE_ROLE_ALIASES = {
     "buffer": "buffer",
     "缓冲": "buffer",
 }
-SPEECH_KINDS = {"台词", "OS", "OV"}
 SPEAKER_VISIBILITIES = {"visible", "offscreen", "nonphysical"}
 REROLL_RISK_LEVELS = {"low", "medium", "high"}
 SCREEN_TEXT_POLICY_MODES = {"none", "post", "ai_overlay", "ai_generated", "ai_ui"}
@@ -1748,7 +1748,7 @@ def dialogue_event_issues(
         if not ref:
             issues.append(f"{prefix}.ref不能为空")
         if kind not in SPEECH_KINDS:
-            issues.append(f"{prefix}.kind只允许台词/OS/OV")
+            issues.append(f"{prefix}.kind只允许台词/OS/OV/系统音")
         if not speaker:
             issues.append(f"{prefix}.speaker不能为空")
         if not line:
@@ -1840,8 +1840,8 @@ def dialogue_event_issues(
                 issues.append(f"{prefix}.breath_pause_plan未落实到子镜头组")
             if expected_lip_sync and "口型" not in timeline:
                 issues.append(f"{prefix}可见对白缺少口型同步说明")
-            if kind in ("OS", "OV") and not any(token in timeline for token in ("口型闭合", "无口型同步", "不驱动口型")):
-                issues.append(f"{prefix}的OS/OV缺少无口型同步说明")
+            if kind in NON_LIP_SYNC_KINDS and not any(token in timeline for token in ("口型闭合", "无口型同步", "不驱动口型")):
+                issues.append(f"{prefix}的{kind}缺少无口型同步说明")
         elif audio_enabled is False and line and line in full_prompt:
             issues.append(f"{prefix}.text在原生音频关闭时不得进入full_prompt")
         if expected_lip_sync and timeline and not any(token in timeline for token in ("句末闭口", "口型闭合", "收口")):

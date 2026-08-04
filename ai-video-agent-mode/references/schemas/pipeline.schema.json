@@ -257,7 +257,7 @@
       "type": "object",
       "properties": {
         "ref": {"type": "string", "minLength": 1},
-        "kind": {"type": "string", "enum": ["台词", "OS", "OV"]},
+        "kind": {"type": "string", "enum": ["台词", "OS", "OV", "系统音"]},
         "speaker": {"type": "string", "minLength": 1},
         "text": {"type": "string", "minLength": 1},
         "time_range": {"type": "string", "pattern": "^\\d+(?:\\.\\d+)?-\\d+(?:\\.\\d+)?秒$"},

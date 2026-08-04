@@ -9,6 +9,7 @@ import json, os, re, sys
 def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
     sys.path.insert(0, os.path.dirname(__file__))
     from build_shotplan import split_dialogue
+    from speech_events import NONPHYSICAL_SPEECH_KINDS, classify_speech_kind
     from validate_durations import _estimate_action_seconds, _estimate_dialogue_seconds
 
     # Load config if provided, else use defaults
@@ -106,6 +107,7 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
             speaker = dm.group(1).strip()
             tone = dm.group(3) or ""
             content = dm.group(4).strip()
+            speech_kind = classify_speech_kind(speaker, tone)
 
             # Colons also introduce timestamps, URLs, camera directions and
             # state labels. Only treat the line as dialogue when its prefix is
@@ -120,7 +122,7 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
                 continue
 
             # Check if this is actually an action line (config-driven keyword match)
-            is_action = bool(action_kw) and any(kw in line for kw in action_kw)
+            is_action = speech_kind == "台词" and bool(action_kw) and any(kw in line for kw in action_kw)
             oral = ["我", "你", "啦", "啊", "吗", "吧", "!", "?", "~"]
             if is_action and not any(kw in content for kw in oral):
                 source_unit["type"] = "action"
@@ -132,14 +134,7 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
                 })
                 continue
 
-            tone_upper = tone.upper()
-            if "OS" in tone_upper or "\u5185\u5fc3\u72ec\u767d" in tone or "\u5185\u5fc3" in tone:
-                speech_kind = "OS"
-            elif "OV" in tone_upper or "\u65c1\u767d" in tone or speaker == "\u65c1\u767d":
-                speech_kind = "OV"
-            else:
-                speech_kind = "\u53f0\u8bcd"
-            is_narr = speech_kind in ("OS", "OV")
+            is_narr = speech_kind != "台词"
             segments = split_dialogue(content, max_seconds=max_shot_duration, reserve_seconds=0.5)
             entries = {}
             for i, (seg, dur) in enumerate(segments):
@@ -220,9 +215,9 @@ def generate(source_path, output_dir, config_path=None, max_shot_duration=None):
                     continue
                 turn_speaker = turn.get("speaker", "")
                 turn_tone = turn.get("tone", "")
-                # OV is a sound source, never a visible-character lock. OS may
-                # still use its on-screen speaker with closed lips.
-                if turn.get("kind") != "OV" and turn_speaker and turn_speaker not in beat_chars:
+                # OV/system audio are nonphysical sound sources. OS may still
+                # use its on-screen speaker with closed lips.
+                if turn.get("kind") not in NONPHYSICAL_SPEECH_KINDS and turn_speaker and turn_speaker not in beat_chars:
                     beat_chars.append(turn_speaker)
                 if turn_tone:
                     for c in characters_list:
@@ -397,10 +392,14 @@ def _characters_in_source_order(text, characters):
 
 
 def _looks_like_dialogue_prefix(speaker, tone, content, characters):
+    from speech_events import is_explicit_system_sound
+
     speaker = str(speaker or "").strip()
     content = str(content or "").strip()
     if not speaker or not content:
         return False
+    if is_explicit_system_sound(speaker, tone):
+        return True
     if speaker in {"时间", "地点", "场景", "动作", "镜头", "画面", "状态", "说明", "备注", "系统", "提示"}:
         return False
     if re.match(r"^(?:https?://|ftp://|www\.)", content, re.I) or re.match(r"^\d{1,2}:\d{2}(?::\d{2})?$", content):

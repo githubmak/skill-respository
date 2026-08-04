@@ -8,8 +8,9 @@ description: >
 
 # AI Video Agent Mode
 
-把源文转换为可审查、可恢复、可导出的即梦 T2V 提示词包。只生成提示词与制作元数据；
-不调用、观看或评分生成结果。`ai_model_readiness_score` 表示合同执行风险，不代表成片质量。
+把源文转换为可审查、可恢复、可导出的即梦 T2V 提示词包。主流程生成提示词与制作元数据；
+用户提供真实成片并明确要求复核时，才运行独立的视频指标或 A/B 校准。`ai_model_readiness_score`
+表示合同执行风险，不代表成片质量。
 
 ## 执行
 
@@ -19,14 +20,17 @@ description: >
 2. 只读取返回的 `context_plan.read_first`；只有当前错误或任务明确命中时，才读取
    `read_on_demand`。`run_only` 中的脚本直接运行，不预读源码。
 3. 新任务默认使用 `full --intent new` 和新的空 `run_dir`。只有用户明确要求续跑时使用
-   `full --intent resume`。完整配置与源文件已一次提供时，可使用 `--auto-start`；它不得跳过
+   `full --intent resume`。完整配置与源文件已一次提供时，优先使用 `--auto-start`；它不得跳过
    任何阶段、provenance、validator 或导出门禁。
 4. 配置确认后，只循环调用 `workflow_supervisor.py`。`waiting_for_workers` 是内部等待状态，
    不是用户确认点；只有路由明确返回 `needs_user_confirm=true` 时才提问。
 5. supervisor 返回 `host_dispatch_required` 时，按 `references/agent_protocol.md` 处理每个
    packet：注册 Agent、至少一次心跳、等待 batch、记录 provenance，然后立即继续 supervisor。
-6. Agent 只能写 `packet._batch_output_path`。合并必须使用 provenance 门禁；失败只修 validator
-   点名字段，第二次重试缩为单主镜。
+6. Agent 只能写 `packet._batch_output_path`。Master Production 每完成一个主镜，先运行 packet 的
+   `incremental_validation_command` 做字段级校验；批次结束仍必须运行完整 `local_validation_command`。
+   合并必须使用 provenance 门禁。局部失败按 `字段 → 主镜 → pair/window → scene` 升级，合格主镜可由
+   partial provenance 保留，未解决主镜自动定点重试；两次字段修复后才扩大到单主镜，无法归属镜头的全局
+   合同错误禁止 partial 复用。任何增量通过都不能替代最终全量 Validate。
 7. Validate 全部通过后，才调用 `export_with_validation.py` 写入配置中已确认的交付路径；导出目标由确认过的
    `seedance_target: auto | 2.0 | 2.5 | both` 决定。`auto` 生成一份 dual-safe 文件，`2.0`/`2.5`
    生成单一优化文件，`both` 从同一份合同原子生成两份可独立投喂 Markdown 和一个非投喂索引。
@@ -54,9 +58,10 @@ description: >
 
 - 仅支持即梦 `t2v`。禁止 I2V、R2V、参考素材槽位或动作素材路径；三状态关键帧只是前期参考。
 - `seedance_target` 是模型适配层，不是第二套剧情事实：`auto` 采用两版共同可读的光影与动作语法；
-  `both` 必须保持镜号、时长、台词/OS/OV、人物、空间、道具、轴线和终态一致，只允许调整光影精度、
+  `both` 必须保持镜号、时长、台词/OS/OV/系统音、人物、空间、道具、轴线和终态一致，只允许调整光影精度、
   高光/黑位控制和动态复杂度措辞。共享镜头时长仍按15秒以内的跨版本安全上限执行。
-- 台词、OS、OV 按 `ref/kind/speaker/text` 逐字锁定；OS/OV 无口型，无源文不得新增人声。
+- 台词、OS、OV、系统音按 `ref/kind/speaker/text` 逐字锁定；OS/OV/系统音无口型。系统音属于
+  非实体声源，不进入可见人物锁；无源文不得新增人声。
 - 每个主镜只服务一个 `narrative_beat_id`；回切、第二目标、第二独立动作链或容量不足时拆镜。
 - Scene Lock 是空间、服装、道具活动区、光源与影调事实的唯一来源；后续阶段只消费，不重写。
 - `full_prompt` 只写当前可见、可执行画面事实。QA、负面词、工程数据、风险与分析标签留在独立字段。
@@ -77,6 +82,9 @@ description: >
   高光滚降。三者都禁止无来源的正面均匀补光。
 - Windows 与 macOS 必须执行同一合同和验证门槛：状态写入使用跨平台锁，packet 中的本地命令使用
   当前 Python 解释器；真实视频校准统一使用 FFmpeg/FFprobe 指标后端，不得按平台跳过指标或降低阈值。
+- Validate 通过后写入包含提示词包、配置、分镜计划、Editor 复审、审计产物和验证代码摘要的验证收据。
+  Export 仅在全部摘要仍一致时复用该结果；旧运行、缺收据或任一输入/代码变化时自动执行原完整门禁。
+  每份临时导出 Markdown 始终重新执行最终交付校验。
 
 ## 权威来源
 
@@ -87,6 +95,7 @@ description: >
 - 画面/连续性知识候选池：`references/production_quality_knowledge.md`
 - 静态与动态美学：`references/contracts/aesthetic_directing_contract.md`
 - 当前 Agent 指令：`references/dispatch/*.md`
+- 增量校验与修复范围：`scripts/validate_main_shot_incremental.py`、`scripts/incremental_validation.py`
 - 运行状态与门禁：`scripts/pipeline_state.py`、`scripts/pipeline_templates.py`
 
 旧 Emotion、Camera、Director 或 Composer 独立阶段及其归档指针已从技能表面移除。当前只派发

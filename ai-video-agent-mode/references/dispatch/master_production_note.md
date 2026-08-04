@@ -14,8 +14,8 @@ scaffold 的 `scene_motion_plan_path` 提供跨镜动态职责，不得把内部
 2. 建立 source basemap、`scene_tone_palette`、人物行动/关系、序列/切点、声音和信息预算。
 3. 执行 `visual_bible → aesthetic_director → continuity_compiler`，填写
    `static_aesthetic_contract`、`dynamic_aesthetic_contract` 与 `aesthetic_priority`。
-4. 最后编写五段 `full_prompt`、独立 `negative_prompt` 和 QA 元数据；运行 packet 指定 validator，
-   只修报告字段直到 PASS。
+4. 编写五段 `full_prompt`、独立负面词和 QA。每镜完成即运行 `incremental_validation_command`，
+   只修报告范围；批末 `local_validation_command` 必须覆盖全部 items 并 PASS，增量通过不能替代它。
 
 ## 源文、空间与连续性
 
@@ -79,4 +79,4 @@ scaffold 的 `scene_motion_plan_path` 提供跨镜动态职责，不得把内部
 - 接触、受力、交接、多人走位或长台词先保物理和口型；动作强时固定或低幅运镜。风险高时启用
   `reroll_control` 和人工首轮检查，不得以更长修辞掩盖生成负担。
 - 不新增剧情、人物、道具、天气或声音。不要输出分析过程；完成前运行 packet 中的完整
-  `local_validation_command`，失败只修点名字段，不得用不同命令或局部检查声称 PASS。
+  `local_validation_command`，失败按报告的字段/主镜/pair/window 范围修复，不得用不同命令或局部检查声称 PASS。

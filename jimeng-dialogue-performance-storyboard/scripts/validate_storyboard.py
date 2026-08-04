@@ -1124,16 +1124,14 @@ def post_audio_format_issues(text: str) -> list[str]:
     issues: list[str] = []
     label_pattern = r"(?:OS|OV|系统音|内心独白|旁白)"
     wrapped_pattern = re.compile(label_pattern + r"\s*[：:]\s*[“\"][^”\"]+[”\"]")
+    explicit_text_pattern = re.compile(label_pattern + r"\s*(?:[：:]|[-—])\s*\S+")
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line or not any(label in line for label in POST_AUDIO_LABEL_TERMS):
             continue
         if "无台词" in line or re.fullmatch(r"无(?:OS|OV|系统音|内心独白|旁白).*", line):
             continue
-        has_text_signal = any(mark in line for mark in ("“", "”", '"')) or any(
-            term in line for term in ("响起", "念出", "吐槽", "旁白", "低语", "声音", "内心")
-        )
-        if has_text_signal and not wrapped_pattern.search(line):
+        if explicit_text_pattern.search(line) and not wrapped_pattern.search(line):
             issues.append(line)
     return issues
 

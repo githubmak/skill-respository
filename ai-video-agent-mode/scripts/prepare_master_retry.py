@@ -7,16 +7,18 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from dispatch_cache import active_packet_paths, prepare_dispatch_packets, _write_active_manifest
 from pipeline_runtime import atomic_json
+from incremental_validation import ALL_MUTABLE_FIELDS, SCOPE_ORDER
 
 
 def prepare(run_dir, review_path=None):
     review_path = review_path or os.path.join(run_dir, ".cache", "review", "llm_gate_result.json")
     with open(review_path, encoding="utf-8-sig") as handle:
         review = json.load(handle)
-    fields, reasons, shots = {}, {}, []
+    fields, reasons, scopes, shots = {}, {}, {}, []
     for window in review.get("windows", []):
         window_shots = _extract_window_shot_ids(window)
         window_reasons = _extract_window_reasons(window)
+        window_scope = str(window.get("repair_scope", "") or "") if isinstance(window, dict) else ""
         for target in window.get("repair_targets", []):
             if isinstance(target, dict):
                 shot_id = str(target.get("shot_id", "") or target.get("subshot_id", ""))
@@ -24,29 +26,48 @@ def prepare(run_dir, review_path=None):
                 shot_id = _extract_primary_shot_id(str(target or ""))
             if not shot_id:
                 continue
-            shots.append(shot_id)
+            dependent = target.get("dependent_shot_ids", []) if isinstance(target, dict) else []
+            target_shots = [shot_id] + [str(value) for value in dependent if str(value).strip()]
+            target_scope = str(target.get("repair_scope", "") or window_scope or "field") if isinstance(target, dict) else (window_scope or "field")
+            for target_shot in target_shots:
+                shots.append(target_shot)
+                scopes[target_shot] = _wider_scope(scopes.get(target_shot, "field"), target_scope)
             if isinstance(target, dict):
                 target_fields = target.get("fields")
                 if not target_fields:
                     target_fields = [target.get("field") or target.get("field_path") or "validator_reported_field"]
             else:
                 target_fields = ["validator_reported_field"]
-            fields.setdefault(shot_id, set()).update(_normalize_retry_fields(target_fields))
-            reasons.setdefault(shot_id, set()).update(window_reasons)
-        shots.extend(window_shots)
-        for shot_id in window_shots:
-            reasons.setdefault(shot_id, set()).update(window_reasons)
+            for target_shot in target_shots:
+                fields.setdefault(target_shot, set()).update(_normalize_retry_fields(target_fields))
+                reasons.setdefault(target_shot, set()).update(window_reasons)
+        if not window.get("repair_targets"):
+            shots.extend(window_shots)
+            for shot_id in window_shots:
+                scopes[shot_id] = _wider_scope(scopes.get(shot_id, "field"), window_scope or "window")
+                reasons.setdefault(shot_id, set()).update(window_reasons)
     shots = sorted(set(shots))
     if not shots:
         return []
     for shot_id in shots:
+        scopes.setdefault(shot_id, "shot")
         if shot_id not in fields:
             fields[shot_id] = {"validator_reported_field"}
         else:
             fields[shot_id] = set(_expand_dependent_fields(fields[shot_id]))
+    history = _prior_retry_attempts(run_dir, shots)
+    effective_scopes = {}
+    attempts = {}
+    for shot_id in shots:
+        prior = history.get(shot_id, 0)
+        effective_scopes[shot_id] = _effective_scope(scopes.get(shot_id, "field"), prior)
+        attempts[shot_id] = prior + 1
+        if effective_scopes[shot_id] == "shot":
+            fields[shot_id] = {ALL_MUTABLE_FIELDS}
     fields_by_shot = {key: sorted(value) for key, value in fields.items()}
     fields_by_shot = _inherit_prior_retry_fields(run_dir, fields_by_shot, shots)
-    existing = _equivalent_active_retry_packets(run_dir, shots, fields_by_shot)
+    fields_by_shot = {key: _normalize_retry_fields(value) for key, value in fields_by_shot.items()}
+    existing = _equivalent_active_retry_packets(run_dir, shots, fields_by_shot, effective_scopes)
     if existing:
         return existing
     retry_batch_size = 1 if _has_previous_retry(run_dir, shots) else None
@@ -73,8 +94,14 @@ def prepare(run_dir, review_path=None):
         packet["retry_context_path"] = atomic_json(packet_path + ".retry.json", {
             "mode": "field_patch",
             "fields_by_main_shot": packet_fields,
+            "repair_scope_by_main_shot": {
+                shot_id: effective_scopes.get(shot_id, "field") for shot_id in packet_shots
+            },
+            "attempt_by_main_shot": {
+                shot_id: attempts.get(shot_id, 1) for shot_id in packet_shots
+            },
             "failure_reasons_by_main_shot": packet_reasons,
-            "rule": "Return only listed main shots and modify only listed fields; locked fields survive merge.",
+            "rule": "Return only listed main shots and modify only the authorized scope; locked fields survive validation and merge.",
         })
         packet["retry_field_scope"] = packet_fields
         atomic_json(packet_path, packet)
@@ -112,6 +139,8 @@ def _normalize_retry_fields(target_fields):
 
 def _expand_dependent_fields(fields):
     values = [str(field or "").strip() for field in fields or [] if str(field or "").strip()]
+    if ALL_MUTABLE_FIELDS in values:
+        return [ALL_MUTABLE_FIELDS]
     if "full_prompt" in values and "qa_metadata.quality_evidence" not in values:
         values.append("qa_metadata.quality_evidence")
     return values
@@ -130,9 +159,15 @@ def _extract_window_shot_ids(window):
         if not isinstance(values, list):
             continue
         for value in values:
-            shot_id = _extract_primary_shot_id(str(value or ""))
-            if shot_id and shot_id not in ids:
-                ids.append(shot_id)
+            if isinstance(value, dict):
+                shot_id = str(value.get("shot_id", "") or value.get("subshot_id", ""))
+                dependent = value.get("dependent_shot_ids", [])
+                candidates = [shot_id] + [str(item) for item in dependent or []]
+            else:
+                candidates = [_extract_primary_shot_id(str(value or ""))]
+            for shot_id in candidates:
+                if shot_id and shot_id not in ids:
+                    ids.append(shot_id)
     return ids
 
 
@@ -147,7 +182,7 @@ def _extract_window_reasons(window):
         if not isinstance(values, list):
             continue
         for value in values:
-            text = str(value or "").strip()
+            text = str(value.get("message", "") if isinstance(value, dict) else value or "").strip()
             if text:
                 reasons.add(text)
     return reasons
@@ -164,7 +199,55 @@ def _packet_shot_ids(packet):
     return ids
 
 
-def _equivalent_active_retry_packets(run_dir, shot_ids, fields_by_shot):
+def _wider_scope(left, right):
+    left = left if left in SCOPE_ORDER else "field"
+    right = right if right in SCOPE_ORDER else "field"
+    return left if SCOPE_ORDER[left] >= SCOPE_ORDER[right] else right
+
+
+def _effective_scope(requested, prior_attempts):
+    """Escalate repeated field patches to one-shot repair, never silently to scene."""
+    requested = requested if requested in SCOPE_ORDER else "field"
+    if requested == "field" and prior_attempts >= 2:
+        return "shot"
+    return requested
+
+
+def _prior_retry_attempts(run_dir, shot_ids):
+    targets = set(str(value) for value in shot_ids or [])
+    counts = {value: 0 for value in targets}
+    dispatch_dir = os.path.join(run_dir, ".cache", "dispatch")
+    if not os.path.isdir(dispatch_dir):
+        return counts
+    for name in os.listdir(dispatch_dir):
+        if not name.endswith("_packet.json"):
+            continue
+        try:
+            with open(os.path.join(dispatch_dir, name), encoding="utf-8-sig") as handle:
+                packet = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if packet.get("phase") != "master_production" or not packet.get("retry_context_path"):
+            continue
+        try:
+            with open(packet["retry_context_path"], encoding="utf-8-sig") as handle:
+                context = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            continue
+        for shot_id in (context.get("attempt_by_main_shot", {}) or {}):
+            shot_id = str(shot_id)
+            if shot_id in counts:
+                counts[shot_id] = max(counts[shot_id], int(
+                    (context.get("attempt_by_main_shot", {}) or {}).get(shot_id, 1) or 1
+                ))
+        if not context.get("attempt_by_main_shot"):
+            for shot_id in _packet_shot_ids(packet):
+                if shot_id in counts:
+                    counts[shot_id] += 1
+    return counts
+
+
+def _equivalent_active_retry_packets(run_dir, shot_ids, fields_by_shot, scopes_by_shot=None):
     wanted = sorted(set(str(shot_id) for shot_id in shot_ids or [] if str(shot_id).strip()))
     if not wanted:
         return []
@@ -190,10 +273,28 @@ def _equivalent_active_retry_packets(run_dir, shot_ids, fields_by_shot):
         context_fields = context.get("fields_by_main_shot", {})
         if not isinstance(context_fields, dict):
             continue
-        if all(sorted(context_fields.get(shot_id, [])) == sorted(fields_by_shot.get(shot_id, [])) for shot_id in packet_shots):
+        provenance = _load_optional(packet.get("_batch_output_path", "") + ".provenance.json")
+        if provenance and set(packet_shots) & set(provenance.get("failed_subshot_ids", []) or []):
+            continue
+        context_scopes = context.get("repair_scope_by_main_shot", {}) or {}
+        if all(
+            sorted(context_fields.get(shot_id, [])) == sorted(fields_by_shot.get(shot_id, []))
+            and (not scopes_by_shot or context_scopes.get(shot_id, "field") == scopes_by_shot.get(shot_id, "field"))
+            for shot_id in packet_shots
+        ):
             matching.append(path)
             covered.update(packet_shots)
     return sorted(matching) if sorted(covered) == wanted else []
+
+
+def _load_optional(path):
+    if not path or not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8-sig") as handle:
+            return json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
 
 
 def _inherit_prior_retry_fields(run_dir, fields_by_shot, shot_ids):
