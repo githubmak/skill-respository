@@ -16,6 +16,11 @@ VISUAL_STATES = ("PASS", "REVISE", "NOT_RUN")
 REVIEW_MODES = ("independent", "self_check")
 
 
+def delivery_status(design_review: str, visual_review: str) -> str:
+    """Engineering/design completion is provisional until real visual evidence passes."""
+    return "FINAL" if design_review == "PASS" and visual_review == "PASS" else "PROVISIONAL"
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -65,6 +70,7 @@ def build_manifest(
             "design_review": design_review,
             "visual_review": visual_review,
         },
+        "delivery_status": delivery_status(design_review, visual_review),
         "limitations": [
             "SHA-256 verifies reviewed bytes, not reviewer identity or context freshness.",
             "Any source or output byte change makes the recorded review stale.",
@@ -108,6 +114,7 @@ def verify_manifest(path: str | Path) -> dict:
         "changed": changed,
         "recorded_review": payload.get("review", {}),
         "effective_review_status": "STALE" if changed else "CURRENT",
+        "delivery_status": "STALE" if changed else payload.get("delivery_status", "PROVISIONAL"),
         "freshness_proof": "byte_hash_only",
         "primary_output_modified": False,
     }

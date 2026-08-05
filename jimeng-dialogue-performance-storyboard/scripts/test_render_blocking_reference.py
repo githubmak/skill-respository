@@ -99,6 +99,23 @@ class BlockingReferenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_spec(invalid)
 
+    def test_rejects_parallel_arrows_in_two_person_relationship(self) -> None:
+        parallel = {**SPEC, "states": [{**SPEC["states"][0], "characters": [
+            {"name": "沈青乔", "x": 0.35, "y": 0.7, "facing_deg": 0},
+            {"name": "卫景耘", "x": 0.65, "y": 0.7, "facing_deg": 0},
+        ]}]}
+        with self.assertRaisesRegex(ValueError, "must face"):
+            validate_spec(parallel)
+
+    def test_independent_relationship_allows_intentional_non_facing(self) -> None:
+        independent = {**SPEC, "states": [{**SPEC["states"][0], "cameras": [
+            {**SPEC["states"][0]["cameras"][0], "facing_mode": "independent"}
+        ], "characters": [
+            {"name": "沈青乔", "x": 0.35, "y": 0.7, "facing_deg": 0},
+            {"name": "卫景耘", "x": 0.65, "y": 0.7, "facing_deg": 0},
+        ]}]}
+        self.assertEqual(validate_spec(independent)["states"][0]["cameras"][0]["facing_mode"], "independent")
+
     def test_same_blocking_id_allows_camera_change_but_rejects_position_change(self) -> None:
         base_state = SPEC["states"][0]
         reverse_camera = {

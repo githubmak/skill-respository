@@ -8,7 +8,7 @@ import json
 import re
 from pathlib import Path
 
-from scene_contract import validate_contract
+from scene_contract import load_contract, validate_contract
 from source_gate import inspect_path
 
 
@@ -60,7 +60,7 @@ def _load_contract(contract) -> dict | None:
     if isinstance(contract, dict):
         return validate_contract(contract)
     path = Path(contract).expanduser().resolve()
-    return validate_contract(json.loads(path.read_text(encoding="utf-8-sig")))
+    return validate_contract(load_contract(path))
 
 
 def route(mode, source=None, contract=None):
@@ -133,10 +133,13 @@ def route(mode, source=None, contract=None):
     return {
         "pass": True,
         "mode": "generate",
+        "skill_root": str(Path(__file__).resolve().parents[1]),
         "read_first": BASE_READ,
         "read_on_demand": on_demand,
         "routing_reasons": reasons,
-        "run_before_generation": ["scripts/source_gate.py"],
+        "run_before_generation": [
+            "<skill_root>/scripts/source_gate.py",
+        ],
         "run_after_scene_contract": [{
             "script": "scripts/scene_contract.py",
             "arguments": ["<scene_contract.json>"],
@@ -157,10 +160,20 @@ def route(mode, source=None, contract=None):
             "exact_shot_number_filenames": True,
             "same_directory_as_storyboard": True,
             "same_source_svg_png": True,
+        }, {
+            "script": "<skill_root>/scripts/prompt_preflight.py",
+            "arguments": ["<scene_draft.md>", "--advisory"],
+            "mutates_primary_output": False,
+        }, {
+            "script": "<skill_root>/scripts/creative_preflight.py",
+            "arguments": ["<scene_draft.md>", "--advisory"],
+            "mutates_primary_output": False,
         }],
         "run_after_generation": [
             "scripts/validate_storyboard.py",
             "scripts/scene_contract.py <scene_contract.json> --storyboard <output.md>",
+            "scripts/prompt_preflight.py <output.md>",
+            "scripts/creative_preflight.py <output.md>",
         ],
         "read_after_generation": ["references/review-pipeline.md"],
         "run_after_review": ["scripts/review_manifest.py create", "scripts/review_manifest.py verify"],

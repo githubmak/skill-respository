@@ -4,6 +4,12 @@
 
 ## 诊断入口
 
+- 合同文件出现重复字段、结果与编辑内容不符：使用 `scene_contract.py` 的严格 JSON 读取；重复键现在直接阻断，不接受“最后一个值覆盖前面的值”。
+- 终态或门槛词反复触发误判：先运行 `scripts/prompt_preflight.py <draft.md> --advisory` 定位负向边界句和过早终态词，完稿后再用严格模式复验；该工具只报风险，不替导演改写正文。
+- 双人关系线稿出现同向箭头：关系镜默认 `facing_mode=mutual`；有意看向道具、门外或第三目标时显式声明 `facing_mode=independent`，避免把语义例外藏在省略字段里。
+- 工程通过但提示词变得通用：运行 `scripts/creative_preflight.py <draft.md> --advisory`，检查第一焦点、源文专属关系/因果、光影职责、摄影机服务和结束余像；严格结果失败时回导演选型，不继续堆制作控制。
+- 设计审查通过但没有关键帧/视频：manifest 的 `delivery_status` 必须是 `PROVISIONAL`，不能作为最终审美交付。
+
 - 风格误配、画面塑料或题材同质化：检查证据路由后读取 `visual-direction-profiles.md`；单个风格词不得触发强 profile。
 - 人物、衣物或环境呆滞且缺少可解释动力源：读取 `liveness-motion-grammar.md`；把动静角色、主体触发与相位差编译进直接提示词和制作控制，不增加模板字段。
 - 人物站位、面向、机位、边界或正反打失败：先用 `spatial-camera-runtime.md` 与 `blocking-facing-reference.md` 修同源 SVG/PNG 和事实合同；只有复杂桌边、纵深、人群或重复失败才读取 `spatial-camera-continuity.md`，最后修提示词。

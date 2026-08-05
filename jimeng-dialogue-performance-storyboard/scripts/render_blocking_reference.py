@@ -18,6 +18,7 @@ SHOT_GROUP_RE = re.compile(r"^S\d+-\d+$")
 PALETTE = ("#2563eb", "#d97706", "#dc2626", "#059669", "#7c3aed", "#475569")
 SHOT_TYPES = ("relationship", "over_shoulder")
 AXIS_SIDES = ("positive", "negative")
+FACING_MODES = ("mutual", "independent")
 
 
 def _number(value, label: str) -> float:
@@ -184,6 +185,25 @@ def _validate_over_shoulder(camera: dict, characters: list[dict]) -> None:
             raise ValueError(f'{actor["name"]} must physically face {other["name"]} for this dialogue reverse shot')
 
 
+def _validate_mutual_facing(camera: dict, characters: list[dict]) -> None:
+    """Catch the common semantic failure where a two-person relation diagram has parallel arrows."""
+    if camera["facing_mode"] != "mutual":
+        return
+    if len(characters) != 2:
+        raise ValueError(
+            f'{camera["label"]} facing_mode=mutual requires exactly two characters; '
+            "use facing_mode=independent for a multi-person composition"
+        )
+    first, second = characters
+    for actor, target in ((first, second), (second, first)):
+        desired = math.degrees(math.atan2(target["y"] - actor["y"], target["x"] - actor["x"])) % 360.0
+        if _angle_delta(actor["facing_deg"], desired) > 55.0:
+            raise ValueError(
+                f'{camera["label"]} {actor["name"]} must face {target["name"]} '
+                "for a mutual relationship camera; use facing_mode=independent when intentional"
+            )
+
+
 def _validate_state_geometry(state: dict) -> None:
     characters = state["characters"]
     camera = state["cameras"][0]
@@ -202,6 +222,8 @@ def _validate_state_geometry(state: dict) -> None:
                 raise ValueError(f'{character["name"]} overlaps solid anchor {anchor["label"]}')
     if camera["shot_type"] == "over_shoulder":
         _validate_over_shoulder(camera, characters)
+    elif camera["facing_mode"] == "mutual":
+        _validate_mutual_facing(camera, characters)
     by_name = {character["name"]: character for character in characters}
     for subject_name in camera["subjects"]:
         subject = by_name[subject_name]
@@ -330,6 +352,10 @@ def validate_spec(spec: dict) -> dict:
             shot_type = str(camera.get("shot_type", "relationship"))
             if shot_type not in SHOT_TYPES:
                 raise ValueError(f"camera[{camera_index}].shot_type must be relationship or over_shoulder")
+            default_facing_mode = "mutual" if shot_type == "relationship" and len(normalized_characters) == 2 else "independent"
+            facing_mode = str(camera.get("facing_mode", default_facing_mode)).strip()
+            if facing_mode not in FACING_MODES:
+                raise ValueError(f"camera[{camera_index}].facing_mode must be mutual or independent")
             foreground = str(camera.get("foreground_character", "")).strip()
             target = str(camera.get("target_character", "")).strip()
             axis_side = str(camera.get("axis_side", "positive"))
@@ -372,6 +398,7 @@ def validate_spec(spec: dict) -> dict:
                 "target_character": target,
                 "axis_side": axis_side,
                 "auto_position": auto_position,
+                "facing_mode": facing_mode,
             })
         normalized_states.append({
             "blocking_id": blocking_id,

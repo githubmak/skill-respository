@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+from pathlib import Path
 
-from scene_contract import recovery_issues, validate_contract
+from scene_contract import load_contract, recovery_issues, validate_contract
 
 
 CONTRACT = {
@@ -113,6 +115,13 @@ class SceneContractTests(unittest.TestCase):
 """
         self.assertIsNone(validate_contract(contract)["shots"][0]["performance"])
         self.assertEqual(recovery_issues(contract, markdown), [])
+
+    def test_rejects_duplicate_json_keys_in_contract_file(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "scene_contract.json"
+            path.write_text('{"version": 1, "scene_id": "S1", "scene_id": "S2"}', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "duplicate JSON key: scene_id"):
+                load_contract(path)
 
 
 if __name__ == "__main__":

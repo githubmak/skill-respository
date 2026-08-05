@@ -20,6 +20,8 @@ TEST_SCRIPTS = (
     "test_review_manifest.py",
     "test_render_blocking_reference.py",
     "test_scene_contract.py",
+    "test_prompt_preflight.py",
+    "test_creative_preflight.py",
 )
 
 

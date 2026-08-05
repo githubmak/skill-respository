@@ -37,6 +37,27 @@ PERFORMANCE_FIELDS = (
 VISUAL_FIELDS = ("first_focus", "core_fact", "end_image")
 
 
+def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
+    """Keep contract edits lossless; json.loads otherwise silently keeps the last key."""
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def load_contract(path: str | Path) -> dict:
+    source = Path(path).expanduser().resolve()
+    try:
+        return json.loads(
+            source.read_text(encoding="utf-8-sig"),
+            object_pairs_hook=_reject_duplicate_keys,
+        )
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid JSON: {exc}") from exc
+
+
 def _text(value: object, label: str, *, required: bool = True) -> str:
     result = str(value or "").strip()
     if required and not result:
@@ -185,7 +206,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         contract_path = Path(args.contract).expanduser().resolve()
-        contract = validate_contract(json.loads(contract_path.read_text(encoding="utf-8-sig")))
+        contract = validate_contract(load_contract(contract_path))
         issues = []
         if args.storyboard:
             markdown = Path(args.storyboard).expanduser().resolve().read_text(encoding="utf-8-sig")

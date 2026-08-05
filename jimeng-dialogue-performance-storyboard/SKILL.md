@@ -11,11 +11,11 @@ description: 将剧本、小说片段、分场稿或对白戏转换为可直接�
 
 目标固定为即梦及 Seedance。除源文不可读，或歧义会改变人物身份、剧情事实和关键动作因果外，不阻塞式追问。纯打斗、九宫格、改写、合规和纯配音任务不进入本流程，也不调用其他本地技能替代。
 
-macOS 使用 `python3 <script.py> <args...>`；Windows 使用 `powershell -ExecutionPolicy Bypass -File scripts/run_skill_tool.ps1 <script.py> <args...>`。平台差异不得跳过任何门禁。
+macOS 使用 `python3 <skill_root>/scripts/<script.py> <args...>`；Windows 使用 `powershell -ExecutionPolicy Bypass -File <skill_root>/scripts/run_skill_tool.ps1 <script.py> <args...>`。平台差异不得跳过任何门禁。`route_task.py` 返回的 `skill_root` 是唯一脚本根路径，避免误调用工作区中的旧版校验器。
 
 ## 路由
 
-先运行 `scripts/route_task.py <generate|audit|video-review>`；生成任务附 `--source <源文路径>`。只读取返回的 `read_first`，再读取命中的 `read_on_demand`，不要预载全部资料。常规生成必须先读：
+先解析技能目录为 `<skill_root>`，运行 `<skill_root>/scripts/route_task.py <generate|audit|video-review>`；生成任务附 `--source <源文路径>`。只读取返回的 `read_first`，再读取命中的 `read_on_demand`，不要预载全部资料。常规生成必须先读：
 
 1. [runtime-core.md](references/runtime-core.md)：唯一常驻生成合同，保护创意、审美、表演、运镜、空间、状态和不可降级质量。
 2. [output-template.md](references/output-template.md)：唯一输出结构和字段顺序。
@@ -33,13 +33,13 @@ macOS 使用 `python3 <script.py> <args...>`；Windows 使用 `powershell -Execu
 
 ## 强制流程
 
-1. 运行源文闸门并通读完整源文；冻结人物、台词/OS/OV/系统音、事件因果、场景、道具归属、起止状态和跨场关键状态。
+1. 运行源文闸门并通读完整源文；冻结人物、台词/OS/OV/系统音、事件因果、场景、道具归属、起止状态和跨场关键状态。拆镜前另建内部“源文事实清单”，锁定原文动作、道具、人数、终态和称谓；该清单不投喂，也不替代导演选型。
 2. 按 [runtime-core.md](references/runtime-core.md) 先完成创意发散、导演选型和不可降级视觉核心，再做生成可行性适配；不得让门禁提前把方案收敛为安全中景、通用微表情或机械微推。
-3. 按观众认知拆镜头组并完成导演选型后，建立非投喂 `scene_contract.json`，运行 `scripts/scene_contract.py <contract>`，再用 `route_task.py generate --source <源文> --contract <contract>` 二阶段路由。合同只冻结已选事实、表演载荷、空间ID和不可降级视觉核心，不能替导演选择演法或镜头类型。
-4. 命中空间参考时，在正式提示词前运行 `scripts/render_blocking_reference.py <spec.json> --storyboard <计划中的Markdown路径> --png --replace`。脚本自动把同源图片放到Markdown父目录，并以镜头组号精确命名为 `<镜头号>.svg` 与 `<镜头号>.png`；人物、边界、面向、实体遮挡、关系轴、近肩距离、门洞通视和完整视场全部通过后，才能从同一合同编译提示词。
-5. 按 [runtime-core.md](references/runtime-core.md) 完成表演 IR、受保护可见载荷和语义门禁，再生成直接提示词与制作控制；完稿后回译对照 IR。每完成一个子镜头，运行 `scripts/incremental_validate.py <scene_draft.md> --current-shot <Sx-xx-x>`，只修返回的最小范围。
+3. 按观众认知拆镜头组并完成导演选型后，建立非投喂 `scene_contract.json`，运行 `scripts/scene_contract.py <contract>`，再用 `route_task.py generate --source <源文> --contract <contract>` 二阶段路由。合同字段优先使用最终提示词中的可见事实原句；重复 JSON 键必须报错，不得静默覆盖。合同只冻结已选事实、表演载荷、空间ID和不可降级视觉核心，不能替导演选择演法或镜头类型。
+4. 命中空间参考时，在正式提示词前运行 `scripts/render_blocking_reference.py <spec.json> --storyboard <计划中的Markdown路径> --png --replace`。双人 `relationship` 状态默认要求双方相向；若剧情有意让人物看向道具、门外或其他目标，必须显式写 `facing_mode: independent`。脚本自动把同源图片放到Markdown父目录，并以镜头组号精确命名为 `<镜头号>.svg` 与 `<镜头号>.png`；人物、边界、面向、实体遮挡、关系轴、近肩距离、门洞通视和完整视场全部通过后，才能从同一合同编译提示词。
+5. 按 [runtime-core.md](references/runtime-core.md) 完成表演 IR、受保护可见载荷和语义门禁，再生成直接提示词与制作控制；编译前运行 `scripts/prompt_preflight.py <draft.md> --advisory` 和 `scripts/creative_preflight.py <draft.md> --advisory`。前者报告易误判措辞，后者检查创意最小载荷（第一焦点、关系/因果、光影职责、摄影机服务和结束余像）；两者都只报告，不改写创意文本。完稿后回译对照 IR。每完成一个子镜头，运行 `scripts/incremental_validate.py <scene_draft.md> --current-shot <Sx-xx-x>`，只修返回的最小范围。
 6. 严格使用当前模板导出；`both` 从同一事实合同生成 2.0、2.5 两份主文件和不可投喂索引。
-7. 保存后运行 `scripts/validate_storyboard.py --shadow-report --seedance-target <目标> <output.md>`，再运行 `scripts/scene_contract.py <contract> --storyboard <output.md>` 检查受保护事实与结尾残留；逐镜通过不能替代完整文件、跨场和双版本校验。
+7. 保存后运行 `scripts/validate_storyboard.py --shadow-report --seedance-target <目标> <output.md>`、`scripts/scene_contract.py <contract> --storyboard <output.md>`、`scripts/prompt_preflight.py <output.md>` 和 `scripts/creative_preflight.py <output.md>`；后两个脚本默认严格阻断会污染终态判断或把镜头退化成通用拍法的结果。逐镜通过不能替代完整文件、跨场和双版本校验。
 8. 工程校验通过后必须读取并执行 [review-pipeline.md](references/review-pipeline.md)。设计复核不可关闭；有关键帧/视频时按档位追加真实画面复核，最后创建并验证 review manifest。任何修订按 `field -> shot -> pair -> window -> scene` 最小升级并重跑受影响门禁；只有事实合同或空间锁广泛级联错误时才重写场景。
 
 ## 不可绕过
@@ -50,6 +50,7 @@ macOS 使用 `python3 <script.py> <args...>`；Windows 使用 `powershell -Execu
 - 直接提示词必须独立成立，以当前可见事实开头，只完成一个获准转换，并把最后20%的稳定终态写入正文。`【状态继承】` 只能压缩复写该终态，不得新增事实。
 - 关键帧、直接提示词和制作控制必须来自同一事实合同；制作控制不得新增另一套主体、构图、光源、运镜、表演、道具或终态。
 - 不以机械校验句、空泛美感词、堆叠运镜或更长提示词修复问题。工程通过不能代替设计审美与真实画面判断，技术指标通过也不能覆盖语义失败。
+- 连续两次同级局部修复仍只是在补字段、压缩文字或重复控制句时，必须升级为重新选型、拆镜或重做光影机制；禁止继续堆补丁把创意核心磨平。
 
 ## 维护
 

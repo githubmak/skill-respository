@@ -1,6 +1,6 @@
 # 强制审查流程
 
-本文件在完整工程校验通过后强制读取。审查产物、manifest 和修复日志均为非投喂文件，不得写入即梦主提示词。工程通过只证明结构和可解析约束成立，不能代替设计、美感或真实画面判断。
+本文件在完整工程校验通过后强制读取。审查产物、manifest 和修复日志均为非投喂文件，不得写入即梦主提示词。工程通过只证明结构和可解析约束成立，不能代替设计、美感或真实画面判断。设计审查通过但真实画面为 `NOT_RUN` 时只能标记 `PROVISIONAL`；只有设计与真实画面都为 `PASS` 才能标记 `FINAL`。
 
 生成阶段已经在每镜正文前完成 `performance_ir -> 受保护可见载荷` 语义门禁；本审查不得补做正文里不存在的表演，只负责确认编译结果没有丢失。
 
@@ -22,7 +22,7 @@
 
 ## 3. 修复与复验
 
-设计或视觉结果为 `REVISE` 时，按 `field -> shot -> pair -> window -> scene` 修复；同级最多两次，仍失败才升级。只改失败事实及其直接依赖，不以平庸镜头替换创意胜者。修改后重新运行受影响的增量校验、完整校验和两层审查；事实合同或空间锁广泛级联错误时才重写场景。
+设计或视觉结果为 `REVISE` 时，按 `field -> shot -> pair -> window -> scene` 修复；同级最多两次，仍失败才升级。只改失败事实及其直接依赖，不以平庸镜头替换创意胜者。修改后重新运行受影响的增量校验、完整校验和两层审查；事实合同或空间锁广泛级联错误时才重写场景。若连续两次修复仍只产生字段补丁、提示词压缩或重复控制句，必须回到导演选型，重新选择镜头机制、拆分任务或重做光影职责。
 
 ## 4. 审查清单
 
@@ -33,4 +33,4 @@ python3 scripts/review_manifest.py create --source <source> --output <main-outpu
 python3 scripts/review_manifest.py verify --manifest <review.json>
 ```
 
-`independent` 必须提供非空 `reviewer_context_id`。manifest 用 SHA-256 绑定源文和所有主输出；任何字节变化都使旧结论 `STALE`，必须重跑受影响审查并重建。交付条件是 manifest 为 `current`、设计审查为 `PASS`，且视觉状态符合所选档位；哈希只证明审查对应相同字节，不证明审查者身份或上下文新鲜度。
+`independent` 必须提供非空 `reviewer_context_id`。manifest 用 SHA-256 绑定源文和所有主输出；任何字节变化都使旧结论 `STALE`，必须重跑受影响审查并重建。`review_manifest.py` 会同时写出 `delivery_status`：设计和视觉均为 `PASS` 才是 `FINAL`，否则为 `PROVISIONAL`；哈希只证明审查对应相同字节，不证明审查者身份或上下文新鲜度。

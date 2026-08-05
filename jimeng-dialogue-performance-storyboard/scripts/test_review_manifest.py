@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from review_manifest import build_manifest, verify_manifest, write_manifest
+from review_manifest import build_manifest, delivery_status, verify_manifest, write_manifest
 
 
 class ReviewManifestTests(unittest.TestCase):
@@ -20,12 +20,19 @@ class ReviewManifestTests(unittest.TestCase):
             source.write_text("原始剧情", encoding="utf-8")
             output.write_text("原始分镜", encoding="utf-8")
             payload = build_manifest(source, [output], "self_check", "PASS", "NOT_RUN")
+            self.assertEqual(payload["delivery_status"], "PROVISIONAL")
             write_manifest(manifest, payload)
             self.assertEqual("current", verify_manifest(manifest)["status"])
             output.write_text("修改后的分镜", encoding="utf-8")
             stale = verify_manifest(manifest)
             self.assertEqual("stale", stale["status"])
             self.assertEqual("STALE", stale["effective_review_status"])
+            self.assertEqual("STALE", stale["delivery_status"])
+
+    def test_only_design_and_visual_pass_is_final(self) -> None:
+        self.assertEqual(delivery_status("PASS", "PASS"), "FINAL")
+        self.assertEqual(delivery_status("REVISE", "PASS"), "PROVISIONAL")
+        self.assertEqual(delivery_status("PASS", "NOT_RUN"), "PROVISIONAL")
 
     def test_self_check_cannot_claim_independence(self) -> None:
         with tempfile.TemporaryDirectory() as root:
