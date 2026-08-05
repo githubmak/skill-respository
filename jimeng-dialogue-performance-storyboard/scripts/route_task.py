@@ -79,6 +79,9 @@ def route(mode, source=None):
         reasons["references/prompt-performance-rules.md"] = ["three or more speaking roles"]
         on_demand.append("references/spatial-camera-continuity.md")
         reasons.setdefault("references/spatial-camera-continuity.md", []).append("three or more speaking roles")
+    if intake.get("performance_cues"):
+        on_demand.append("references/prompt-performance-rules.md")
+        reasons.setdefault("references/prompt-performance-rules.md", []).append("explicit source performance cue")
     on_demand = list(dict.fromkeys(on_demand))
     return {
         "pass": True,
@@ -94,7 +97,9 @@ def route(mode, source=None):
             "max_local_repair_attempts": 2,
             "scope_order": ["field", "shot", "pair", "window", "scene"],
         }],
-        "run_after_generation": ["scripts/validate_storyboard.py", "scripts/concise_storyboard.py"],
+        "run_after_generation": ["scripts/validate_storyboard.py"],
+        "run_after_review": ["scripts/review_manifest.py create", "scripts/review_manifest.py verify"],
+        "optional_after_delivery": ["scripts/concise_storyboard.py"],
         "preload_all_references": False,
         "primary_output_unchanged": True,
         "source_gate": intake,

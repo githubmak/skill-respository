@@ -16,6 +16,10 @@ from pathlib import Path
 
 SCENE_RE = re.compile(r"^(?:场景|地点)[：:]|^\d+-\d+\b|^SCENE\b", re.I)
 DIALOGUE_RE = re.compile(r"^([^：:]{1,24})(?:（[^）]*）)?[：:](.+)$")
+PERFORMANCE_CUE_LINE_RE = re.compile(
+    r"^(?P<speaker>[^：:]{1,24}?)(?P<speaker_cue>（[^）]*）)?[：:](?P<body>.+)$"
+)
+LEADING_PERFORMANCE_CUE_RE = re.compile(r"^(?P<space>\s*)(?P<cue>（[^）]*）)(?P<dialogue>[\s\S]*)$")
 INLINE_SPEAKER_RE = re.compile(
     r"(?:^|[\n。！？；;”’])\s*([\u4e00-\u9fffA-Za-z0-9_·]{1,12})(?:（[^）]*）)?[：:](?=\s*[“\"‘']|[^/\n]{2,})",
     re.M,
@@ -76,7 +80,8 @@ def inspect_text(text: str) -> dict:
     if not compact:
         blocking.append(_issue("SOURCE_EMPTY", "源文为空，无法建立场景与状态底图"))
 
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    numbered_lines = [(number, line.strip()) for number, line in enumerate(text.splitlines(), start=1) if line.strip()]
+    lines = [line for _, line in numbered_lines]
     scene_lines = [line for line in lines if SCENE_RE.search(line)]
     dialogue_lines = [line for line in lines if DIALOGUE_RE.match(line) and not SCENE_RE.search(line)]
     action_lines = [line for line in lines if ACTION_RE.search(line)]
@@ -89,6 +94,7 @@ def inspect_text(text: str) -> dict:
         speaker = match.group(1).strip()
         if speaker not in speakers:
             speakers.append(speaker)
+    performance_cues = _performance_cues(numbered_lines)
 
     if compact and not scene_lines:
         advisories.append(_issue("NO_SCENE_ANCHOR", "未检测到场景标题；按地点、时间和现实层建立空间索引", "advisory"))
@@ -121,7 +127,9 @@ def inspect_text(text: str) -> dict:
             "action_line_count": len(action_lines),
             "speaker_count": len(speakers),
             "speakers": speakers[:32],
+            "performance_cue_count": len(performance_cues),
         },
+        "performance_cues": performance_cues,
         "risk_flags": risk_flags,
         "style_evidence": _style_evidence(text),
         "source_fidelity": {
@@ -130,6 +138,37 @@ def inspect_text(text: str) -> dict:
             "visual_inference_allowed": True,
         },
     }
+
+
+def _performance_cues(numbered_lines: list[tuple[int, str]]) -> list[dict]:
+    """Bind explicit source performance parentheticals to their exact dialogue line."""
+    cues: list[dict] = []
+    for line_number, line in numbered_lines:
+        if SCENE_RE.search(line):
+            continue
+        match = PERFORMANCE_CUE_LINE_RE.match(line)
+        if not match:
+            continue
+        speaker = match.group("speaker").strip()
+        body = match.group("body")
+        leading = LEADING_PERFORMANCE_CUE_RE.match(body)
+        dialogue = leading.group("dialogue").strip() if leading else body.strip()
+        associations = []
+        if match.group("speaker_cue"):
+            associations.append(("speaker_suffix", match.group("speaker_cue")))
+        if leading:
+            associations.append(("dialogue_prefix", leading.group("cue")))
+        for position, cue in associations:
+            cues.append({
+                "line_number": line_number,
+                "speaker": speaker,
+                "cue": cue,
+                "cue_text": cue[1:-1],
+                "cue_position": position,
+                "dialogue": dialogue,
+                "source_line": line,
+            })
+    return cues
 
 
 def inspect_path(source_path: str, report_path: str | None = None, include_text: bool = False) -> dict:

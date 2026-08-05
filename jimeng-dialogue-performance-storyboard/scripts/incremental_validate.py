@@ -204,6 +204,8 @@ def _issue(message: str, default_scope: str, shot_ids: list[str]) -> dict:
 
 
 def _repair_scope(message: str, default_scope: str) -> str:
+    if "显式时间窗" in message or "结束边界失败" in message:
+        return "shot"
     if any(term in message for term in ("上一镜", "跨镜头组", "物品状态", "支撑点", "连续肩后镜")):
         return "pair"
     if any(term in message for term in ("连续三镜", "three consecutive", "连续五镜")):
@@ -219,6 +221,8 @@ def _issue_code(message: str) -> str:
     rules = (
         (("missing 【", "镜号应为"), "FIELD_STRUCTURE"),
         (("over 500",), "DIRECT_PROMPT_LENGTH"),
+        (("显式时间窗", "时间空档", "未声明重叠", "区间越过镜头时长"), "TIMING_WINDOW"),
+        (("结束边界失败", "结束状态新增未入正文"), "STATE_BOUNDARY"),
         (("OS/OV/系统音", "OS说话人", "口型", "visible dialogue"), "SPEECH_CONTRACT"),
         (("时空光照", "时段", "主光源", "外部亮度", "天空黑位"), "TEMPORAL_LIGHTING_CONTINUITY"),
         (("关键帧", "KEYFRAME"), "KEYFRAME_CONTRACT"),
@@ -239,6 +243,10 @@ def _issue_code(message: str) -> str:
 
 
 def _repair_fields(message: str, scope: str) -> list[str]:
+    if "显式时间窗" in message:
+        return ["【镜号】", "【口型分窗】"]
+    if "结束边界失败" in message:
+        return ["【画面描述｜直接复制】", "【状态继承】"]
     fields = [label for label in FIELD_LABELS if label in message]
     if not fields:
         if any(term in message for term in ("口型", "台词", "OS/OV/系统音", "OS说话人", "声音")):

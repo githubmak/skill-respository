@@ -46,6 +46,20 @@ class SourceGateTests(unittest.TestCase):
         self.assertFalse(result["pass"])
         self.assertTrue(any(item["code"] == "SOURCE_MISSING" for item in result["blocking"]))
 
+    def test_performance_cues_remain_bound_to_exact_dialogue(self) -> None:
+        result = inspect_text("甲（压着嗓子）：别出声。\n乙：（笑）你也怕了？")
+        self.assertEqual(2, result["stats"]["performance_cue_count"])
+        first, second = result["performance_cues"]
+        self.assertEqual(
+            ("甲", "（压着嗓子）", "speaker_suffix", "别出声。"),
+            (first["speaker"], first["cue"], first["cue_position"], first["dialogue"]),
+        )
+        self.assertEqual(
+            ("乙", "（笑）", "dialogue_prefix", "你也怕了？"),
+            (second["speaker"], second["cue"], second["cue_position"], second["dialogue"]),
+        )
+        self.assertEqual("乙：（笑）你也怕了？", second["source_line"])
+
 
 if __name__ == "__main__":
     unittest.main()

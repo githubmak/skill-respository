@@ -1177,7 +1177,7 @@ def _retry_examples(retry_context_path):
     if fields & {"full_prompt", "camera_beat_map", "dramatic_design", "coverage_role"}:
         paths.append(os.path.join(skill_root, "references", "format_example.txt"))
     if fields & {"performance_contract", "continuity_contract", "reroll_control", "qa_metadata"}:
-        paths.append(os.path.join(skill_root, "references", "quality_exemplar", "S2-03_high_quality_example.txt"))
+        paths.append(os.path.join(skill_root, "references", "quality_exemplar", "performance_continuity_example.txt"))
     return [path for path in paths if os.path.isfile(path)]
 
 

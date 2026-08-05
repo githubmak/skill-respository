@@ -34,6 +34,7 @@ def main():
     steps.append(_run("rule_consistency", [sys.executable, _script("check_rule_consistency.py")]))
     steps.append(_run("skill_surface", [sys.executable, _script("audit_skill_surface.py")]))
     steps.append(_run("source_gate", [sys.executable, _script("test_source_gate.py")]))
+    steps.append(_run("seedance_target", [sys.executable, _script("test_seedance_target.py")]))
     steps.append(_run("speech_events", [sys.executable, _script("test_speech_events.py")]))
     steps.append(_run("validation_receipt", [sys.executable, _script("test_validation_receipt.py")]))
     steps.append(_run("incremental_master_validation", [sys.executable, _script("test_incremental_master_validation.py")]))
@@ -46,6 +47,9 @@ def main():
     steps.append(_run("quality_control_matrix", [sys.executable, _script("test_quality_control_matrix.py")]))
     steps.append(_run("keyframe_pipeline", [sys.executable, _script("test_keyframe_pipeline.py")]))
     steps.append(_run("visual_ab_review", [sys.executable, _script("test_visual_ab_review.py")]))
+    steps.append(_run("visual_calibration", [
+        sys.executable, os.path.join(SCRIPT_DIR, "calibration", "test_visual_calibration_lab.py"),
+    ]))
     steps.append(_run("golden_jimeng", [sys.executable, _script("golden_jimeng_check.py")]))
     steps.append(_run("edge_cases", [sys.executable, _script("test_edge_cases.py")]))
     if args.source:

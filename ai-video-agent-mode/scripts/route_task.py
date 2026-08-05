@@ -14,7 +14,6 @@ ROUTES = {
         "agents": True,
         "read_first": ["references/stage_gates.md"],
         "read_on_demand": [
-            ".cache/stage_summary/<phase>.json",
             "references/contracts/contract_index.md",
         ],
         "run_only": ["scripts/workflow_supervisor.py"],
@@ -69,7 +68,7 @@ ROUTES = {
             "packet.constraints_path",
             "packet.retry_context_path",
         ],
-        "read_on_demand": [".cache/stage_summary/<phase>.json"],
+        "read_on_demand": [],
         "run_only": [
             "scripts/record_batch_provenance.py",
             "scripts/merge_agent_outputs.py",

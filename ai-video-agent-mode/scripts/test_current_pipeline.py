@@ -324,9 +324,9 @@ def run():
         _write(retry_context_path, {"items": [{"repair_fields": ["full_prompt"]}]})
         assert [os.path.basename(path) for path in _retry_examples(retry_context_path)] == ["format_example.txt"]
         _write(retry_context_path, {"items": [{"repair_fields": ["performance_contract"]}]})
-        assert [os.path.basename(path) for path in _retry_examples(retry_context_path)] == ["S2-03_high_quality_example.txt"]
+        assert [os.path.basename(path) for path in _retry_examples(retry_context_path)] == ["performance_continuity_example.txt"]
         _write(retry_context_path, {"items": [{"repair_fields": ["full_prompt", "qa_metadata"]}]})
-        assert {os.path.basename(path) for path in _retry_examples(retry_context_path)} == {"format_example.txt", "S2-03_high_quality_example.txt"}
+        assert {os.path.basename(path) for path in _retry_examples(retry_context_path)} == {"format_example.txt", "performance_continuity_example.txt"}
         assert INTERNAL_TITLE_LEAK.search("S02 | S1-02 | | 11.6s | dialogue | latent")
         assert not INTERNAL_TITLE_LEAK.search("### S1-02｜11.6秒")
         assert "主角" in PLACEHOLDER_CHARACTER_NAMES

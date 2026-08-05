@@ -13,6 +13,7 @@ from production_intelligence import (
     perspective_scale_contract_issues,
     predict_action_failure,
     prop_lifecycle_contract_issues,
+    prop_lifecycle_risk,
     spatial_facing_issues,
 )
 
@@ -33,6 +34,8 @@ def _categories(prompt, source=""):
 
 def _test_visual_prior_classifier():
     assert "negative_concept_priming" in _categories("女人不戴护士帽，站在客厅")
+    assert "negative_concept_priming" in _categories("人物不要厨师帽，背景不是餐厅")
+    assert "negative_concept_priming" not in _categories("不新增人物，不重复主体，避免画面闪烁")
     assert "back_facing_eyeline" in _categories("男人背对镜头，望向某人")
     assert "back_facing_eyeline" not in _categories(
         "男人背对镜头，胸口朝窗，头向画面左转20度，看向门口固定声源"
@@ -66,6 +69,9 @@ def _test_prop_and_action_contracts():
     assert not prop_lifecycle_contract_issues({"prop_lifecycle_contract": contract}, prompt, True)
     broken = dict(contract, end_location="男孩右手掌心")
     assert prop_lifecycle_contract_issues({"prop_lifecycle_contract": broken}, prompt, True)
+    assert prop_lifecycle_risk("角色把铜制罗盘递给同伴")
+    assert prop_lifecycle_risk("角色拿起未列入词典的怀表")
+    assert not prop_lifecycle_risk("角色站在门口观察同伴")
     risky = {
         "full_prompt": "角色同时递出手机并抓住对方，摄影机环绕，玻璃倒影遮挡，没有稳定终态。",
         "qa_metadata": {"action_budget": {"primary_action_count": 2, "physical_camera_move_count": 1}},
@@ -117,12 +123,12 @@ def _test_perspective_and_lighting():
 
 def _test_spatial_facing():
     valid = (
-        "摄影机位于门外院地，朝屋内拍摄。沈青乔站在门槛外侧前景，背对摄影机，"
-        "身体、胸口和脚尖面向卫景耘；卫景耘始终站在门槛内侧后景，身体和正面朝向沈青乔，"
-        "正面和双肩可见。二人相互面对。沈青乔背影只遮挡卫景耘左侧下半身，"
-        "卫景耘脸、双手和木棍仍可见，中央留出视觉通道。"
+        "摄影机位于门外院地，朝屋内拍摄。甲站在门槛外侧前景，背对摄影机，"
+        "身体、胸口和脚尖面向乙；乙始终站在门槛内侧后景，身体和正面朝向甲，"
+        "正面和双肩可见。二人相互面对。甲背影只遮挡乙左侧下半身，"
+        "乙脸、双手和木棍仍可见，中央留出视觉通道。"
     )
-    assert not spatial_facing_issues({}, valid, ["沈青乔", "卫景耘"])
+    assert not spatial_facing_issues({}, valid, ["甲", "乙"])
     invalid = "摄影机在门槛外侧，甲在门槛外侧前景，乙在门槛内侧后景，两人对峙并面向镜头，门外夜光留在背景。"
     issues = spatial_facing_issues({}, invalid, ["甲", "乙"])
     assert any("分别写A身体面向B" in issue for issue in issues)
@@ -130,6 +136,7 @@ def _test_spatial_facing():
     assert any("门外夜色" in issue for issue in issues)
     assert spatial_facing_issues({}, "女主回家后直接站在门槛内侧。", ["女主"])
     assert spatial_facing_issues({}, "甲和乙各提竹篮，双竹篮归属固定。", ["甲", "乙"])
+    assert spatial_facing_issues({}, "甲和乙各持一枚罗盘，两枚罗盘归属固定。", ["甲", "乙"])
     authorized = (
         "甲身体、胸口和脚尖面向乙，乙身体、胸口和脚尖面向甲，两人对峙。"
         "源文为打破第四面墙表演，2.0-3.0秒仅甲短暂直视镜头，甲身体仍面向乙；"

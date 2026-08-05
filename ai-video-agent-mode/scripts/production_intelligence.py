@@ -10,17 +10,25 @@ import difflib
 import re
 
 
-NEGATIVE_VISUAL_CONCEPTS = (
-    "护士帽", "护士服", "白大褂", "医院", "病房", "校服", "教室",
-    "警帽", "警服", "警局", "军装", "婚纱", "教堂", "囚服", "法庭",
+NEGATIVE_VISUAL_CLAUSE_RE = re.compile(
+    r"(?:不要(?:出现|生成|添加|戴|带|穿)?|禁止(?:出现|生成|添加)?|避免(?:出现|生成|添加)?|"
+    r"不是|不戴|不带|不穿|去掉|去除|移除|排除|没有)"
+    r"(?P<concept>[^，。；;\n]{1,18})"
 )
-PROP_WORDS = (
-    "手机", "平板", "电脑", "书", "文件", "照片", "证件", "镜子", "镜面",
-    "表盘", "杯", "钥匙", "卡", "银行卡", "笔", "包", "外套", "武器",
+SAFE_NEGATIVE_ARTIFACT_TERMS = (
+    "新增人物", "重复人物", "新增主体", "重复主体", "多余人物", "多余主体",
+    "变形", "畸形", "错位", "穿模", "粘连", "融合", "断裂", "扭曲", "拉伸",
+    "抖动", "闪烁", "漂移", "跳变", "乱码", "水印", "字幕", "标志", "logo",
+    "噪点", "失焦", "模糊", "过曝", "死黑", "偏色", "污染", "锯齿", "裁切",
+    "光晕", "粒子", "运动模糊", "鬼影", "压缩伪影", "色带", "摩尔纹",
 )
-PROP_ACTIONS = (
-    "拿", "握", "递", "接", "放", "推", "拉", "翻", "看", "读", "展示",
-    "操作", "点击", "滑动", "塞", "取出", "收起", "佩戴", "脱下",
+PROP_MANIPULATION_RE = re.compile(
+    r"(?:把|将)(?P<object_after_ba>[\u4e00-\u9fffA-Za-z0-9_·]{1,12})"
+    r"[^，。；;\n]{0,8}(?:拿起|拿出|取出|握住|递给|递出|交给|接过|接住|放下|放到|"
+    r"推开|拉开|翻开|点击|滑动|操作|塞进|收起|佩戴|脱下|展示)|"
+    r"(?:拿起|拿出|取出|握住|递给|递出|交给|接过|接住|放下|放到|推开|拉开|翻开|"
+    r"点击|滑动|操作|塞进|收起|佩戴|脱下|展示|阅读|玩)"
+    r"(?P<object_after_action>[\u4e00-\u9fffA-Za-z0-9_·]{1,12})"
 )
 DEPTH_TERMS = ("前景", "中景", "后景", "近处", "远处", "靠近镜头", "远离镜头")
 COLLECTIVE_SUBJECTS = ("所有清晰入画人物", "全部清晰入画人物", "所有可见人物")
@@ -48,7 +56,11 @@ CAMERA_VISIBLE_PLANE_TERMS = (
 )
 DOORWAY_EVENT_TERMS = ("回家", "进门", "走进", "进入屋内", "跨过门槛", "跨进门槛", "迈过门槛")
 OCCLUSION_RESULT_TERMS = ("仍可见", "保持可见", "清晰可见", "不被遮住", "露出", "视觉通道", "视线通道", "中央空隙")
-SIMILAR_PROP_GROUP_RE = re.compile(r"(?:双|两个|两只|两件)(?:鱼篓|竹篓|菜篓|竹篮|菜篮|篮子|背篓|木棍|拐杖)")
+SIMILAR_PROP_GROUP_RE = re.compile(
+    r"(?:双|两个|两只|两件|两根|两把|两盏|两部|两台|两枚)"
+    r"(?P<object>[\u4e00-\u9fffA-Za-z0-9_·]{1,10})"
+)
+NON_PROP_PAIRED_OBJECTS = ("手", "脚", "眼", "耳", "臂", "腿", "肩", "膝", "人", "人物", "孩子", "男女")
 PROP_DISTINCTION_TERMS = (
     "不同", "区分", "圆口", "方口", "深色", "浅色", "宽", "窄", "高筒", "矮筒", "鱼", "菜",
     "布盖", "藤编", "竹编", "粗编", "细编", "形状", "颜色", "内容物", "尺寸差",
@@ -60,12 +72,14 @@ def classify_visual_prior_risks(prompt, source_text=""):
     text = str(prompt or "")
     source = str(source_text or "")
     risks = []
-    for concept in NEGATIVE_VISUAL_CONCEPTS:
-        if re.search(r"(?:不要|禁止|避免|不是|没有|不戴|不穿|去掉).{0,5}" + re.escape(concept), text):
-            risks.append(_risk(
-                "negative_concept_priming", "high", concept,
-                "删除该错误概念，改写真实身份、服装、发型和目标场景固定锚点",
-            ))
+    for match in NEGATIVE_VISUAL_CLAUSE_RE.finditer(text):
+        concept = match.group("concept").strip()
+        if not concept or any(term in match.group(0) for term in SAFE_NEGATIVE_ARTIFACT_TERMS):
+            continue
+        risks.append(_risk(
+            "negative_concept_priming", "high", concept,
+            "删除该错误概念，改写真实身份、服装、发型和目标场景固定锚点",
+        ))
     if re.search(r"背对(?:镜头|摄影机).{0,24}(?:看向|望向|盯着|凝视)(?:某人|人物|角色|他|她)", text):
         risks.append(_risk(
             "back_facing_eyeline", "high", "背对镜头却看向未空间化的人物",
@@ -225,14 +239,22 @@ def spatial_facing_issues(metadata, prompt="", visible_characters=None):
     if len(visible) >= 2 and any(term in text for term in ("前景", "近处")) and any(term in text for term in ("后景", "远处")):
         if "遮挡" not in text or not any(term in text for term in OCCLUSION_RESULT_TERMS):
             issues.append("具名前后景人物必须写允许遮挡部位及后景脸/手/关键道具的可见结果；占比只能辅助")
-    if SIMILAR_PROP_GROUP_RE.search(text) and not any(term in text for term in PROP_DISTINCTION_TERMS):
+    similar_group = next(
+        (
+            match.group("object")
+            for match in SIMILAR_PROP_GROUP_RE.finditer(text)
+            if not any(match.group("object").startswith(term) for term in NON_PROP_PAIRED_OBJECTS)
+        ),
+        "",
+    )
+    if similar_group and not any(term in text for term in PROP_DISTINCTION_TERMS):
         issues.append("同类道具同时入画必须用持有人加形状/颜色/内容物至少一项区分")
     return issues
 
 
 def prop_lifecycle_risk(value):
     text = _flatten_text(value)
-    return any(prop in text for prop in PROP_WORDS) and any(action in text for action in PROP_ACTIONS)
+    return bool(PROP_MANIPULATION_RE.search(text))
 
 
 def prop_lifecycle_contract_issues(metadata, prompt="", required=False):

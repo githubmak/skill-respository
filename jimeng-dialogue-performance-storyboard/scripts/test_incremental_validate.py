@@ -104,6 +104,26 @@ class IncrementalValidationTests(unittest.TestCase):
         self.assertTrue(result["final_full_validation_required"])
         self.assertFalse(result["primary_output_modified"])
 
+    def test_explicit_timing_failure_repairs_shot_header_and_window(self):
+        issue = _issue(
+            "S1-01-1: 【口型分窗】显式时间窗失败 -> 尾部空档 2-3s 未分配",
+            "field",
+            ["S1-01-1"],
+        )
+        self.assertEqual("TIMING_WINDOW", issue["code"])
+        self.assertEqual("shot", issue["repair_scope"])
+        self.assertEqual(["【镜号】", "【口型分窗】"], issue["fields"])
+
+    def test_state_boundary_failure_repairs_direct_and_state_in_one_shot(self):
+        issue = _issue(
+            "S1-01-1: 【状态继承】结束边界失败 -> 结束状态新增未入正文道具/支撑 -> 钥匙",
+            "field",
+            ["S1-01-1"],
+        )
+        self.assertEqual("STATE_BOUNDARY", issue["code"])
+        self.assertEqual("shot", issue["repair_scope"])
+        self.assertEqual(["【画面描述｜直接复制】", "【状态继承】"], issue["fields"])
+
     def test_fifth_shot_without_memory_anchor_returns_window_scope(self):
         children = [
             _child(

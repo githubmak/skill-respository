@@ -44,7 +44,7 @@ description: >
 | 情况 | 最小读取 |
 |---|---|
 | 新运行 | route 输出、`stage_gates.md` |
-| 续跑 | route 输出、最新 `.cache/stage_summary/<phase>.json` |
+| 续跑 | route 输出、`.cache/pipeline_state.json` 与当前阶段已验证产物 |
 | Agent 派发 | packet、`constraints_path`、对应 scaffold/cache、`agent_protocol.md` |
 | 单镜修复 | packet、`retry_context_path`、validator 点名字段 |
 | 审查 | 先运行 validator；再按 `contracts/contract_index.md` 读取命中的一个合同切片 |
@@ -65,6 +65,7 @@ description: >
 - 每个主镜只服务一个 `narrative_beat_id`；回切、第二目标、第二独立动作链或容量不足时拆镜。
 - Scene Lock 是空间、服装、道具活动区、光源与影调事实的唯一来源；后续阶段只消费，不重写。
 - `full_prompt` 只写当前可见、可执行画面事实。QA、负面词、工程数据、风险与分析标签留在独立字段。
+- 生产脚本不得按固定镜号、角色名、项目文件名或某一剧情道具执行定点分支；实体、场景、光源和活动道具从当前源文、配置与 Scene Lock 开放提取。测试夹具可使用虚构样例，但不得进入路由或运行时判断。
 - 最终完整 Markdown 必须包含项目级 `## 制作质量总控` 和逐镜 `【本镜制作控制】`，把画面质感、光效与曝光、动态美学、表演与情绪、穿帮控制、抽卡策略、蒙太奇与剪辑转译为用户可见的执行摘要；不得只存在于 `qa_metadata`、validator 或 engineering 视图。
 - `【本镜制作控制】` 不是第二套事实：七项中的可见执行事实必须逐项在 `【画面描述｜直接复制】` 获得语义落地；风险等级、人工检查、失败重试、后期和拆镜决定保留在制作控制。Export 生成逐项 grounding 报告，任一适用可见维度未落地即阻断。
 - Master Production 内部按 `visual_bible → aesthetic_director → continuity_compiler → full_prompt`

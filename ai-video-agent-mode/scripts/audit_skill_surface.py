@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 from contract_registry import AGENT_PHASE_NAMES
 
@@ -20,6 +21,15 @@ RETIRED_RELATIVE_PATHS = (
     "references/examples/emotion_example.json",
     "references/examples/scene_example.json",
     "scripts/modec_v4.py",
+    "scripts/apply_targeted_master_repair.py",
+    "scripts/prepare_episode7_e2e_fixture.py",
+    "scripts/validator/contamination.py",
+    "scripts/validator/field_types.py",
+    "scripts/validator/quality.py",
+)
+PROJECT_SPECIFIC_RUNTIME_PATTERNS = (
+    re.compile(r"\bif\s+(?:shot_id|subshot_id)\s*==\s*['\"]S\d", re.I),
+    re.compile(r"\bSELECTED_SHOT_IDS\b"),
 )
 
 
@@ -43,6 +53,18 @@ def audit(skill_root: str) -> list[str]:
     else:
         if "## §A — 归档分析记录结构" in contract:
             issues.append("archive-only §A remains in the active field contract")
+    scripts_dir = os.path.join(skill_root, "scripts")
+    for name in os.listdir(scripts_dir):
+        if not name.endswith(".py") or name.startswith("test_") or name == "golden_jimeng_check.py":
+            continue
+        path = os.path.join(scripts_dir, name)
+        try:
+            with open(path, "r", encoding="utf-8-sig") as handle:
+                source = handle.read()
+        except OSError:
+            continue
+        if any(pattern.search(source) for pattern in PROJECT_SPECIFIC_RUNTIME_PATTERNS):
+            issues.append("project-specific shot branch remains in production script: scripts/" + name)
     return issues
 
 

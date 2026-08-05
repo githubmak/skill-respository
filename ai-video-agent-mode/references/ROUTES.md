@@ -17,7 +17,7 @@
   `production_quality_knowledge.md` 或完整 Python 实现。
 - Worker 只处理 `packet.items`，先读 `constraints_path`；Master Production 再读 scaffold 和
   scene lock cache。`source_path` 仅在 packet 信息不足时作为局部回退。
-- 续跑先读 `.cache/stage_summary/<phase>.json`。只为 validator 点名的主镜或字段重开大产物。
+- 续跑先读 `.cache/pipeline_state.json` 和当前阶段已验证产物。只为 validator 点名的主镜或字段重开大产物。
 - 审查先运行 validator，再用 `contracts/contract_index.md` 定位一个相关切片；不要为了一个
   口型、道具或光影问题同时读取全部质量知识。
 - 只有静态/动态美学问题命中时，按需读取

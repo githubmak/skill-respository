@@ -125,6 +125,50 @@ class SemanticCollisionTests(unittest.TestCase):
         self.assertTrue(validator.has_camera_state("35mm低位机位轻微手持中景。"))
         self.assertTrue(validator.has_camera_state("镜头保持轻微手持感但主体稳定。"))
 
+    def test_unlisted_negative_visual_prior_is_rejected(self) -> None:
+        issues = validator.negative_priming_issues("人物不要厨师帽，背景不是餐厅。")
+        self.assertTrue(any("厨师帽" in issue and "餐厅" in issue for issue in issues), issues)
+
+    def test_artifact_negative_controls_are_not_visual_priors(self) -> None:
+        text = "不新增人物，不重复主体，避免画面闪烁，人物肢体不穿模。"
+        self.assertEqual([], validator.negative_priming_issues(text))
+        global_negative = "换脸、穿模、口型错位、背景重构、人物瞬移、模糊失焦、透视错乱、强光晕、过量粒子"
+        self.assertEqual([], validator.negative_priming_issues(global_negative, negative_field=True))
+
+    def test_unlisted_concept_in_negative_field_is_rejected(self) -> None:
+        issues = validator.negative_priming_issues("换脸、穿模、厨师帽、餐厅", negative_field=True)
+        self.assertTrue(any("厨师帽" in issue and "餐厅" in issue for issue in issues), issues)
+
+    def test_explicit_timing_windows_require_full_non_overlapping_coverage(self) -> None:
+        valid = "0.0-0.5秒锁位\n0.5-2.5秒台词\n2.5-3.0秒闭口余波"
+        self.assertEqual([], validator.explicit_timing_window_issues(valid, 3.0))
+        underfill = validator.explicit_timing_window_issues("0.0-1.0秒台词\n1.5-3.0秒余波", 3.0)
+        self.assertTrue(any("时间空档" in issue for issue in underfill), underfill)
+        overflow = validator.explicit_timing_window_issues("0.0-3.2秒台词", 3.0)
+        self.assertTrue(any("越过镜头时长" in issue for issue in overflow), overflow)
+        overlap = validator.explicit_timing_window_issues("0.0-2.0秒台词\n1.8-3.0秒反应", 3.0)
+        self.assertTrue(any("未声明重叠" in issue for issue in overlap), overlap)
+
+    def test_relative_timing_does_not_trigger_numeric_coverage_gate(self) -> None:
+        self.assertEqual([], validator.explicit_timing_window_issues("开口前停半拍，句末留短余波", 3.0))
+        self.assertEqual([], validator.explicit_timing_window_issues("句末留0.2-0.4秒停顿", 3.0))
+
+    def test_state_cannot_invent_actor_prop_or_screen_side(self) -> None:
+        direct = "甲站在画面左侧，身体面向乙，乙站在画面右侧，身体面向甲。"
+        state = "甲站在画面右侧，身体面向乙，右手握住钥匙；丙留在门外侧。"
+        issues = validator.state_grounding_issues(direct, state, ["甲", "乙", "丙"])
+        self.assertTrue(any("丙" in issue and "人物" in issue for issue in issues), issues)
+        self.assertTrue(any("钥匙" in issue for issue in issues), issues)
+        self.assertTrue(any("甲" in issue and "画面侧" in issue for issue in issues), issues)
+
+    def test_state_may_repeat_grounded_end_facts(self) -> None:
+        direct = (
+            "甲站在画面左侧，身体面向乙，从桌面拿起钥匙；最后20%甲右手握住钥匙，"
+            "仍停在画面左侧，身体面向乙。"
+        )
+        state = "甲右手握住钥匙，仍停在画面左侧，身体面向乙。"
+        self.assertEqual([], validator.state_grounding_issues(direct, state, ["甲", "乙"]))
+
 
 class SpatialFacingContractTests(unittest.TestCase):
     def test_each_visible_actor_requires_a_complete_spatial_contract(self) -> None:
@@ -728,6 +772,25 @@ class ShotTypeShadowTests(unittest.TestCase):
     def test_dialogue_performance_classification(self) -> None:
         prompt = "客厅平视近景，镜头固定。沈青乔开口说：“回来。”"
         self.assertEqual("dialogue_performance", validator.detect_shot_type(prompt))
+
+    def test_fixed_dialogue_rate_is_shadow_advice_only(self) -> None:
+        direct = (
+            "16:9，3D自然电影CG，客厅窗光照亮人物正脸。平视近景，镜头固定。"
+            "甲开口说：“这是一句明显超过两秒估算容量的可见对白。”说完闭口，乙听见后抬眼。"
+        )
+        block = (
+            "【镜号】\n1，2s，普通。\n\n"
+            f"【画面描述｜直接复制】\n{direct}\n\n"
+            "【表演与声音】\n甲说完闭口，乙闭口听。\n\n"
+            "【状态继承】\n甲乙仍相对站立。\n\n"
+            "【本镜制作控制】\n"
+        )
+        issues: list[str] = []
+        validator.validate_child("S1-01", 1, "1，2s，普通。", block, ["甲", "乙"], issues)
+        self.assertFalse(any("visible dialogue duration too short" in issue for issue in issues), issues)
+        text = "#### S1-01｜镜头组总时长：2s\n\n【出现人物】\n甲\n乙\n\n" + block
+        diagnostics = validator.shadow_validate(Path("dummy.md"), text)
+        self.assertTrue(any("dialogue_rate_estimate=" in item and "advisory_only=true" in item for item in diagnostics), diagnostics)
 
     def test_relationship_classification(self) -> None:
         prompt = "本镜画面内可见人数：2人。沈青乔与阿丰并肩站在溪边，身体面对溪水，镜头固定。"

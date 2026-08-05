@@ -12,6 +12,13 @@ from pathlib import Path
 QUALITY_CONTROL_FIELD = "【本镜制作控制】"
 SEEDANCE_TARGETS = {"auto", "2.0", "2.5", "both"}
 CHILD_FIELDS = ["【镜号】", "【画面描述｜直接复制】", "【表演与声音】", "【状态继承】", QUALITY_CONTROL_FIELD]
+EXPLICIT_TIME_WINDOW_RE = re.compile(
+    r"(?P<start>-?\d+(?:\.\d+)?)\s*[-–—~～至]\s*(?P<end>-?\d+(?:\.\d+)?)\s*(?:s|秒)",
+    re.I,
+)
+DECLARED_OVERLAP_TERMS = ("允许重叠", "声明重叠", "源文明示抢话", "后期声音重叠")
+DEFAULT_DIALOGUE_RATE_CHARS_PER_SECOND = 6.5
+DEFAULT_DIALOGUE_REACTION_MARGIN_SECONDS = 0.5
 KEYFRAME_IMAGE_FIELD = "【关键帧生图提示】"
 KEYFRAME_VIDEO_FIELD = "【即梦视频提示｜配合关键帧】"
 DIRECT_NEXT_FIELDS = (KEYFRAME_IMAGE_FIELD, KEYFRAME_VIDEO_FIELD, "【表演与声音】")
@@ -202,37 +209,24 @@ KEYFRAME_CAMERA_TERMS = (
     "闯入式镜头", "冲入画面", "时间断裂",
     "快速推", "快速拉", "快速横移", "手持抖动", "强运镜",
 )
-NEGATION_CUES_BEFORE = (
-    "不要", "不要出现", "不要戴", "不要带", "不要穿", "不能有", "不应有", "不出现", "不戴", "不带", "不穿", "不是", "不在",
-    "禁止", "避免", "去掉", "去除", "移除", "排除", "没有", "无", "非",
+NEGATIVE_PRIMING_CLAUSE_RE = re.compile(
+    r"(?:不要(?:出现|生成|添加|戴|带|穿)?|禁止(?:出现|生成|添加)?|避免(?:出现|生成|添加)?|"
+    r"不是|不戴|不带|不穿|去掉|去除|移除|排除|没有)"
+    r"(?P<concept>[^，。；;\n]{1,18})"
 )
-NEGATION_CUES_AFTER = ("不要出现", "不能出现", "不应出现", "不出现", "去掉", "去除", "移除", "排除", "不存在")
-NEGATIVE_PRIMING_GROUPS = (
-    (
-        "医疗职业/场景",
-        ("护士帽", "护士服", "病号服", "白大褂", "手术服", "听诊器", "医院", "病房", "诊室", "手术室"),
-        "改写目标发型、实际服装和目标地点固定锚点",
-    ),
-    (
-        "警务/军事职业与场景",
-        ("警帽", "警服", "警徽", "警局", "军帽", "军装", "迷彩服", "肩章", "战场"),
-        "改写人物真实身份、日常服装和目标场景",
-    ),
-    (
-        "学校/未成年人场景",
-        ("校服", "红领巾", "教室", "校园"),
-        "改写人物年龄、实际服装和目标地点",
-    ),
-    (
-        "婚礼/宗教场景",
-        ("婚纱", "头纱", "婚礼", "教堂", "僧袍", "道袍"),
-        "改写实际服装、发型和目标场景锚点",
-    ),
-    (
-        "司法/拘押场景",
-        ("囚服", "监狱", "法庭"),
-        "改写实际服装、人物关系和目标地点",
-    ),
+SAFE_NEGATIVE_ARTIFACT_TERMS = (
+    "漂移", "换脸", "变形", "错乱", "变色", "畸形", "穿模", "多手", "多臂",
+    "口型", "嘴部", "崩坏", "重构", "瞬移", "互换", "漂浮", "穿手", "跳帧",
+    "磨皮", "模糊", "失焦", "翻白眼", "呆滞", "机械", "循环", "重复", "抖动",
+    "忽高忽低", "拉长", "缩短", "尺度跳变", "浮空", "透视错乱", "广角畸变",
+    "新增人物", "新增主体", "多余人物", "多余主体", "闪烁", "乱码", "水印", "字幕",
+    "噪点", "过曝", "死黑", "偏色", "锯齿", "裁切", "粘连", "融合", "断裂",
+    "接触阴影缺失", "打滑", "步幅跳变", "无位移", "支撑点", "承载面", "轨迹断裂",
+    "光晕", "粒子", "运动模糊", "鬼影", "压缩伪影", "色带", "摩尔纹",
+)
+VISUAL_PRIOR_CONCEPT_RE = re.compile(
+    r"(?:帽|服|装|袍|裙|纱|徽|章|器|车|船|剑|刀|枪|室|房|厅|院|馆|局|校|场|"
+    r"堂|庭|狱|站|店|屋|宅|村|城|街|山|海|漠|林|洞|岛|护士|警察|军人|学生|僧人)$"
 )
 PHONE_OPERATION_TERMS = (
     "玩手机游戏", "玩手机", "玩手游", "打手游", "刷手机", "看手机", "浏览手机", "浏览消息",
@@ -927,31 +921,31 @@ def strip_quoted_content(text: str) -> str:
     return re.sub(r"[“\"][^”\"]*[”\"]", "", text)
 
 
-def has_negation_near(text: str, start: int, end: int) -> bool:
-    before = text[max(0, start - 14):start].rstrip()
-    after = text[end:min(len(text), end + 10)].lstrip()
-    flexible_prefix = re.search(
-        r"(?:不要|不能|不应|禁止|避免|去掉|去除|移除|排除|没有|不是|不戴|不带|不穿)[^，。；;\n]{0,6}$",
-        before,
-    )
-    return bool(flexible_prefix) or any(before.endswith(cue) for cue in NEGATION_CUES_BEFORE) or any(
-        after.startswith(cue) for cue in NEGATION_CUES_AFTER
-    )
-
-
 def negative_priming_issues(text: str, negative_field: bool = False) -> list[str]:
     cleaned = strip_quoted_content(text)
-    issues: list[str] = []
-    for label, terms, rewrite in NEGATIVE_PRIMING_GROUPS:
-        hits: list[str] = []
-        for term in terms:
-            for match in re.finditer(re.escape(term), cleaned):
-                if negative_field or has_negation_near(cleaned, match.start(), match.end()):
-                    hits.append(term)
-                    break
-        if hits:
-            issues.append(f"{label}：{','.join(dict.fromkeys(hits))}；{rewrite}")
-    return issues
+    if negative_field:
+        candidates = [
+            (part.strip(), part.strip())
+            for part in re.split(r"[，,、。；;\n]", cleaned)
+            if part.strip()
+        ]
+    else:
+        candidates = [
+            (match.group("concept").strip(), match.group(0))
+            for match in NEGATIVE_PRIMING_CLAUSE_RE.finditer(cleaned)
+        ]
+    leaked = [
+        candidate
+        for candidate, clause in candidates
+        if not any(term in clause for term in SAFE_NEGATIVE_ARTIFACT_TERMS)
+        and (not negative_field or VISUAL_PRIOR_CONCEPT_RE.search(candidate))
+    ]
+    if not leaked:
+        return []
+    return [
+        "负向场景先验：%s；删除错误概念，改写真实身份、服装、发型、道具和目标地点固定锚点"
+        % ",".join(dict.fromkeys(leaked))
+    ]
 
 
 def phone_operation_detected(text: str) -> bool:
@@ -2491,6 +2485,98 @@ def optional_function_count(block: str) -> int:
     return count
 
 
+def shot_duration_seconds(header: str) -> float | None:
+    match = re.search(r"，\s*(\d+(?:\.\d+)?)s\s*，", header, re.I)
+    return float(match.group(1)) if match else None
+
+
+def explicit_timing_window_issues(text: str, duration: float, tolerance: float = 0.01) -> list[str]:
+    """Validate numeric timing windows only; relative timing remains a semantic choice."""
+    windows: list[dict] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        for match in EXPLICIT_TIME_WINDOW_RE.finditer(line):
+            before = line[max(0, match.start() - 8):match.start()]
+            after = line[match.end():match.end() + 6]
+            if re.search(r"(?:约|大约|持续|时长|留|预留|间隔|停顿|通常为|约为)$", before) or re.match(
+                r"(?:左右|的?间隙|的?停顿|时长|范围)", after
+            ):
+                continue
+            windows.append({
+                "start": float(match.group("start")),
+                "end": float(match.group("end")),
+                "label": match.group(0),
+                "line_number": line_number,
+                "overlap_declared": any(term in line for term in DECLARED_OVERLAP_TERMS),
+            })
+    if not windows:
+        return []
+
+    issues: list[str] = []
+    valid = []
+    for window in windows:
+        if window["start"] < 0 or window["end"] <= window["start"]:
+            issues.append(f"无效区间 {window['label']}（第{window['line_number']}行）")
+            continue
+        if window["end"] > duration + tolerance:
+            issues.append(f"区间越过镜头时长 {window['label']} > {duration:g}s")
+        valid.append(window)
+    if not valid:
+        return issues
+
+    valid.sort(key=lambda item: (item["start"], item["end"]))
+    covered_end = 0.0
+    covering_window: dict | None = None
+    if valid[0]["start"] > tolerance:
+        issues.append(f"起始空档 0-{valid[0]['start']:g}s 未分配")
+    for window in valid:
+        if window["start"] > covered_end + tolerance:
+            issues.append(f"时间空档 {covered_end:g}-{window['start']:g}s 未分配")
+        elif window["start"] < covered_end - tolerance and not (
+            window["overlap_declared"] or (covering_window and covering_window["overlap_declared"])
+        ):
+            issues.append(f"未声明重叠：{window['label']} 从 {window['start']:g}s 与前一区间相交")
+        if window["end"] > covered_end:
+            covered_end = window["end"]
+            covering_window = window
+    if covered_end < duration - tolerance:
+        issues.append(f"尾部空档 {covered_end:g}-{duration:g}s 未分配")
+    return list(dict.fromkeys(issues))
+
+
+def state_grounding_issues(direct: str, state: str, cast_names: list[str]) -> list[str]:
+    """Reject only concrete end-state facts that are provably absent or contradictory."""
+    if not state:
+        return []
+    direct_clean = strip_quoted_content(direct)
+    state_clean = strip_quoted_content(state)
+    issues: list[str] = []
+    missing_actors = [name for name in cast_names if name in state_clean and name not in direct_clean]
+    if missing_actors:
+        issues.append("结束状态新增未入正文人物 -> " + "、".join(missing_actors))
+
+    missing_objects = [
+        anchor for anchor in _physical_object_anchors(state_clean)
+        if len(anchor) >= 2 and anchor not in direct_clean
+    ]
+    if missing_objects:
+        issues.append("结束状态新增未入正文道具/支撑 -> " + "、".join(dict.fromkeys(missing_objects)))
+
+    direct_contract = build_spatial_contract(direct_clean, cast_names)
+    state_contract = build_spatial_contract(state_clean, cast_names)
+    direct_facts = {fact.name: fact for fact in direct_contract.actors}
+    for fact in state_contract.actors:
+        before = direct_facts.get(fact.name)
+        if fact.screen_side and (not before or before.screen_side != fact.screen_side):
+            issues.append(f"结束状态中{fact.name}的画面侧未由正文落幅支持")
+        if fact.threshold_side and (not before or before.threshold_side != fact.threshold_side):
+            issues.append(f"结束状态中{fact.name}的门槛侧未由正文落幅支持")
+        if fact.facing_targets and (
+            not before or not set(fact.facing_targets).issubset(before.facing_targets)
+        ):
+            issues.append(f"结束状态中{fact.name}的身体面向未由正文落幅支持")
+    return list(dict.fromkeys(issues))
+
+
 def validate_child(
     group_id: str,
     number: int,
@@ -2521,6 +2607,8 @@ def validate_child(
     negative = extract_optional_field(block, "【本镜补充负面提示词｜直接复制】")
     keyframe_image = extract_optional_field(block, KEYFRAME_IMAGE_FIELD)
     keyframe_video = extract_optional_field(block, KEYFRAME_VIDEO_FIELD)
+    for issue in state_grounding_issues(direct, state, cast_names):
+        issues.append(f"{sid}: 【状态继承】结束边界失败 -> {issue}")
     for issue in quality_control_issues(quality_control, direct, cast_names):
         issues.append(f"{sid}: {issue}")
     optional_count = optional_function_count(block)
@@ -2666,15 +2754,10 @@ def validate_child(
         if len(keyframe_posture_hits) < 4:
             issues.append(f"{sid}: posture keyframes should repeat body support/contact structure in each static frame")
 
-    duration_match = re.search(r"，\s*(\d+(?:\.\d+)?)s\s*，", header)
-    spoken_chars = sum(len(re.sub(r"\s+", "", line)) for line in re.findall(r"“([^”]+)”", direct))
-    if duration_match and spoken_chars:
-        duration = float(duration_match.group(1))
-        min_duration = spoken_chars / 6.5 + 0.5
-        if duration + 0.01 < min_duration:
-            issues.append(
-                f"{sid}: visible dialogue duration too short -> {duration:g}s for {spoken_chars} chars, need about {min_duration:.1f}s"
-            )
+    duration = shot_duration_seconds(header)
+    if mouth_window and duration is not None:
+        for issue in explicit_timing_window_issues(mouth_window, duration):
+            issues.append(f"{sid}: 【口型分窗】显式时间窗失败 -> {issue}")
     hits = [word for word in BANNED_DIRECT if word in direct]
     if hits:
         issues.append(f"{sid}: banned direct-prompt terms -> {','.join(hits)}")
@@ -3153,6 +3236,21 @@ def shadow_validate(path: Path, text: str | None = None) -> list[str]:
                 f"semantic={semantic_state}; length_guidance={report.length_guidance}; "
                 f"disagreement={report.disagreement}"
             )
+            duration = shot_duration_seconds(child.group(1).strip())
+            spoken_chars = sum(
+                len(re.sub(r"\s+", "", line))
+                for line in visible_dialogue_quotes(direct)
+            )
+            if duration is not None and spoken_chars:
+                estimated_min = (
+                    spoken_chars / DEFAULT_DIALOGUE_RATE_CHARS_PER_SECOND
+                    + DEFAULT_DIALOGUE_REACTION_MARGIN_SECONDS
+                )
+                diagnostics.append(
+                    f"SHADOW {group_id}-{number}: dialogue_rate_estimate={estimated_min:.1f}s "
+                    f"for {spoken_chars} chars vs shot={duration:g}s; advisory_only=true; "
+                    "prefer measured dubbing/audio duration and explicit timing windows"
+                )
         for family, patterns in LIVENESS_PATTERN_FAMILIES.items():
             count = sum(any(re.search(pattern, direct) for pattern in patterns) for direct in group_directs)
             if count >= 3:
