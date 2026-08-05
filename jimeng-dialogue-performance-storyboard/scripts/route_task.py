@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from pathlib import Path
 
+from scene_contract import validate_contract
 from source_gate import inspect_path
 
 
@@ -15,7 +17,7 @@ RISK_REFERENCES = {
     "physical_support": "references/physical-structure-continuity.md",
     "prop_transfer": "references/physical-structure-continuity.md",
     "screen_or_text": "references/generation-risk-guards.md",
-    "multi_person": "references/spatial-camera-continuity.md",
+    "multi_person": "references/spatial-camera-runtime.md",
     "lighting_change": "references/visual-attraction-rules.md",
 }
 NARRATIVE_TERMS = re.compile(r"悬疑|误会|喜剧|惊吓|威胁|蒙太奇|闪回|梦境|追逐|无台词")
@@ -29,9 +31,39 @@ COMPLEX_CAMERA_TERMS = re.compile(
 COMPLEX_CAMERA_STRUCTURE = re.compile(
     r"(?:摄影机|镜头|机位)[^。；;\n]{0,24}(?:越过|绕到|穿过|贴近|跟随|升起|下降|俯冲|后撤|甩向|掠过)"
 )
+CRITICAL_PERFORMANCE_TERMS = re.compile(
+    r"拒绝|承认|否认|质问|坦白|道歉|告别|求婚|分手|背叛|隐瞒|秘密|保护|"
+    r"别进来|别走|住手|我知道了|原来是你|关系重定义"
+)
+CONTRACT_RISK_REFERENCES = {
+    "critical_performance_turn": ("references/prompt-performance-runtime.md",),
+    "multi_person": (
+        "references/prompt-performance-runtime.md",
+        "references/spatial-camera-runtime.md",
+        "references/blocking-facing-reference.md",
+    ),
+    "boundary": (
+        "references/spatial-camera-runtime.md",
+        "references/blocking-facing-reference.md",
+    ),
+    "prop_transfer": ("references/physical-structure-continuity.md",),
+    "physical_support": ("references/physical-structure-continuity.md",),
+    "screen_or_text": ("references/generation-risk-guards.md",),
+    "complex_camera": ("references/cinematic-grammar-library.md",),
+    "lighting_change": ("references/visual-attraction-rules.md",),
+}
 
 
-def route(mode, source=None):
+def _load_contract(contract) -> dict | None:
+    if contract is None:
+        return None
+    if isinstance(contract, dict):
+        return validate_contract(contract)
+    path = Path(contract).expanduser().resolve()
+    return validate_contract(json.loads(path.read_text(encoding="utf-8-sig")))
+
+
+def route(mode, source=None, contract=None):
     if mode == "video-review":
         return {
             "pass": True,
@@ -81,13 +113,22 @@ def route(mode, source=None):
         on_demand.append("references/cinematic-grammar-library.md")
         reasons["references/cinematic-grammar-library.md"] = ["complex camera path or viewpoint change"]
     if intake.get("stats", {}).get("speaker_count", 0) >= 3:
-        on_demand.append("references/prompt-performance-rules.md")
-        reasons["references/prompt-performance-rules.md"] = ["three or more speaking roles"]
-        on_demand.append("references/spatial-camera-continuity.md")
-        reasons.setdefault("references/spatial-camera-continuity.md", []).append("three or more speaking roles")
+        on_demand.append("references/prompt-performance-runtime.md")
+        reasons["references/prompt-performance-runtime.md"] = ["three or more speaking roles"]
+        on_demand.append("references/spatial-camera-runtime.md")
+        reasons.setdefault("references/spatial-camera-runtime.md", []).append("three or more speaking roles")
     if intake.get("performance_cues"):
-        on_demand.append("references/prompt-performance-rules.md")
-        reasons.setdefault("references/prompt-performance-rules.md", []).append("explicit source performance cue")
+        on_demand.append("references/prompt-performance-runtime.md")
+        reasons.setdefault("references/prompt-performance-runtime.md", []).append("explicit source performance cue")
+    if CRITICAL_PERFORMANCE_TERMS.search(text):
+        on_demand.append("references/prompt-performance-runtime.md")
+        reasons.setdefault("references/prompt-performance-runtime.md", []).append("critical two-person performance turn")
+    contract_payload = _load_contract(contract)
+    if contract_payload:
+        for flag in contract_payload["risk_vector"]:
+            for reference in CONTRACT_RISK_REFERENCES.get(flag, ()):
+                on_demand.append(reference)
+                reasons.setdefault(reference, []).append(f"scene contract: {flag}")
     on_demand = list(dict.fromkeys(on_demand))
     return {
         "pass": True,
@@ -96,6 +137,11 @@ def route(mode, source=None):
         "read_on_demand": on_demand,
         "routing_reasons": reasons,
         "run_before_generation": ["scripts/source_gate.py"],
+        "run_after_scene_contract": [{
+            "script": "scripts/scene_contract.py",
+            "arguments": ["<scene_contract.json>"],
+            "then_reroute_with": ["--contract", "<scene_contract.json>"],
+        }],
         "run_during_generation": [{
             "after": "each_shot",
             "script": "scripts/incremental_validate.py",
@@ -106,10 +152,16 @@ def route(mode, source=None):
         "run_before_prompt_compilation": [{
             "when": "(two_or_more_interacting_people or (blocking_reference == required and two_or_more_visible_people)) and blocking_reference != off",
             "script": "scripts/render_blocking_reference.py",
-            "arguments": ["<blocking_spec.json>", "--output-dir", "<export_dir>"],
-            "one_file_per_shot_group": True,
+            "arguments": ["<blocking_spec.json>", "--storyboard", "<planned_output.md>", "--png", "--replace"],
+            "one_pair_per_shot_group": True,
+            "exact_shot_number_filenames": True,
+            "same_directory_as_storyboard": True,
+            "same_source_svg_png": True,
         }],
-        "run_after_generation": ["scripts/validate_storyboard.py"],
+        "run_after_generation": [
+            "scripts/validate_storyboard.py",
+            "scripts/scene_contract.py <scene_contract.json> --storyboard <output.md>",
+        ],
         "read_after_generation": ["references/review-pipeline.md"],
         "run_after_review": ["scripts/review_manifest.py create", "scripts/review_manifest.py verify"],
         "optional_after_delivery": ["scripts/concise_storyboard.py"],
@@ -123,8 +175,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("mode", choices=("generate", "audit", "video-review"))
     parser.add_argument("--source")
+    parser.add_argument("--contract")
     args = parser.parse_args(argv)
-    result = route(args.mode, args.source)
+    result = route(args.mode, args.source, args.contract)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result.get("pass") else 1
 

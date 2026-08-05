@@ -19,6 +19,7 @@ TEST_SCRIPTS = (
     "test_seedance_target.py",
     "test_review_manifest.py",
     "test_render_blocking_reference.py",
+    "test_scene_contract.py",
 )
 
 

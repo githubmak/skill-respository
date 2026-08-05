@@ -746,6 +746,11 @@ class OutputFormatTests(unittest.TestCase):
         issues = validator.validate(Path("dummy.md"), text)
         self.assertTrue(any("首个镜头组必须为S1-01" in issue for issue in issues))
 
+    def test_split_scene_file_keeps_its_global_scene_number(self) -> None:
+        text = "#### S2-01｜镜头组总时长：2s\n\n【出现人物】\n甲\n"
+        issues = validator.validate(Path("项目_S2_客厅_即梦投喂分镜.md"), text)
+        self.assertFalse(any("首个镜头组必须为" in issue for issue in issues))
+
     def test_group_numbering_cannot_skip_or_repeat(self) -> None:
         text = (
             "#### S1-01｜镜头组总时长：2s\n\n【出现人物】\n甲\n\n"
@@ -822,6 +827,42 @@ class ShotTypeShadowTests(unittest.TestCase):
     def test_prop_transfer_is_high_risk_transition(self) -> None:
         prompt = "她从右手递出卡片，对方接触后接过并握住，她再松手。"
         self.assertEqual("high_risk_transition", validator.detect_shot_type(prompt))
+
+    def test_direct_prompt_hard_limits_follow_complexity_and_keyframes(self) -> None:
+        self.assertEqual(500, validator.direct_prompt_hard_limit("1，4s，普通。"))
+        self.assertEqual(650, validator.direct_prompt_hard_limit("1，4s，复杂。"))
+        self.assertEqual(
+            700,
+            validator.direct_prompt_hard_limit("1，4s，复杂。", "首帧...尾帧", "0-4s..."),
+        )
+
+    def test_validate_child_applies_each_prompt_ceiling(self) -> None:
+        def length_issues(length: int, complexity: str, keyframed: bool = False) -> list[str]:
+            optional = ""
+            if keyframed:
+                optional = (
+                    "\n【关键帧生图提示】\n首帧：甲站定。尾帧：甲站定。\n"
+                    "\n【即梦视频提示｜配合关键帧】\n0-4s：甲保持站定。\n"
+                )
+            block = (
+                f"【镜号】\n1，4s，{complexity}。\n\n"
+                f"【画面描述｜直接复制】\n{'甲' * length}\n\n"
+                "【表演与声音】\n无台词。\n\n"
+                "【状态继承】\n甲保持站定。\n\n"
+                "【本镜制作控制】\n画面质感：甲。\n光效与曝光：甲。\n动态美学：甲。\n"
+                "表演与情绪：甲。\n穿帮控制：甲。\n抽卡策略：甲。\n蒙太奇与剪辑：甲。\n"
+                + optional
+            )
+            issues: list[str] = []
+            validator.validate_child("S1-01", 1, f"1，4s，{complexity}。", block, ["甲"], issues)
+            return [issue for issue in issues if "direct prompt over" in issue]
+
+        self.assertEqual([], length_issues(500, "普通"))
+        self.assertTrue(length_issues(501, "普通"))
+        self.assertEqual([], length_issues(650, "复杂"))
+        self.assertTrue(length_issues(651, "复杂"))
+        self.assertEqual([], length_issues(700, "复杂", keyframed=True))
+        self.assertTrue(length_issues(701, "复杂", keyframed=True))
 
     def test_complete_short_silent_shot_is_not_rejected_by_length(self) -> None:
         prompt = (

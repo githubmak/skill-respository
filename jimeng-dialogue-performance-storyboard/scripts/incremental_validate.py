@@ -220,7 +220,7 @@ def _repair_scope(message: str, default_scope: str) -> str:
 def _issue_code(message: str) -> str:
     rules = (
         (("missing 【", "镜号应为"), "FIELD_STRUCTURE"),
-        (("over 500",), "DIRECT_PROMPT_LENGTH"),
+        (("direct prompt over",), "DIRECT_PROMPT_LENGTH"),
         (("显式时间窗", "时间空档", "未声明重叠", "区间越过镜头时长"), "TIMING_WINDOW"),
         (("结束边界失败", "结束状态新增未入正文"), "STATE_BOUNDARY"),
         (("OS/OV/系统音", "OS说话人", "口型", "visible dialogue"), "SPEECH_CONTRACT"),

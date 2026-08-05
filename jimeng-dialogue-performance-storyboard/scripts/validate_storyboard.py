@@ -434,9 +434,12 @@ SHOT_TYPE_GUIDANCE = {
     "cutaway_insert": ("空镜/物件插入", 90, 220),
     "montage_fragment": ("蒙太奇片段", 120, 260),
     "non_combat_action": ("非战斗行动", 200, 340),
-    "high_risk_transition": ("高风险状态转换", 220, 500),
+    "high_risk_transition": ("高风险状态转换", 220, 650),
     "unclassified": ("未分类剧情镜头", 200, 320),
 }
+DIRECT_PROMPT_NORMAL_LIMIT = 500
+DIRECT_PROMPT_COMPLEX_LIMIT = 650
+DIRECT_PROMPT_KEYFRAMED_LIMIT = 700
 SCENE_ANCHOR_TERMS = (
     "客厅", "卧室", "厨房", "餐厅", "办公室", "警局", "医院", "教室", "走廊", "街道", "商业街",
     "溪边", "河边", "院子", "庭院", "门口", "窗边", "柜台", "工作台", "桌面", "地面", "墙面",
@@ -592,6 +595,15 @@ class SemanticShotReport:
 
 def compact_len(text: str) -> int:
     return len(re.sub(r"\s+", "", text))
+
+
+def direct_prompt_hard_limit(header: str, keyframe_image: str = "", keyframe_video: str = "") -> int:
+    """Return the prompt ceiling without adding another output classification field."""
+    if "复杂" not in header:
+        return DIRECT_PROMPT_NORMAL_LIMIT
+    if keyframe_image and keyframe_video:
+        return DIRECT_PROMPT_KEYFRAMED_LIMIT
+    return DIRECT_PROMPT_COMPLEX_LIMIT
 
 
 def has_scene_anchor(text: str) -> bool:
@@ -2633,8 +2645,9 @@ def validate_child(
         issues.append(
             f"{sid}: 高风险镜头建议添加成对关键帧字段 -> {','.join(keyframe_reasons)}；若不加关键帧，请拆成更简单的准备/转换/终态镜头"
         )
-    if compact_len(direct) > 500:
-        issues.append(f"{sid}: direct prompt over 500 chars -> {compact_len(direct)}")
+    prompt_limit = direct_prompt_hard_limit(header, keyframe_image, keyframe_video)
+    if compact_len(direct) > prompt_limit:
+        issues.append(f"{sid}: direct prompt over {prompt_limit} chars -> {compact_len(direct)}")
     prefix = direct[:120]
     if not any(term in prefix for term in ASPECT_TERMS):
         issues.append(f"{sid}: direct prompt prefix missing aspect ratio/画幅")
@@ -3041,11 +3054,14 @@ def validate(path: Path, text: str | None = None, seedance_target: str = "auto")
     scene_group_records: list[tuple[int, str, list[str]]] = []
     scene_shot_records: list[tuple[int, str, str, list[str]]] = []
     scene_memory_records: list[tuple[int, str, str, str]] = []
+    scene_file_match = re.search(r"(?:^|[_-])S(\d+)(?:[_-]|$)", path.stem)
+    expected_first_scene = int(scene_file_match.group(1)) if scene_file_match else 1
+    expected_first_group = f"S{expected_first_scene}-01"
     for match in groups:
         group_count += 1
         group_id, group_total, block = match.group(1), match.group(2), match.group(3)
-        if group_count == 1 and group_id != "S1-01":
-            issues.append(f"{group_id}: 每个独立Markdown文件的首个镜头组必须为S1-01，不添加文件/案例前缀")
+        if group_count == 1 and group_id != expected_first_group:
+            issues.append(f"{group_id}: 独立Markdown文件的首个镜头组必须为{expected_first_group}，且不添加文件/案例前缀")
         scene_number, beat_number = (int(part) for part in group_id[1:].split("-"))
         current_group_number = (scene_number, beat_number)
         if previous_group_number is not None:

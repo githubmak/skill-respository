@@ -52,6 +52,15 @@ class IncrementalValidationTests(unittest.TestCase):
         self.assertEqual("shot", target["repair_scope"])
         self.assertEqual(["【画面描述｜直接复制】", "【本镜制作控制】"], target["fields"])
 
+    def test_expanded_prompt_limit_keeps_length_issue_code(self):
+        target = _issue(
+            "S1-01-1: direct prompt over 650 chars -> 651",
+            "field",
+            ["S1-01-1"],
+        )
+        self.assertEqual("DIRECT_PROMPT_LENGTH", target["code"])
+        self.assertEqual(["【画面描述｜直接复制】"], target["fields"])
+
     def test_missing_field_is_scoped_to_current_field(self):
         draft = "#### S1-01\n\n【出现人物】\n她\n\n" + _child(
             1, _direct("她发现漏水后转身按下阀门，水流停止；"),
