@@ -31,6 +31,7 @@ class RuntimeToolTests(unittest.TestCase):
         )
         self.assertNotIn("command", result["run_during_generation"][0])
         self.assertEqual(result["run_after_generation"], ["scripts/validate_storyboard.py"])
+        self.assertEqual(result["read_after_generation"], ["references/review-pipeline.md"])
         self.assertEqual(result["optional_after_delivery"], ["scripts/concise_storyboard.py"])
         self.assertIn("scripts/review_manifest.py verify", result["run_after_review"])
 
@@ -42,6 +43,20 @@ class RuntimeToolTests(unittest.TestCase):
         self.assertIn("references/physical-structure-continuity.md", result["read_on_demand"])
         self.assertIn("references/spatial-camera-continuity.md", result["read_on_demand"])
         self.assertIn("references/generation-risk-guards.md", result["read_on_demand"])
+        self.assertIn("references/blocking-facing-reference.md", result["read_on_demand"])
+        self.assertEqual(
+            "scripts/render_blocking_reference.py",
+            result["run_before_prompt_compilation"][0]["script"],
+        )
+
+    def test_audit_and_video_review_cannot_bypass_semantic_review(self):
+        audit = route("audit")
+        video = route("video-review")
+        self.assertIn("references/review-pipeline.md", audit["read_first"])
+        self.assertTrue(audit["design_review_required"])
+        self.assertIn("references/review-pipeline.md", video["read_first"])
+        self.assertTrue(video["objective_metrics_only"])
+        self.assertTrue(video["visual_semantic_review_required"])
 
     def test_natural_camera_language_and_three_speakers_route_specialists(self):
         with tempfile.TemporaryDirectory() as root:
@@ -93,6 +108,44 @@ class RuntimeToolTests(unittest.TestCase):
         self.assertIn("演员调度与摄影机响应", template)
         self.assertIn("主要人物目标、保护对象、对外策略、策略转折和行为签名", template)
         self.assertNotIn("动态美学：[起幅、触发、主体动作/有意静止", template)
+
+    def test_compact_runtime_preserves_non_degradable_quality_contract(self):
+        runtime = (SKILL_ROOT / "references" / "runtime-core.md").read_text(encoding="utf-8")
+        for requirement in (
+            "导演上限合同",
+            "遮蔽候选来源",
+            "不做平均化拼接",
+            "不可降级视觉核心",
+            "签名镜",
+            "关系投影",
+            "站位面向线稿",
+            "身体面向",
+            "完整视场",
+            "触发 -> 接收 -> 可见处理 -> 选择/压住选择 -> 对手反应 -> 落幅",
+            "遮挡、距离感、信息显露或关系压力",
+            "最后20%稳定终态",
+            "incremental_validate.py",
+            "validate_storyboard.py",
+            "设计审美复核始终强制",
+            "任何字节变化使旧结论失效",
+        ):
+            self.assertIn(requirement, runtime)
+
+    def test_skill_router_stays_compact_and_review_is_mandatory(self):
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        review = (SKILL_ROOT / "references" / "review-pipeline.md").read_text(encoding="utf-8")
+        self.assertLessEqual(len(skill.splitlines()), 80)
+        self.assertIn("review-pipeline.md", skill)
+        for requirement in (
+            "设计审查不可关闭",
+            "隐藏候选来源",
+            "visual_review=required",
+            "scripts/review_video.py",
+            "SHA-256",
+            "field -> shot -> pair -> window -> scene",
+            "非投喂",
+        ):
+            self.assertIn(requirement, review)
 
 
 if __name__ == "__main__":

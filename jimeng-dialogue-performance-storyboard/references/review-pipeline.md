@@ -1,0 +1,34 @@
+# 强制审查流程
+
+本文件在完整工程校验通过后强制读取。审查产物、manifest 和修复日志均为非投喂文件，不得写入即梦主提示词。工程通过只证明结构和可解析约束成立，不能代替设计、美感或真实画面判断。
+
+## 1. 设计盲审
+
+设计审查不可关闭。优先由未参与生成的新上下文执行并记为 `independent`；不可用时记为 `self_check`，不得声称独立。审查者先只看源文节拍、直接提示词和相邻镜，隐藏候选来源、评分与导演上限合同，并逐镜回答：
+
+`人物想得到/保护什么 | 策略何处改变或坚持的代价 | 第一眼主体及原因 | 关系几何/信息顺序 | 可见情绪证据 | 光影叙事职责 | 摄影机运动造成的遮挡/距离/信息/权力差值 | 结束画面与五秒余像 | 与相邻镜至少三项观看差异`
+
+完成盲答后才揭示导演合同对照。以下任一情况返回 `REVISE + 最小 repair_scope`：答案只能复述台词、标签、焦段、颜色或运动参数；签名镜核心晚于直接提示词前60%；关系/认知变化只在制作控制；构图删除后信息无损；运镜只改变大小或制造动感；光影只负责照明；情绪没有当前景别可见证据；普通镜可无损替换成通用中近景；相邻差异不足三项；多人关系、面向、可见面、轴线或边界无法物理闭合。其余才记 `PASS`。
+
+## 2. 真实画面复核
+
+- `visual_review=auto`：有本地关键帧或视频就复核；没有则记 `NOT_RUN`，不阻塞设计审查。
+- `visual_review=required`：缺少可读视觉文件或视觉结果不是 `PASS` 时阻塞交付。
+- `visual_review=off`：仅关闭真实画面复核并记 `NOT_RUN`，不能关闭设计审查。
+
+使用 GPT-5.6 视觉能力检查首帧、关键动作帧和尾帧：第一焦点、构图与景别、人物身份/数量、槽位与身体面向、摄影机可见面、遮挡和边界两侧、视线、比例与支撑、道具归属、肤色/光源/材质、情绪可读性、运动收益和稳定终态。签名镜还要确认不可降级核心真实成立且与相邻镜可区分；失败的签名镜从窗口计数移除并回修。`scripts/review_video.py` 只提供 FFmpeg 客观指标，不能代替视觉审片。
+
+## 3. 修复与复验
+
+设计或视觉结果为 `REVISE` 时，按 `field -> shot -> pair -> window -> scene` 修复；同级最多两次，仍失败才升级。只改失败事实及其直接依赖，不以平庸镜头替换创意胜者。修改后重新运行受影响的增量校验、完整校验和两层审查；事实合同或空间锁广泛级联错误时才重写场景。
+
+## 4. 审查清单
+
+交付前创建非投喂 JSON：
+
+```bash
+python3 scripts/review_manifest.py create --source <source> --output <main-output> [--output <other-main-output>] --manifest <review.json> --review-mode <independent|self_check> --reviewer-context-id <id> --design-review <PASS|REVISE> --visual-review <PASS|REVISE|NOT_RUN>
+python3 scripts/review_manifest.py verify --manifest <review.json>
+```
+
+`independent` 必须提供非空 `reviewer_context_id`。manifest 用 SHA-256 绑定源文和所有主输出；任何字节变化都使旧结论 `STALE`，必须重跑受影响审查并重建。交付条件是 manifest 为 `current`、设计审查为 `PASS`，且视觉状态符合所选档位；哈希只证明审查对应相同字节，不证明审查者身份或上下文新鲜度。

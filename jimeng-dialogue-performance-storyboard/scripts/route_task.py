@@ -36,18 +36,21 @@ def route(mode, source=None):
         return {
             "pass": True,
             "mode": mode,
-            "read_first": [],
+            "read_first": ["references/review-pipeline.md"],
             "read_on_demand": [],
             "run_only": ["scripts/review_video.py"],
+            "objective_metrics_only": True,
+            "visual_semantic_review_required": True,
             "primary_output_unchanged": True,
         }
     if mode == "audit":
         return {
             "pass": True,
             "mode": mode,
-            "read_first": ["references/output-template.md"],
+            "read_first": ["references/output-template.md", "references/review-pipeline.md"],
             "read_on_demand": ["references/validation-checklist.md"],
             "run_only": ["scripts/validate_storyboard.py"],
+            "design_review_required": True,
             "primary_output_unchanged": True,
         }
     if not source:
@@ -62,6 +65,9 @@ def route(mode, source=None):
         if reference and reference not in on_demand:
             on_demand.append(reference)
             reasons.setdefault(reference, []).append(flag)
+    if "multi_person" in intake.get("risk_flags", {}):
+        on_demand.append("references/blocking-facing-reference.md")
+        reasons.setdefault("references/blocking-facing-reference.md", []).append("two or more interacting people")
     text = intake.pop("_source_text", "")
     narrative_reason = ""
     if NARRATIVE_TERMS.search(text) or NARRATIVE_STRUCTURE.search(text):
@@ -97,7 +103,14 @@ def route(mode, source=None):
             "max_local_repair_attempts": 2,
             "scope_order": ["field", "shot", "pair", "window", "scene"],
         }],
+        "run_before_prompt_compilation": [{
+            "when": "(two_or_more_interacting_people or (blocking_reference == required and two_or_more_visible_people)) and blocking_reference != off",
+            "script": "scripts/render_blocking_reference.py",
+            "arguments": ["<blocking_spec.json>", "--output-dir", "<export_dir>"],
+            "one_file_per_shot_group": True,
+        }],
         "run_after_generation": ["scripts/validate_storyboard.py"],
+        "read_after_generation": ["references/review-pipeline.md"],
         "run_after_review": ["scripts/review_manifest.py create", "scripts/review_manifest.py verify"],
         "optional_after_delivery": ["scripts/concise_storyboard.py"],
         "preload_all_references": False,

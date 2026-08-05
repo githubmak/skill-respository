@@ -18,6 +18,7 @@ TEST_SCRIPTS = (
     "test_runtime_tools.py",
     "test_seedance_target.py",
     "test_review_manifest.py",
+    "test_render_blocking_reference.py",
 )
 
 
