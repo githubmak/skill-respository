@@ -10,6 +10,20 @@ SCENE_LOCK_PALETTE_FIELDS = (
     "space_master_sentence",
     "tone_palette",
     "light_texture_purpose",
+    "visual_scene_prefix",
+    "foreground_layer",
+    "midground_layer",
+    "background_layer",
+    "genre_visual_signature",
+    "lived_in_detail",
+    "depth_focus_policy",
+    "landscape_identity",
+    "landscape_composition",
+    "natural_motion_system",
+    "environment_story_arc",
+    "reveal_order",
+    "light_weather_progression",
+    "breathing_policy",
 )
 
 

@@ -29,7 +29,8 @@ from record_batch_provenance import record as record_provenance, verify as verif
 from merge_agent_outputs import merge_agent_outputs, _normalize_retry_patch_fields
 from scene_lock_authority import scene_lock_authority_issues
 from pipeline_templates import GATES
-from pipeline_runner import _local_phase_valid, _materialize, _review_target_shot_ids, run as pipeline_runner_run
+from pipeline_runner import _local_phase_valid, _materialize, _phase_packet_paths, _review_target_shot_ids, run as pipeline_runner_run
+from dispatch_queue import pending_packet_paths
 from prepare_master_retry import prepare as prepare_master_retry
 from redispatch_incomplete_master import redispatch as redispatch_incomplete_master
 from check_export import INTERNAL_TITLE_LEAK, _direct_export_blocks, _export_check, _plan_index as export_plan_index, _source_dialogue_events as export_source_dialogue_events
@@ -41,7 +42,7 @@ from validate_durations import _estimate_action_seconds
 from build_shotplan import _estimate_dialogue_seconds as split_dialogue_seconds
 from validate_durations import _estimate_dialogue_seconds as validated_dialogue_seconds
 from generate_shotplan import _dramatic_design, _pack_action_beats, _pack_interaction_beats, _register_dramatic_beats
-from validate_composer_output import validate_composer_output
+from validate_composer_output import _load_scaffold_for_batch, validate_composer_output
 from performance_budget import report as performance_report
 from benchmark_core_pipeline import evaluate as evaluate_benchmark
 from create_benchmark_fixtures import create as create_benchmark_fixtures
@@ -69,7 +70,18 @@ def run():
         os.makedirs(os.path.join(run_dir, ".cache", "analysis"))
         os.makedirs(os.path.join(run_dir, ".cache", "composer"))
         os.makedirs(os.path.join(run_dir, ".cache", "orchestrator"))
+        dispatch_dir = os.path.join(run_dir, ".cache", "dispatch")
+        os.makedirs(dispatch_dir)
+        apple_double_packet = os.path.join(dispatch_dir, "._master_production_fake_packet.json")
+        with open(apple_double_packet, "wb") as handle:
+            handle.write(b"\x00\x05\x16\x07AppleDouble metadata")
+        assert pending_packet_paths(run_dir, "master_production") == []
+        assert _phase_packet_paths(run_dir, "master_production") == []
+        assert _load_scaffold_for_batch(os.path.join(run_dir, "missing.json"), run_dir) == {}
         locks = {"scenes": [{"scene": "场景A", "space_anchor": "门与长桌", "screen_positions": "甲左乙右",
+                               "space_id": "SP-A", "space_master_sentence": "门在画面右后，长桌横贯中景，甲左乙右",
+                               "tone_palette": "冷白顶灯、低饱和青灰",
+                               "light_texture_purpose": "让手与文件夹边缘有浅阴影",
                                "wardrobe_lock": "沿用确认设定", "prop_state": "文件夹在桌中央",
                                "light_source": "顶灯", "light_direction": "上方", "light_temperature": "4500K",
                                "foreground_layer": "前景桌角轻虚化形成低位框景",
@@ -104,11 +116,6 @@ def run():
         assert "unknown.tone_palette" in lock_issues
         assert merged_items[0]["qa_metadata"]["scene_tone_palette"]["space_master_sentence"] == "错误主锁定"
         assert merged_items[0]["qa_metadata"]["scene_tone_palette"]["tone_palette"] == "错误色卡"
-        low_risk_item = {"qa_metadata": {"ai_model_readiness_score": {"overall": {"score": 8}}}}
-        assert _disabled_risk_field_issues(
-            low_risk_item, {"shot_id": "S1", "characters": ["甲"], "shot_type": "dialogue"}
-        ) == ["ai_model_readiness_score"]
-        assert "ai_model_readiness_score" in low_risk_item["qa_metadata"]
         _write(lock_path, locks)
         rich_locks_path = os.path.join(run_dir, ".cache", "analysis", "rich_scene_locks.json")
         rich_locks = {"scenes": [dict(
@@ -238,7 +245,7 @@ def run():
         retry_packet = _read(retry_packets[0])
         assert [item["shot_id"] for item in retry_packet["items"]] == ["S1"]
         retry_context = _read(retry_packet["retry_context_path"])
-        assert retry_context["fields_by_main_shot"] == {"S1": ["full_prompt", "qa_metadata.quality_evidence"]}
+        assert retry_context["fields_by_main_shot"] == {"S1": ["full_prompt"]}
         _write(retry_review, {"contract_version": PROMPT_CONTRACT_VERSION, "windows": [
             {"window_id": "W002", "pass": False, "blocking": [{"shot_id": "S2", "field_path": "review_contracts.reroll_control.mitigation_steps[1]"}],
              "repair_targets": [{"shot_id": "S2", "field_path": "review_contracts.reroll_control.mitigation_steps[1]"}]}
@@ -273,7 +280,7 @@ def run():
         assert not set(retry_packets) & set(active_after_second_round)
         assert _read(second_round_retry_packets[0])["batch_size"] == 1
         assert _read(_read(second_round_retry_packets[0])["retry_context_path"])["fields_by_main_shot"] == {
-            "S2": ["full_prompt", "qa_metadata.quality_evidence", "review_contracts.reroll_control.mitigation_steps[1]"]
+            "S2": ["full_prompt", "review_contracts.reroll_control.mitigation_steps[1]"]
         }
         active_manifest = _read(os.path.join(run_dir, ".cache", "dispatch", "active_master_production_manifest.json"))
         assert not any(
@@ -291,22 +298,22 @@ def run():
         replacement = {"qa_metadata": {"reroll_control": {"mitigation_steps": ["keep", "right hand"]}}}
         patched = patch_only(previous, replacement, ["review_contracts.reroll_control.mitigation_steps[1]"])
         assert patched["qa_metadata"]["reroll_control"]["mitigation_steps"] == ["keep", "right hand"]
-        assert _normalize_retry_patch_fields(["full_prompt.生成规格"]) == ["full_prompt", "qa_metadata.quality_evidence"]
+        assert _normalize_retry_patch_fields(["full_prompt.生成规格"]) == ["full_prompt"]
         patched_prompt = patch_only(
             {
                 "full_prompt": "生成规格：16:9横屏。",
-                "qa_metadata": {"quality_evidence": {"axis_continuity": {"fragment": "同侧轴线"}}},
+                "qa_metadata": {"performance_contract": {"end_residue": "目光停在门口"}},
                 "locked": "keep",
             },
             {
                 "full_prompt": "生成规格：9:16竖屏。",
-                "qa_metadata": {"quality_evidence": {"axis_continuity": {"fragment": "画面左侧保持"}}},
+                "qa_metadata": {"performance_contract": {"end_residue": "手落在桌边"}},
                 "locked": "changed",
             },
             _normalize_retry_patch_fields(["full_prompt.生成规格"]),
         )
         assert "9:16" in patched_prompt["full_prompt"]
-        assert patched_prompt["qa_metadata"]["quality_evidence"]["axis_continuity"]["fragment"] == "画面左侧保持"
+        assert patched_prompt["qa_metadata"]["performance_contract"]["end_residue"] == "目光停在门口"
         assert patched_prompt["locked"] == "keep"
         os.makedirs(os.path.join(run_dir, ".cache", "review"), exist_ok=True)
         _write(os.path.join(run_dir, ".cache", "review", "pre_editor_gate.json"),
@@ -418,7 +425,14 @@ def run():
         state_heartbeat(run_dir, "scene_lock", "agent-gate-test", gate_dispatch_id)
         receipt_heartbeat(gate_packet_path, gate_packet, "agent-gate-test")
         record_provenance(gate_packet_path)
-        assert verify_provenance(batch_path)[0] is True
+        provenance_check = verify_provenance(batch_path)
+        assert provenance_check[0] is True
+        provenance_manifest = provenance_check[2]
+        assert provenance_manifest["batch_bytes"] == os.path.getsize(batch_path)
+        assert provenance_manifest["batch_characters"] > 0
+        assert provenance_manifest["shot_count"] == 1
+        assert provenance_manifest["worker_elapsed_seconds"] >= 0
+        assert provenance_manifest["token_usage"]["status"] == "unavailable"
         invariant_result = audit_pipeline_invariants(run_dir)
         assert invariant_result["pass"] is True
         broken_state = _read(os.path.join(run_dir, ".cache", "pipeline_state.json"))
@@ -987,10 +1001,9 @@ def run():
             assert recovery_sizes == [10, 2], recovery_sizes
         high_items = [_master_item("F%02d" % index, "两人打斗后互相格挡") for index in range(1, 6)]
         high_risk = dispatch_risk(high_items[0])
-        assert high_risk["tier"] == "high" and high_risk["batch_capacity"] == 2
-        assert [len(batch) for batch in _dynamic_master_chunks(high_items)] == [2, 2, 1]
+        assert high_risk["tier"] == "high" and high_risk["batch_capacity"] == 6
+        assert [len(batch) for batch in _dynamic_master_chunks(high_items)] == [5]
         low_hint = _composer_execution_hints({"subshot_id": "L1", "visible_characters": ["甲"], "duration": 2, "editorial_mode": "continuous_take"})
-        assert not low_hint["risk_gated_contracts"]["ai_model_readiness_score"]
         assert not low_hint["risk_gated_contracts"]["pressure_release_design"]
         light_profile = validation_profile({
             "subshot_id": "ENV-01", "shot_type": "environment", "non_character_confirmed": True,
@@ -999,7 +1012,7 @@ def run():
         assert light_profile["profile"] == "environment"
         assert not any(light_profile[key] for key in (
             "performance_causality", "performance_contract", "story_punch_contract",
-            "ai_model_readiness_score", "pressure_release_design", "listener_reaction_plan",
+            "pressure_release_design", "listener_reaction_plan",
             "character_scene_objective_contract", "relationship_emotion_arc",
         ))
         assert light_profile["sequence_directing_plan"] and light_profile["cut_decision_contract"]
@@ -1025,7 +1038,6 @@ def run():
             "subshot_id": "H-01", "characters": ["甲", "乙"], "visible_characters": ["甲", "乙"],
             "base_action": "甲将手机递给乙", "duration": 5,
         })
-        assert high_profile["ai_model_readiness_score"]
         phone_game = {
             "subshot_id": "PHONE-01", "characters": ["男孩"], "visible_characters": ["男孩"],
             "base_action": "男孩双手横握手机玩游戏", "duration": 4,
@@ -1043,12 +1055,14 @@ def run():
             "visual_intent": "空置窗边", "base_action": "窗帘轻晃", "characters": [],
         })["skin_tone_protection_contract"] is False
         high_hint = _composer_execution_hints({"subshot_id": "H1", "visible_characters": ["甲", "乙"], "duration": 5, "editorial_mode": "shot_group", "emotion_driver": {"tension_intent": "rising"}})
-        assert high_hint["risk_gated_contracts"]["ai_model_readiness_score"]
         assert high_hint["risk_gated_contracts"]["pressure_release_design"]
         scaffold_packets = prepare_dispatch_packets(run_dir, "master_production", 1, ["S1"])
         scaffold_packet = _read(scaffold_packets[0])
         scaffold = _read(scaffold_packet["composer_scaffold_path"])
         scaffold_metadata = scaffold["shots"][0]["qa_metadata"]
+        assert scaffold_metadata["scene_tone_palette"]["space_id"] == locks["scenes"][0]["space_id"]
+        assert scaffold_metadata["scene_tone_palette"]["tone_palette"] == locks["scenes"][0]["tone_palette"]
+        assert "qa_metadata.scene_tone_palette" in scaffold["locked_fields"]
         assert "source_constraint_basemap" in scaffold_metadata
         assert "emotion_micro_chain" in scaffold_metadata["source_constraint_basemap"]
         assert "performance_baseline_lock" in scaffold_metadata["source_constraint_basemap"]
@@ -1103,8 +1117,8 @@ def run():
             item["source_subshots"][0]["dialogue_events"] = [{"text": "这是一段超过三十二个字的对白，用来证明单纯长对白不会被拆到复杂动作级别。"}]
             item["source_subshots"][0]["duration"] = 9
         dialogue_risk = dispatch_risk(dialogue_items[0])
-        assert dialogue_risk["tier"] == "high" and dialogue_risk["batch_capacity"] == 3
-        assert [len(batch) for batch in _dynamic_master_chunks(dialogue_items)] == [3, 3]
+        assert dialogue_risk["tier"] == "high" and dialogue_risk["batch_capacity"] == 6
+        assert [len(batch) for batch in _dynamic_master_chunks(dialogue_items)] == [6]
         large_items = [_master_item("L%02d" % index, "动作" + "x" * 5000) for index in range(1, 3)]
         assert [len(batch) for batch in _dynamic_master_chunks(large_items)] == [1, 1]
         editor_windows = [dict(windows[0], review_tier="light") for _ in range(10)]

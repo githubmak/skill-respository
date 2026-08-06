@@ -147,7 +147,7 @@ def main():
         packet = json.load(open(retry["packets"][0], encoding="utf-8"))
         context = json.load(open(packet["retry_context_path"], encoding="utf-8"))
         assert context["fields_by_main_shot"] == {
-            "S1": ["full_prompt", "qa_metadata.quality_evidence"]
+            "S1": ["full_prompt"]
         }
         assert context["repair_scope_by_main_shot"] == {"S1": "field"}
 

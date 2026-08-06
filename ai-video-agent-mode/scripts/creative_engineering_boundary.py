@@ -35,6 +35,8 @@ FIELD_OWNERSHIP = {
     "generation_control": ENGINE,
     "_scene_lock_ref": ENGINE,
     "full_prompt": MODEL,
+    "seedance_prompt": MODEL,
+    "seedance_prompt_variants": MODEL,
     "negative_prompt": MODEL,
     "director_card": MODEL,
     "scene_lock": MODEL,
@@ -45,21 +47,21 @@ FIELD_OWNERSHIP = {
     "qa_metadata.dialogue_events[].kind": ENGINE,
     "qa_metadata.dialogue_events[].speaker": ENGINE,
     "qa_metadata.dialogue_events[].text": ENGINE,
-    "qa_metadata.quality_contract": ENGINE,
-    "qa_metadata.prompt_information_budget": HYBRID,
-    "qa_metadata.scene_tone_palette": HYBRID,
-    "qa_metadata.continuity_contract": HYBRID,
-    "qa_metadata.ai_model_readiness_score": HYBRID,
+    "qa_metadata.quality_contract": MODEL,
+    "qa_metadata.prompt_information_budget": MODEL,
+    "qa_metadata.scene_tone_palette": MODEL,
+    "qa_metadata.continuity_contract": MODEL,
 }
 
 ENGINE_ONLY_OPERATIONS = frozenset({
-    "parse", "serialize", "count", "validate", "hash", "version",
-    "exact_dedupe", "merge_verified", "layout", "export", "resume",
+    "parse", "serialize", "count", "deterministic_validate", "hash", "version",
+    "merge_verified", "layout", "export", "resume",
 })
 
 FORBIDDEN_ENGINE_OPERATIONS = frozenset({
     "semantic_rewrite", "semantic_compress", "select_creative_clause",
-    "infer_emotion", "choose_camera", "repair_scene_lock", "delete_creative_field",
+    "infer_emotion", "choose_camera", "judge_aesthetics", "judge_seedance_semantics",
+    "repair_scene_lock", "delete_creative_field", "compile_seedance_prompt",
 })
 
 

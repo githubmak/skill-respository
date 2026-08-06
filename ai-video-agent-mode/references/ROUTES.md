@@ -8,7 +8,7 @@
 | `full` | 新源文、剧情或配置变化；明确续跑 | `stage_gates.md` | 最新 source-gate/stage summary、命中的合同索引行 | `workflow_supervisor.py` |
 | `compose` | 已有 shot plan 与 Scene Lock | `agent_protocol.md` | packet 的 constraints/scaffold/scene lock cache | dispatch 与 Composer validator |
 | `single-repair` | 修一个失败主镜或字段 | packet constraints、retry context | 对应 stage summary | provenance 与 merge 脚本 |
-| `audit` | 诊断现有包，不重生成 | 无 | validator 报告、命中的合同索引行 | 全集/导演/情绪/ModeC/export audit |
+| `audit` | 模型复审现有包，不导出 | `editor_pass2_note.md` | 源文、Scene Lock、相邻镜与确定性报告 | `workflow_supervisor.py` 派发 Editor |
 | `export` | 导出已通过验证的包 | 无 | 仅格式诊断时读 `export_spec.md` | `export_with_validation.py` |
 
 ## 读取纪律
@@ -18,11 +18,11 @@
 - Worker 只处理 `packet.items`，先读 `constraints_path`；Master Production 再读 scaffold 和
   scene lock cache。`source_path` 仅在 packet 信息不足时作为局部回退。
 - 续跑先读 `.cache/pipeline_state.json` 和当前阶段已验证产物。只为 validator 点名的主镜或字段重开大产物。
-- 审查先运行 validator，再用 `contracts/contract_index.md` 定位一个相关切片；不要为了一个
+- 审查先运行确定性 validator，再由模型 Editor 用 `contracts/contract_index.md` 定位相关创作切片；不要为了一个
   口型、道具或光影问题同时读取全部质量知识。
 - 只有静态/动态美学问题命中时，按需读取
   `contracts/aesthetic_directing_contract.md`，不把它加入正常路由的 `read_first`。
-- 脚本能确定性验证或生成的内容直接运行脚本，不把实现源码加载进模型上下文。
+- 脚本能确定性验证或排版的内容直接运行脚本；任何涉及观众感受的判断保留给模型。
 - 修改技能合同才读取完整权威段落，并同步 schema、validator、Golden 和 rule consistency。
 
 ## 初始化
@@ -50,8 +50,8 @@
 
 派发只读 packet、所列 sidecar 和 `references/agent_protocol.md`。运行而不预读：
 `validate_scene_locks.py`、`validate_composer_output.py`、`pre_editor_gate.py`、
-`record_batch_provenance.py`、`merge_agent_outputs.py`、`episode_state_graph.py`、
-`episode_director_audit.py`、`check_export.py`。仅在调试状态机实现时读取
+`record_batch_provenance.py`、`merge_agent_outputs.py`、`validate_deterministic_package.py`、
+`check_export.py`。摄影、情绪、Seedance 和审美审查必须派发模型 Editor。仅在调试状态机实现时读取
 `pipeline_runner.py`、`pipeline_state.py`、`pipeline_runtime.py` 或 `sources.py`。
 
 `dispatch/scene_lock_note.md`、`dispatch/master_production_note.md` 与

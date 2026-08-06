@@ -170,7 +170,7 @@ def _all_phase_packets(dispatch_dir):
         return []
     paths = []
     for name in os.listdir(dispatch_dir):
-        if not name.endswith("_packet.json"):
+        if name.startswith("._") or not name.endswith("_packet.json"):
             continue
         path = os.path.join(dispatch_dir, name)
         try:

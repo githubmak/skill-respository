@@ -1,7 +1,7 @@
 import os
 import unittest
 
-from seedance_target import adapt_lighting_text, adapt_visual_prefix, normalize_target, variant_paths
+from seedance_target import normalize_target, variant_paths
 from resolve_run_mode import config_issues
 
 
@@ -17,17 +17,10 @@ class SeedanceTargetTests(unittest.TestCase):
         self.assertTrue(index.endswith("00_双版本索引.md"))
         self.assertNotEqual(paths["2.0"], paths["2.5"])
 
-    def test_lighting_adapters_are_distinct(self):
-        base = "窗光从左侧落到人物脸部，右侧脸颊保留阴影。"
-        self.assertIn("浅至中等阴影", adapt_lighting_text(base, "2.0"))
-        self.assertIn("中深明暗层次", adapt_lighting_text(base, "2.5"))
-        self.assertEqual(adapt_lighting_text(base, "auto"), base)
-
-    def test_old_uniform_face_rule_is_rewritten_for_newer_targets(self):
-        old = "脸部受光均匀，鼻侧、眼窝和下颌只保留浅阴影。"
-        self.assertNotIn("脸部受光均匀", adapt_visual_prefix(old, "2.5"))
-        self.assertIn("中深", adapt_visual_prefix(old, "2.5"))
-        self.assertIn("中等", adapt_visual_prefix(old, "auto"))
+    def test_target_module_has_no_creative_adapters(self):
+        import seedance_target
+        self.assertFalse(hasattr(seedance_target, "adapt_lighting_text"))
+        self.assertFalse(hasattr(seedance_target, "adapt_visual_prefix"))
 
     def test_both_rejects_duration_above_cross_version_limit(self):
         config = {

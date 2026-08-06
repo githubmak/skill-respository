@@ -6,7 +6,9 @@ import os
 import tempfile
 
 from prepare_creative_blueprint import prepare
-from preflight_check import _validate_dialogue_source_lock, _validate_source_snapshot
+from preflight_check import _validate_dialogue_source_lock, _validate_source_snapshot, run as preflight_run
+from build_shotplan import normalize
+from pipeline_runner import _local_phase_valid, _sha256
 from workflow_supervisor import execute_local_phase
 
 
@@ -36,30 +38,83 @@ def run():
 
         request, request_path = prepare(run_dir, source_path)
         assert request["authority"] == "model"
-        assert len(request["required_outputs"]) == 3
+        assert list(request["required_outputs"]) == ["shot_plan_draft"]
         assert os.path.isfile(request_path)
         snapshot = json.load(open(request["source_snapshot_path"], encoding="utf-8"))
         assert snapshot["source_sha256"] == request["source_sha256"]
         assert snapshot["lines"][1]["text"] == "角色A：你终于来了。"
-        source_records = [{
-            "source_id": "SRC0001", "line": 2,
-            "type": "dialogue", "text": "角色A：你终于来了。",
-        }]
+        source_ledger = json.load(open(request["source_ledger_path"], encoding="utf-8"))
+        source_records = source_ledger["units"]
+        assert [item["source_id"] for item in source_records] == [
+            "SRC000001", "SRC000002", "SRC000003",
+        ]
         issues = []
         _validate_source_snapshot(run_dir, source_records, issues)
         _validate_dialogue_source_lock({
-            "D1": {"text": "你终于来了。", "source_ids": ["SRC0001"]},
-        }, {"SRC0001": source_records[0]}, issues)
+            "D1": {"text": "你终于来了。", "source_ids": ["SRC000002"]},
+        }, {item["source_id"]: item for item in source_records}, issues)
         assert not issues
         _validate_dialogue_source_lock({
-            "D2": {"text": "你终于回来了。", "source_ids": ["SRC0001"]},
-        }, {"SRC0001": source_records[0]}, issues)
+            "D2": {"text": "你终于回来了。", "source_ids": ["SRC000002"]},
+        }, {item["source_id"]: item for item in source_records}, issues)
         assert any(item["check"] == "DIALOGUE_SOURCE_TEXT" for item in issues)
 
         detail = execute_local_phase(run_dir, "orchestrator", source_path)
         assert detail["action"] == "creative_authoring_required"
         assert not os.path.exists(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"))
         assert not os.path.exists(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.draft.json"))
+        assert os.path.exists(os.path.join(run_dir, ".cache", "orchestrator", "source_ledger.json"))
+
+    with tempfile.TemporaryDirectory(prefix="creative-source-reuse-") as root:
+        run_dir = os.path.join(root, "run")
+        source_path = os.path.join(root, "source.txt")
+        _write(source_path, "场景一\n甲：同一句源文。\n乙转身。\n")
+        _write(os.path.join(run_dir, "project_config.json"), {
+            "project_name": "复用测试", "canvas": "16:9", "visual_style": "模型自定",
+            "max_shot_duration": 15, "target_platform": "即梦",
+        })
+        prepare(run_dir, source_path)
+        _write(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.draft.json"), {
+            "dialogue_map": {"D1": "同一句源文。"},
+            "dialogue_events": {
+                "D1": {
+                    "ref": "D1", "kind": "台词", "speaker": "甲", "text": "同一句源文。",
+                    "source_ids": ["SRC000002"],
+                },
+            },
+            "source_exclusions": [],
+            "shots": [
+                {"shot_id": "S1", "scene": "场景一", "subshots": [{
+                    "subshot_id": "S1-1", "duration": 5,
+                    "source_ids": ["SRC000001", "SRC000002"], "dialogue_refs": ["D1"],
+                }]},
+                {"shot_id": "S2", "scene": "场景一", "subshots": [{
+                    "subshot_id": "S2-1", "duration": 5,
+                    "source_ids": ["SRC000002", "SRC000003"], "dialogue_refs": [],
+                }]},
+            ],
+        })
+        normalize(run_dir)
+        assert preflight_run(run_dir) == []
+
+    with tempfile.TemporaryDirectory(prefix="creative-receipt-") as root:
+        orchestrator = os.path.join(root, ".cache", "orchestrator")
+        preflight = os.path.join(root, ".cache", "preflight", "report.json")
+        paths = {
+            "draft_sha256": os.path.join(orchestrator, "shot_plan.draft.json"),
+            "shot_plan_sha256": os.path.join(orchestrator, "shot_plan.json"),
+            "source_ledger_sha256": os.path.join(orchestrator, "source_ledger.json"),
+            "source_snapshot_sha256": os.path.join(orchestrator, "source_snapshot.json"),
+            "preflight_report_sha256": preflight,
+        }
+        for path in paths.values():
+            _write(path, {})
+        receipt = {key: _sha256(path) for key, path in paths.items()}
+        receipt["preflight_pass"] = True
+        _write(os.path.join(orchestrator, "creative_validation_receipt.json"), receipt)
+        assert _local_phase_valid(root, "orchestrator")
+        _write(paths["draft_sha256"], {"model_revision": 2})
+        assert not _local_phase_valid(root, "orchestrator")
 
     supervisor_source = open(
         os.path.join(os.path.dirname(__file__), "workflow_supervisor.py"), encoding="utf-8"

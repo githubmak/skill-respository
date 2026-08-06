@@ -19,8 +19,7 @@ def check(packet):
     external = 0
     for key in (
         "constraints_path", "composer_scaffold_path", "scene_lock_cache_path",
-        "pre_editor_gate_path",
-        "emotion_camera_audit_path", "review_packet_path",
+        "pre_editor_gate_path", "review_packet_path", "editor_creative_context_path",
     ):
         path = packet.get(key)
         if not path or not isinstance(path, str) or not os.path.isfile(path):

@@ -2,6 +2,7 @@
 """Record and verify the provenance of one completed Agent batch."""
 
 import hashlib
+import argparse
 import json
 import os
 import sys
@@ -15,7 +16,7 @@ from dispatch_receipts import complete as complete_receipt, load_and_verify as v
 from contract_registry import PROMPT_CONTRACT_VERSION
 
 
-def record(packet_path, allow_partial=False):
+def record(packet_path, allow_partial=False, input_tokens=None, output_tokens=None):
     packet = _load(packet_path)
     if packet.get("contract_version") != PROMPT_CONTRACT_VERSION or not packet.get("dispatch_id"):
         raise SystemExit("Invalid or unsupported dispatch contract")
@@ -95,6 +96,17 @@ def record(packet_path, allow_partial=False):
 
     batch_sha256 = _sha256(batch_path)
     receipt, receipt_path = complete_receipt(packet_path, packet, agent_id, batch_sha256)
+    recorded_at = time.time()
+    batch_data = _load(batch_path)
+    batch_text = _read_text(batch_path)
+    item_rows = next((batch_data.get(key) for key in ("shots", "items", "scenes", "windows")
+                      if isinstance(batch_data.get(key), list)), [])
+    exact_tokens = (
+        {"status": "exact", "input_tokens": int(input_tokens), "output_tokens": int(output_tokens),
+         "total_tokens": int(input_tokens) + int(output_tokens)}
+        if isinstance(input_tokens, int) and isinstance(output_tokens, int)
+        else {"status": "unavailable", "reason": "host did not provide exact per-dispatch token usage"}
+    )
     manifest = {
         "contract_version": PROMPT_CONTRACT_VERSION,
         "dispatch_id": packet["dispatch_id"],
@@ -121,7 +133,12 @@ def record(packet_path, allow_partial=False):
         "dispatch_receipt_sha256": receipt_sha256(receipt_path),
         "dispatch_receipt_nonce": receipt.get("nonce"),
         "dispatch_heartbeat_count": receipt.get("heartbeat_count"),
-        "recorded_at": time.time(),
+        "recorded_at": recorded_at,
+        "worker_elapsed_seconds": round(max(recorded_at - spawn_time, 0), 3),
+        "batch_bytes": os.path.getsize(batch_path),
+        "batch_characters": len(batch_text),
+        "shot_count": len(item_rows),
+        "token_usage": exact_tokens,
     }
     sidecar = batch_path + ".provenance.json"
     with open(sidecar, "w", encoding="utf-8") as handle:
@@ -129,7 +146,7 @@ def record(packet_path, allow_partial=False):
     index_path = os.path.join(provenance_dir, packet["dispatch_id"] + ".json")
     with open(index_path, "w", encoding="utf-8") as handle:
         json.dump(manifest, handle, ensure_ascii=False, indent=2)
-    _mark_dispatch_recorded(run_dir, phase, packet["dispatch_id"], validation_mode)
+    _mark_dispatch_recorded(run_dir, phase, packet["dispatch_id"], validation_mode, manifest)
     cache_artifact(run_dir, phase, manifest, {"packet": packet.get("dispatch_id")})
     if failed_subshot_ids:
         target_by_shot = {
@@ -150,7 +167,7 @@ def record(packet_path, allow_partial=False):
     return sidecar
 
 
-def _mark_dispatch_recorded(run_dir, phase, dispatch_id, validation_mode):
+def _mark_dispatch_recorded(run_dir, phase, dispatch_id, validation_mode, manifest=None):
     state_path = os.path.join(run_dir, ".cache", "pipeline_state.json")
     with json_lock(state_path):
         state = load_state(run_dir)
@@ -161,6 +178,9 @@ def _mark_dispatch_recorded(run_dir, phase, dispatch_id, validation_mode):
             dispatch["recorded_at"] = time.time()
             if isinstance(dispatch.get("spawn_time"), (int, float)):
                 dispatch["elapsed_seconds"] = round(max(dispatch["recorded_at"] - dispatch["spawn_time"], 0), 3)
+            for field in ("batch_bytes", "batch_characters", "shot_count", "worker_elapsed_seconds", "token_usage"):
+                if isinstance(manifest, dict) and field in manifest:
+                    dispatch[field] = manifest[field]
         dispatches = phase_state.get("dispatches", {})
         statuses = [entry.get("status") for entry in dispatches.values() if isinstance(entry, dict)]
         if statuses and all(status == "done" for status in statuses):
@@ -259,9 +279,19 @@ def _load(path):
         return json.load(handle)
 
 
+def _read_text(path):
+    with open(path, "r", encoding="utf-8-sig") as handle:
+        return handle.read()
+
+
 if __name__ == "__main__":
-    args = [arg for arg in sys.argv[1:] if arg != "--allow-partial"]
-    if len(args) != 1:
-        print("usage: record_batch_provenance.py [--allow-partial] <dispatch_packet.json>")
-        sys.exit(2)
-    record(args[0], allow_partial="--allow-partial" in sys.argv[1:])
+    parser = argparse.ArgumentParser()
+    parser.add_argument("packet_path")
+    parser.add_argument("--allow-partial", action="store_true")
+    parser.add_argument("--input-tokens", type=int)
+    parser.add_argument("--output-tokens", type=int)
+    cli = parser.parse_args()
+    if (cli.input_tokens is None) != (cli.output_tokens is None):
+        parser.error("--input-tokens and --output-tokens must be provided together")
+    record(cli.packet_path, allow_partial=cli.allow_partial,
+           input_tokens=cli.input_tokens, output_tokens=cli.output_tokens)

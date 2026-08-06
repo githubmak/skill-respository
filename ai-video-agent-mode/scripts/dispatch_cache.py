@@ -5,6 +5,7 @@ large shot list into every prompt. Workers read the packet from disk, write only
 their required output file, and retry messages carry only failed subshot ids.
 """
 import json
+import copy
 import os
 import re
 import sys
@@ -16,18 +17,11 @@ if not os.environ.get("PYTHONPYCACHEPREFIX") and not getattr(sys, "pycache_prefi
     sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(__file__))
 from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_prefix
-from shot_semantics import (
-    dispatch_risk,
-    functional_surface_risk,
-    quality_contract,
-    temporal_transition_candidate,
-    validation_profile,
-)
 from context_budget import check as check_context_budget
-from batch_planner import analysis_chunks as _analysis_chunks, batch_risk as _batch_risk
+from batch_planner import analysis_chunks as _analysis_chunks, batch_profile as _batch_profile
 from batch_planner import dynamic_master_chunks as _plan_dynamic_master_chunks
 from batch_planner import editor_review_chunks as _editor_review_chunks
-from contract_registry import PROMPT_CONTRACT_VERSION, RISK_GATED_QA_FIELDS
+from contract_registry import PROMPT_CONTRACT_VERSION
 
 block_source_pycache_until_run_dir()
 
@@ -85,11 +79,10 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
         # subshots for analysis, but they are changes inside one main-shot
         # task—not independently generated videos.
         items = _to_master_tasks(items)
-        # Risk tiers control capacity, not quality: high-risk tasks remain in
-        # 4-shot (or smaller) batches, normal tasks in 6, and truly stable
-        # tasks can reach 8–10 without carrying complex context.
+        # Batch boundaries are mechanical: item count, declared chain IDs and
+        # serialized context size. Engineering never interprets scene meaning.
         size = max(int(batch_size or 4), 1)
-        chunks = _dynamic_master_chunks(items, force_single=(size == 1))
+        chunks = _dynamic_master_chunks(items, max_items=size, force_single=(size == 1))
     elif phase == "editor_pass2":
         size = max(int(batch_size or 10), 1)
         chunks = _editor_review_chunks(items, batch_size)
@@ -127,7 +120,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             retry_context_path, retry_mode = _write_retry_context(
                 run_dir, phase, packet_items, out_dir, dispatch_tag
             )
-        batch_risk = _batch_risk(chunk)
+        batch_profile = _batch_profile(chunk)
         packet = {
             "contract_version": PROMPT_CONTRACT_VERSION,
             "dispatch_id": dispatch_id,
@@ -137,6 +130,8 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             "run_dir": run_dir,
             "source_path": source_path,
             "source_sha256": _sha256(source_path),
+            "source_snapshot_path": os.path.join(run_dir, ".cache", "orchestrator", "source_snapshot.json"),
+            "source_ledger_path": os.path.join(run_dir, ".cache", "orchestrator", "source_ledger.json"),
             "project_config_path": os.path.join(run_dir, "project_config.json"),
             "constraints_path": constraints_path,
             "output_path": public_output,
@@ -144,10 +139,9 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             "batch_index": idx,
             "total_batches": len(chunks),
             "batch_size": size,
-            "batch_capacity": batch_risk["batch_capacity"],
-            "risk_tier": batch_risk["tier"],
-            "risk_reasons": batch_risk["reasons"],
-            "review_scope": batch_risk["review_scope"],
+            "batch_capacity": size,
+            "batch_policy": batch_profile["basis"],
+            "creative_review_scope": "full_model_review",
             "total_item_count": len(items),
             "subshot_count": sum(len(item.get("source_subshots", [item])) for item in chunk),
             "master_shot_count": len(chunk),
@@ -158,7 +152,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
                 "to _batch_output_path. Do not write output_path; the main agent merges batch files. "
                 "Require the current contract_version from contract_registry and read constraints_path for the full phase contract; "
                 "a missing or older contract version requires redispatch. For master_production, start from "
-                "composer_scaffold_path, preserve every locked field, and create exactly one Jimeng task per packet item; each task serves one narrative_beat_id only, with any shot_group used only as internal coverage of that beat; read scene_lock_cache_path once per scene; "
+                "composer_scaffold_path, preserve every locked field, and create exactly one Jimeng task per packet item; the model decides each task's dramatic coverage, internal rhythm, and editorial form; read scene_lock_cache_path once per scene; "
                 "source_path is fallback context only and must not be read in full unless packet data is insufficient. "
                 "Do not paste unchanged source content back into chat."
             ),
@@ -184,20 +178,20 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
                     "constraints_path",
                     "composer_scaffold_path",
                     "scene_lock_cache_path",
+                    "source_snapshot_path",
+                    "source_ledger_path",
                 ],
                 "per_shot_context": [
-                    "packet.items[].source_subshots",
-                    "packet.items[].dialogue_events",
-                    "packet.items[].dramatic_design",
-                    "packet.items[].duration_design",
-                    "packet.items[].execution_hints",
+                    "packet.items[] complete model-authored record",
+                    "packet.items[].source_subshots complete model-authored children",
+                    "packet.items[].dialogue_events locked source facts",
                 ],
-                "history_policy": "Do not read full source history by default. Use scene locks plus packet items; cross-shot continuity must come from packet sequence_context, continuity fields, and scaffold locks.",
-                "quality_policy": "Fill core fields and scaffold-present risk fields only. Do not recreate omissions; all gates remain mandatory.",
+                "history_policy": "Use the complete bounded scene context needed for directing. Scene locks are model-authored references, not engineering prescriptions.",
+                "quality_policy": "Use scaffold structures only when they help the shot. Creative depth is chosen by the model and judged by the model Editor.",
             }
             packet["instruction"] += (
                 " Composer batch output top-level must be exactly {\"shots\": [...]}; "
-                "omit contract_version. The scaffold, constraints sidecar and validator are authoritative; do not restate or weaken them. "
+                "omit contract_version. Preserve only scaffold locked_fields; all other creative fields are model-owned. "
                 "After each main shot, run incremental_validation_command with its shot id and patch only the reported scope. "
                 "Then run the exact full-batch local_validation_command; it must PASS and cannot be replaced by an incremental PASS."
             )
@@ -216,12 +210,22 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             packet["composer_scaffold_path"] = scaffold_path
             packet["scene_lock_cache_path"] = scene_lock_cache_path
         if phase == "editor_pass2":
+            editor_context_path = _write_editor_creative_context(
+                run_dir, source_path, chunk, out_dir, dispatch_tag
+            )
             packet["targeted_review"] = bool(wanted)
             packet["target_shot_ids"] = sorted(wanted)
             packet["review_packet_path"] = os.path.join(run_dir, ".cache", "review", "llm_gate_review.md")
             packet["pre_editor_gate_path"] = pre_editor_gate_path
-            packet["emotion_camera_audit_path"] = pre_editor_result["semantic_audit_path"]
-            packet["instruction"] += " For editor_pass2, read pre_editor_gate_path and emotion_camera_audit_path first. The local gate has already completed deterministic checks; review every listed performance, expectation-anchor, cut-motivation, camera-competition, and continuity issue without changing locked source facts. Light review_tier still requires a pass for its current shot and carryover; high review_tier requires the complete scene window. "
+            packet["editor_creative_context_path"] = editor_context_path
+            packet["instruction"] += (
+                " For editor_pass2, read pre_editor_gate_path and editor_creative_context_path in full. The latter contains the exact, "
+                "unclipped model-authored prompts, director cards, creative metadata, plan facts, and adjacent shots for this bounded window. "
+                "It also points to the immutable source snapshot and engineering ledger for verbatim source review. "
+                "The local gate proves only mechanical validity. Independently judge script interpretation, emotional causality, "
+                "performance, shot rhythm, blocking, camera, movement, focus, lighting, palette, Seedance comprehensibility, and final aesthetics. "
+                "Do not defer any semantic decision to keyword or regex reports. Every window receives the same full model review standard."
+            )
         check_context_budget(packet)
         suffix = "" if len(chunks) == 1 else "_batch%03d" % idx
         out_path = os.path.join(out_dir, "%s%s_%s_packet.json" % (phase, suffix, dispatch_tag))
@@ -238,6 +242,47 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
         target_ids=sorted(wanted),
     )
     return paths
+
+
+def _write_editor_creative_context(run_dir, source_path, windows, out_dir, dispatch_tag):
+    """Stage exact bounded creative text for model Editor review."""
+    package = _load_json(source_path)
+    wanted = set()
+    for window in windows:
+        if not isinstance(window, dict):
+            continue
+        for relation in ("previous", "current", "next"):
+            item = window.get(relation)
+            if isinstance(item, dict) and item.get("shot_id"):
+                wanted.add(str(item["shot_id"]))
+    shots = [
+        item for item in package.get("shots", [])
+        if isinstance(item, dict) and str(item.get("shot_id", "")) in wanted
+    ]
+    plan = _load_optional_json(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"))
+    planned = [
+        item for item in plan.get("shots", [])
+        if isinstance(item, dict) and str(item.get("shot_id", "")) in wanted
+    ]
+    scene_names = {str(item.get("scene", "")) for item in planned}
+    locks = _load_optional_json(os.path.join(run_dir, ".cache", "analysis", "scene_locks.json"))
+    scene_locks = [
+        item for item in locks.get("scenes", [])
+        if isinstance(item, dict) and str(item.get("scene", "")) in scene_names
+    ]
+    path = os.path.join(out_dir, "editor_creative_context_%s.json" % dispatch_tag)
+    os.makedirs(out_dir, exist_ok=True)
+    _write_json(path, {
+        "authority": "model_editor",
+        "semantic_transform": False,
+        "source_snapshot_path": os.path.join(run_dir, ".cache", "orchestrator", "source_snapshot.json"),
+        "source_ledger_path": os.path.join(run_dir, ".cache", "orchestrator", "source_ledger.json"),
+        "target_shot_ids": sorted(wanted),
+        "shots": shots,
+        "planned_shots": planned,
+        "scene_locks": scene_locks,
+    })
+    return path
 
 
 def prepare_dispatch_packet(run_dir, phase, batch_size=None, subshot_ids=None):
@@ -447,16 +492,18 @@ def _extract_items(data, wanted):
     if "shots" in data:
         items = []
         for shot in data.get("shots", []):
+            if not isinstance(shot, dict):
+                continue
             shot_id = shot.get("shot_id", "")
             if isinstance(shot, dict) and "subshots" not in shot and shot.get("subshot_id"):
                 ssid = shot.get("subshot_id", "")
                 if wanted and ssid not in wanted and shot_id not in wanted:
                     continue
-                copied = dict(shot)
-                copied.setdefault("visible_characters", copied.get("characters", []))
-                items.append(copied)
+                items.append(copy.deepcopy(shot))
                 continue
             for ss in shot.get("subshots", []):
+                if not isinstance(ss, dict):
+                    continue
                 ssid = ss.get("subshot_id", "")
                 if wanted and ssid not in wanted and shot_id not in wanted:
                     continue
@@ -465,54 +512,36 @@ def _extract_items(data, wanted):
                     for ref in ss.get("dialogue_refs", [])
                     if isinstance(data.get("dialogue_events", {}).get(ref), dict)
                 ]
-                items.append({
-                    "shot_id": shot.get("shot_id", ""),
-                   "subshot_id": ssid,
-                   "scene": shot.get("scene", ""),
-                   "scene_type": shot.get("scene_type", "") or ss.get("scene_type", ""),
-                   "duration": ss.get("duration", 0),
-                   "shot_size": ss.get("shot_size", ""),
-                    "base_action": ss.get("base_action", ""),
-                    "shot_type": ss.get("shot_type", "") or ss.get("visual_type", "") or ss.get("purpose", ""),
-                    "visual_intent": ss.get("visual_intent", "") or ss.get("image_subject", "") or ss.get("atmosphere", ""),
-                    "characters": ss.get("characters", []),
-                    "visible_characters": ss.get("visible_characters", ss.get("characters", [])),
-                    "dialogue_refs": ss.get("dialogue_refs", []),
-                    "dialogue_events": source_events,
-                    "dialogue_raw_text": "\n".join(str(event.get("text", "") or "") for event in source_events),
-                    "emotion_tone": ss.get("emotion_tone", ""),
-                    "performance_chain": ss.get("performance_chain", {}),
-                    "editorial_mode": ss.get("editorial_mode", "continuous_take"),
-                    "camera_beat_map": ss.get("camera_beat_map", []),
-                    "sequence_context": ss.get("sequence_context", {}),
-                    "dramatic_design": dict(ss.get("dramatic_design", {}) or {}),
-                    "duration_design": dict(ss.get("duration_design", {}) or {}),
-                    "quality_contract": quality_contract(ss),
-                    "spatial_map": ss.get("spatial_map", {}),
-                    "props": ss.get("props", []),
+                copied = copy.deepcopy(ss)
+                copied.setdefault("shot_id", shot_id)
+                copied.setdefault("subshot_id", ssid)
+                copied.setdefault("scene", shot.get("scene", ""))
+                copied["parent_shot_context"] = copy.deepcopy({
+                    key: value for key, value in shot.items() if key != "subshots"
                 })
+                copied.setdefault("dialogue_events", source_events)
+                items.append(copied)
         return items
     items = []
     for item in data.get("items", []):
         if wanted and item.get("subshot_id") not in wanted:
             continue
         if isinstance(item, dict):
-            copied = dict(item)
-            copied.setdefault("visible_characters", copied.get("characters", []))
-            items.append(copied)
+            items.append(copy.deepcopy(item))
     return items
 
 
 def _scene_lock_items(shot_plan):
-    """Collapse a shot plan into one immutable lock request per scene."""
+    """Group full model-authored shot records by the model-declared scene."""
     scenes = {}
     for shot in shot_plan.get("shots", []):
         scene = str(shot.get("scene", "") or "__default__")
         entry = scenes.setdefault(scene, {
             "scene": scene, "scene_type": shot.get("scene_type", ""),
-            "shot_ids": [], "subshot_ids": [], "characters": [],
+            "shot_ids": [], "subshot_ids": [], "characters": [], "shots": [],
         })
         entry["shot_ids"].append(shot.get("shot_id", ""))
+        entry["shots"].append(copy.deepcopy(shot))
         for subshot in shot.get("subshots", []):
             entry["subshot_ids"].append(subshot.get("subshot_id", ""))
             for character in subshot.get("characters", []):
@@ -624,12 +653,7 @@ def _select_contract_sections(body, phase):
 def _phase_contract_slice_text(skill_dir, phase):
     """Load compact decision slices only for phases that create prompts."""
     slice_files = {
-        "master_production": (
-            "direct_copy_contract.md",
-            "source_basemap_contract.md",
-            "visual_quality_contract.md",
-            "aesthetic_directing_contract.md",
-        ),
+        "master_production": ("direct_copy_contract.md",),
     }.get(phase, ())
     parts = []
     for filename in slice_files:
@@ -640,9 +664,9 @@ def _phase_contract_slice_text(skill_dir, phase):
                 # §B0 is already included verbatim. Keep this sidecar a locator
                 # for the fast contract instead of duplicating its full prose.
                 text = (
-                    "# 快速直投合同定位\n\n"
-                    "直投正文由 direct_prompt_compiler.py 从同一事实源编译；必须保留可见构图、单一路径运镜、"
-                    "对白口型、光影材质和最后20%终端锁定，不写内部合同名或负向概念；详规见本文件。\n"
+                    "# 模型直投合同定位\n\n"
+                    "Master Production 直接创作 seedance_prompt；工程只验证字符数、版本字段并原样导出。"
+                    "摄影、表演、光影、动作与 Seedance 语义由模型决定；详规见本文件。\n"
                 )
             parts.append("# Included Contract Slice: %s\n\n%s" % (relative, text))
     return "\n\n".join(parts).rstrip() + ("\n" if parts else "")
@@ -677,434 +701,75 @@ def _to_master_tasks(items):
     masters = []
     for key in order:
         children = groups[key]
-        first = dict(children[0])
+        first = copy.deepcopy(children[0])
         first["shot_id"] = key
         first["subshot_id"] = key  # output identity is the main shot
         first["source_subshot_ids"] = [str(child.get("subshot_id", "")) for child in children]
-        first["source_subshots"] = children
+        first["source_subshots"] = copy.deepcopy(children)
         first["duration"] = round(sum(float(child.get("duration", 0) or 0) for child in children), 3)
-        first["editorial_mode"] = "shot_group" if len(children) > 1 else children[0].get("editorial_mode", "continuous_take")
         first["dialogue_refs"] = [ref for child in children for ref in child.get("dialogue_refs", [])]
         first["dialogue_events"] = [event for child in children for event in child.get("dialogue_events", [])]
-        first["temporal_transition_candidate"] = temporal_transition_candidate(first)
         first["master_task"] = True
         masters.append(first)
     return masters
 
 
-def _dynamic_master_chunks(items, force_single=False):
-    return _plan_dynamic_master_chunks(items, _compact_composer_item, force_single=force_single)
+def _dynamic_master_chunks(items, max_items=6, force_single=False):
+    return _plan_dynamic_master_chunks(
+        items, _compact_composer_item, max_items=max_items, force_single=force_single
+    )
 
 
 def _write_composer_scaffold(
     run_dir, items, dispatch_dir, dispatch_tag, scene_lock_cache_path,
 ):
+    return _write_model_owned_scaffold(
+        run_dir, items, dispatch_dir, dispatch_tag, scene_lock_cache_path
+    )
+
+
+def _write_model_owned_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scene_lock_cache_path):
+    """Write only mechanical locks; all creative fields remain blank/model-owned."""
     config = _load_optional_json(os.path.join(run_dir, "project_config.json"))
-    project_control = config.get("generation_control", {})
+    project_control = config.get("generation_control", {}) if isinstance(config, dict) else {}
     shots = []
     for item in items:
-        control = item.get("generation_control")
-        if not isinstance(control, dict):
-            control = project_control if isinstance(project_control, dict) else {}
-        control = {
-            "mode": "t2v",
-            "audio_enabled": bool(control.get("audio_enabled", True)),
-        }
-        duration = item.get("duration", 0)
+        control = item.get("generation_control") if isinstance(item.get("generation_control"), dict) else project_control
+        events = []
+        for event in item.get("dialogue_events", []) if isinstance(item.get("dialogue_events"), list) else []:
+            if isinstance(event, dict):
+                events.append({
+                    "ref": event.get("ref", ""), "kind": event.get("kind", ""),
+                    "speaker": event.get("speaker", ""), "text": event.get("text", ""),
+                })
         shots.append({
             "shot_id": item.get("shot_id", ""),
             "subshot_id": item.get("subshot_id", ""),
-            "duration": duration,
-            "full_prompt": "生成规格：\n\n主体与空间锁定：\n\n主镜头连续规则：\n\n子镜头组：\n\n光照、声音与稳定约束：",
+            "source_subshot_ids": list(item.get("source_subshot_ids", [item.get("subshot_id", "")]) or []),
+            "duration": item.get("duration", 0),
+            "full_prompt": "",
+            "seedance_prompt": "",
+            "seedance_prompt_variants": {},
             "director_card": "",
-            "negative_prompt": "{{NEGATIVE_PROMPT_AUTO_INJECT}}",
+            "negative_prompt": "",
             "qa_metadata": {
-                "dramatic_goal": "",
-                "dramatic_design": dict(item.get("dramatic_design", {}) or {}),
-                "story_punch_contract": {
-                    "audience_question": "",
-                    "character_pressure": "",
-                    "visible_pressure_object": "",
-                    "dramatic_turn": "",
-                    "picture_punctuation": "",
-                    "composition_priority": "",
-                    "camera_motivation": "",
-                    "end_residue": "",
-                },
-                "duration_design": dict(item.get("duration_design", {}) or {}),
-                "source_constraint_basemap": {
-                    "space_basis": "",
-                    "state_prop_basis": "",
-                    "character_orientation_basis": "",
-                    "tension_curve_role": "",
-                    "sound_lip_sync_basis": "",
-                    "screen_text_policy": "",
-                    "performance_baseline_lock": "none",
-                    "emotion_micro_chain": "",
-                    "dialogue_performance_kernel": "none",
-                    "emotion_residue_contract": "none",
-                    "viewpoint_motion_lock": "none",
-                    "premium_director_polish": "",
-                    "creative_profile": "balanced",
-                    "single_shot_risk": "",
-                },
-                "scene_tone_palette": {
-                    "space_id": "",
-                    "space_master_sentence": "",
-                    "tone_palette": "",
-                    "light_texture_purpose": "",
-                    "visual_scene_prefix": "",
-                    "foreground_layer": "",
-                    "midground_layer": "",
-                    "background_layer": "",
-                    "genre_visual_signature": "",
-                    "lived_in_detail": "",
-                    "depth_focus_policy": "",
-                    "landscape_identity": "",
-                    "landscape_composition": "",
-                    "natural_motion_system": "",
-                    "environment_story_arc": "",
-                    "reveal_order": "",
-                    "light_weather_progression": "",
-                    "breathing_policy": "",
-                },
-                "visual_bible": {
-                    "visual_thesis": "",
-                    "palette_system": "",
-                    "light_motivation": "",
-                    "contrast_exposure": "",
-                    "composition_grammar": "",
-                    "material_world": "",
-                    "atmosphere_rule": "",
-                    "imperfection_policy": "",
-                    "reference_policy": "none",
-                    "continuity_lock": "",
-                },
-                "static_aesthetic_contract": {
-                    "visual_intent": "",
-                    "composition_hierarchy": "",
-                    "light_design": "",
-                    "color_grade": "",
-                    "lens_rendering": "",
-                    "depth_atmosphere": "",
-                    "material_anchor": "",
-                    "signature_frame": "",
-                    "aesthetic_exclusions": "",
-                },
-                "dynamic_aesthetic_contract": {
-                    "motion_thesis": "",
-                    "start_state": "",
-                    "trigger": "",
-                    "primary_subject_motion": "",
-                    "secondary_environment_motion": "",
-                    "camera_path": "",
-                    "focus_behavior": "",
-                    "material_motion": "",
-                    "atmosphere_motion": "",
-                    "tempo_easing": "",
-                    "end_state": "",
-                    "stability_fallback": "",
-                },
-                "aesthetic_priority": {
-                    "visual_thesis": "",
-                    "primary_eye_target": "",
-                    "secondary_visual_layer": "",
-                    "must_preserve": "",
-                    "degrade_first": "",
-                },
-                "video_texture_contract": {
-                    "look_profile": "",
-                    "exposure_policy": "",
-                    "material_motion_policy": "",
-                    "atmosphere_motion_policy": "",
-                    "camera_stability_policy": "",
-                    "continuity_carryover": "",
-                    "risk_controls": "",
-                },
-                "character_scene_objective_contract": {
-                    "focus_character": "",
-                    "scene_objective": "",
-                    "stakes": "",
-                    "obstacle": "",
-                    "active_tactic": "",
-                    "visible_tactic_evidence": "",
-                    "tactic_shift": "",
-                    "knowledge_gap": "",
-                    "power_state_change": "",
-                    "end_action_state": "",
-                },
-                "relationship_emotion_arc": {
-                    "participants": "",
-                    "start_relation_state": "",
-                    "conflicting_wants": "",
-                    "emotional_misalignment": "",
-                    "turn_trigger": "",
-                    "power_shift": "",
-                    "end_relation_state": "",
-                    "shared_residue": "",
-                },
-                "sequence_directing_plan": {
-                    "scene_visual_argument": "",
-                    "sequence_position": "",
-                    "distance_lens_stage": "",
-                    "composition_motif_state": "",
-                    "rule_break_or_hold": "",
-                    "blocking_camera_coordination": "",
-                    "environment_beat": "",
-                    "handoff": "",
-                },
-                "cut_decision_contract": {
-                    "cut_mode": "",
-                    "trigger": "",
-                    "pre_cut_hold": "",
-                    "information_gain": "",
-                    "sound_strategy": "",
-                    "economy_reason": "",
-                    "fallback": "",
-                },
-                "prompt_information_budget": {
-                    "profile": str((item.get("quality_contract", {}) or {}).get("profile", "") or ""),
-                    "primary_render_task": "",
-                    "must_render": "",
-                    "supporting_visual": "",
-                    "metadata_only": "",
-                    "visual_enhancer_limit": 1,
-                    "compression_rule": "",
-                },
-                "sound_directing_plan": {
-                    "primary_source": "",
-                    "source_direction_distance": "",
-                    "room_environment_response": "",
-                    "foreground_background_priority": "",
-                    "silence_or_drop": "",
-                    "lead_lag_strategy": "",
-                    "cut_support": "",
-                },
-                "screen_text_policy": {
-                    "mode": "none",
-                    "text_refs": [],
-                    "render_rule": "",
-                    "safe_area": "",
-                    "perspective_rule": "",
-                },
-                "tension_curve_role": "",
-                "performance_priority": {"primary": "", "supporting": [], "background": []},
-                "action_budget": {
-                    "primary_action_count": 0,
-                    "emotion_turn_count": 0,
-                    "supporting_reaction_count": 0,
-                    "physical_camera_move_count": 0,
-                    "editorial_response_count": 0,
-                },
-                "editorial_mode": item.get("editorial_mode", "continuous_take"),
-                "emotion_driver": {
-                    "trigger": "",
-                    "start_state": "",
-                    "visible_leak": "",
-                    "face_or_eyeline": "",
-                    "voice_or_breath": "",
-                    "end_residue": "",
-                    "tension_intent": "",
-                    "empathy_anchor": "",
-                },
-                "camera_beat_map": list(item.get("camera_beat_map", []) or []),
-                "sequence_context": dict(item.get("sequence_context", {}) or {}),
-                "viewpoint": item.get("viewpoint", "objective"),
-                "visual_hierarchy": item.get("visual_hierarchy", ""),
-                "entry_strategy": item.get("entry_strategy", "none"),
-                "reveal_strategy": item.get("reveal_strategy", "direct"),
-                "focus_strategy": item.get("focus_strategy", "single_plane"),
-                "temporal_transition_contract": _transition_contract_scaffold(item),
-                "quality_contract": dict(item.get("quality_contract", {}) or {}),
-                "quality_evidence": {},
-                "ai_model_readiness_score": {
-                    "scene_space": {"score": 0, "reason": ""},
-                    "continuity_risk": {"score": 0, "reason": ""},
-                    "emotion_readability": {"score": 0, "reason": ""},
-                    "tension_pressure": {"score": 0, "reason": ""},
-                    "camera_emotion_fit": {"score": 0, "reason": ""},
-                    "prop_continuity": {"score": 0, "reason": ""},
-                    "visual_beauty": {"score": 0, "reason": ""},
-                    "overall": {"score": 0, "weakest_point": "", "first_pass_check": ""},
-                },
-                "pressure_release_design": {
-                    "pressure_source": "",
-                    "pressure_object": "",
-                    "escalation_steps": [],
-                    "release_trigger": "",
-                    "release_mode": "",
-                    "release_result": "",
-                    "split_threshold": "",
-                },
-                "start_state": "",
-                "end_state": "",
-                "performance_causality": {
-                    "tension_intent": "",
-                    "trigger": "",
-                    "response_order": [],
-                    "physical_logic": "",
-                    "motion_boundary": "",
-                    "hold_strategy": "",
-                    "end_residue": "",
-                },
-                "performance_contract": {
-                    "tension_intent": "",
-                    "trigger_event": "",
-                    "trigger_time": "",
-                    "inner_emotion": "",
-                    "display_intent": "",
-                    "mask_leak": "",
-                    "start_intensity": 0,
-                    "end_intensity": 0,
-                    "emotion_delta": 0,
-                    "primary_expression": "",
-                    "primary_body_action": "",
-                    "eye_focus": "",
-                    "reaction_delay": "",
-                    "voice_or_breath_control": "",
-                    "viewer_empathy_anchor": "",
-                    "readable_image_moment": "",
-                    "visual_progression": "",
-                    "suppression_or_release": "",
-                    "camera_pressure": "",
-                    "scene_pressure": "",
-                    "end_residue": "",
-                },
-                "expectation_anchor": {
-                    "applicable": False,
-                    "semantic_mode": "none",
-                    "anchor_type": "none",
-                    "anchor": "N/A",
-                    "expecting_subject": "N/A",
-                    "source_interpretation": "N/A",
-                    "start_state": "N/A",
-                    "progress_event": "N/A",
-                    "detail_cut_rule": "N/A",
-                    "return_reaction": "N/A",
-                    "end_state": "N/A",
-                },
-                "continuity_contract": {
-                    "start_anchor": "",
-                    "end_anchor": "",
-                    "position_continuity": "",
-                    "eyeline_continuity": "",
-                    "prop_state": "",
-                    "lighting_continuity": "",
-                    "next_carryover": "",
-                    "state_change": False,
-                    "state_transitions": [],
-                },
-                "reroll_control": {
-                    "risk_level": "",
-                    "identity_anchor": "",
-                    "motion_anchor": "",
-                    "scene_anchor": "",
-                    "camera_anchor": "",
-                    "risk_reason": "",
-                    "mitigation_steps": [],
-                    "manual_first_pass_check": False,
-                },
-                "listener_reaction_plan": {},
-                "dialogue_events": [
-                    {
-                        "ref": event.get("ref", ""),
-                        "kind": event.get("kind", ""),
-                        "speaker": event.get("speaker", ""),
-                        "text": event.get("text", ""),
-                        "time_range": "",
-                        "speaker_visibility": "",
-                        "facial_state": "",
-                        "body_state": "",
-                        "delivery": "",
-                        "breath_pause_plan": "",
-                        "lip_sync": None,
-                        "line_function": "",
-                        "subtext": "",
-                        "stress_words": [],
-                        "subtext_visible_evidence": "",
-                        "turn_relation": "",
-                        "conversation_mode": "clean_turn",
-                        "response_latency": "",
-                        "overlap_or_interrupt_window": "none",
-                        "conversation_source_basis": "",
-                    }
-                    for event in item.get("dialogue_events", [])
-                    if isinstance(event, dict)
-                ],
                 "dialogue_refs": list(item.get("dialogue_refs", []) or []),
+                "dialogue_events": events,
             },
-            "generation_control": control,
+            "generation_control": {
+                "mode": "t2v",
+                "audio_enabled": bool((control or {}).get("audio_enabled", True)),
+            },
             "_scene_lock_ref": str(item.get("scene", "") or "__default__"),
-            "source_subshot_ids": list(item.get("source_subshot_ids", [item.get("subshot_id", "")])),
-            "source_subshots": [
-                {"subshot_id": child.get("subshot_id", ""), "duration": child.get("duration", 0),
-                 "scene_delta": {"lighting": child.get("lighting", ""), "spatial": child.get("spatial_map", {})},
-                 "base_action": child.get("base_action", ""), "camera_beat_map": child.get("camera_beat_map", [])}
-                for child in item.get("source_subshots", [item])
-            ],
         })
-        profile = validation_profile(item)
-        metadata = shots[-1]["qa_metadata"]
-        for field, profile_key in RISK_GATED_QA_FIELDS.items():
-            if not profile.get(profile_key, False):
-                metadata.pop(field, None)
-        if functional_surface_risk(item):
-            shots[-1]["qa_metadata"]["prop_functional_surface_contract"] = {
-                "applicable": True,
-                "prop": "",
-                "functional_surface": "",
-                "user": "",
-                "user_view_relation": "",
-                "camera_half_space": "",
-                "camera_visible_surface": "",
-                "grip_contact": "",
-                "interaction_evidence": "",
-                "content_visibility": "hidden",
-                "orientation_lock": "",
-                "fallback_shot": "",
-            }
-        if validation_profile(item)["skin_tone_protection_contract"]:
-            shots[-1]["qa_metadata"]["skin_tone_protection_contract"] = {
-                "applicable": True,
-                "subjects": "",
-                "protection_mode": "natural_protected",
-                "source_allowed_skin_marks": "none",
-                "skin_tone_baseline": "",
-                "face_light_and_exposure": "",
-                "face_fill_shadow_policy": "",
-                "environment_color_boundary": "",
-                "texture_atmosphere_boundary": "",
-                "continuity_lock": "",
-                "fallback": "",
-            }
-        profile = validation_profile(item)
-        if profile["prop_lifecycle_contract"]:
-            shots[-1]["qa_metadata"]["prop_lifecycle_contract"] = {
-                "prop": "", "purpose": "", "visible_surface": "", "start_location": "",
-                "contact_owner": "", "contact_mode": "", "motion_path": "",
-                "end_location": "", "end_orientation": "", "next_shot_state": "",
-            }
-        if profile["perspective_scale_contract"]:
-            shots[-1]["qa_metadata"]["perspective_scale_contract"] = {
-                "subjects_depth": "", "support_plane": "", "projection_scale_rule": "",
-                "body_ratio_lock": "", "motion_scaling": "", "prop_scale_lock": "",
-                "grounding_evidence": "", "fallback": "",
-            }
-        if profile["lighting_topology_contract"]:
-            shots[-1]["qa_metadata"]["lighting_topology_contract"] = {
-                "motivated_source": "", "source_direction": "", "temperature_range": "",
-                "face_light_layer": "", "environment_light_layer": "",
-                "shadow_exposure_policy": "", "volume_light_boundary": "",
-                "conflict_resolution": "",
-            }
     payload = {
         "contract_version": PROMPT_CONTRACT_VERSION,
         "locked_fields": [
-            "shot_id", "subshot_id", "duration", "negative_prompt",
-            "source_subshot_ids",
+            "shot_id", "subshot_id", "source_subshot_ids", "duration",
             "qa_metadata.dialogue_refs", "qa_metadata.dialogue_events[].ref/kind/speaker/text",
             "generation_control",
         ],
+        "creative_authority": "model",
         "scene_lock_cache_path": scene_lock_cache_path,
         "shots": shots,
     }
@@ -1113,27 +778,8 @@ def _write_composer_scaffold(
     return path
 
 
-def _transition_contract_scaffold(item):
-    candidate = temporal_transition_candidate(item)
-    return {
-        "enabled": False,
-        "kind": candidate.get("kind", "none"),
-        "source_trigger": candidate.get("source_trigger", ""),
-        "decision_reason": "",
-        "time_range": "",
-        "effect": "",
-        "effect_source_basis": "",
-        "from_state": "",
-        "to_state": "",
-        "audio_bridge": "",
-        "lip_sync": False,
-        "prompt_anchor": "",
-        "fallback": "split_with_matched_cut",
-    }
-
-
 def _write_retry_context(run_dir, phase, items, dispatch_dir, dispatch_tag):
-    """Expose only validator facts for the retry batch, never the full prior output."""
+    """Expose only validator facts for the retry batch, never prior creative text."""
     sources = _load_optional_json(os.path.join(run_dir, ".cache", "sources.json"))
     selected = []
     max_retries = 0
@@ -1164,351 +810,42 @@ def _write_retry_context(run_dir, phase, items, dispatch_dir, dispatch_tag):
 def _repair_fields(issues):
     fields = []
     for issue in issues if isinstance(issues, list) else []:
-        text = str(issue)
-        for token in ("full_prompt", "negative_prompt", "generation_control", "qa_metadata", "dialogue_events", "performance_contract", "character_scene_objective_contract", "relationship_emotion_arc", "sequence_directing_plan", "cut_decision_contract", "prompt_information_budget", "sound_directing_plan", "prop_functional_surface_contract", "skin_tone_protection_contract", "continuity_contract", "reroll_control", "camera_beat_map"):
-            if token in text and token not in fields:
-                fields.append(token)
+        if not isinstance(issue, dict):
+            continue
+        field = str(issue.get("field_path", "") or "").strip()
+        if field and field not in fields:
+            fields.append(field)
     return fields or ["validator_reported_field"]
 
 
 def _retry_examples(retry_context_path):
-    """Return only structural examples relevant to the failed retry fields."""
-    context = _load_optional_json(retry_context_path)
-    fields = set()
-    for item in context.get("items", []) if isinstance(context.get("items"), list) else []:
-        fields.update(str(value) for value in item.get("repair_fields", []) or [])
-    for values in context.get("fields_by_main_shot", {}).values() if isinstance(context.get("fields_by_main_shot"), dict) else []:
-        fields.update(str(value) for value in values or [])
-    skill_root = os.path.dirname(os.path.dirname(__file__))
-    paths = []
-    if fields & {"full_prompt", "camera_beat_map", "dramatic_design", "coverage_role"}:
-        paths.append(os.path.join(skill_root, "references", "format_example.txt"))
-    if fields & {"performance_contract", "continuity_contract", "reroll_control", "qa_metadata"}:
-        paths.append(os.path.join(skill_root, "references", "quality_exemplar", "performance_continuity_example.txt"))
-    return [path for path in paths if os.path.isfile(path)]
+    """Engineering does not choose creative examples from issue keywords."""
+    del retry_context_path
+    return []
 
 
 def _write_scene_lock_cache(run_dir, items, dispatch_dir, group_tag):
+    del items, dispatch_dir, group_tag
     approved_path = os.path.join(run_dir, ".cache", "analysis", "scene_locks.json")
     if os.path.exists(approved_path):
         return approved_path
-    config = _load_optional_json(os.path.join(run_dir, "project_config.json"))
-    scenes = {}
-    for item in items:
-        scene = str(item.get("scene", "") or "__default__")
-        entry = scenes.setdefault(scene, {
-            "scene": scene,
-            "canvas": config.get("canvas", ""),
-            "visual_style": config.get("visual_style", ""),
-            "performance_direction": config.get("performance_direction", {}),
-            "costumes": _scene_costumes(config.get("costume_map", {}), scene),
-            "generation_control": config.get("generation_control", {}),
-            "shared_light_anchors": [],
-            "lighting_by_subshot": {},
-            "spatial_by_subshot": {},
-            "continuity_by_subshot": {},
-        })
-        sid = str(item.get("subshot_id", ""))
-        lighting = str(item.get("lighting", "") or "")
-        if lighting:
-            entry["lighting_by_subshot"][sid] = lighting
-            for anchor in _light_anchors(lighting):
-                if anchor not in entry["shared_light_anchors"]:
-                    entry["shared_light_anchors"].append(anchor)
-        spatial = str(item.get("axis_space", item.get("spatial_map", "")) or "")
-        if spatial:
-            entry["spatial_by_subshot"][sid] = spatial
-        continuity = item.get("scene_continuity", {})
-        if isinstance(continuity, dict) and any(str(value or "").strip() for value in continuity.values()):
-            entry["continuity_by_subshot"][sid] = continuity
-    path = os.path.join(dispatch_dir, "master_production_%s_scene_locks.json" % group_tag)
-    _write_json(path, {"contract_version": PROMPT_CONTRACT_VERSION, "scenes": scenes})
-    return path
+    raise FileNotFoundError(
+        "CREATIVE_AUTHORING_REQUIRED: model-authored scene_locks.json is missing; "
+        "engineering cannot synthesize lighting, space, continuity, or visual direction"
+    )
 
 
 def _compact_composer_item(item):
-    # The Composer scaffold carries locked structural fields and Phase-1
-    # ledgers.  The packet item should be a compact execution index plus the
-    # source facts the worker must visibly realize.  Keeping the full master
-    # dict here duplicated scaffold data and pushed stable 50-shot dialogue
-    # runs from 10-shot light batches down to 2-shot packets.
-    sources = [
-        source for source in item.get("source_subshots", [item])
-        if isinstance(source, dict)
-    ]
-    compact_sources = (
-        [_compact_source_subshot(source) for source in sources]
-        if len(sources) > 1
-        else []
-    )
-    scene_delta = {
-        "lighting": str(item.get("lighting", "") or ""),
-        "spatial": str(item.get("axis_space", item.get("spatial_map", "")) or ""),
-        "continuity": dict(item.get("scene_continuity", {}) or {}) if isinstance(item.get("scene_continuity"), dict) else {},
-    }
-    visible_characters = list(item.get("visible_characters", item.get("characters", [])) or [])
-    characters = list(item.get("characters", []) or [])
-    copied = {
-        "shot_id": item.get("shot_id", ""),
-        "subshot_id": item.get("subshot_id", ""),
-        "scene": item.get("scene", ""),
-        "duration": item.get("duration", 0),
-        "base_action": item.get("base_action", ""),
-        "visible_characters": visible_characters,
-        "dialogue_refs": list(item.get("dialogue_refs", []) or []),
-        "dialogue_events": [
-            dict(event)
-            for event in item.get("dialogue_events", []) or []
-            if isinstance(event, dict)
-        ],
-        "source_subshot_ids": list(item.get("source_subshot_ids", [item.get("subshot_id", "")]) or []),
-        "editorial_mode": item.get("editorial_mode", "continuous_take"),
-        "source_subshots": compact_sources,
-        "scene_lock_ref": str(item.get("scene", "") or "__default__"),
-        "composer_scaffold_ref": str(item.get("subshot_id", "")),
-        "execution_hints": _compact_execution_hints(_composer_execution_hints(item)),
-    }
-    if characters and characters != visible_characters:
-        copied["characters"] = characters
-    if not copied["source_subshots"]:
-        copied.pop("source_subshots", None)
-    if not any(scene_delta.values()):
-        copied.pop("scene_delta", None)
-    else:
-        copied["scene_delta"] = scene_delta
-    if not copied["dialogue_refs"]:
-        copied.pop("dialogue_refs", None)
-    if not copied["source_subshot_ids"]:
-        copied.pop("source_subshot_ids", None)
+    """Pass the complete model-authored item and append only file references."""
+    copied = copy.deepcopy(item)
+    copied["scene_lock_ref"] = str(item.get("scene", "") or "__default__")
+    copied["composer_scaffold_ref"] = str(item.get("subshot_id", ""))
     return copied
 
 
-def _compact_execution_hints(hints):
-    required_contracts = [
-        value for value in list(hints.get("required_contracts", []) or [])
-        if value not in {
-            "skin_tone_protection_contract", "prop_lifecycle_contract",
-            "perspective_scale_contract", "lighting_topology_contract",
-        }
-    ]
-    compacted = {
-        "template": hints.get("template", ""),
-        "risk": hints.get("risk", "standard"),
-        "reasons": list(hints.get("reasons", []) or []),
-        "visible": list(hints.get("visible", []) or []),
-        # The skin contract is already present in each applicable scaffold and
-        # enforced locally; do not duplicate its long name in every packet item.
-        "required_contracts": required_contracts,
-    }
-    return compacted
-
-
 def _compact_source_subshot(source):
-    """Keep child-shot facts needed for timeline assembly without duplicating
-    the full master item inside every packet item.
-
-    The Composer scaffold carries locked output fields, while packet.items
-    carries source facts.  A one-child master previously embedded an almost
-    identical child dict, doubling every light task and forcing 10-shot
-    capacity batches down to 2-shot packets.  Preserve source identity,
-    dialogue, visible cast, duration and dramatic/duration ledgers; omit
-    repeated top-level mirrors such as quality_contract and execution hints.
-    """
-    keep = (
-        "shot_id",
-        "subshot_id",
-        "scene",
-        "duration",
-        "base_action",
-        "characters",
-        "visible_characters",
-        "dialogue_refs",
-        "dialogue_events",
-        "emotion_tone",
-        "editorial_mode",
-        "source_ids",
-    )
-    compacted = {key: source.get(key) for key in keep if key in source}
-    compacted["scene_delta"] = {
-        "lighting": str(source.get("lighting", "") or ""),
-        "spatial": str(source.get("axis_space", source.get("spatial_map", "")) or ""),
-        "continuity": (
-            dict(source.get("scene_continuity", {}) or {})
-            if isinstance(source.get("scene_continuity"), dict)
-            else {}
-        ),
-    }
-    return compacted
-
-
-def _composer_execution_hints(item):
-    risk = dispatch_risk(item)
-    sources = item.get("source_subshots")
-    sources = sources if isinstance(sources, list) and sources else [item]
-    visible = _visible_characters(item, sources)
-    dialogue_events = [
-        event for source in sources if isinstance(source, dict)
-        for event in source.get("dialogue_events", []) or []
-        if isinstance(event, dict)
-    ]
-    dialogue_text_length = sum(len(str(event.get("text", "") or "")) for event in dialogue_events)
-    duration = _safe_float(item.get("duration", 0))
-    reasons = risk.get("reasons", [])
-    editorial_mode = str(item.get("editorial_mode", "continuous_take") or "continuous_take")
-    template = _composer_template(reasons, visible, dialogue_events, item)
-    return {
-        "template": template["name"],
-        "risk": risk.get("tier", "standard"),
-        "reasons": reasons,
-        "duration_mode": _duration_mode(duration, reasons),
-        "visible": visible,
-        "risk_gated_contracts": _risk_gated_contracts(item, visible, dialogue_events, reasons, editorial_mode),
-        "required_contracts": [
-            key for key, required in validation_profile(item, item.get("qa_metadata", {}), visible).items()
-            if key not in ("profile", "risk_tier") and required
-        ],
-        "fill_order": template["fill_order"],
-        "checks": _composer_preflight_checks(editorial_mode, visible, dialogue_events, reasons, dialogue_text_length),
-    }
-
-
-def _risk_gated_contracts(item, visible, dialogue_events, reasons, editorial_mode):
-    profile = validation_profile(item, item.get("qa_metadata", {}), visible)
-    return {
-        field: bool(profile.get(profile_key, False))
-        for field, profile_key in RISK_GATED_QA_FIELDS.items()
-    }
-
-
-def _item_tension_intent(item):
-    for key in ("performance_contract", "emotion_driver", "performance_causality"):
-        value = item.get(key)
-        if isinstance(value, dict) and value.get("tension_intent"):
-            return str(value.get("tension_intent", "") or "")
-    metadata = item.get("qa_metadata")
-    if isinstance(metadata, dict):
-        for key in ("performance_contract", "emotion_driver", "performance_causality"):
-            value = metadata.get(key)
-            if isinstance(value, dict) and value.get("tension_intent"):
-                return str(value.get("tension_intent", "") or "")
-    return str(item.get("tension_intent", "") or "")
-
-
-def _composer_template(reasons, visible, dialogue_events, item):
-    if "fight_or_force" in reasons:
-        return {
-            "name": "fight_causal_unit",
-            "fill_order": ["initiator", "direction", "contact_or_judgment", "feedback", "end_lock"],
-        }
-    if "prop_transfer" in reasons:
-        return {
-            "name": "prop_information_transfer",
-            "fill_order": ["prop_start", "transfer_or_refusal", "detail", "recipient_state", "carryover"],
-        }
-    if "shot_group" in reasons or item.get("editorial_mode") == "shot_group":
-        return {
-            "name": "motivated_shot_group",
-            "fill_order": ["beat_subject", "beat_trigger", "one_hand_off_or_reframe", "beat_residue", "same_narrative_lock"],
-        }
-    if dialogue_events and len(visible) > 1:
-        return {
-            "name": "dialogue_relationship_lock",
-            "fill_order": [
-                "line_function", "turn_relation", "subtext", "stress_words", "speaker", "listener",
-                "subtext_visible_evidence", "delayed_listener_reaction", "screen_lr", "mouth_boundary", "residue",
-            ],
-        }
-    if dialogue_events:
-        return {
-            "name": "single_speaker_performance",
-            "fill_order": [
-                "line_function", "turn_relation", "subtext", "stress_words", "speaker", "face",
-                "body", "subtext_visible_evidence", "breath", "voice", "mouth_boundary", "residue",
-            ],
-        }
-    if len(visible) > 1:
-        return {
-            "name": "relationship_blocking_or_movement",
-            "fill_order": ["primary", "supporting_pos", "one_change", "screen_dir", "residue"],
-        }
-    return {
-        "name": "stable_insert_or_single_action",
-        "fill_order": ["subject", "scene_anchor", "one_action_or_state", "camera", "residue"],
-    }
-
-
-def _duration_mode(duration, reasons):
-    if "fight_or_force" in reasons:
-        return "fight_one_causal_unit"
-    if duration <= 2.5:
-        return "single_micro_action"
-    if duration <= 6:
-        return "one_or_two_linked_actions"
-    return "continuous_dialogue_or_process"
-
-
-def _composer_preflight_checks(editorial_mode, visible, dialogue_events, reasons, dialogue_text_length):
-    checks = [
-        "top=shots",
-        "priority=visible",
-        "quality_evidence=literal_fragments",
-        "contracts_visible_in_prompt",
-    ]
-    if editorial_mode == "continuous_take":
-        checks.append("continuous_take=one_range")
-    else:
-        checks.append("shot_group=2-3_ranges_one_narrative_beat")
-    if dialogue_events:
-        checks.append("dialogue_exact+subtext+stress+breath+mouth_close")
-    if dialogue_text_length >= 32:
-        checks.append("long_dialogue=no_extra_plot")
-    if "fight_or_force" in reasons:
-        checks.append("fight_continuity=start_contact_end")
-    return checks
-
-
-def _visible_characters(item, sources):
-    values = item.get("visible_characters", item.get("characters", [])) or []
-    if not values:
-        values = [
-            character for source in sources if isinstance(source, dict)
-            for character in (source.get("visible_characters", source.get("characters", [])) or [])
-        ]
-    if isinstance(values, str):
-        values = [part.strip() for part in re.split(r"[;；,，、/]+", values) if part.strip()]
-    return list(dict.fromkeys(str(value).strip() for value in values if str(value).strip()))
-
-
-def _safe_float(value):
-    try:
-        return float(value or 0)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def _scene_costumes(costume_map, scene):
-    if not isinstance(costume_map, dict):
-        return {}
-    result = {}
-    for character, mapping in costume_map.items():
-        if isinstance(mapping, dict):
-            value = mapping.get(scene)
-            if value is not None:
-                result[character] = value
-    return result
-
-
-def _light_anchors(text):
-    anchors = []
-    for value in re.findall(r"\d{4}K", text):
-        if value not in anchors:
-            anchors.append(value)
-    for sentence in re.split(r"[。；;]", text):
-        if any(token in sentence for token in ("主光源", "主光", "顶灯", "窗光")):
-            compact = sentence.strip()
-            if compact and compact not in anchors:
-                anchors.append(compact)
-    return anchors[:4]
+    """Retained API: child records are no longer compacted or filtered."""
+    return copy.deepcopy(source)
 
 
 def _load_optional_json(path):
@@ -1528,14 +865,6 @@ def _sha256(path):
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def _append_reference_file(handle, path, title):
-    if not os.path.exists(path):
-        return
-    with open(path, "r", encoding="utf-8-sig") as ref:
-        handle.write("\n\n# %s\n\n" % title)
-        handle.write(ref.read())
 
 
 if __name__ == "__main__":

@@ -141,8 +141,6 @@ def _expand_dependent_fields(fields):
     values = [str(field or "").strip() for field in fields or [] if str(field or "").strip()]
     if ALL_MUTABLE_FIELDS in values:
         return [ALL_MUTABLE_FIELDS]
-    if "full_prompt" in values and "qa_metadata.quality_evidence" not in values:
-        values.append("qa_metadata.quality_evidence")
     return values
 
 
@@ -220,7 +218,7 @@ def _prior_retry_attempts(run_dir, shot_ids):
     if not os.path.isdir(dispatch_dir):
         return counts
     for name in os.listdir(dispatch_dir):
-        if not name.endswith("_packet.json"):
+        if name.startswith("._") or not name.endswith("_packet.json"):
             continue
         try:
             with open(os.path.join(dispatch_dir, name), encoding="utf-8-sig") as handle:
@@ -307,7 +305,7 @@ def _inherit_prior_retry_fields(run_dir, fields_by_shot, shot_ids):
     if not os.path.isdir(dispatch_dir):
         return {shot_id: sorted(fields) for shot_id, fields in inherited.items()}
     for name in os.listdir(dispatch_dir):
-        if not name.endswith("_packet.json"):
+        if name.startswith("._") or not name.endswith("_packet.json"):
             continue
         path = os.path.join(dispatch_dir, name)
         try:
@@ -341,7 +339,7 @@ def _has_previous_retry(run_dir, shot_ids):
     if not os.path.isdir(dispatch_dir):
         return False
     for name in os.listdir(dispatch_dir):
-        if not name.endswith("_packet.json"):
+        if name.startswith("._") or not name.endswith("_packet.json"):
             continue
         path = os.path.join(dispatch_dir, name)
         try:

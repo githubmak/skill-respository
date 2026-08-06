@@ -3,34 +3,14 @@
   "canvas": "",
   "visual_style": "",
   "genre": "",
-  "performance_direction": {
-    "causal_chain": "情绪由剧情触发、景别可见的表情控制、细部或已确认道具泄露、身体承接、声音或呼吸落点和可见残留组成",
-    "detail_leak_policy": "每个节拍只选择当前景别可见的一条细部或道具泄露路径，不堆叠身体部位",
-    "non_speaking_reaction": "非说话人物只对可感知事件给出一次自然反应，并保持正确口型边界",
-    "editorial_policy": "镜头变化只响应表演重音；连续镜保持一条轨迹，情绪驱动镜头组允许有动机的反打、细节切换、推近、重构图或跟随"
-  },
-  "quality_policy": {
-    "model_agnostic_gates": true,
-    "double_qa": true,
-    "auto_repair": true,
-    "profile_routing": true
-  },
-  "_quality_policy_desc": "所有模型和所有镜头都必须经过同一质量合同、确定性QA、语义QA与最终验证。profile_routing仅跳过无关人物分析，不降低环境、物件或人物镜的质量要求。",
-  "_performance_direction_desc": "用户可按项目改写表演方向卡。它是创作输入而非模型负面词；不得填入示例专属人物、剧情、道具、场景或画风。",
   "max_shot_duration": null,
-  "max_static_shot_duration": 6,
-  "_max_static_shot_duration_desc": "单一微表情、一次视线变化、静态压场或群体凝视的默认上限。超过该值的 Orchestrator 子镜必须填写 duration_rationale（continuous_dialogue/continuous_interaction/continuous_action/sustained_reveal）与有序 dramatic_beats；氛围、余韵、压迫或停顿本身不能作为延长理由。",
   "output_type": "动态视频",
   "target_platform": "",
-  "_target_platform_desc": "当前契约仅支持即梦。提示词使用即梦可执行的可见构图、时间窗和稳定性控制；不得把示例题材或画风写成默认。",
   "seedance_target": "auto",
-  "_seedance_target_desc": "auto 输出一份兼容 Seedance 2.0/2.5 的 dual-safe Markdown；2.0 或 2.5 输出单一模型优化版；both 从同一镜头、台词和连续性合同原子导出两份独立可投喂 Markdown，并生成 00_双版本索引.md。both 不改变镜号、台词、时长、人物、空间、道具或剧情事实，只改变模型适配的光影精度与动态复杂度措辞。",
   "generation_control": {
     "mode": "t2v",
-    "audio_enabled": true,
-    "supports_negative_prompt": true
+    "audio_enabled": true
   },
-  "_generation_control_desc": "固定为即梦 T2V；不接受外部素材路径、首尾帧或动作素材。人物连续性由固定身份锚点、服装、屏幕左右、场景锚点和上镜终态继承控制。",
   "prompt_limits": {
     "hard_max_chars": null
   },
@@ -38,14 +18,10 @@
     "scenario": "",
     "injected_failure_rate": 0
   },
-  "_benchmark_desc": "仅用于性能回归：scenario 只允许 dialogue/action/mixed；injected_failure_rate 只允许 0 或 0.10。真实 50 主镜运行由 benchmark_core_pipeline.py 汇总，禁止伪造耗时。",
-  "_prompt_limits_desc": "只有用户或目标平台明确提供提示词硬上限时填写正整数。动态长度范围是软指导，不写入此字段，也不因软范围溢出拆镜。",
   "export_base": "",
-  "_export_base_desc": "必须由用户在本次运行中明确提供输出文件位置/输出目录后填写；禁止默认当前目录、工作区目录、源文件目录、上次目录或自动生成目录。所有 run_dir、.cache、dispatch、review、analysis、composer、director、continuity 中间文件都必须位于 export_base 下。",
   "delivery": {
     "markdown_path": ""
   },
-  "_delivery_desc": "本次运行开始时由用户一次确认的最终 Markdown 交付绝对路径。路径必须位于 export_base 内；通过全部验证后，自动同时写出同名 XLSX，不再在导出阶段重复询问。",
   "confirmation": {
     "config_version": 4,
     "confirmed_at": "",
@@ -53,11 +29,8 @@
     "confirmed_values": {},
     "confirmed_values_sha256": ""
   },
-  "_confirmation_desc": "模板值不等于用户确认。逐项 Wizard 完成，或用户通过高质量快速模式一次明确提交全部九个基础字段后，才写入 confirmed_at，并在 confirmed_fields 中列出 export_base、canvas、visual_style、max_shot_duration、target_platform、seedance_target、generation_control.mode、generation_control.audio_enabled、delivery.markdown_path；同时写入 confirmed_values 及其哈希。快速模式必须丢弃输入文件中的旧 confirmation 元数据。任一确认值变更时必须回到对应确认流程。没有此记录不得续跑、合成、修复或导出。",
   "run_timestamp": "",
   "character_list": [],
   "global_negative_prompt": "",
-  "_global_negative_prompt_desc": "默认由negative_prompts.py按镜头上下文生成精简负面词。仅当目标平台有明确专项要求时填写额外词，不写‘禁止……’式正向命令。",
- "costume_map": {},
- "_costume_map_desc": "角色服装表。key为运行时角色名，value为该角色在运行时场景中的已确认服装描述。Prompt Composer只能从costume_map匹配，不得自行编造。结构示例：{角色A: {场景A: 已确认服装描述, 场景B: 继承场景A服装}}。"
+  "costume_map": {}
 }

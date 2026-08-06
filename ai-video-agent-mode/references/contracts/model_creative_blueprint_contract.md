@@ -1,82 +1,79 @@
 # 模型创作蓝图合同
 
-Orchestrator 是模型创作阶段，不是本地分镜算法。工程层先产出
-`.cache/orchestrator/source_snapshot.json` 和
-`.cache/orchestrator/creative_blueprint_request.json`，然后暂停并返回
-`creative_authoring_required`。当前主模型读取源文、快照、项目配置和本合同后，创作以下三个文件：
+Orchestrator 是大模型导演创作阶段。工程先生成逐字源文证据：
+
+- `.cache/orchestrator/source_snapshot.json`
+- `.cache/orchestrator/source_ledger.json`
+- `.cache/orchestrator/creative_blueprint_request.json`
+
+模型读取源文、上述证据和项目配置，只需创作：
 
 - `.cache/orchestrator/shot_plan.draft.json`
-- `.cache/orchestrator/source_ledger.json`
-- `.cache/orchestrator/dramatic_beat_ledger.json`
 
-## 模型职责
+## 最高目标
 
-模型负责理解剧情和潜台词，识别人物目标、关系与情绪变化，决定场景和戏剧节拍，完成拆镜、
-反应归属、叙事权重、镜头功能、覆盖角色、时长策略及视觉标点。模型必须保留源文事实和逐字台词，
-每个主镜只服务一个 `narrative_beat_id`，每镜不超过用户确认的 `max_shot_duration`。
+让大模型充分发挥导演与创作能力，以最终画面和观众感受为判断标准。模型负责剧本理解、潜台词、
+人物目标与关系、情绪因果、表演、戏剧节拍、拆镜、节奏、站位、机位、景别、焦段、运镜、焦点、
+光影、影调、色卡、材质、声音、动作设计、Seedance 语义编译和最终审美判断。
 
-`source_ledger.json` 由模型给每个需要进入成片的源文单元分配稳定 `source_id`，并记录源快照中的
-`line`、逐字 `text`，再标记 `type=action|dialogue|scene_header|context`。工程层会核对行号与全文，
-模型不能改写 ledger 原文。`type=action|dialogue` 的单元必须被
-`dramatic_beat_ledger.json` 中至少一个节拍引用。`dramatic_beat_ledger.json` 的每个 `beat_id`
-必须唯一归属于 `shot_plan.draft.json` 中一个现存 `subshot_id`。
+模型可自由决定创作分析过程、字段名称和嵌套结构。`dramatic_design`、`duration_design`、节拍 ledger、
+固定权重、固定镜头功能或一节拍一镜都不是必填合同。一个源文单元可被多个镜头引用，一个镜头也可承载
+多个节拍；重复、回切、蒙太奇、长镜头和拆镜均由模型决定。
 
-每个 `dialogue_events` 记录还必须提供 `source_ids`。工程层要求 `text` 是这些源文行中的逐字连续片段；
-允许模型按完整语义句拆成多个事件，但不允许增删、同义替换或改标点。
+## 工程证据
 
-## 工程职责
+`source_ledger.json` 由工程从快照逐行生成，每条包含稳定 `source_id`、`line` 和逐字 `text`。工程不判断
+该行是动作、对白、场景标题还是上下文，也不从文本推断剧情功能。
 
-工程层只做源文件读取、逐行快照、哈希、JSON/Schema、ID 唯一性、时长测量、逐字台词、引用覆盖、
-配置锁定和文件写入。工程层不得创建或补全剧情节拍，不得自动合并动作/对白，不得选择反应人物、
-叙事权重、镜头功能、景别、焦段、构图、运镜、光影、情绪或表演。
+模型在每个子镜的 `source_ids` 中引用支撑该镜的源文行。非空源文行必须至少被一个镜头或对白事件引用；
+若某行不进入成片，模型在顶层 `source_exclusions` 中写入 `source_id` 和创作理由。工程只检查 ID 是否存在、
+是否遗漏或冲突，不判断理由是否正确。同一 `source_id` 可跨镜重复引用，不设“恰好一次”限制。
 
-模型提交后，`build_shotplan.py` 只允许补机械 ID、锁定确认过的画幅/风格/时长上限并拒绝非法引用。
-`preflight_check.py` 可以阻断错误，但语义修复必须返回模型处理，不能由脚本改写为可通过版本。
+每个 `dialogue_events` 记录提供 `source_ids`，且 `text` 必须是对应源文中的逐字连续片段。模型可以按语义句
+拆分事件，但不能增删、同义替换或改标点。原文没有的人声、台词、OS、OV 或系统音不得新增。
 
-## 最小 `shot_plan.draft.json` 形状
+## 最小机械接口
+
+以下示例只展示工程需要定位的 ID、时长、源文和对白引用。除这些锁定事实外，模型可增加任意创作字段，
+所有新增字段必须被后续 packet 和 Editor 上下文完整透传。
 
 ```json
 {
-  "project_name": "",
-  "canvas": "16:9",
-  "visual_style": "用户确认风格",
-  "max_shot_duration": 15,
-  "scenes": [{"id": "SC01", "name": "场景名"}],
   "dialogue_map": {"D1": "逐字原文"},
   "dialogue_events": {
-    "D1": {"ref": "D1", "kind": "台词", "speaker": "人物名", "text": "逐字原文", "source_ids": ["SRC0001"]}
+    "D1": {
+      "ref": "D1",
+      "kind": "台词",
+      "speaker": "人物名",
+      "text": "逐字原文",
+      "source_ids": ["SRC000002"]
+    }
   },
-  "shots": [{
-    "shot_id": "S1-01",
-    "scene": "场景名",
-    "core_action": "模型创作的本镜剧情动作",
-    "subshots": [{
-      "subshot_id": "S1-01-01",
-      "duration": 8.0,
-      "characters": ["人物名"],
-      "dialogue_refs": ["D1"],
-      "base_action": "本镜可见动作与反应",
-      "source_ids": ["SRC0001"],
-      "dramatic_design": {
-        "shot_function": "dialogue",
-        "coverage_role": "relationship_blocking",
-        "narrative_weight": "high",
-        "information_gain": "本镜唯一新增信息",
-        "reaction_ownership": "承担反应的人物",
-        "narrative_beat_id": "B001",
-        "dramatic_beat_ids": ["B001"],
-        "visual_punctuation": []
-      },
-      "duration_design": {
-        "duration_strategy": "pack_toward_limit",
-        "justified_content_duration": 8.0,
-        "utilization_ratio": 0.533,
-        "duration_rationale": "continuous_interaction",
-        "dramatic_beats": ["B001"]
-      }
-    }]
-  }]
+  "source_exclusions": [
+    {"source_id": "SRC000001", "reason": "模型判断的非成片内容理由"}
+  ],
+  "shots": [
+    {
+      "shot_id": "S1-01",
+      "scene": "模型识别的场景",
+      "subshots": [
+        {
+          "subshot_id": "S1-01-01",
+          "duration": 8.0,
+          "source_ids": ["SRC000002", "SRC000003"],
+          "dialogue_refs": ["D1"]
+        }
+      ]
+    }
+  ]
 }
 ```
 
-示例只说明字段结构，不提供创意默认值；不得把其中的角色、权重、镜头功能或时长迁移到真实项目。
+## 工程门禁
+
+工程只执行 JSON/Schema、机械 ID、源文逐字完整性、对白逐字核对、引用存在、显式覆盖状态、时长上限、
+配置锁定、哈希和文件写入。它不得创建或补全剧情节拍，不得自动合并动作或对白，不得选择反应人物、
+叙事权重、镜头功能、构图、运镜、光影、情绪、表演或 Seedance 表达。
+
+`build_shotplan.py` 只补机械 ID、锁定确认过的画幅/风格/时长上限并保留模型的全部未知字段。
+`preflight_check.py` 只报告可机械证明的问题；任何需要改变创作语义的修复必须返回模型。

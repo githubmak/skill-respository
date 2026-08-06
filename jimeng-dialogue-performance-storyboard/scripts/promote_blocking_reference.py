@@ -42,6 +42,8 @@ def record_review(render_report: str, decision: str, findings: list[str]) -> dic
     return {
         "schema_version": 1,
         "blocking_gate_version": BLOCKING_GATE_VERSION,
+        "reference_role": "blocking_geometry_only",
+        "generation_reference_allowed": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "shot_group": payload.get("shot_group"),
         "geometry_review": "PASS",
@@ -59,6 +61,8 @@ def promote(review_path: str, delivery_dir: str, replace: bool = False) -> dict:
         raise ValueError("visual review uses a stale blocking gate; rerender and review again before promotion")
     if review.get("visual_review") != "PASS" or not review.get("promotion_allowed"):
         raise ValueError("promotion requires geometry PASS and visual_review PASS")
+    if review.get("reference_role") != "blocking_geometry_only" or review.get("generation_reference_allowed") is not False:
+        raise ValueError("blocking artifacts are geometry references only; cinematic/reference promotion requires a separate reviewed asset")
     destination_dir = Path(delivery_dir).expanduser().resolve()
     if "staging" in destination_dir.parts:
         raise ValueError("delivery directory cannot be inside staging")
@@ -78,6 +82,8 @@ def promote(review_path: str, delivery_dir: str, replace: bool = False) -> dict:
         "shot_group": review.get("shot_group"),
         "promoted": promoted,
         "visual_review": "PASS",
+        "reference_role": "blocking_geometry_only",
+        "generation_reference_allowed": False,
         "primary_storyboard_modified": False,
     }
 
@@ -103,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "record":
             result = record_review(args.render_report, args.decision, args.finding)
+            result["pass"] = True
             Path(args.review).expanduser().resolve().write_text(
                 json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
             )

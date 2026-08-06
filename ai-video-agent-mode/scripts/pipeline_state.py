@@ -9,6 +9,7 @@ from contract_registry import (
     PIPELINE_CONTRACT_VERSION,
     PIPELINE_PHASES,
 )
+from pipeline_deadline import ensure_state_contract
 from pipeline_runtime import atomic_json, json_lock
 
 # ========== Constants ==========
@@ -46,6 +47,7 @@ def init_state(run_dir):
         "phase_order": PHASE_ORDER,
         "phases": {p: {"status": "pending", "agent_id": None, "retries": 0, "spawn_time": None, "timeout_count": 0} for p in PHASE_ORDER}
     }
+    ensure_state_contract(state)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
@@ -59,6 +61,15 @@ def load_state(run_dir):
     with open(path, "r", encoding="utf-8-sig") as f:
         state = json.load(f)
     changed = False
+    before_deadline = (
+        state.get("pipeline_deadline_seconds"), state.get("pipeline_deadline_at"),
+        state.get("pipeline_status"),
+    )
+    ensure_state_contract(state)
+    changed = before_deadline != (
+        state.get("pipeline_deadline_seconds"), state.get("pipeline_deadline_at"),
+        state.get("pipeline_status"),
+    )
     state_contract_version = state.get("pipeline_contract_version")
     if not state_contract_version:
         state["pipeline_contract_version"] = PIPELINE_CONTRACT_VERSION

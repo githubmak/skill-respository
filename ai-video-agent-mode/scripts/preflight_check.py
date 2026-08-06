@@ -1,218 +1,129 @@
-"""Preflight checks before spawning analysis agents."""
+"""Deterministic source, ledger, ID, dialogue, and duration preflight."""
+
 import json
 import os
 import sys
 
-if not os.environ.get("PYTHONPYCACHEPREFIX") and not getattr(sys, "pycache_prefix", None):
-    sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(__file__))
-from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_prefix
-
-block_source_pycache_until_run_dir()
 from validate_durations import validate as validate_durations
-from shot_semantics import is_declared_non_action, is_implicit_character_action, render_anchor, requires_base_action, requires_characters
-from speech_events import NONPHYSICAL_SPEECH_KINDS, SPEECH_KINDS
 
 
-ALLOWED_VISUAL_PUNCTUATION = {
-    "occlusion_reveal", "low_angle_scale", "foreground_reaction",
-    "camera_follow", "light_reveal", "stop_mark", "rack_focus",
-}
-PLACEHOLDER_CHARACTER_NAMES = {"主角", "角色A", "角色B", "角色甲", "角色乙"}
-# These checks protect visual economy, but a later Composer/Editor pass can
-# repair them without losing source facts.  Keep the set intentionally small:
-# identity, dialogue, ownership, and duration failures remain hard blockers.
-ADVISORY_CHECKS = {
-    "VISUAL_PUNCTUATION_COUNT",
-    "VISUAL_PUNCTUATION_VALUE",
-}
+SPEECH_KINDS = {"台词", "OS", "OV", "系统音"}
 
 
 def run(run_dir):
-    """Validate shot_plan before expensive sub-agent dispatch."""
-    ensure_pycache_prefix(run_dir)
-    shot_plan_path = os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json")
-    project_config_path = os.path.join(run_dir, "project_config.json")
+    plan_path = os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json")
+    config_path = os.path.join(run_dir, "project_config.json")
     issues = []
+    plan = _load_required(plan_path, issues, "SHOT_PLAN")
+    shots = plan.get("shots", []) if isinstance(plan, dict) else []
+    if not isinstance(shots, list) or not shots:
+        issues.append(_issue("GLOBAL", "SHOTS_EMPTY", "shots must be a non-empty array"))
+        shots = []
 
-    if not os.path.exists(shot_plan_path):
-        return [_issue("GLOBAL", "SHOT_PLAN_MISSING", "missing .cache/orchestrator/shot_plan.json")]
-
-    try:
-        with open(shot_plan_path, "r", encoding="utf-8-sig") as f:
-            shot_plan = json.load(f)
-    except Exception as exc:
-        return [_issue("GLOBAL", "SHOT_PLAN_PARSE", str(exc))]
-
-    seen = set()
-    dialogue_map = shot_plan.get("dialogue_map", {}) or {}
-    dialogue_events = shot_plan.get("dialogue_events", {}) or {}
-    declared_beats = {}
-
-    for shot in shot_plan.get("shots", []):
-        shot_id = shot.get("shot_id", "")
-        if not shot_id:
-            issues.append(_issue("GLOBAL", "SHOT_ID_MISSING", "shot missing shot_id"))
+    seen_shots, seen_subshots, referenced_dialogue, referenced_sources = set(), set(), [], []
+    dialogue_events = plan.get("dialogue_events", {}) if isinstance(plan.get("dialogue_events"), dict) else {}
+    for shot in shots:
+        if not isinstance(shot, dict):
+            issues.append(_issue("GLOBAL", "SHOT_TYPE", "shot must be an object"))
+            continue
+        shot_id = str(shot.get("shot_id", ""))
+        if not shot_id or shot_id in seen_shots:
+            issues.append(_issue(shot_id or "GLOBAL", "SHOT_ID", "shot_id must be non-empty and unique"))
+        seen_shots.add(shot_id)
         subshots = shot.get("subshots", [])
-        if not subshots:
-            issues.append(_issue(shot_id or "GLOBAL", "SUBSHOTS_EMPTY", "shot has no subshots"))
-        for ss in subshots:
-            ssid = ss.get("subshot_id", "")
-            if not ssid:
-                issues.append(_issue(shot_id or "GLOBAL", "SUBSHOT_ID_MISSING", "subshot missing subshot_id"))
+        if not isinstance(subshots, list) or not subshots:
+            issues.append(_issue(shot_id or "GLOBAL", "SUBSHOTS_EMPTY", "subshots must be a non-empty array"))
+            continue
+        for subshot in subshots:
+            if not isinstance(subshot, dict):
+                issues.append(_issue(shot_id, "SUBSHOT_TYPE", "subshot must be an object"))
                 continue
-            if ssid in seen:
-                issues.append(_issue(ssid, "SUBSHOT_ID_DUPLICATE", "duplicate subshot_id"))
-            seen.add(ssid)
-            dramatic_design = ss.get("dramatic_design")
-            if not isinstance(dramatic_design, dict):
-                issues.append(_issue(ssid, "DRAMATIC_DESIGN_MISSING", "dramatic_design is required"))
-            else:
-                narrative_beat_id = str(dramatic_design.get("narrative_beat_id", "") or "").strip()
-                punctuation = dramatic_design.get("visual_punctuation")
-                if not isinstance(punctuation, list):
-                    issues.append(_issue(ssid, "VISUAL_PUNCTUATION_TYPE", "dramatic_design.visual_punctuation must be an array"))
-                else:
-                    if len(punctuation) > 2:
-                        issues.append(_issue(ssid, "VISUAL_PUNCTUATION_COUNT", "visual punctuation allows at most 2 devices"))
-                    if len(set(punctuation)) != len(punctuation) or any(item not in ALLOWED_VISUAL_PUNCTUATION for item in punctuation):
-                        issues.append(_issue(ssid, "VISUAL_PUNCTUATION_VALUE", "visual punctuation contains duplicate or unsupported device"))
-                    if (
-                        dramatic_design.get("shot_function") == "entrance"
-                        and dramatic_design.get("narrative_weight") in ("high", "critical")
-                        and not 1 <= len(punctuation) <= 2
-                    ):
-                        issues.append(_issue(ssid, "VISUAL_PUNCTUATION_COUNT", "important entrance needs 1-2 visual punctuation devices"))
-                if narrative_beat_id:
-                    dramatic_beat_ids = [str(beat_id).strip() for beat_id in dramatic_design.get("dramatic_beat_ids", []) or [] if str(beat_id).strip()]
-                    if narrative_beat_id not in dramatic_beat_ids:
-                        issues.append(_issue(ssid, "NARRATIVE_BEAT_ID_MISMATCH", "narrative_beat_id must be one of dramatic_beat_ids"))
-                for beat_id in dramatic_design.get("dramatic_beat_ids", []) or []:
-                    if beat_id in declared_beats:
-                        issues.append(_issue(ssid, "DRAMATIC_BEAT_DUPLICATE_OWNER", "%s also owned by %s" % (beat_id, declared_beats[beat_id])))
-                    declared_beats[beat_id] = ssid
-            base_action = ss.get("base_action", "")
-            characters = ss.get("characters", []) or []
-            for character in characters:
-                if str(character).strip() in PLACEHOLDER_CHARACTER_NAMES:
-                    issues.append(_issue(ssid, "PLACEHOLDER_CHARACTER", "replace placeholder character name with a source-confirmed name"))
-            dialogue_refs = ss.get("dialogue_refs", []) or []
-            shot_size = ss.get("shot_size", "")
-            shot_type = ss.get("shot_type", "") or ss.get("visual_type", "") or ss.get("purpose", "")
-            if is_declared_non_action(ss):
-                if ss.get("non_character_confirmed") is not True:
-                    issues.append(_issue(ssid, "NON_CHARACTER_CONFIRMATION_MISSING", "non-character insert must set non_character_confirmed=true"))
-                if not render_anchor(ss):
-                    issues.append(_issue(ssid, "NON_CHARACTER_RENDER_ANCHOR_MISSING", "non-character insert must provide visual_intent/image_subject/atmosphere"))
-                if dialogue_refs or characters or is_implicit_character_action(base_action):
-                    issues.append(_issue(ssid, "NON_CHARACTER_CONFIRMATION_CONTRADICTION", "non_character_confirmed=true conflicts with dialogue, visible characters, or implicit human action"))
-            if not base_action and requires_base_action(ss):
-                issues.append(_issue(ssid, "BASE_ACTION_MISSING", "base_action required for character/action/dialogue shots; use visual_intent/shot_type for true non-action shots"))
-            if not characters and requires_characters(base_action, dialogue_refs, shot_size, shot_type):
-                nonphysical_only = bool(dialogue_refs) and all(
-                    isinstance(dialogue_events.get(ref), dict)
-                    and dialogue_events[ref].get("kind") in NONPHYSICAL_SPEECH_KINDS
-                    for ref in dialogue_refs
-                )
-                if not nonphysical_only:
-                    issues.append(_issue(ssid, "CHARACTERS_MISSING", "characters required for dialogue/action/performance shots; OV-only shots and system-audio-only shots may keep an empty visible-character list"))
-            for ref in dialogue_refs:
-                if ref not in dialogue_map:
-                    issues.append(_issue(ssid, "DIALOGUE_REF_MISSING", "%s not found in dialogue_map" % ref))
-                    continue
+            sid = str(subshot.get("subshot_id", ""))
+            if not sid or sid in seen_subshots:
+                issues.append(_issue(sid or shot_id, "SUBSHOT_ID", "subshot_id must be non-empty and unique"))
+            seen_subshots.add(sid)
+            refs = subshot.get("dialogue_refs", [])
+            if not isinstance(refs, list):
+                issues.append(_issue(sid, "DIALOGUE_REFS_TYPE", "dialogue_refs must be an array"))
+                refs = []
+            referenced_dialogue.extend(str(ref) for ref in refs)
+            source_refs = subshot.get("source_ids", [])
+            if not isinstance(source_refs, list):
+                issues.append(_issue(sid, "SOURCE_IDS_TYPE", "source_ids must be an array"))
+                source_refs = []
+            referenced_sources.extend(str(source_id) for source_id in source_refs)
+            for ref in refs:
                 event = dialogue_events.get(ref)
                 if not isinstance(event, dict):
-                    issues.append(_issue(ssid, "DIALOGUE_EVENT_MISSING", "%s not found in dialogue_events; regenerate Orchestrator" % ref))
+                    issues.append(_issue(sid, "DIALOGUE_EVENT_MISSING", "%s is absent" % ref))
                     continue
-                for field in ("ref", "kind", "speaker", "text"):
-                    if not str(event.get(field, "") or "").strip():
-                        issues.append(_issue(ssid, "DIALOGUE_EVENT_FIELD", "%s.%s is required" % (ref, field)))
-                if event.get("ref") != ref:
-                    issues.append(_issue(ssid, "DIALOGUE_EVENT_REF", "%s ref mismatch" % ref))
-                if event.get("kind") not in SPEECH_KINDS:
-                    issues.append(_issue(ssid, "DIALOGUE_EVENT_KIND", "%s kind must be 台词/OS/OV/系统音" % ref))
-                if event.get("kind") == "OV" and str(event.get("speaker", "") or "").strip() in characters:
-                    issues.append(_issue(ssid, "OV_SPEAKER_VISIBLE_LOCK", "%s is OV and must not be locked as a visible character" % ref))
-                if event.get("kind") == "系统音" and str(event.get("speaker", "") or "").strip() in characters:
-                    issues.append(_issue(ssid, "SYSTEM_SOUND_VISIBLE_LOCK", "%s is system audio and must not be locked as a visible character" % ref))
+                facts = tuple(str(event.get(field, "")) for field in ("ref", "kind", "speaker", "text"))
+                if not all(facts) or facts[0] != str(ref) or facts[1] not in SPEECH_KINDS:
+                    issues.append(_issue(sid, "DIALOGUE_EVENT_FACTS", "%s has invalid locked facts" % ref))
 
-    source_ledger_path = os.path.join(run_dir, ".cache", "orchestrator", "source_ledger.json")
-    beat_ledger_path = os.path.join(run_dir, ".cache", "orchestrator", "dramatic_beat_ledger.json")
-    source_records = _ledger_records(source_ledger_path, "units", issues, "SOURCE_LEDGER")
-    source_values = [str(record.get("source_id", "") or "") for record in source_records]
-    if any(not value for value in source_values) or len(source_values) != len(set(source_values)):
+    source_path = os.path.join(run_dir, ".cache", "orchestrator", "source_ledger.json")
+    source_records = _ledger_records(source_path, "units", issues, "SOURCE_LEDGER")
+    source_ids = [str(item.get("source_id", "")) for item in source_records]
+    if any(not value for value in source_ids) or len(source_ids) != len(set(source_ids)):
         issues.append(_issue("GLOBAL", "SOURCE_LEDGER_ID", "source_id values must be non-empty and unique"))
-    source_ids = set(source_values)
-    source_record_by_id = {
-        str(record.get("source_id", "") or ""): record for record in source_records
-        if str(record.get("source_id", "") or "")
-    }
-    snapshot_path = os.path.join(run_dir, ".cache", "orchestrator", "source_snapshot.json")
-    if os.path.exists(snapshot_path):
-        _validate_source_snapshot(run_dir, source_records, issues)
-        _validate_dialogue_source_lock(dialogue_events, source_record_by_id, issues)
-    required_source_ids = {
-        str(record.get("source_id", "") or "")
-        for record in source_records
-        if record.get("type") in {"action", "dialogue"}
-    }
-    beat_records = _ledger_records(beat_ledger_path, "beats", issues, "DRAMATIC_BEAT_LEDGER")
-    ledger_beat_ids = set()
-    assigned_source_ids = set()
-    for record in beat_records:
-        beat_id = str(record.get("beat_id", "") or "")
-        owner = str(record.get("owner_subshot_id", "") or "")
-        if not beat_id or beat_id in ledger_beat_ids:
-            issues.append(_issue(owner or "GLOBAL", "DRAMATIC_BEAT_LEDGER_ID", "missing or duplicate beat_id: %s" % beat_id))
-            continue
-        ledger_beat_ids.add(beat_id)
-        if owner not in seen:
-            issues.append(_issue(owner or "GLOBAL", "DRAMATIC_BEAT_OWNER", "%s owner must exist in shot_plan" % beat_id))
-        if declared_beats.get(beat_id) != owner:
-            issues.append(_issue(owner or "GLOBAL", "DRAMATIC_BEAT_OWNER_MISMATCH", "%s ledger=%s shot_plan=%s" % (beat_id, owner, declared_beats.get(beat_id))))
-        for source_id in record.get("source_ids", []) or []:
-            if source_id not in source_ids:
-                issues.append(_issue(owner or "GLOBAL", "DRAMATIC_BEAT_SOURCE", "%s references unknown %s" % (beat_id, source_id)))
-            else:
-                assigned_source_ids.add(source_id)
-    for source_id in sorted(required_source_ids - assigned_source_ids):
-        issues.append(_issue("GLOBAL", "SOURCE_UNIT_UNASSIGNED", "%s action/dialogue source unit is not assigned to any planned dramatic beat" % source_id))
-    for beat_id in sorted(set(declared_beats) - ledger_beat_ids):
-        issues.append(_issue(declared_beats[beat_id], "DRAMATIC_BEAT_LEDGER_MISSING", beat_id))
+    source_map = {str(item.get("source_id", "")): item for item in source_records if item.get("source_id")}
+    _validate_source_snapshot(run_dir, source_records, issues)
+    _validate_dialogue_source_lock(dialogue_events, source_map, issues)
+    for event in dialogue_events.values():
+        if isinstance(event, dict) and isinstance(event.get("source_ids"), list):
+            referenced_sources.extend(str(source_id) for source_id in event["source_ids"])
+    for source_id in referenced_sources:
+        if source_id not in source_map:
+            issues.append(_issue("GLOBAL", "SOURCE_REFERENCE", "unknown source_id %s" % source_id))
 
-    for dur_issue in validate_durations(shot_plan_path, project_config_path=project_config_path if os.path.exists(project_config_path) else None):
-        sid, field, value, expected = dur_issue
-        issues.append(_issue(sid, "DURATION_%s" % field, "got %s expected %s" % (value, expected)))
+    excluded_sources = _source_exclusions(plan, source_map, issues)
+    overlap = sorted(set(referenced_sources) & excluded_sources)
+    if overlap:
+        issues.append(_issue(
+            "GLOBAL", "SOURCE_COVERAGE_CONFLICT",
+            "source_ids cannot be both referenced and explicitly excluded: %s" % ", ".join(overlap[:20]),
+        ))
+    required_sources = {
+        str(item.get("source_id", ""))
+        for item in source_records
+        if str(item.get("text", "")).strip()
+    }
+    missing_sources = sorted(required_sources - set(referenced_sources) - excluded_sources)
+    if missing_sources:
+        issues.append(_issue(
+            "GLOBAL", "SOURCE_COVERAGE",
+            "every non-empty source line must be referenced or explicitly model-excluded: %s"
+            % ", ".join(missing_sources[:20]),
+        ))
+
+    for sid, field, value, expected in validate_durations(plan_path, project_config_path=config_path if os.path.isfile(config_path) else None):
+        issues.append(_issue(sid, "DURATION_" + field, "got %s expected %s" % (value, expected)))
 
     report_path = os.path.join(run_dir, ".cache", "preflight", "report.json")
     os.makedirs(os.path.dirname(report_path), exist_ok=True)
-    blocking = [item for item in issues if item.get("severity", "blocking") == "blocking"]
-    advisories = [item for item in issues if item.get("severity") == "advisory"]
-    with open(report_path, "w", encoding="utf-8") as f:
-        json.dump(
-            {"pass": not blocking, "issues": issues, "blocking": blocking, "advisories": advisories},
-            f,
-            ensure_ascii=False,
-            indent=2,
-        )
+    blocking = [item for item in issues if item["severity"] == "blocking"]
+    with open(report_path, "w", encoding="utf-8") as handle:
+        json.dump({"pass": not blocking, "issues": issues, "blocking": blocking, "advisories": []}, handle, ensure_ascii=False, indent=2)
     return issues
 
 
 def _issue(subshot_id, check, msg):
-    severity = "advisory" if check in ADVISORY_CHECKS else "blocking"
-    return {"subshot_id": subshot_id, "check": check, "severity": severity, "msg": msg}
+    return {"subshot_id": subshot_id, "check": check, "severity": "blocking", "msg": msg}
+
+
+def _load_required(path, issues, check):
+    try:
+        with open(path, "r", encoding="utf-8-sig") as handle:
+            value = json.load(handle)
+        return value if isinstance(value, dict) else {}
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        issues.append(_issue("GLOBAL", check + "_PARSE", str(exc)))
+        return {}
 
 
 def _ledger_records(path, key, issues, check):
-    if not os.path.exists(path):
-        issues.append(_issue("GLOBAL", check + "_MISSING", path))
-        return []
-    try:
-        with open(path, "r", encoding="utf-8-sig") as handle:
-            data = json.load(handle)
-    except Exception as exc:
-        issues.append(_issue("GLOBAL", check + "_PARSE", str(exc)))
-        return []
+    data = _load_required(path, issues, check)
     records = data.get(key)
     if not isinstance(records, list):
         issues.append(_issue("GLOBAL", check + "_STRUCTURE", "%s must be an array" % key))
@@ -220,38 +131,54 @@ def _ledger_records(path, key, issues, check):
     return [record for record in records if isinstance(record, dict)]
 
 
-def _ledger_ids(path, key, id_field, issues, check):
-    records = _ledger_records(path, key, issues, check)
-    values = [str(record.get(id_field, "") or "") for record in records]
-    if any(not value for value in values) or len(values) != len(set(values)):
-        issues.append(_issue("GLOBAL", check + "_ID", "%s values must be non-empty and unique" % id_field))
-    return set(values)
-
-
 def _validate_source_snapshot(run_dir, source_records, issues):
     path = os.path.join(run_dir, ".cache", "orchestrator", "source_snapshot.json")
-    if not os.path.exists(path):
-        # Migrated fixtures and historical runs may not have the new evidence
-        # file. Every new supervisor run creates it before model authoring.
+    if not os.path.isfile(path):
         return
-    try:
-        with open(path, "r", encoding="utf-8-sig") as handle:
-            snapshot = json.load(handle)
-    except Exception as exc:
-        issues.append(_issue("GLOBAL", "SOURCE_SNAPSHOT_PARSE", str(exc)))
-        return
-    line_map = {
-        item.get("line"): item.get("text")
-        for item in snapshot.get("lines", []) if isinstance(item, dict)
-    }
+    snapshot = _load_required(path, issues, "SOURCE_SNAPSHOT")
+    snapshot_lines = [item for item in snapshot.get("lines", []) if isinstance(item, dict)]
+    line_map = {item.get("line"): item.get("text") for item in snapshot_lines}
+    if len(source_records) != len(snapshot_lines):
+        issues.append(_issue(
+            "GLOBAL", "SOURCE_LEDGER_COMPLETENESS",
+            "source ledger must contain every snapshot line exactly once",
+        ))
+    seen_lines = set()
     for record in source_records:
         source_id = str(record.get("source_id", "") or "GLOBAL")
         line = record.get("line")
         if not isinstance(line, int) or line not in line_map:
-            issues.append(_issue(source_id, "SOURCE_LEDGER_LINE", "line must reference source_snapshot.json"))
+            issues.append(_issue(source_id, "SOURCE_LEDGER_LINE", "line must reference source snapshot"))
+        elif line in seen_lines:
+            issues.append(_issue(source_id, "SOURCE_LEDGER_LINE", "snapshot line is duplicated"))
+        elif record.get("text") != line_map[line]:
+            issues.append(_issue(source_id, "SOURCE_LEDGER_TEXT", "text must exactly match source snapshot"))
+        elif source_id != "SRC%06d" % line:
+            issues.append(_issue(source_id, "SOURCE_LEDGER_ID", "source_id must match its deterministic line id"))
+        seen_lines.add(line)
+
+
+def _source_exclusions(plan, source_map, issues):
+    records = plan.get("source_exclusions", [])
+    if not isinstance(records, list):
+        issues.append(_issue("GLOBAL", "SOURCE_EXCLUSIONS_TYPE", "source_exclusions must be an array"))
+        return set()
+    excluded = set()
+    for record in records:
+        if not isinstance(record, dict):
+            issues.append(_issue("GLOBAL", "SOURCE_EXCLUSION_STRUCTURE", "each exclusion must be an object"))
             continue
-        if record.get("text") != line_map[line]:
-            issues.append(_issue(source_id, "SOURCE_LEDGER_TEXT", "text must exactly match the source snapshot line"))
+        source_id = str(record.get("source_id", ""))
+        reason = str(record.get("reason", "")).strip()
+        if not source_id or source_id in excluded:
+            issues.append(_issue(source_id or "GLOBAL", "SOURCE_EXCLUSION_ID", "source_id must be non-empty and unique"))
+            continue
+        if source_id not in source_map:
+            issues.append(_issue(source_id, "SOURCE_EXCLUSION_UNKNOWN", "source_id is absent from the engineering ledger"))
+        if not reason:
+            issues.append(_issue(source_id, "SOURCE_EXCLUSION_REASON", "model-authored reason is required"))
+        excluded.add(source_id)
+    return excluded
 
 
 def _validate_dialogue_source_lock(dialogue_events, source_record_by_id, issues):
@@ -260,28 +187,23 @@ def _validate_dialogue_source_lock(dialogue_events, source_record_by_id, issues)
             continue
         source_refs = event.get("source_ids")
         if not isinstance(source_refs, list) or not source_refs:
-            issues.append(_issue(str(ref), "DIALOGUE_SOURCE_IDS", "dialogue event requires non-empty source_ids"))
+            issues.append(_issue(str(ref), "DIALOGUE_SOURCE_IDS", "dialogue event requires source_ids"))
             continue
         source_lines = []
-        unknown = []
         for source_id in source_refs:
             record = source_record_by_id.get(str(source_id))
             if not isinstance(record, dict):
-                unknown.append(str(source_id))
+                issues.append(_issue(str(ref), "DIALOGUE_SOURCE_UNKNOWN", "unknown source_id %s" % source_id))
             else:
-                source_lines.append(str(record.get("text", "") or ""))
-        if unknown:
-            issues.append(_issue(str(ref), "DIALOGUE_SOURCE_UNKNOWN", "unknown source_ids: " + ", ".join(unknown)))
-            continue
-        exact = str(event.get("text", "") or "")
-        if exact and not any(exact in line for line in source_lines):
+                source_lines.append(str(record.get("text", "")))
+        exact = str(event.get("text", ""))
+        if exact and source_lines and not any(exact in line for line in source_lines):
             issues.append(_issue(str(ref), "DIALOGUE_SOURCE_TEXT", "dialogue text is not an exact source substring"))
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("usage: preflight_check.py <run_dir>")
-        sys.exit(1)
-    issues = run(sys.argv[1])
-    print(json.dumps(issues, ensure_ascii=False, indent=2))
-    sys.exit(0 if not any(item.get("severity", "blocking") == "blocking" for item in issues) else 1)
+    if len(sys.argv) != 2:
+        raise SystemExit("usage: preflight_check.py <run_dir>")
+    found = run(sys.argv[1])
+    print(json.dumps(found, ensure_ascii=False, indent=2))
+    raise SystemExit(0 if not found else 1)

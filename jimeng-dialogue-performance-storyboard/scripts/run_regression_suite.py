@@ -12,20 +12,13 @@ import time
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 TEST_SCRIPTS = (
-    "test_validate_storyboard.py",
-    "test_incremental_validate.py",
     "test_source_gate.py",
-    "test_runtime_tools.py",
-    "test_seedance_target.py",
+    "test_validate_delivery.py",
+    "test_architecture_boundary.py",
     "test_review_manifest.py",
     "test_render_blocking_reference.py",
     "test_blocking_promotion.py",
     "test_blocking_repair_preflight.py",
-    "test_end_to_end_quality_boundary.py",
-    "test_scene_contract.py",
-    "test_prompt_preflight.py",
-    "test_creative_preflight.py",
-    "test_repair_scope.py",
 )
 
 

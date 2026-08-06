@@ -5,6 +5,27 @@ from creative_engineering_boundary import PHASE_AUTHORITY, boundary_issues
 PROMPT_CONTRACT_VERSION = "jimeng-t2v-v1"
 PIPELINE_CONTRACT_VERSION = "jimeng-t2v-pipeline-v2"
 
+# Wall-clock reliability contract. This is a hard production deadline, not a
+# benchmark target. The supervisor must stop and emit a report when it expires.
+PIPELINE_HARD_DEADLINE_SECONDS = 90 * 60
+PIPELINE_DEADLINE_WARNING_SECONDS = 10 * 60
+# Codex exposes four total agent slots in the normal desktop runtime.  The
+# supervisor occupies one of them, so a plan that assumes four workers is not
+# executable and systematically underestimates queue waves.
+PIPELINE_WORKER_SLOT_CAP = 3
+
+# Conservative planning targets used to reject a run that can no longer
+# finish before the hard deadline. They do not relax per-worker timeouts.
+PHASE_PLANNING_SECONDS = {
+    "orchestrator": 15 * 60,
+    "scene_lock": 5 * 60,
+    "master_production": 10 * 60,
+    "editor_pass1": 60,
+    "editor_pass2": 5 * 60,
+    "validate": 2 * 60,
+    "export": 60,
+}
+
 # Keep runtime phase identity, ownership, artifact boundaries, timeout and
 # batching policy in one executable registry. Other modules derive their
 # public constants from this tuple instead of maintaining parallel copies.
@@ -21,7 +42,7 @@ PIPELINE_PHASE_SPECS = (
             ".cache/orchestrator/creative_blueprint_request.json",
             ".cache/orchestrator/shot_plan.json",
             ".cache/orchestrator/source_ledger.json",
-            ".cache/orchestrator/dramatic_beat_ledger.json",
+            ".cache/orchestrator/creative_validation_receipt.json",
         ),
         "validator": None, "authority": PHASE_AUTHORITY["orchestrator"],
     },
@@ -114,9 +135,6 @@ def machine_contract_issues():
         issues.append("every pipeline phase must have exactly one executor")
     if AGENT_PHASE_NAMES & LOCAL_PHASE_NAMES:
         issues.append("agent and local phase sets must not overlap")
-    overlap = set(QA_REQUIRED_FIELDS) & set(RISK_GATED_QA_FIELDS)
-    if overlap:
-        issues.append("core and risk-gated QA fields overlap: %s" % ",".join(sorted(overlap)))
     for spec in PIPELINE_PHASE_SPECS:
         name = spec["name"]
         if spec["executor"] not in {"agent", "local"}:
@@ -133,31 +151,13 @@ def machine_contract_issues():
     return issues
 
 SHOT_REQUIRED_FIELDS = frozenset({
-    "shot_id", "subshot_id", "duration", "full_prompt", "negative_prompt",
+    "shot_id", "subshot_id", "source_subshot_ids", "duration", "full_prompt", "seedance_prompt", "director_card", "negative_prompt",
     "qa_metadata", "generation_control",
 })
 
+# Only mechanically verifiable source references are required by code. Creative
+# analysis fields remain available to Master Production and Editor, but their
+# shape and depth are not an engineering pass/fail contract.
 QA_REQUIRED_FIELDS = (
-    "dramatic_goal", "performance_priority", "action_budget", "start_state", "end_state",
-    "continuity_contract", "reroll_control", "dialogue_refs",
-    "dialogue_events", "editorial_mode", "camera_beat_map", "sequence_context",
-    "quality_contract", "dramatic_design", "duration_design", "viewpoint",
-    "visual_hierarchy", "entry_strategy", "reveal_strategy",
-    "focus_strategy", "temporal_transition_contract", "scene_tone_palette", "sequence_directing_plan",
-    "cut_decision_contract", "prompt_information_budget", "sound_directing_plan",
+    "dialogue_refs", "dialogue_events",
 )
-
-# Map optional QA fields to shot_semantics.validation_profile keys. Scaffolds
-# omit disabled fields so light environment/object shots do not pay character-
-# performance context costs. Validators still require every enabled field.
-RISK_GATED_QA_FIELDS = {
-    "emotion_driver": "performance_contract",
-    "performance_causality": "performance_causality",
-    "performance_contract": "performance_contract",
-    "story_punch_contract": "story_punch_contract",
-    "character_scene_objective_contract": "character_scene_objective_contract",
-    "relationship_emotion_arc": "relationship_emotion_arc",
-    "listener_reaction_plan": "listener_reaction_plan",
-    "ai_model_readiness_score": "ai_model_readiness_score",
-    "pressure_release_design": "pressure_release_design",
-}

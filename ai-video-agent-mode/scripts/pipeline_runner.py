@@ -14,15 +14,27 @@ sys.path.insert(0, os.path.dirname(__file__))
 from pipeline_state import AGENT_PHASES, LOCAL_PHASES, PHASE_BATCH_SIZE, PHASE_TIMEOUT_SECONDS, advance, load_state, save_state, mark_done, mark_started, mark_waiting
 from pipeline_templates import GATES
 from dispatch_cache import active_packet_paths, prepare_dispatch_packets
-from dispatch_queue import fill_slots, pending_packet_paths
+from dispatch_queue import fill_slots, pending_packet_paths, retire_timed_out_dispatches
 from merge_agent_outputs import merge_agent_outputs
 from record_batch_provenance import verify
 from contract_registry import PROMPT_CONTRACT_VERSION
 from pipeline_runtime import atomic_json
+from pipeline_deadline import feasibility, fuse, status as deadline_status
 
 
 def run(run_dir):
     state = load_state(run_dir)
+    budget = deadline_status(state)
+    if state.get("pipeline_status") == "fused":
+        return {"action": "fused", "phase": state.get("current_phase"),
+                "report_path": state.get("fuse_report_path"), "budget": budget,
+                "requires_user_input": False}
+    if budget["expired"]:
+        report = fuse(run_dir, state, "hard_deadline_exceeded")
+        save_state(run_dir, state)
+        return {"action": "fused", "phase": state.get("current_phase"),
+                "report_path": state.get("fuse_report_path"), "report": report,
+                "budget": budget, "requires_user_input": False}
     phase = state["current_phase"]
     gate = GATES.get(phase)
     if not gate:
@@ -77,13 +89,40 @@ def run(run_dir):
     packets = _current_source_packets(packets)
     if not packets:
         packets = prepare_dispatch_packets(run_dir, phase, batch_size, subshot_ids=target_ids)
+    verified_dispatch_ids = _verified_dispatch_ids(packets)
+    recovery = retire_timed_out_dispatches(
+        run_dir, phase, packets, verified_dispatch_ids=verified_dispatch_ids,
+    )
+    if recovery["exhausted_dispatch_ids"]:
+        state = load_state(run_dir)
+        report = fuse(run_dir, state, "worker_retry_exhausted", forecast={
+            "exhausted_dispatch_ids": recovery["exhausted_dispatch_ids"],
+            "retired_dispatch_ids": recovery["retired_dispatch_ids"],
+        })
+        save_state(run_dir, state)
+        return {"action": "fused", "phase": phase,
+                "report_path": state.get("fuse_report_path"), "report": report,
+                "budget": deadline_status(state), "requires_user_input": False}
+    if recovery["replacement_packets"]:
+        packets = _current_source_packets(pending_packet_paths(run_dir, phase))
     ready = fill_slots(run_dir, phase, packets)
+    verified = _verified_packets(run_dir, phase)
+    remaining_packet_count = max(len(packets) - len(verified), 0)
+    state = load_state(run_dir)
+    forecast = feasibility(run_dir, state, packet_count=remaining_packet_count)
+    if not forecast["feasible"]:
+        report = fuse(run_dir, state, "projected_deadline_miss", forecast=forecast)
+        save_state(run_dir, state)
+        return {"action": "fused", "phase": phase,
+                "report_path": state.get("fuse_report_path"), "report": report,
+                "budget": forecast, "requires_user_input": False}
     if ready:
         return {"action": "spawn", "phase": phase, "dispatch_packets": ready,
                 "dispatch_packet": ready[0], "timeout": PHASE_TIMEOUT_SECONDS.get(phase),
                 "requires_user_input": False,
+                "budget": forecast,
+                "interrupt_dispatch_ids": recovery["retired_dispatch_ids"],
                 "after_spawn": "register_dispatch_agent_then_record_heartbeat_then_record_batch_provenance"}
-    verified = _verified_packets(run_dir, phase)
     # A phase may only be materialized once *every* packet has provenance and
     # validation.  Previously, one completed batch plus a full worker pool
     # could be merged while sibling packets were still running.
@@ -95,8 +134,10 @@ def run(run_dir):
             "verified_batches": len(verified),
             "total_batches": len(packets),
             "worker_status": _worker_status(run_dir, phase, packets),
+            "budget": forecast,
             "requires_user_input": False,
             "automatic_resume": True,
+            "poll_after_seconds": 60,
             "next_action": "poll_pipeline_runner_after_worker_state_changes",
         }
     if phase == "master_production":
@@ -186,6 +227,17 @@ def _verified_packets(run_dir, phase):
                 output,
             ))
     return [output for _is_retry, _created_at, _recorded_at, output in sorted(records)]
+
+
+def _verified_dispatch_ids(packet_paths):
+    result = set()
+    for packet_path in packet_paths or []:
+        packet = _load(packet_path)
+        output = packet.get("_batch_output_path", "")
+        valid, _reason, _manifest = verify(output) if output and os.path.exists(output) else (False, "missing", None)
+        if valid and packet.get("dispatch_id"):
+            result.add(str(packet["dispatch_id"]))
+    return result
 
 
 def _prepare_incremental_master_retry(run_dir, verified_outputs):
@@ -286,7 +338,7 @@ def _phase_packet_paths(run_dir, phase):
         return []
     paths = []
     for name in os.listdir(dispatch_dir):
-        if not name.endswith("_packet.json"):
+        if name.startswith("._") or not name.endswith("_packet.json"):
             continue
         path = os.path.join(dispatch_dir, name)
         if _load(path).get("phase") == phase:
@@ -311,14 +363,21 @@ def _worker_status(run_dir, phase, packet_paths):
     state = load_state(run_dir)
     dispatches = state.get("phases", {}).get(phase, {}).get("dispatches", {})
     result = []
+    now = time.time()
+    timeout = PHASE_TIMEOUT_SECONDS.get(phase)
     for packet_path in packet_paths:
         packet = _load(packet_path)
         dispatch_id = packet.get("dispatch_id", "")
         entry = dispatches.get(dispatch_id, {}) if isinstance(dispatches, dict) else {}
+        spawn_time = entry.get("spawn_time") if isinstance(entry, dict) else None
+        elapsed = max(now - spawn_time, 0) if isinstance(spawn_time, (int, float)) else None
         result.append({
             "dispatch_id": dispatch_id,
             "status": entry.get("status", "awaiting_registration") if isinstance(entry, dict) else "awaiting_registration",
             "agent_id": entry.get("agent_id") if isinstance(entry, dict) else None,
+            "elapsed_seconds": round(elapsed, 3) if elapsed is not None else None,
+            "timeout_remaining_seconds": round(max(timeout - elapsed, 0), 3)
+            if elapsed is not None and isinstance(timeout, (int, float)) else None,
         })
     return result
 
@@ -415,7 +474,7 @@ def _load(path):
     try:
         with open(path, "r", encoding="utf-8-sig") as handle:
             return json.load(handle)
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return {}
 
 
@@ -428,8 +487,23 @@ def _completed_phase_valid(run_dir, phase, gate):
 
 
 def _local_phase_valid(run_dir, phase):
-    if phase in ("user_confirm", "orchestrator"):
+    if phase == "user_confirm":
         return True
+    if phase == "orchestrator":
+        orchestrator_dir = os.path.join(run_dir, ".cache", "orchestrator")
+        receipt = _load(os.path.join(orchestrator_dir, "creative_validation_receipt.json"))
+        if receipt.get("preflight_pass") is not True:
+            return False
+        expected = {
+            "draft_sha256": os.path.join(orchestrator_dir, "shot_plan.draft.json"),
+            "shot_plan_sha256": os.path.join(orchestrator_dir, "shot_plan.json"),
+            "source_ledger_sha256": os.path.join(orchestrator_dir, "source_ledger.json"),
+            "source_snapshot_sha256": os.path.join(orchestrator_dir, "source_snapshot.json"),
+            "preflight_report_sha256": os.path.join(run_dir, ".cache", "preflight", "report.json"),
+        }
+        return all(receipt.get(key) == _sha256(path) for key, path in expected.items() if os.path.isfile(path)) and all(
+            os.path.isfile(path) for path in expected.values()
+        )
     package_path = os.path.join(run_dir, ".cache", "composer", "merged.prompt_package.json")
     package_sha256 = _sha256(package_path) if os.path.isfile(package_path) else ""
     if phase == "editor_pass1":

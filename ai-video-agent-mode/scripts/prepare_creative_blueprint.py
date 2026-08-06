@@ -14,7 +14,7 @@ import os
 import sys
 
 
-REQUEST_VERSION = "model-creative-blueprint-v1"
+REQUEST_VERSION = "model-creative-blueprint-v2"
 
 
 def prepare(run_dir, source_path):
@@ -45,11 +45,24 @@ def prepare(run_dir, source_path):
     }
     _atomic_json(snapshot_path, snapshot)
 
+    source_ledger_path = os.path.join(output_dir, "source_ledger.json")
+    source_ledger = {
+        "ledger_version": REQUEST_VERSION,
+        "source_sha256": snapshot["source_sha256"],
+        "units": [
+            {
+                "source_id": "SRC%06d" % index,
+                "line": line["line"],
+                "text": line["text"],
+            }
+            for index, line in enumerate(snapshot["lines"], 1)
+        ],
+    }
+    _atomic_json(source_ledger_path, source_ledger)
+
     request_path = os.path.join(output_dir, "creative_blueprint_request.json")
     required_outputs = {
         "shot_plan_draft": os.path.join(output_dir, "shot_plan.draft.json"),
-        "source_ledger": os.path.join(output_dir, "source_ledger.json"),
-        "dramatic_beat_ledger": os.path.join(output_dir, "dramatic_beat_ledger.json"),
     }
     request = {
         "request_version": REQUEST_VERSION,
@@ -57,6 +70,7 @@ def prepare(run_dir, source_path):
         "authority": "model",
         "source_path": source_path,
         "source_snapshot_path": snapshot_path,
+        "source_ledger_path": source_ledger_path,
         "source_sha256": snapshot["source_sha256"],
         "project_config_path": config_path,
         "creative_contract_path": os.path.join(
@@ -75,7 +89,9 @@ def prepare(run_dir, source_path):
         "model_owned_decisions": [
             "story_and_subtext", "character_goal_and_relationship", "emotion_and_performance",
             "dramatic_beats", "shot_splitting", "reaction_ownership", "narrative_weight",
-            "shot_function", "coverage_and_duration_strategy", "visual_punctuation",
+            "shot_function", "coverage_and_duration_strategy", "blocking", "camera", "focus",
+            "lighting_and_palette", "action_design", "seedance_semantic_compilation",
+            "visual_punctuation", "final_aesthetic_judgment",
         ],
         "engine_forbidden_decisions": [
             "infer_emotion", "pack_narrative_beats", "select_reaction_owner",
@@ -84,7 +100,7 @@ def prepare(run_dir, source_path):
         "resume_command": [
             sys.executable,
             os.path.join(os.path.dirname(__file__), "workflow_supervisor.py"),
-            run_dir,
+            "--run-dir", run_dir,
             "--source", source_path,
         ],
     }

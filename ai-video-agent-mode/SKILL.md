@@ -9,16 +9,17 @@ description: >
 # AI Video Agent Mode
 
 把源文转换为可审查、可恢复、可导出的即梦 T2V 提示词包。主流程生成提示词与制作元数据；
-用户提供真实成片并明确要求复核时，才运行独立的视频指标或 A/B 校准。`ai_model_readiness_score`
-表示合同执行风险，不代表成片质量。
+用户提供真实成片并明确要求复核时，才运行独立的视频指标或 A/B 校准。工程层不要求模型填写
+自评分或逐字段证据抄录；可执行性由确定性 validator 和 Editor 语义复审共同判断。
 
 ## 最高优先级：模型创作主权
 
 先读取 `references/creative_engineering_boundary.md`，并让它高于字段合同、验证规则、性能目标和导出便利性：
 
 - 大模型负责剧情、潜台词、人物关系、情绪、表演、拆镜、调度、构图、运镜、光影、声音、语义精炼和审美复审。
-- 工程代码只负责文件、Schema、计数、逐字事实、哈希、调度、恢复、精确去重、排版和导出。
-- 工程层可以拒绝不合法创作，但不得选句、删句、改写 Scene Lock 或静默删除创作字段来让验证通过。
+- 工程代码只负责文件、Schema、计数、逐字事实、哈希、调度、恢复、排版和导出。
+- 工程层只可拒绝能机械证明的不合法状态，例如缺字段、超时长、台词不一致、版本缺失或文件损坏；
+  不得以“平淡、不够电影感、运镜不合理、Seedance不理解”等语义结论阻断创作。
 - 需要改变语义时返回 `CREATIVE_REWRITE_REQUIRED`，由大模型在锁定事实内完成修订。
 - 所有修改先说明根因和所有权；禁止按项目、角色、镜号或单次错误文本打补丁。
 
@@ -34,11 +35,15 @@ description: >
    任何阶段、provenance、validator 或导出门禁。
 4. 配置确认后，只循环调用 `workflow_supervisor.py`。首次进入 Orchestrator 时，supervisor 只做源文
    快照和机械门禁；若返回 `creative_authoring_required`，主模型必须读取该请求和源文，创作
-   `shot_plan.draft.json`、`source_ledger.json`、`dramatic_beat_ledger.json` 后再继续调用 supervisor。
+   `shot_plan.draft.json` 后再继续调用 supervisor。逐行 `source_ledger.json` 由工程根据源文快照自动生成；
+   模型只在分镜草案中引用这些 ID，并自由决定节拍、拆镜和覆盖关系。
    这不是失败，也不是用户确认点；不得调用本地关键词分镜生成器代替模型创作。
-   `waiting_for_workers` 是内部等待状态，只有路由明确返回 `needs_user_confirm=true` 时才提问。
+   `waiting_for_workers` 是内部等待状态，只有路由明确返回 `needs_user_confirm=true` 时才提问；宿主必须
+   至少每分钟继续轮询 supervisor，不能把等待状态当作静默暂停。
 5. supervisor 返回 `host_dispatch_required` 时，按 `references/agent_protocol.md` 处理每个
    packet：注册 Agent、至少一次心跳、等待 batch、记录 provenance，然后立即继续 supervisor。
+   packet 的绝对超时不会被心跳延长；到期后必须中断旧 worker，并使用 supervisor 生成的新 UUID packet
+   重派。初始尝试加两次重派仍失败时立即熔断并报告。
 6. Agent 只能写 `packet._batch_output_path`。Master Production 每完成一个主镜，先运行 packet 的
    `incremental_validation_command` 做字段级校验；批次结束仍必须运行完整 `local_validation_command`。
    合并必须使用 provenance 门禁。局部失败按 `字段 → 主镜 → pair/window → scene` 升级，合格主镜可由
@@ -47,6 +52,8 @@ description: >
 7. Validate 全部通过后，才调用 `export_with_validation.py` 写入配置中已确认的交付路径；导出目标由确认过的
    `seedance_target: auto | 2.0 | 2.5 | both` 决定。`auto` 生成一份 dual-safe 文件，`2.0`/`2.5`
    生成单一优化文件，`both` 从同一份合同原子生成两份可独立投喂 Markdown 和一个非投喂索引。
+8. 从首次初始化运行状态起计算 90 分钟硬截止。超过截止，或按剩余未验证批次、最多三个 worker 和阶段预算
+   预测已无法按时完成时，必须停止派发，写 `.cache/control/fuse_report.json` 并向用户报告；禁止静默续跑。
 
 ## 上下文预算
 
@@ -70,36 +77,32 @@ description: >
 ## 不可破坏约束
 
 - 仅支持即梦 `t2v`。禁止 I2V、R2V、参考素材槽位或动作素材路径；三状态关键帧只是前期参考。
-- `seedance_target` 是模型适配层，不是第二套剧情事实：`auto` 采用两版共同可读的光影与动作语法；
-  `both` 必须保持镜号、时长、台词/OS/OV/系统音、人物、空间、道具、轴线和终态一致，只允许调整光影精度、
-  高光/黑位控制和动态复杂度措辞。共享镜头时长仍按15秒以内的跨版本安全上限执行。
+- `seedance_target` 只由工程层记录和选择输出文件。模型直接创作目标版本的 `seedance_prompt`；`both`
+  由模型分别创作 `seedance_prompt_variants["2.0"]` 与 `["2.5"]`。工程层不得推导版本差异、改写光影或拼接动作语句。
 - 台词、OS、OV、系统音按 `ref/kind/speaker/text` 逐字锁定；OS/OV/系统音无口型。系统音属于
   非实体声源，不进入可见人物锁；无源文不得新增人声。
-- 每个主镜只服务一个 `narrative_beat_id`；回切、第二目标、第二独立动作链或容量不足时拆镜。
-- Scene Lock 是空间、服装、道具活动区、光源与影调事实的唯一来源；后续阶段只消费，不重写。
+- 一个主镜可承载一个或多个戏剧节拍，一个源文单元可跨镜复用。是否回切、重复、蒙太奇、拆镜或长镜头
+  由大模型根据观众感受和 Seedance 表达决定；工程只检查总时长与引用存在。
+- Scene Lock 与 `scene_tone_palette` 都是模型创作资产。工程只冻结文件版本并提供差异事实；Master 和 Editor
+  负责判断每镜如何继承、变化和最终呈现，工程不得把场景色卡复制成不可改写的镜头语义。
 - `full_prompt` 只写当前可见、可执行画面事实。QA、负面词、工程数据、风险与分析标签留在独立字段。
 - 生产脚本不得按固定镜号、角色名、项目文件名或某一剧情道具执行定点分支；实体、场景、光源和活动道具从当前源文、配置与 Scene Lock 开放提取。测试夹具可使用虚构样例，但不得进入路由或运行时判断。
-- 最终完整 Markdown 必须包含项目级 `## 制作质量总控` 和逐镜 `【本镜制作控制】`，把画面质感、光效与曝光、动态美学、表演与情绪、穿帮控制、抽卡策略、蒙太奇与剪辑转译为用户可见的执行摘要；不得只存在于 `qa_metadata`、validator 或 engineering 视图。
-- `【本镜制作控制】` 不是第二套事实：七项中的可见执行事实必须逐项在 `【画面描述｜直接复制】` 获得语义落地；风险等级、人工检查、失败重试、后期和拆镜决定保留在制作控制。Export 生成逐项 grounding 报告，任一适用可见维度未落地即阻断。
-- Master Production 内部按 `visual_bible → aesthetic_director → continuity_compiler → full_prompt`
-  接力；这些是同一任务内字段，不是额外 Agent 阶段。
-- 每场先冻结 `camera_variation_plan`，每镜选择一个有源文依据的构图骨架和一个运镜家族；
-  连续三镜不得重复“景别+角度+构图+运镜”组合，除非明确是情绪冻结镜。
-- 不得把固定机位、0.2米微推和微表情停顿当作默认模板；运镜必须由动作、视线交接、关系压力或空间揭示触发，并形成可见信息增量与稳定落幅。
-- 每镜建立 `terminal_frame_contract`，并把最后20%的可见人数、固定槽位、脸/手/肢体分离、
-  道具归属、支撑接触、摄影机停稳、光曝锁定和“不新增/不重复主体”编译进 `full_prompt`。
-- 双人对峙、相见、肩后和正背镜把人物实际面向与摄影机可见面分开：分别写摄影机位置/方向、双方身体/胸口/脚尖面向目标、正面/背面/侧面可见和视线目标。`正面可见` 不等于 `面向镜头`，抽象 `对望/面对面` 不能替代双方相反朝向。
-- 源文明示 POV、对镜口播或打破第四面墙时，允许双人关系中唯一一人直视镜头；必须点名人物、限定时间窗、写身体保持关系或可见转向，以及回看对手/保持直视到落幅的终态。其他人物保持场内视线，普通正反打不得使用该例外。
-- 门口镜逐人绑定门槛内/外侧；回家/进门必须写门外起点、跨门槛中间态和屋内终点。前后景与画面占比只作软锚点，必须补共同地面、真实相对身高、允许遮挡部位和必须露出的脸/手/关键道具。儿童用头顶相对成人肩/胸位置锁定比例；同类道具以持有人加形状、颜色或内容物区分。
-- 直投正文只由 `direct_prompt_compiler.py` 做顺序组装、精确去重和计数；不得按类别或关键词选择创作句。
-  超过 700 字返回 `CREATIVE_REWRITE_REQUIRED`，由 Master Production 语义精炼。导演卡最多 500 字，
-  同样必须由大模型创作或精炼，不静默截断、删句或用空话补齐。
-- 复杂度和风险只改变批次与专项合同，不降低 direct-copy、连续性、口型、审美或导出门槛。
+- 最终 Markdown 原样排版模型创作的 Seedance 提示词、导演卡、负面词与逐字台词。制作质量总结如需交付，
+  也必须来自模型 Editor；Export 不生成 grounding 报告，不靠关键词判断创作意图是否已经“落地”。
+- 模型可自由决定创作过程、分析维度和表达结构，包括是否使用 `visual_bible`、三状态关键帧、
+  终帧合同、摄影变化计划、重复构图、固定机位或复杂运动。双人关系、门槛拓扑、人物比例、道具接触等
+  专业知识是模型可调用的导演工具，不是工程模板或字段配额；是否采用及如何表达由剧情、情绪、观众感受、
+  Seedance 能力和最终审美共同决定。
+- `seedance_prompt` 与 `director_card` 都由模型完整创作。Export 只原样选择字段、计算字符数和排版；超过
+  700/500 字或字段缺失时返回 `CREATIVE_REWRITE_REQUIRED`，不得组装、去重、截断、删句或补写。
+- 批次只按条目数、显式连续链 ID 和实际上下文大小划分；工程代码不得从剧情词语推断镜头复杂度、
+  风险类型或应采用的专项创作合同。
+- 模型创作对象通过 Orchestrator、packet、scaffold 和 Editor 上下文时必须完整透传，包括未来新增的未知字段；
+  工程不得用字段白名单压缩创作上下文，也不得自动注入 `editorial_mode`、节拍归属或镜头组织方式。
 - 只有用户提供真实候选并明确要求视觉复核时才记录候选评分；不得用 Golden 或提示词推测成片。
 - 成片复核必须同时检查动作语义、门槛拓扑、人物面向/视线、纵深比例/遮挡、构图运镜因果、光源连续、伪文字和音轨有效性；FFmpeg/FFprobe 技术指标通过不代表语义通过。
-- 光影适配：`2.0` 使用简洁动机光、浅至中等阴影和清晰面部受光；`auto` 使用主受光面清晰、背光侧
-  中等层次阴影的 dual-safe 规则；`2.5` 可表达更完整的动机光、中深明暗层次、局部环境色、稳定黑位和
-  高光滚降。三者都禁止无来源的正面均匀补光。
+- Seedance 版本的摄影、光影、动作复杂度和表达方式由模型结合当前平台能力进行语义编译和最终审美判断；
+  工程配置只声明目标版本，不携带创作模板。
 - Windows 与 macOS 必须执行同一合同和验证门槛：状态写入使用跨平台锁，packet 中的本地命令使用
   当前 Python 解释器；真实视频校准统一使用 FFmpeg/FFprobe 指标后端，不得按平台跳过指标或降低阈值。
 - Validate 通过后写入包含提示词包、配置、分镜计划、Editor 复审、审计产物和验证代码摘要的验证收据。
@@ -120,7 +123,8 @@ description: >
 - 运行状态与门禁：`scripts/pipeline_state.py`、`scripts/pipeline_templates.py`
 
 旧 Emotion、Camera、Director 或 Composer 独立阶段及其归档指针已从技能表面移除。当前只派发
-`scene_lock/master_production/editor_pass2`；专业能力按风险进入 Master 字段，不恢复旧阶段。
+`scene_lock/master_production/editor_pass2`；专业能力由 Master 模型按剧情需要自由调用，不恢复旧阶段或
+脚本风险分级。
 历史 `composer` 脚本名与 `.cache/composer/` 路径仅是稳定产物接口，不表示存在独立 Composer Agent。
 
 ## 验证

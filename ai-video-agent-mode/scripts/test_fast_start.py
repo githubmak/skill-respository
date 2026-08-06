@@ -80,20 +80,24 @@ def run():
         assert outcome["supervisor"]["status"] == "creative_authoring_required"
         assert outcome["supervisor"]["phase"] == "orchestrator"
         assert outcome["supervisor"]["creative_request_path"].endswith("creative_blueprint_request.json")
-        assert len(outcome["supervisor"]["missing_outputs"]) == 3
+        assert len(outcome["supervisor"]["missing_outputs"]) == 1
 
         saved = _read(os.path.join(run_dir, "project_config.json"))
         assert not config_issues(saved, run_dir=run_dir, require_confirmation=True)
         assert saved["confirmation"]["confirmed_at"] != "fake"
         assert saved["confirmation"]["config_version"] != 999
         assert saved["confirmation"]["confirmed_fields"] == list(BASE_FIELDS)
-        assert saved["generation_control"]["supports_negative_prompt"] is True
+        assert "supports_negative_prompt" not in saved["generation_control"]
+        assert "performance_direction" not in saved
+        assert "quality_policy" not in saved
+        assert "max_static_shot_duration" not in saved
         assert "source_rules" not in saved
         state = _read(os.path.join(run_dir, ".cache", "pipeline_state.json"))
         assert state["phases"]["user_confirm"]["status"] == "done"
         assert state["phases"]["orchestrator"]["status"] == "running"
         assert state["current_phase"] == "orchestrator"
         assert os.path.isfile(os.path.join(run_dir, ".cache", "orchestrator", "source_snapshot.json"))
+        assert os.path.isfile(os.path.join(run_dir, ".cache", "orchestrator", "source_ledger.json"))
         assert os.path.isfile(os.path.join(run_dir, ".cache", "orchestrator", "creative_blueprint_request.json"))
         assert not os.path.exists(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"))
         source_gate_path = os.path.join(run_dir, ".cache", "preflight", "source_gate.json")

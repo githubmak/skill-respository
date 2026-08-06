@@ -63,6 +63,9 @@ SCENE 2 现代办公室
         _write(orchestrator / "shot_plan.json", shot_plan)
         locks = {"scenes": [{
             "scene": "府邸", "space_anchor": "木门与长廊", "screen_positions": "角色A位于门内左侧",
+            "space_id": "SP-府邸", "space_master_sentence": "木门框住中景人物，长廊向后延伸",
+            "tone_palette": "冷中性月光与深木色",
+            "light_texture_purpose": "月光勾出门框、衣褶与门槛磨损",
             "wardrobe_lock": "角色A沿用确认长袍", "prop_state": "木门半开",
             "light_source": "庭院月光", "light_direction": "从画面右后方", "light_temperature": "冷中性",
             "foreground_layer": "前景门框轻虚", "midground_layer": "中景角色A与木门实焦",

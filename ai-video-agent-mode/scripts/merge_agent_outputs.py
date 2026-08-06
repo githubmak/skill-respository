@@ -9,7 +9,6 @@ from record_batch_provenance import verify as verify_provenance
 from pipeline_runtime import patch_only
 from contract_registry import PROMPT_CONTRACT_VERSION
 from incremental_validation import ALL_MUTABLE_FIELDS
-from scene_lock_authority import scene_lock_authority_issues
 
 def merge_agent_outputs(output_path, *input_paths, require_provenance=True):
     """Merge only receipt-verified worker outputs into one public artifact."""
@@ -82,13 +81,6 @@ def merge_agent_outputs(output_path, *input_paths, require_provenance=True):
         str(path).endswith('.prompt_package.json') for path in input_paths
     )
 
-    if is_prompt_package:
-        lock_issues = scene_lock_authority_issues(all_items, output_path)
-        if lock_issues:
-            raise ValueError(
-                "SCENE_LOCK_CONFLICT:工程合并器不得改写模型创作的场景事实；请从权威Scene Lock重新生成受影响镜头："
-                + "；".join(lock_issues[:8])
-            )
     result = _build_prompt_package(all_items) if is_prompt_package else {'items': all_items}
 
     out_dir = os.path.dirname(output_path)
@@ -149,11 +141,6 @@ def _normalize_retry_patch_fields(fields):
             text = "full_prompt"
         if text not in normalized:
             normalized.append(text)
-    if "full_prompt" in normalized and "qa_metadata.quality_evidence" not in normalized:
-        # quality_evidence fragments are derived from full_prompt sections.  If
-        # a retry replaces prompt wording, keeping stale fragments can make the
-        # deterministic validator fail even though the visible prompt is fixed.
-        normalized.append("qa_metadata.quality_evidence")
     return normalized
 
 

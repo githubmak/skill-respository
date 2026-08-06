@@ -1,57 +1,35 @@
-"""Strict contract validation for one immutable Scene Lock record per scene."""
+"""Validate only the deterministic Scene Lock envelope."""
+
 import json
 import sys
 
-REQUIRED = ("scene", "space_anchor", "screen_positions", "wardrobe_lock", "prop_state",
-            "light_source", "light_direction", "light_temperature", "audio_policy",
-            "foreground_layer", "midground_layer", "background_layer",
-            "genre_visual_signature", "lived_in_detail", "depth_focus_policy",
-            "landscape_identity", "landscape_composition", "natural_motion_system",
-            "environment_story_arc", "reveal_order", "light_weather_progression",
-            "breathing_policy")
-OPTIONAL_FLAT_FIELDS = (
-    "space_id", "space_master_sentence", "entrance_exit", "prop_activity_zone",
-    "tone_palette", "light_texture_purpose", "skin_tone_reference", "face_light_policy",
-    "skin_color_cast_boundary", "skin_texture_boundary",
-)
-
 
 def validate(path):
-    with open(path, encoding="utf-8-sig") as handle:
-        data = json.load(handle)
-    issues, seen = [], set()
-    space_master_by_id = {}
+    try:
+        with open(path, encoding="utf-8-sig") as handle:
+            data = json.load(handle)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return ["scene lock JSON is unreadable: %s" % exc]
     scenes = data.get("scenes", []) if isinstance(data, dict) else []
     if not isinstance(scenes, list) or not scenes:
         return ["scenes must be a non-empty list"]
+    issues, seen_scenes, seen_ids = [], set(), set()
     for index, item in enumerate(scenes):
         prefix = "scene[%d]" % index
         if not isinstance(item, dict):
-            issues.append(prefix + " must be an object"); continue
-        scene = str(item.get("scene", "") or "").strip()
-        if not scene or scene in seen:
-            issues.append(prefix + " scene must be non-empty and unique")
-        seen.add(scene)
-        for field in REQUIRED[1:]:
-            value = item.get(field)
-            if value is None or value == "" or value == [] or value == {}:
-                issues.append(prefix + " missing " + field)
-            elif not isinstance(value, str):
-                issues.append(prefix + " " + field + " must be a non-empty flat string")
-        for field in OPTIONAL_FLAT_FIELDS:
-            if field not in item:
-                continue
-            value = item.get(field)
-            if value is None or value == "" or value == [] or value == {}:
-                issues.append(prefix + " " + field + " must be a non-empty flat string when present")
-            elif not isinstance(value, str):
-                issues.append(prefix + " " + field + " must be a non-empty flat string")
-        space_id = str(item.get("space_id", "") or "").strip()
-        master_sentence = str(item.get("space_master_sentence", "") or "").strip()
-        if space_id and master_sentence:
-            previous = space_master_by_id.setdefault(space_id, master_sentence)
-            if previous != master_sentence:
-                issues.append(prefix + " space_id reuses a different space_master_sentence")
+            issues.append(prefix + " must be an object")
+            continue
+        scene = item.get("scene")
+        space_id = item.get("space_id")
+        if not isinstance(scene, str) or not scene.strip() or scene in seen_scenes:
+            issues.append(prefix + " scene must be a non-empty unique string")
+        if not isinstance(space_id, str) or not space_id.strip() or space_id in seen_ids:
+            issues.append(prefix + " space_id must be a non-empty unique string")
+        seen_scenes.add(scene)
+        seen_ids.add(space_id)
+        creative_fields = [key for key, value in item.items() if key not in {"scene", "space_id"} and value not in (None, "", [], {})]
+        if not creative_fields:
+            issues.append(prefix + " CREATIVE_REWRITE_REQUIRED: model-authored scene contract is empty")
     return issues
 
 

@@ -28,16 +28,13 @@ class SourceGateTests(unittest.TestCase):
         self.assertIn("prop_transfer", result["risk_flags"])
         self.assertTrue(result["source_fidelity"]["visual_inference_allowed"])
 
-    def test_style_routing_is_evidence_based(self) -> None:
-        one = inspect_text("古装人物走过门边。")
-        many = inspect_text("古代府邸，汉服人物在月光下推开木门。")
-        self.assertEqual(one["style_evidence"]["confidence"], "low")
-        self.assertEqual(many["style_evidence"]["confidence"], "high")
+    def test_source_gate_does_not_score_or_choose_visual_style(self) -> None:
+        result = inspect_text("古代府邸，汉服人物在月光下推开木门。")
+        self.assertNotIn("style_evidence", result)
 
-    def test_unlisted_transfer_and_world_style_use_structural_evidence(self) -> None:
+    def test_unlisted_transfer_uses_structural_evidence(self) -> None:
         result = inspect_text("末世轨道舱内，机械装甲人物把玉佩递给同伴，舱门外极光闪动。")
         self.assertIn("prop_transfer", result["risk_flags"])
-        self.assertGreaterEqual(result["style_evidence"]["independent_channel_count"], 3)
 
     def test_path_read_error_blocks(self) -> None:
         with tempfile.TemporaryDirectory() as root:

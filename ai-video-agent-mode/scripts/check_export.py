@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Thirty-point current-contract package/export quality gate."""
+"""Check deterministic package and export-layout facts only."""
 
 import json
 import os
@@ -7,64 +7,10 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from prompt_contract import (
-    FORBIDDEN_MODEL_TERMS,
-    LEGACY_LABELS,
-    PROMPT_LABELS,
-    action_budget_issues,
-    aesthetic_directing_contract_issues,
-    ai_model_readiness_issues,
-    attention_handoff_issues,
-    camera_competition_issues,
-    cinematic_image_contract_issues,
-    coverage_role_issues,
-    continuity_contract_issues,
-    direct_copy_prompt_issues,
-    direct_feed_prompt_issues,
-    dialogue_event_issues,
-    expectation_anchor_issues,
-    fight_continuity_issues,
-    fight_transition_issues,
-    listener_reaction_issues,
-    performance_causality_issues,
-    performance_contract_issues,
-    physical_transition_chain_issues,
-    pressure_release_issues,
-    production_control_grounding_issues,
-    prompt_length_issues,
-    reroll_control_issues,
-    role_partition_issues,
-    scene_tone_palette_issues,
-    screen_text_policy_issues,
-    screen_text_policy_metadata_issues,
-    shot_group_handoff_issues,
-    source_constraint_basemap_issues,
-    story_punch_issues,
-    jimeng_shot_group_issues,
-    split_sections,
-    tension_curve_role_issues,
-    terminal_frame_contract_issues,
-    timeline_issues,
-    timeline_ranges,
-    visibility_issues,
-    visual_texture_issues,
-    video_texture_contract_issues,
-)
-from negative_prompts import PLACEHOLDER, is_fight_context
-from production_intelligence import (
-    lighting_topology_contract_issues,
-    multi_person_attention_budget_issues,
-    physical_stability_issues,
-    perspective_scale_contract_issues,
-    prop_lifecycle_contract_issues,
-    spatial_facing_issues,
-    visual_prior_risk_issues,
-)
-from contract_registry import PROMPT_CONTRACT_VERSION, QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
-from shot_semantics import validation_profile as derive_validation_profile, disabled_risk_gated_fields
+from seedance_target import normalize_target
+from validate_deterministic_package import selected_seedance_prompt, validate_package
 
 
-FORBIDDEN_ENGINES = ["C4D", "Octane", "Blender", "Redshift", "Arnold", "Unreal Engine"]
 INTERNAL_TITLE_LEAK = re.compile(
     r"(?m)^\s*(?:#+\s*)?[^|\n]+\|\s*S\d+-\d+\s*\|[^\n]*\|\s*"
     r"(?:dialogue|action|dramatic|environment|object)\s*\|\s*"
@@ -73,268 +19,64 @@ INTERNAL_TITLE_LEAK = re.compile(
 
 
 def check_export(md_path, run_dir, quality_mode=False):
-    plan = _load(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"))
-    config = _load_optional(os.path.join(run_dir, "project_config.json"))
     package_path = _find_package(run_dir)
-    package = _load(package_path) if package_path else {}
-    llm_review = _load_optional(os.path.join(run_dir, ".cache", "review", "llm_gate_result.json"))
-    shots = package.get("shots", [])
-    hard_max_chars = (config.get("prompt_limits", {}) or {}).get("hard_max_chars")
-    plan_map, scene_by_id, expected_source_ids = _plan_index(plan)
-    director_map = {}
-    scene_map = {}
-    failures = []
-
-    if not quality_mode:
-        editor_ok, editor_detail = _editor_review_check(llm_review)
-        if not editor_ok:
-            print("[BLOCK] Editor Pass 2 is incomplete: " + editor_detail)
-
-    def check(number, label, condition, detail=""):
-        print(f"  [{'OK' if condition else '!!'}] {number:02d}. {label}: {detail or ('OK' if condition else 'FAIL')}")
-        if not condition:
-            failures.append(f"{label}: {detail}")
-
-    ids = [shot.get("subshot_id", "") for shot in shots if isinstance(shot, dict)]
-    source_ids = [
-        source_id
-        for shot in shots if isinstance(shot, dict)
-        for source_id in _as_list(shot.get("source_subshot_ids", [shot.get("subshot_id", "")]))
-    ]
-    expected_ids = set(plan_map)
-
-    check(1, "Package exists", bool(package_path), package_path or "missing")
-    check(2, "Current contract", package.get("contract_version") == PROMPT_CONTRACT_VERSION, str(package.get("contract_version")))
-    check(3, "Single shots authority", set(package) == {"contract_version", "shots"} and isinstance(shots, list), str(sorted(package)))
-    check(4, "Subshot coverage", set(source_ids) == expected_source_ids, f"{len(set(source_ids))}/{len(expected_source_ids)}")
-    check(5, "Unique subshots", len(ids) == len(set(ids)), f"{len(ids) - len(set(ids))} duplicate(s)")
-    missing_fields = sum(1 for shot in shots if not SHOT_REQUIRED_FIELDS.issubset(shot))
-    check(6, "Required shot fields", missing_fields == 0, f"{missing_fields} incomplete")
-    bad_duration = sum(1 for shot in shots if not isinstance(shot.get("duration"), (int, float)) or shot.get("duration", 0) <= 0)
-    check(7, "Positive durations", bad_duration == 0, f"{bad_duration} invalid")
-
-    bad_sections = 0
-    bad_spacing = 0
-    legacy_hits = 0
-    pollution = 0
-    length_issues = 0
-    timeline_missing = 0
-    timeline_coverage = 0
-    timeline_overload = 0
-    negative_missing = 0
-    negative_ambiguous = 0
-    metadata_missing = 0
-    performance_causality_errors = 0
-    performance_contract_errors = 0
-    continuity_contract_errors = 0
-    reroll_control_errors = 0
-    role_issues = 0
-    primary_issues = 0
-    budget_issues = 0
-    camera_budget_issues = 0
-    coverage_issues = 0
-    visible_detail_issues = 0
-    direct_feed_issues = 0
-    dialogue_issues = 0
-    mode_issues = 0
-    asset_issues = 0
-    audio_issues = 0
-    eyeline_issues = 0
-    engine_issues = 0
-    fight_continuity_errors = 0
-    fight_records = []
-
-    for shot in shots:
-        sid = shot.get("subshot_id", "")
-        full_prompt = str(shot.get("full_prompt", "") or "")
-        sections = split_sections(full_prompt, PROMPT_LABELS)
-        if list(sections) != PROMPT_LABELS or any(not sections.get(label) for label in PROMPT_LABELS):
-            bad_sections += 1
-        if full_prompt.count("\n\n") != 4:
-            bad_spacing += 1
-        if any(re.search(rf"(?:^|\n\n){re.escape(label)}[：:]", full_prompt) for label in LEGACY_LABELS):
-            legacy_hits += 1
-        if any(term in full_prompt for term in FORBIDDEN_MODEL_TERMS) or "负面提示词" in full_prompt or PLACEHOLDER in full_prompt:
-            pollution += 1
-        if prompt_length_issues(full_prompt, shot.get("duration", 0), hard_max_chars):
-            length_issues += 1
-        t_issues = timeline_issues(full_prompt, shot.get("duration", 0))
-        if any("缺少" in issue for issue in t_issues):
-            timeline_missing += 1
-        if any(word in issue for issue in t_issues for word in ("断档", "重叠", "倒置", "不一致", "开始")):
-            timeline_coverage += 1
-        if len(timeline_ranges(full_prompt)) > 3:
-            timeline_overload += 1
-        if jimeng_shot_group_issues(full_prompt, (shot.get("qa_metadata", {}) or {}).get("editorial_mode", "continuous_take")):
-            camera_budget_issues += 1
-        if visual_texture_issues(full_prompt):
-            visible_detail_issues += 1
-        if screen_text_policy_issues(full_prompt):
-            visible_detail_issues += 1
-        if direct_feed_prompt_issues(full_prompt):
-            direct_feed_issues += 1
-
-        negative = str(shot.get("negative_prompt", "") or "").strip()
-        if not negative or PLACEHOLDER in negative:
-            negative_missing += 1
-        if "禁止" in negative or "无需" in negative:
-            negative_ambiguous += 1
-
-        metadata = shot.get("qa_metadata")
-        if not isinstance(metadata, dict) or any(key not in metadata for key in QA_REQUIRED_FIELDS):
-            metadata_missing += 1
-            metadata = metadata if isinstance(metadata, dict) else {}
-        metadata_semantic_issues = (
-            source_constraint_basemap_issues(metadata)
-            + scene_tone_palette_issues(metadata)
-            + screen_text_policy_metadata_issues(metadata, full_prompt)
-            + tension_curve_role_issues(metadata)
-            + cinematic_image_contract_issues(metadata, full_prompt)
-            + video_texture_contract_issues(metadata, full_prompt)
-            + aesthetic_directing_contract_issues(metadata, full_prompt)
-            + terminal_frame_contract_issues(metadata, full_prompt)
-            + production_control_grounding_issues(metadata, full_prompt)
-        )
-        if metadata_semantic_issues:
-            metadata_missing += 1
-        plan_item = plan_map.get(sid, {})
-        visible = _as_list(plan_item.get("visible_characters", plan_item.get("characters", [])))
-        validation_profile = derive_validation_profile(plan_item, metadata, visible)
-        for field in disabled_risk_gated_fields(plan_item, metadata, visible):
-            issues.append(prefix + "不适用的风险字段不得由Agent重新注入：qa_metadata." + field)
-        production_issues = (
-            visual_prior_risk_issues(full_prompt, json.dumps(plan_item, ensure_ascii=False))
-            + multi_person_attention_budget_issues(metadata, full_prompt, visible)
-            + spatial_facing_issues(metadata, full_prompt, visible)
-            + prop_lifecycle_contract_issues(metadata, full_prompt, validation_profile["prop_lifecycle_contract"])
-            + perspective_scale_contract_issues(metadata, full_prompt, visible, validation_profile["perspective_scale_contract"])
-            + lighting_topology_contract_issues(metadata, full_prompt, validation_profile["lighting_topology_contract"])
-            + physical_stability_issues(metadata, full_prompt, visible)
-        )
-        if production_issues:
-            metadata_missing += 1
-        role_errors = role_partition_issues(metadata, visible)
-        if role_errors:
-            role_issues += 1
-        if validation_profile["performance_contract"]:
-            if performance_causality_issues(metadata, visible):
-                performance_causality_errors += 1
-            if performance_contract_issues(metadata, full_prompt, visible):
-                performance_contract_errors += 1
-        if validation_profile["ai_model_readiness_score"] and ai_model_readiness_issues(metadata, full_prompt, visible):
-            performance_contract_errors += 1
-        if validation_profile["pressure_release_design"] and pressure_release_issues(metadata, full_prompt, visible):
-            performance_contract_errors += 1
-        if validation_profile["story_punch_contract"] and story_punch_issues(metadata, full_prompt, visible):
-            performance_contract_errors += 1
-        if validation_profile["listener_reaction_plan"] and listener_reaction_issues(metadata, full_prompt):
-            performance_contract_errors += 1
-        if expectation_anchor_issues(metadata, full_prompt):
-            performance_contract_errors += 1
-        if continuity_contract_issues(metadata, full_prompt, visible):
-            continuity_contract_errors += 1
-        if physical_transition_chain_issues(metadata, full_prompt):
-            continuity_contract_errors += 1
-        if reroll_control_issues(metadata, shot.get("generation_control"), visible):
-            reroll_control_errors += 1
-        roles = metadata.get("performance_priority", {}) if isinstance(metadata, dict) else {}
-        if visible and (not isinstance(roles, dict) or not roles.get("primary")):
-            primary_issues += 1
-        fight = is_fight_context(plan_item.get("scene_type", ""), plan_item.get("shot_type", ""), full_prompt)
-        b_issues = action_budget_issues(metadata, shot.get("duration", 0), fight)
-        if b_issues:
-            budget_issues += 1
-        if fight:
-            if fight_continuity_issues(metadata, shot.get("duration", 0)):
-                fight_continuity_errors += 1
-            fight_records.append((sid, metadata))
-        budget = metadata.get("action_budget", {}) if isinstance(metadata, dict) else {}
-        editorial_mode = metadata.get("editorial_mode", shot.get("editorial_mode", "continuous_take"))
-        camera_errors = camera_competition_issues(full_prompt, editorial_mode) + attention_handoff_issues(metadata, full_prompt) + shot_group_handoff_issues(metadata)
-        if not isinstance(budget, dict) or budget.get("physical_camera_move_count") not in (0, 1) or camera_errors:
-            camera_budget_issues += 1
-        if coverage_role_issues(metadata, full_prompt):
-            coverage_issues += 1
-        shot_size = director_map.get(sid, {}).get("shot_size", plan_item.get("shot_size", ""))
-        if visibility_issues(full_prompt, shot_size):
-            visible_detail_issues += 1
-
-        refs = metadata.get("dialogue_refs", []) if isinstance(metadata, dict) else []
-        expected_refs = director_map.get(sid, {}).get("dialogue_refs", plan_item.get("dialogue_refs", []))
-        raw = str(director_map.get(sid, {}).get("dialogue_raw_text", plan_item.get("dialogue_raw_text", "")) or "").strip()
-        if set(refs if isinstance(refs, list) else []) != set(expected_refs if isinstance(expected_refs, list) else []):
-            dialogue_issues += 1
-        elif raw:
-            control = shot.get("generation_control", {})
-            if isinstance(control, dict) and control.get("audio_enabled") is True and raw not in full_prompt:
-                dialogue_issues += 1
-            elif isinstance(control, dict) and control.get("audio_enabled") is False and raw in full_prompt:
-                dialogue_issues += 1
-
-        control = shot.get("generation_control")
-        if not isinstance(control, dict) or control.get("mode") != "t2v":
-            mode_issues += 1
-            control = control if isinstance(control, dict) else {}
-        if "reference_assets" in control:
-            asset_issues += 1
-        if not isinstance(control.get("audio_enabled"), bool):
-            audio_issues += 1
-        dialogue_issues += len(dialogue_event_issues(
-            metadata,
-            _source_dialogue_events(plan, metadata),
-            visible,
-            full_prompt,
-            control.get("audio_enabled"),
-            shot.get("duration", 0),
-        ))
-        if _has_direct_to_camera(full_prompt) and not _direct_to_camera_authorized(director_map.get(sid, {})):
-            eyeline_issues += 1
-        if any(engine in full_prompt for engine in FORBIDDEN_ENGINES):
-            engine_issues += 1
-
-    for (_, previous_metadata), (_, current_metadata) in zip(fight_records, fight_records[1:]):
-        fight_continuity_errors += len(fight_transition_issues(previous_metadata, current_metadata))
-
-    check(8, "Four executable sections", bad_sections == 0, f"{bad_sections} bad")
-    check(9, "Exact paragraph spacing", bad_spacing == 0, f"{bad_spacing} bad")
-    check(10, "No obsolete prompt sections", legacy_hits == 0, f"{legacy_hits} leak(s)")
-    check(11, "No model-prompt pollution", pollution == 0, f"{pollution} polluted")
-    check(12, "Runtime prompt hard limit", length_issues == 0, f"{length_issues} outside")
-    check(13, "Timeline present", timeline_missing == 0, f"{timeline_missing} missing")
-    check(14, "Timeline exact coverage", timeline_coverage == 0, f"{timeline_coverage} bad")
-    check(15, "Timeline <=3 segments", timeline_overload == 0, f"{timeline_overload} overloaded")
-    check(16, "Negative prompt injected separately", negative_missing == 0, f"{negative_missing} missing")
-    check(17, "No ambiguous negative commands", negative_ambiguous == 0, f"{negative_ambiguous} ambiguous")
-    check(
-        18,
-        "QA contracts complete",
-        metadata_missing == 0 and performance_causality_errors == 0 and performance_contract_errors == 0 and continuity_contract_errors == 0 and reroll_control_errors == 0,
-        f"metadata={metadata_missing}, causality={performance_causality_errors}, performance={performance_contract_errors}, continuity={continuity_contract_errors}, reroll={reroll_control_errors}",
+    report = validate_package(
+        package_path,
+        run_dir=run_dir,
+        report_path=os.path.join(run_dir, ".cache", "validate", "deterministic_export_check.json"),
+        require_editor=True,
     )
-    check(19, "Role partition complete", role_issues == 0, f"{role_issues} bad")
-    check(20, "Exactly one primary when visible", primary_issues == 0, f"{primary_issues} bad")
-    check(21, "Action budget/fight continuity", budget_issues == 0 and fight_continuity_errors == 0, f"budget={budget_issues}, fight={fight_continuity_errors}")
-    check(22, "Camera budget and coverage role", camera_budget_issues == 0 and coverage_issues == 0, f"budget={camera_budget_issues}, coverage={coverage_issues}")
-    check(23, "Shot-size/direct-feed visibility", visible_detail_issues == 0 and direct_feed_issues == 0, f"visible={visible_detail_issues}, direct={direct_feed_issues}")
-    check(24, "Dialogue boundary", dialogue_issues == 0, f"{dialogue_issues} mismatch(es)")
-    check(25, "Generation mode", mode_issues == 0, f"{mode_issues} invalid")
-    check(26, "Reference assets", asset_issues == 0, f"{asset_issues} invalid")
-    check(27, "Audio capability", audio_issues == 0, f"{audio_issues} invalid")
-    check(28, "Story-correct eyeline", eyeline_issues == 0, f"{eyeline_issues} unauthorized")
-    light_jumps = _light_jumps(plan, scene_by_id, scene_map)
-    check(29, "Lighting continuity", light_jumps == 0, f"{light_jumps} unexplained jump(s)")
-    export_ok, export_detail = _export_check(md_path, quality_mode, expected_ids)
-    editor_ok, editor_detail = _editor_review_check(llm_review)
-    check(30, "Export separation/readiness", export_ok and engine_issues == 0 and editor_ok, export_detail + f"; engines={engine_issues}; editor={editor_detail}")
+    failures = list(report["issues"])
+    if not quality_mode:
+        failures.extend(_delivery_file_issues(md_path, run_dir, package_path))
+    total = 2 if quality_mode else 6
+    failed = len(failures)
+    print("[DETERMINISTIC EXPORT CHECK] %s" % ("PASS" if not failures else "FAIL"))
+    for issue in failures[:80]:
+        print("  - " + issue)
+    return max(0, total - failed), failed
 
-    total = 30
-    passed = total - len(failures)
-    print(f"\n  RESULT: {passed}/{total} passed" + (f", {len(failures)} issues" if failures else " - ALL CLEAN"))
-    if failures:
-        print("  ISSUES:")
-        for index, issue in enumerate(failures, 1):
-            print(f"    {index}. {issue}")
-    return passed, len(failures)
+
+def _delivery_file_issues(md_path, run_dir, package_path):
+    if not md_path or not os.path.isfile(md_path):
+        return ["MARKDOWN: delivery file is missing"]
+    with open(md_path, "r", encoding="utf-8-sig") as handle:
+        text = handle.read()
+    package = _load(package_path)
+    config = _load_optional(os.path.join(run_dir, "project_config.json"))
+    target = _target_from_export_path(md_path, normalize_target(config.get("seedance_target", "auto")))
+    issues = []
+    for shot in package.get("shots", []):
+        if not isinstance(shot, dict):
+            continue
+        shot_id = str(shot.get("shot_id", ""))
+        prompt = selected_seedance_prompt(shot, target)
+        if shot_id not in text:
+            issues.append("%s: shot id is absent from Markdown" % shot_id)
+        if prompt and prompt not in text:
+            issues.append("%s: model-authored Seedance prompt was changed or omitted" % shot_id)
+        card = shot.get("director_card", "")
+        if isinstance(card, str) and card and card not in text:
+            issues.append("%s: model-authored director_card was changed or omitted" % shot_id)
+        for event in (shot.get("qa_metadata", {}) or {}).get("dialogue_events", []):
+            if isinstance(event, dict) and str(event.get("text", "")) not in text:
+                issues.append("%s: verbatim dialogue is absent from Markdown" % shot_id)
+    if INTERNAL_TITLE_LEAK.search(text):
+        issues.append("LAYOUT: internal machine title leaked")
+    xlsx_path = os.path.splitext(md_path)[0] + ".xlsx"
+    if not os.path.isfile(xlsx_path):
+        issues.append("XLSX: companion workbook is missing")
+    return issues
+
+
+def _target_from_export_path(path, configured):
+    name = os.path.basename(path)
+    if configured == "both":
+        if "Seedance2.0" in name:
+            return "2.0"
+        if "Seedance2.5" in name:
+            return "2.5"
+    return configured
 
 
 def _find_package(run_dir):
@@ -344,156 +86,61 @@ def _find_package(run_dir):
         ".cache/prompt_package.json",
     ):
         path = os.path.join(run_dir, relative)
-        if os.path.exists(path):
+        if os.path.isfile(path):
             return path
-    return ""
+    return os.path.join(run_dir, ".cache", "composer", "merged.prompt_package.json")
 
 
 def _plan_index(plan):
-    by_id = {}
-    scene_by_id = {}
-    expected_source_ids = set()
-    for shot in plan.get("shots", []):
-        shot_id = str(shot.get("shot_id", "") or "")
-        if not shot_id:
+    by_id, scene_by_id, expected_source_ids = {}, {}, set()
+    for shot in plan.get("shots", []) if isinstance(plan, dict) else []:
+        if not isinstance(shot, dict):
             continue
-        subshots = shot.get("subshots", []) if isinstance(shot.get("subshots"), list) else []
-        characters = []
-        dialogue_refs = []
-        for subshot in subshots:
-            expected_source_ids.add(str(subshot.get("subshot_id", "") or ""))
-            characters.extend(_as_list(subshot.get("visible_characters", subshot.get("characters", []))))
-            dialogue_refs.extend(_as_list(subshot.get("dialogue_refs", [])))
-        first = subshots[0] if subshots else {}
-        by_id[shot_id] = {
-            "shot_id": shot_id,
-            "subshot_ids": [subshot.get("subshot_id", "") for subshot in subshots if subshot.get("subshot_id")],
-            "characters": sorted(set(characters)),
-            "dialogue_refs": dialogue_refs,
-            "dramatic_design": first.get("dramatic_design", {}),
-            "scene_type": first.get("scene_type", shot.get("scene_type", "")),
-            "shot_type": first.get("shot_type", shot.get("shot_type", "")),
-            "shot_size": first.get("shot_size", shot.get("shot_size", "")),
-        }
-        scene_by_id[shot_id] = shot.get("scene", "")
+        scene = str(shot.get("scene", ""))
+        for subshot in shot.get("subshots", []) if isinstance(shot.get("subshots"), list) else []:
+            if not isinstance(subshot, dict):
+                continue
+            sid = str(subshot.get("subshot_id", ""))
+            if sid:
+                by_id[sid] = subshot
+                scene_by_id[sid] = scene
+                expected_source_ids.add(sid)
     return by_id, scene_by_id, expected_source_ids
-
-
-def _light_jumps(plan, scene_by_id, scene_map):
-    ordered = [subshot.get("subshot_id", "") for shot in plan.get("shots", []) for subshot in shot.get("subshots", [])]
-    jumps = 0
-    for left, right in zip(ordered, ordered[1:]):
-        if scene_by_id.get(left) != scene_by_id.get(right):
-            continue
-        t1 = scene_map.get(left, {}).get("light_temp")
-        t2 = scene_map.get(right, {}).get("light_temp")
-        if isinstance(t1, (int, float)) and isinstance(t2, (int, float)) and abs(t1 - t2) > 500:
-            jumps += 1
-    return jumps
 
 
 def _export_check(md_path, quality_mode, expected_ids):
     if quality_mode:
         return True, "quality mode"
-    if not md_path or not os.path.exists(md_path):
+    if not md_path or not os.path.isfile(md_path):
         return False, "markdown missing"
     with open(md_path, "r", encoding="utf-8-sig") as handle:
         text = handle.read()
-    ids_ok = all(subshot_id in text for subshot_id in expected_ids)
-    required_sections = (
-        "## 使用说明",
-        "## 全局锁定",
-        "## 制作质量总控",
-        "## 通用负面提示词｜直接复制",
-        "## 场景状态表",
-        "## 分镜投喂卡",
-        "【画面参数】",
-        "【画面描述｜直接复制】",
-        "【运镜描述】",
-        "【光影描述】",
-        "【负面提示词｜直接复制】",
-        "【表演与声音】",
-        "【状态继承】",
-        "【本镜制作控制】",
-    )
-    forbidden_sections = ("QA元数据", "qa_metadata", "生成控制", "generation_control")
-    direct_blocks = _direct_export_blocks(text)
-    direct_issues = [
-        issue
-        for block in direct_blocks
-        for issue in direct_copy_prompt_issues(block, max_chars=700, require_visual_texture=True)
-    ]
-    production_control_issues = _production_control_export_issues(text)
-    separated = (
-        all(label in text for label in required_sections)
-        and direct_blocks
-        and not direct_issues
-        and not production_control_issues
-        and not any(label in text for label in forbidden_sections)
-    )
-    title_ok = not bool(INTERNAL_TITLE_LEAK.search(text))
-    no_grid_section = "自动九宫格剧情包" not in text
-    xlsx_path = os.path.splitext(md_path)[0] + ".xlsx"
-    direct_detail = "direct_blocks=%d%s%s" % (
-        len(direct_blocks),
-        (", direct_issues=" + str(len(direct_issues))) if direct_issues else "",
-        (", production_control_issues=" + str(len(production_control_issues))) if production_control_issues else "",
-    )
-    return ids_ok and separated and title_ok and no_grid_section and os.path.exists(xlsx_path), f"ids={ids_ok}, separated={separated}, {direct_detail}, title={title_ok}, no_grid={no_grid_section}, xlsx={os.path.exists(xlsx_path)}"
+    ids_ok = all(identifier in text for identifier in expected_ids)
+    xlsx_ok = os.path.isfile(os.path.splitext(md_path)[0] + ".xlsx")
+    title_ok = not INTERNAL_TITLE_LEAK.search(text)
+    return ids_ok and xlsx_ok and title_ok, "ids=%s, xlsx=%s, title=%s" % (ids_ok, xlsx_ok, title_ok)
 
 
 def _direct_export_blocks(markdown_text):
-    fenced_pattern = re.compile(
-        r"\*\*画面描述｜直接复制(?:（模型提示词）)?\*\*\s*\n+\s*```text\s*\n(.*?)\n```",
+    pattern = re.compile(
+        r"【画面描述｜直接复制】\s*\n+(.*?)(?=\n+【导演卡｜直接复制[^】]*】|\n+#### |\Z)",
         re.S,
     )
-    text = str(markdown_text or "")
-    blocks = [match.group(1).strip() for match in fenced_pattern.finditer(text)]
-    card_pattern = re.compile(
-        r"【画面描述｜直接复制】\s*\n+(.*?)(?=\n+【(?:导演卡｜直接复制｜(?:180-500|≤500)字|画面参数|运镜描述|光影描述|负面提示词｜直接复制|表演与声音|状态继承|剪辑衔接|本镜制作控制|本镜必要约束｜直接复制|本镜补充负面提示词｜直接复制|内部溯源|关键帧生图提示|空间与道具锁定)[^】]*】|\n+#### |\n+---|\Z)",
-        re.S,
-    )
-    blocks.extend(match.group(1).strip() for match in card_pattern.finditer(text))
-    return [block for block in blocks if block]
+    return [match.group(1).strip() for match in pattern.finditer(str(markdown_text or "")) if match.group(1).strip()]
 
 
 def _production_control_export_issues(markdown_text):
-    text = str(markdown_text or "")
-    issues = []
-    global_match = re.search(r"## 制作质量总控\s*\n(.*?)(?=\n##\s|\Z)", text, re.S)
-    global_text = global_match.group(1) if global_match else ""
-    global_labels = (
-        "画面质感基线", "光效与曝光连续", "动态美学基线",
-        "表演与情绪基线", "蒙太奇与剪辑基线", "穿帮与抽卡总控",
-    )
-    for label in global_labels:
-        match = re.search(re.escape(label) + r"[：:]\s*([^\n]+)", global_text)
-        value = match.group(1).strip() if match else ""
-        if len(value) < 8:
-            issues.append("制作质量总控缺少可执行" + label)
-        elif any(term in value for term in ("已检查", "按合同", "见内部", "待定", "TBD")):
-            issues.append("制作质量总控包含内部占位：" + label)
+    """Retained API: production-control semantics are reviewed by the model Editor."""
+    return []
 
-    shot_blocks = [
-        match.group(1).strip()
-        for match in re.finditer(r"【本镜制作控制】\s*\n+(.*?)(?=\n+【|\n+#### |\n+---|\Z)", text, re.S)
-    ]
-    if not shot_blocks:
-        issues.append("缺少本镜制作控制块")
-        return issues
-    shot_labels = (
-        "画面质感", "光效与曝光", "动态美学", "表演与情绪",
-        "穿帮控制", "抽卡策略", "蒙太奇与剪辑",
-    )
-    for index, block in enumerate(shot_blocks, start=1):
-        for label in shot_labels:
-            match = re.search(r"(?:^|\n)" + re.escape(label) + r"[：:]\s*([^\n]+)", block)
-            value = match.group(1).strip() if match else ""
-            if len(value) < 6:
-                issues.append("本镜制作控制%d缺少%s" % (index, label))
-            elif any(term in value for term in ("已检查", "按合同", "见内部", "待定", "TBD")):
-                issues.append("本镜制作控制%d包含内部占位：%s" % (index, label))
-    return issues
+
+def _source_dialogue_events(plan, metadata):
+    ledger = plan.get("dialogue_events", {}) if isinstance(plan.get("dialogue_events"), dict) else {}
+    return [dict(ledger[ref]) for ref in _as_list(metadata.get("dialogue_refs", [])) if isinstance(ledger.get(ref), dict)]
+
+
+def _as_list(value):
+    return [str(item).strip() for item in value if str(item).strip()] if isinstance(value, list) else []
 
 
 def _load(path):
@@ -502,56 +149,27 @@ def _load(path):
 
 
 def _load_optional(path):
-    return _load(path) if os.path.exists(path) else {"items": []}
+    try:
+        return _load(path)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
 
 
 def _editor_review_check(llm_review):
-    if not isinstance(llm_review, dict) or not llm_review or "items" in llm_review:
-        return False, "missing llm review"
-    if llm_review.get("pass") is not True:
-        return False, "pass!=true"
-    blocking = llm_review.get("blocking")
-    if not isinstance(blocking, list) or blocking:
-        return False, "blocking not empty"
-    return True, "ok"
-
-
-def _as_list(value):
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    if isinstance(value, str):
-        return [part.strip() for part in re.split(r"[;；,，、/]+", value) if part.strip()]
-    return []
-
-
-def _source_dialogue_events(plan, metadata):
-    dialogue_events = plan.get("dialogue_events", {}) if isinstance(plan.get("dialogue_events"), dict) else {}
-    refs = _as_list(metadata.get("dialogue_refs", []))
-    return [
-        dict(dialogue_events[ref])
-        for ref in refs
-        if isinstance(dialogue_events.get(ref), dict)
-    ]
-
-
-def _has_direct_to_camera(text):
-    return bool(re.search(r"(?:面向|面对|朝向|正对|看向|直视|盯着)镜头", str(text or "")))
-
-
-def _direct_to_camera_authorized(item):
-    blob = "\n".join(str(item.get(key, "")) for key in (
-        "character_action", "axis_space", "camera_facing_desc", "dialogue_audio", "base_action",
-    ))
-    return bool(re.search(r"自拍|直播|对观众|直视观众|镜头内设备|原文明确.*镜头", blob))
+    valid = (
+        isinstance(llm_review, dict)
+        and llm_review.get("pass") is True
+        and isinstance(llm_review.get("blocking"), list)
+        and not llm_review["blocking"]
+    )
+    return valid, "ok" if valid else "missing or blocking model Editor review"
 
 
 if __name__ == "__main__":
     if len(sys.argv) == 3 and sys.argv[1] == "--quality":
-        passed, failed = check_export("", sys.argv[2], quality_mode=True)
-        sys.exit(0 if failed == 0 else 1)
+        _passed, failed = check_export("", sys.argv[2], quality_mode=True)
+        raise SystemExit(0 if failed == 0 else 1)
     if len(sys.argv) == 3:
-        passed, failed = check_export(sys.argv[1], sys.argv[2], quality_mode=False)
-        sys.exit(0 if failed == 0 else 1)
-    print("Usage: python3 check_export.py <export_md> <run_dir>")
-    print("       python3 check_export.py --quality <run_dir>")
-    sys.exit(2)
+        _passed, failed = check_export(sys.argv[1], sys.argv[2], quality_mode=False)
+        raise SystemExit(0 if failed == 0 else 1)
+    raise SystemExit("usage: check_export.py <export.md> <run_dir> | --quality <run_dir>")

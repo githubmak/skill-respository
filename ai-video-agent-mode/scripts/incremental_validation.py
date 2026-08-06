@@ -27,7 +27,7 @@ _QA_CONTRACTS = (
     "prompt_information_budget", "sound_directing_plan", "performance_causality",
     "performance_contract", "listener_reaction_plan", "continuity_contract",
     "reroll_control", "dialogue_events", "dialogue_refs", "quality_contract",
-    "quality_evidence", "duration_design", "dramatic_design", "emotion_driver",
+    "duration_design", "dramatic_design", "emotion_driver",
     "camera_beat_map", "attention_handoff", "terminal_frame_contract",
     "visual_bible", "static_aesthetic_contract", "dynamic_aesthetic_contract",
     "aesthetic_priority", "video_texture_contract", "cinematic_image_contract",

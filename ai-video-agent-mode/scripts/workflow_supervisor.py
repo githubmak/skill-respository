@@ -21,11 +21,7 @@ from prepare_creative_blueprint import prepare as prepare_creative_blueprint, mi
 from preflight_check import run as preflight_check
 from source_gate import run as source_gate
 from pre_editor_gate import run as pre_editor_gate
-from emotion_camera_audit import audit as emotion_camera_audit
-from episode_state_graph import build_episode_state_graph
-from episode_director_audit import audit as episode_director_audit
 from validate_modec import main as validate_modec
-from check_export import check_export
 from export_with_validation import export_with_validation, _record_normalization_provenance
 from normalize_prompt_package import normalize_package
 from pipeline_runner import run as pipeline_run
@@ -69,10 +65,14 @@ def run_until_pause(run_dir, source_path=None, max_ticks=24):
         if action == "spawn":
             return _result("host_dispatch_required", history, phase=outcome.get("phase"),
                            dispatch_packets=outcome.get("dispatch_packets", []),
+                           interrupt_dispatch_ids=outcome.get("interrupt_dispatch_ids", []),
+                           budget=outcome.get("budget"),
                            protocol=_dispatch_protocol())
         if action == "wait_for_workers":
             return _result("waiting_for_workers", history, phase=outcome.get("phase"),
-                           worker_status=outcome.get("worker_status", []))
+                           worker_status=outcome.get("worker_status", []),
+                           poll_after_seconds=outcome.get("poll_after_seconds", 60),
+                           budget=outcome.get("budget"))
         if action == "field_patch_retry":
             history.append({
                 "action": "targeted_retry_prepared",
@@ -83,6 +83,10 @@ def run_until_pause(run_dir, source_path=None, max_ticks=24):
             continue
         if action == "completed":
             return _result("completed", history)
+        if action == "fused":
+            return _result("fused", history, phase=outcome.get("phase"),
+                           report_path=outcome.get("report_path"),
+                           budget=outcome.get("budget"), reason="pipeline deadline gate stopped execution")
         return _result(action or "blocked", history, phase=outcome.get("phase"),
                        reason=outcome.get("reason"), expected_outputs=outcome.get("expected_outputs"))
     return _result("blocked", history, reason="supervisor tick limit reached")
@@ -123,6 +127,7 @@ def execute_local_phase(run_dir, phase, source_path=None):
                 str(item.get("msg", item.get("message", item))) if isinstance(item, dict) else str(item)
                 for item in blocking[:8]
             ))
+        _write_orchestrator_receipt(run_dir)
         return {
             "source_path": source_path,
             "source_gate_path": source_report.get("report_path", ""),
@@ -144,27 +149,16 @@ def execute_local_phase(run_dir, phase, source_path=None):
         source_sha256 = _sha256(package_path)
         normalize_package(package_path, package_path)
         _record_normalization_provenance(package_path, source_sha256)
-        episode_graph, episode_graph_path = build_episode_state_graph(run_dir)
-        if not episode_graph.get("pass"):
-            raise ValueError("episode state graph failed: " + episode_graph_path)
-        director_audit, director_audit_path = episode_director_audit(run_dir)
-        if not director_audit.get("pass"):
-            raise ValueError("episode director audit failed: " + director_audit_path)
-        audit, audit_path = emotion_camera_audit(run_dir)
-        if not audit.get("pass"):
-            raise ValueError("emotion/camera audit failed: " + audit_path)
         if validate_modec(run_dir) != 0:
             raise ValueError("validate_modec failed")
-        _passed, failed = check_export("", run_dir, quality_mode=True)
-        if failed != 0:
-            raise ValueError("quality gate failed")
+        deterministic_path = os.path.join(run_dir, ".cache", "validate", "deterministic_package.json")
         receipt_path, _receipt = create_receipt(run_dir, package_path, (
-            episode_graph_path, director_audit_path, audit_path,
+            deterministic_path,
         ))
         path = os.path.join(run_dir, ".cache", "validate", "result.json")
-        atomic_json(path, {"pass": True, "validated_at": time.time(), "emotion_camera_audit": audit_path,
-                           "episode_state_graph": episode_graph_path,
-                           "episode_director_audit": director_audit_path,
+        atomic_json(path, {"pass": True, "validated_at": time.time(),
+                           "validator_scope": "deterministic_facts_plus_model_editor",
+                           "deterministic_report": deterministic_path,
                            "validation_receipt": receipt_path,
                            "package_sha256": _sha256(package_path)})
         return {"result_path": path}
@@ -221,7 +215,11 @@ def _prepare_pre_editor_retry(run_dir, gate_result):
             if str(item.get("shot_id", "")) == shot_id
         ]
         if not targets:
-            targets = _repair_targets_from_pre_editor_issues(shot_id, shot_issues)
+            targets = [{
+                "shot_id": shot_id,
+                "field_path": "validator_reported_field",
+                "reason": "validator did not provide a structured field_path",
+            }]
         windows.append({
             "window_id": "PRE_" + shot_id,
             "pass": False,
@@ -250,26 +248,6 @@ def _prepare_pre_editor_retry(run_dir, gate_result):
         "target_shot_ids": failed,
         "reason": "pre_editor_composer_validation",
     }
-
-
-def _repair_targets_from_pre_editor_issues(shot_id, issues):
-    targets = []
-    mapping = (
-        ("scene_tone_palette.visual_scene_prefix", "qa_metadata.scene_tone_palette.visual_scene_prefix"),
-        ("source_constraint_basemap.single_shot_risk", "qa_metadata.source_constraint_basemap.single_shot_risk"),
-        ("performance_causality.hold_strategy", "qa_metadata.performance_causality.hold_strategy"),
-        ("performance_contract.", "qa_metadata.performance_contract"),
-        ("story_punch_contract.", "qa_metadata.story_punch_contract"),
-        ("reroll_control.camera_anchor", "qa_metadata.reroll_control.camera_anchor"),
-        ("pressure_release_design", "qa_metadata.pressure_release_design"),
-        ("必须落实到full_prompt", "full_prompt"),
-        ("full_prompt", "full_prompt"),
-    )
-    for issue in issues:
-        for needle, field in mapping:
-            if needle in issue and not any(item.get("field_path") == field for item in targets):
-                targets.append({"shot_id": shot_id, "field_path": field, "reason": issue})
-    return targets
 
 
 def _record_request(run_dir, source_path):
@@ -303,9 +281,29 @@ def _dispatch_protocol():
         "spawn one worker for each dispatch packet",
         "register the returned Agent ID with register_dispatch_agent.py",
         "record at least one heartbeat while the worker is running",
+        "do not wait beyond the packet timeout; interrupt the worker and call the supervisor again",
         "accept only packet._batch_output_path after JSON parsing succeeds",
         "run record_batch_provenance.py, then call workflow_supervisor.py again",
+        "pass exact input/output token counts to provenance only when the host exposes them; otherwise leave unavailable",
+        "while any worker is running, poll the supervisor at least once per minute so freed slots are refilled",
     ]
+
+
+def _write_orchestrator_receipt(run_dir):
+    """Bind normalized shot plan to the exact model draft that produced it."""
+    orchestrator_dir = os.path.join(run_dir, ".cache", "orchestrator")
+    report_path = os.path.join(run_dir, ".cache", "preflight", "report.json")
+    receipt = {
+        "contract_version": PROMPT_CONTRACT_VERSION,
+        "draft_sha256": _sha256(os.path.join(orchestrator_dir, "shot_plan.draft.json")),
+        "shot_plan_sha256": _sha256(os.path.join(orchestrator_dir, "shot_plan.json")),
+        "source_ledger_sha256": _sha256(os.path.join(orchestrator_dir, "source_ledger.json")),
+        "source_snapshot_sha256": _sha256(os.path.join(orchestrator_dir, "source_snapshot.json")),
+        "preflight_report_sha256": _sha256(report_path),
+        "preflight_pass": True,
+        "created_at": time.time(),
+    }
+    atomic_json(os.path.join(orchestrator_dir, "creative_validation_receipt.json"), receipt)
 
 
 def _result(status, history, **fields):

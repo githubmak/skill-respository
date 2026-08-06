@@ -259,7 +259,6 @@ def validation_profile(subshot, metadata=None, visible_characters=None):
         "performance_causality": has_character_performance,
         "performance_contract": has_character_performance,
         "story_punch_contract": has_character_performance or prop_transition,
-        "ai_model_readiness_score": risk.get("tier") == "high",
         "pressure_release_design": tension in ("rising", "peak"),
         "listener_reaction_plan": bool(events) and len(visible) > 1,
         "expectation_anchor": isinstance(expectation, dict) and expectation.get("applicable") is True,
@@ -369,14 +368,10 @@ def dispatch_risk(item):
         # High risk is not one size.  Keep simple long-dialogue work reasonably
         # grouped, but reduce the blast radius for shots that often force
         # expensive full-batch retries.
-        complex_reasons = {
-            "fight_or_force",
-            "prop_transfer",
-            "shot_group",
-            "high_reroll_risk",
-            "temporal_transition",
-        }
-        capacity = 2 if any(reason in complex_reasons for reason in reasons) or len(reasons) > 1 else 3
+        # Risk controls review depth, never the amount of creative reasoning.
+        # Keep up to one scene-sized six-shot packet and let the executable
+        # context budget split it further when the actual payload is too large.
+        capacity = 6
         return {"tier": "high", "reasons": reasons, "batch_capacity": capacity, "review_scope": "full_scene_window"}
     is_non_character = bool(sources) and all(is_true_non_action_subshot(source) for source in sources if isinstance(source, dict))
     single_stable = len(unique_characters) <= 1 and not has_shot_group and not any(

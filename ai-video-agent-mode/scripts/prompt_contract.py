@@ -134,16 +134,7 @@ GENERIC_PERFORMANCE_TERMS = {
     "情绪复杂", "表情细腻", "保持状态", "微微变化", "很强烈",
     "感染力强", "观众共情", "共情感强", "画面感强", "情绪到位", "内心张力拉满",
 }
-READINESS_DIMENSIONS = {
-    "scene_space": "场景空间",
-    "continuity_risk": "穿帮风险",
-    "emotion_readability": "情绪可读",
-    "tension_pressure": "张力压迫",
-    "camera_emotion_fit": "运镜服务情绪",
-    "prop_continuity": "道具连续",
-    "visual_beauty": "画面美感",
-}
-READINESS_GENERIC_TERMS = {
+GENERIC_QUALITY_TERMS = {
     "很好", "优秀", "合格", "稳定", "清晰", "有张力", "很有张力", "画面好看",
     "空间清楚", "道具稳定", "情绪到位", "无明显问题", "整体不错", "执行性强",
 }
@@ -883,108 +874,6 @@ def performance_contract_issues(metadata, full_prompt="", visible_characters=Non
     return issues
 
 
-def ai_model_readiness_issues(metadata, full_prompt="", visible_characters=None):
-    """Require a compact self-score focused on AI video model execution risk."""
-    metadata = metadata if isinstance(metadata, dict) else {}
-    readiness = metadata.get("ai_model_readiness_score")
-    visible = _string_list(visible_characters or [])
-    required = _readiness_required(metadata, full_prompt, visible)
-    has_content = _readiness_has_content(readiness)
-    if not required and not has_content:
-        return []
-    if not visible and readiness in (None, {}):
-        return []
-    if required and not has_content:
-        return ["高风险或人物复杂镜必须提供qa_metadata.ai_model_readiness_score；低风险镜可省略"]
-    if not isinstance(readiness, dict):
-        return ["qa_metadata.ai_model_readiness_score必须是对象，用于AI视频大模型可执行性自检"]
-
-    issues = []
-    scores = []
-    for key, label in READINESS_DIMENSIONS.items():
-        entry = readiness.get(key)
-        if not isinstance(entry, dict):
-            issues.append(f"ai_model_readiness_score.{key}（{label}）必须是对象")
-            continue
-        score = entry.get("score")
-        if not isinstance(score, int) or score < 1 or score > 10:
-            issues.append(f"ai_model_readiness_score.{key}.score必须是1-10整数")
-        else:
-            scores.append(score)
-        reason = str(entry.get("reason", "") or "").strip()
-        if len(reason) < 8 or reason in READINESS_GENERIC_TERMS:
-            issues.append(f"ai_model_readiness_score.{key}.reason必须说明具体可见依据或风险，不能只写空泛好评")
-
-    overall = readiness.get("overall")
-    if not isinstance(overall, dict):
-        issues.append("ai_model_readiness_score.overall必须是对象")
-    else:
-        score = overall.get("score")
-        if not isinstance(score, int) or score < 1 or score > 10:
-            issues.append("ai_model_readiness_score.overall.score必须是1-10整数")
-        weakest = str(overall.get("weakest_point", "") or "").strip()
-        first_pass = str(overall.get("first_pass_check", "") or "").strip()
-        if len(weakest) < 6 or weakest in READINESS_GENERIC_TERMS:
-            issues.append("ai_model_readiness_score.overall.weakest_point必须写最弱风险点，不能写空泛好评")
-        if len(first_pass) < 6:
-            issues.append("ai_model_readiness_score.overall.first_pass_check必须写人工首轮检查点")
-
-    if scores and min(scores) >= 9:
-        issues.append("ai_model_readiness_score不得所有核心维度都给9分以上；必须暴露T2V首轮最可能失败的维度")
-
-    sections = split_sections(full_prompt, PROMPT_LABELS)
-    prompt_text = "\n".join(sections.values())
-    if visible:
-        if not any(term in prompt_text for term in ("画面左", "画面右", "画面中", "前景", "中景", "后景")):
-            issues.append("ai_model_readiness_score不能替代空间锁定；人物镜full_prompt仍需屏幕坐标或景深层级")
-        if not any(term in prompt_text for term in ("落幅", "下一镜", "继承", "仍", "保持", "停在", "留在")):
-            issues.append("ai_model_readiness_score不能替代尾帧继承；full_prompt必须写落幅/下一镜承接")
-    return issues
-
-
-def _readiness_required(metadata, full_prompt="", visible=None):
-    visible = _string_list(visible or [])
-    if not visible:
-        return False
-    if len(visible) >= 2:
-        return True
-    if isinstance(metadata.get("dialogue_events"), list) and metadata.get("dialogue_events"):
-        return True
-    if str(metadata.get("editorial_mode", "")) == "shot_group":
-        return True
-    contract = metadata.get("continuity_contract", {})
-    if isinstance(contract, dict):
-        if contract.get("state_change") is True:
-            return True
-        prop_state = str(contract.get("prop_state", "") or "")
-        if prop_state and not _is_no_prop_state(prop_state):
-            return True
-    tension = ""
-    for key in ("performance_contract", "emotion_driver", "performance_causality"):
-        value = metadata.get(key, {})
-        if isinstance(value, dict) and value.get("tension_intent"):
-            tension = value.get("tension_intent")
-            break
-    if tension in ("rising", "peak"):
-        return True
-    reroll = metadata.get("reroll_control", {})
-    if isinstance(reroll, dict) and reroll.get("risk_level") == "high":
-        return True
-    return bool(re.search(r"拿起|递给|接住|放下|药瓶|手机|钥匙|刀|枪|门外|脚步|封条|转向|转身|硬切|拉焦", str(full_prompt or "")))
-
-
-def _readiness_has_content(readiness):
-    if not isinstance(readiness, dict):
-        return False
-    for value in readiness.values():
-        if isinstance(value, dict):
-            if any(str(child).strip() not in ("", "0", "False", "None", "none", "N/A") for child in value.values()):
-                return True
-        elif str(value).strip():
-            return True
-    return False
-
-
 def pressure_release_issues(metadata, full_prompt="", visible_characters=None):
     """Validate pressure is built and released through executable visible beats."""
     metadata = metadata if isinstance(metadata, dict) else {}
@@ -1059,7 +948,7 @@ def story_punch_issues(metadata, full_prompt="", visible_characters=None):
         if (
             len(value) < 4
             or value in GENERIC_PERFORMANCE_TERMS
-            or value in READINESS_GENERIC_TERMS
+            or value in GENERIC_QUALITY_TERMS
             or STORY_PUNCH_GENERIC_RE.search(value)
             or any(term in value for term in ABSTRACT_VISUAL_TERMS)
         ):

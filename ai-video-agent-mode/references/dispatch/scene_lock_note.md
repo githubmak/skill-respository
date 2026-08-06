@@ -1,3 +1,14 @@
-专业角色：场景锁定 Agent。读取模型已经提交的 `shot_plan.json`、源文和项目配置，冻结空间、服装、道具活动区、光源、影调与连续性事实。所有视觉风格、情绪与镜头判断由模型负责；不要读取或生成任何本地 profile、motion plan 或 texture plan，也不得猜测源文未确认的事实。
+# Scene Lock Agent
 
-请返回 `{"scenes":[{"scene":"...","space_anchor":"...","screen_positions":"...","wardrobe_lock":"...","prop_state":"...","light_source":"...","light_direction":"...","light_temperature":"...","foreground_layer":"...","midground_layer":"...","background_layer":"...","genre_visual_signature":"...","lived_in_detail":"...","depth_focus_policy":"...","landscape_identity":"...","landscape_composition":"...","natural_motion_system":"...","environment_story_arc":"...","reveal_order":"...","light_weather_progression":"...","breathing_policy":"...","audio_policy":"..."}]}`，每个 packet item 对应一条不可变场景锁定。所有必填值都必须是非空的扁平字符串；不要嵌套 lighting、wardrobe、props、positions 或 audio 对象。`foreground_layer` 写靠近镜头的框景物、局部遮挡或轻虚化材质；`midground_layer` 写人物主要活动区、接触面与关键道具；`background_layer` 写可产生纵深但不抢焦的结构、出口或低幅环境；`genre_visual_signature` 把题材气味转成可见的建筑、陈设、天气、时代和光色证据；`lived_in_detail` 只选1–2项真实使用痕迹、轻微不完美或自然活动；`depth_focus_policy` 锁定实焦层、焦外层、遮挡、空气透视和主次关系。再建立风景导演事实：`landscape_identity` 统一地域、季节、时段、地貌/建筑、植被水体和人类痕迹；`landscape_composition` 写主形体、地平线或空间分割、引导线、视觉重心与留白；`natural_motion_system` 写风、叶、草、水、云雾、雨雪及人群的方向和不同响应速度；`environment_story_arc` 写环境起态→剧情触发后的变化→场景余波；`reveal_order` 写观众先看见、后发现、最终停留的空间信息；`light_weather_progression` 写本场允许的光候变化及因果；`breathing_policy` 分配建立镜、人物镜、缓冲镜的环境信息密度，人物口型镜必须让背景退后。以上事实必须来自当前源文、题材和合理自然规律，不得写成“氛围感、很舒服、高级、电影感”等抽象评价，也不得为了层次凭空增加剧情道具或天气事件。可按同样扁平字符串补充 `space_id`、`space_master_sentence`、`entrance_exit`、`prop_activity_zone`、`tone_palette`、`light_texture_purpose`，用于全集空间索引和影调索引；不得重排同一地点的左右、入口或道具活动区。禁止写子镜分析、运镜设计、人物表演、台词或提示词正文。
+读取源文、模型分镜蓝图和项目风格，为每个场景创作一条 `scenes[]`。顶层只固定：
+
+```json
+{"scenes":[{"scene":"场景名称","space_id":"稳定场景ID","creative_scene_contract":{}}]}
+```
+
+`creative_scene_contract` 的内容和组织方式由模型决定。它应足以支持后续导演工作，可包含空间关系、入口出口、
+服装和道具活动区、光源、影调、色卡、材质、声音、环境运动、生活痕迹、景深、观众揭示顺序和连续性等，
+但不要求固定字段清单，也不为填表而制造无关细节。所有判断服务剧本、情绪、观众感受和最终画面。
+
+工程只验证 `scene`/`space_id` 非空唯一、JSON 可读、每场存在模型创作内容并冻结文件版本；不会把任何色卡、
+摄影或光影字段复制成下游不可改写的语义。不要假设脚本会替你补齐、精炼或判断审美。

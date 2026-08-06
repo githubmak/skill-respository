@@ -1,36 +1,13 @@
-# Direct-Copy Contract Slice
+# Model-Authored Seedance Contract
 
-权威来源仍是 `references/format_constraints.md` §B0/§B2/§B6。本文件只作为快速定位切片。
+Master Production 直接创作最终 `seedance_prompt`，不是让 Export 从其他字段派生。模型自行决定叙事、
+表演、空间、机位、运镜、焦点、光影、色卡、材质、声音、节奏和终态的组织方式，并对目标 Seedance
+版本进行语义编译。
 
-`画面描述｜直接复制` 必须：
+- 单目标：填写 `seedance_prompt`，最多700字。
+- 双目标：分别填写 `seedance_prompt_variants["2.0"]` 与 `["2.5"]`，每份最多700字。
+- 导演卡：模型另写 `director_card`，最多500字。
+- 超限或缺失：由模型重写；工程不得组装、去重、截断、补写或更换词语。
+- Editor：独立判断是否准确理解剧本、能否让观众读懂、是否适配 Seedance 以及最终审美是否成立。
 
-- 从 `full_prompt` 派生，不新增第二套提示词事实。
-- 保留五段内容原有顺序、时间窗、原文台词和声音边界。
-- 移除“上一镜、继承、尾帧、剪辑、切到、反打到、当前主角、当前对话者”等元叙述，改写为当前可见事实。
-- 开头优先使用 `scene_tone_palette.visual_scene_prefix`：画幅/视觉风格 + 本镜固定空间锚点 + 本镜影调光线。
-- 控制在 700 中文字符以内；light 镜也必须保留当前镜必要的空间、表演、光影和终端事实，但不设最低字数。
-- 同一创作意图由 Master Production 另写模型主权字段 `director_card`（≤500字）；Export 只做顺序组装、精确去重和计数，不从完整提示词选择性删句。
-  缺失或超限时返回 `CREATIVE_REWRITE_REQUIRED`，必须回到模型阶段重写，不能用截断、启发式删句或空话替代。
-- 必含画幅、影调、色卡/视觉前缀、画面主体、运镜状态、光影描述和 1–2 个具体质感锚点。
-- 推荐使用即梦友好导演卡顺序：画幅/风格 → 场景色卡/影调 → 主体位置与可见人数 → 表演/台词/听者反应 → 运镜路径或稳定状态 → 光影材质 → 落幅。
-- 对白镜必须显式落地 `dialogue_performance_kernel` 的可见部分：1–3 个逐字原文重音词及说法、潜台词转译后的手眼/道具/距离证据、说话者口型、听者低幅反应、句末闭口与余波落幅；OS/OV/画外声只写闭口承接。
-- 禁止把 `line_function/subtext/turn_relation/conversation_mode/response_latency/overlap_or_interrupt_window/conversation_source_basis/inner_emotion/display_intent/emotion_delta/scene_objective/active_tactic/knowledge_gap/power_state_change/sequence_directing_plan/cut_decision_contract/prompt_information_budget` 等分析标签、枚举名或强度数字写进直投正文。它们必须先转译成可见停顿/抢话/收句、动作、构图、环境节拍、声音、运镜响应或落幅。
-- 按 `prompt_information_budget` 保护 `must_render`，并限制 `cinematic/video_texture` 中实际进入正文的视觉增强层数量；超过 `visual_enhancer_limit` 时阻断回修，不由编译器擅自删除较好的增强层。
-- 人物/对白镜应只保留一个构图戏眼和一个有因果的运镜/固定策略；不得堆叠多个“高级”构图、运镜和表情指令争抢同一时间窗。
-- 每条直投正文必须消费本镜一个具体构图骨架（如前景框景、三角关系、斜线纵深、中央空位、低/高机位或横向揭示）和一个单一路径/固定理由；同场连续镜头不得连续复用同一“景别+角度+构图+运镜”组合。
-- 人物镜必须把视线/动作方向留白、前景遮挡边界和轮廓分离转成可见事实：实焦人物眼口与活动手不被遮住，画面边缘避开颈/肘/腕/膝/踝，多人头脸肩线和四肢以错位、景深或明暗分开。
-- 双人关系镜将人物实际面向与摄影机可见面分开：双方身体/胸口/脚尖各自面向对方，另写摄影机看到正面/背面/侧面和各自视线目标。`正面可见` 不得改写成 `面向镜头`；前后景或占比不得替代门槛侧、遮挡部位和可见通道。
-- 仅当源文明示 POV、口播或打破第四面墙时，正文才可让双人关系中的唯一指定人物按时间窗直视镜头；必须保留身体关系/转向、其他人物场内视线和结束状态。普通正反打不适用。
-- 回家/进门正文必须保留门外起点、跨门槛中间态、屋内终态和常驻人物所在侧；门外机位朝屋内时使用屋内背景锚点。儿童/成人纵深保留相对肩胸高度与共同接地，同类道具保留可见差异。
-- 直投正文必须把终端帧合同编译为自然中文，至少写出最后20%的摄影机停稳、可见人数/槽位、人物边界或道具归属保持，以及不新增/不重复主体；不得只把 `end_state` 留在 QA 元数据。
-- 功能面道具风险镜必须保留“功能面朝使用者、摄影机实际可见面、握持/接触、操作证据、方向终态”这些可见事实；不得泄漏 `prop_functional_surface_contract/content_visibility/camera_half_space` 字段名。需要读清内容时使用肩后/过肩/俯拍/斜上方同侧机位或拆镜，不把手机屏幕、照片正面、书页或表盘转向观众。
-- 高风险镜才追加 `本镜必要约束｜直接复制` 与 `本镜补充负面提示词｜直接复制`。
-- `【本镜制作控制】` 的画面质感、光效与曝光、动态美学、表演与情绪、穿帮控制、抽卡策略中的可见降级结果、蒙太奇/剪辑中的可见结果，必须逐项在直投正文中有语义证据。风险等级、人工复核、失败重试、后期与拆镜决定属于纯生产信息，不得为通过校验塞入模型正文。导出报告记录每项 `applicable/grounded/candidate_facts/grounded_facts`，适用项未落地时阻断。
-
-导出统一由 `scripts/direct_prompt_compiler.py` 做结构化组装，顺序固定为：
-`visual_prefix → space → continuity → performance → light → video_texture → cinematic`。
-编译器只做跨段精确去重，不删除任何非完全重复的创作句；空间、连续性、表演、光影、原生音频台词和 `must_render` 均为模型创作事实。
-结果超过700字、导演卡超过500字或视觉增强层超过预算时，Export 必须返回 `CREATIVE_REWRITE_REQUIRED` 并退回 Master Production，
-不得静默裁切。
-
-完整 Markdown、`.concise.md` 和 `.engineering.md` 共用同一 canonical package。简洁视图只含导演卡和负面词；工程视图可保留句级来源、Scene Lock、动作失败预测、合同字段和压缩差异，但不能成为新的模型正文。
+工程只验证字段、字符数、版本映射、逐字台词和原样导出。

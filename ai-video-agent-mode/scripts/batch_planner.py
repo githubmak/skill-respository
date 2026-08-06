@@ -1,44 +1,32 @@
-"""Pure batch planning shared by dispatch packet construction.
+"""Deterministic batch planning shared by dispatch packet construction.
 
-This module deliberately knows nothing about run directories or packet files.
-Keeping capacity policy here makes it testable without coupling it to scaffold
-or retry serialization.
+Batch boundaries depend only on declared item limits, continuity IDs, and the
+actual serialized context budget. This module must not interpret scene text or
+classify creative complexity.
 """
 
 from context_budget import composer_items_fit, editor_items_fit
-from shot_semantics import dispatch_risk, workload_units
 
 
 def analysis_chunks(items, max_items, phase):
-    weight_budget = max_items * 2
-    item_cap = max_items * 2
-    chunks, current, current_weight = [], [], 0
+    del phase
+    item_cap = max(int(max_items), 1)
+    chunks, current = [], []
     for item in items:
-        weight = workload_units(item, phase)
-        if current and (len(current) >= item_cap or current_weight + weight > weight_budget):
+        if current and len(current) >= item_cap:
             chunks.append(current)
-            current, current_weight = [], 0
+            current = []
         current.append(item)
-        current_weight += weight
     if current:
         chunks.append(current)
     return chunks or [items]
 
 
-def batch_risk(items):
-    tiers = {"light": 0, "standard": 1, "high": 2}
-    risks = [dispatch_risk(item) for item in items]
-    selected = max(risks, key=lambda risk: tiers.get(risk.get("tier"), 1)) if risks else dispatch_risk({})
-    reasons = []
-    for risk in risks:
-        for reason in risk.get("reasons", []):
-            if reason not in reasons:
-                reasons.append(reason)
+def batch_profile(items):
+    """Return a mechanical batching receipt without classifying content."""
     return {
-        "tier": selected.get("tier", "standard"),
-        "reasons": reasons or ["normal_contract"],
-        "batch_capacity": int(selected.get("batch_capacity", 6)),
-        "review_scope": selected.get("review_scope", "bounded_scene_window"),
+        "basis": "item_count_chain_ids_and_context_size",
+        "item_count": len(items),
     }
 
 
@@ -54,8 +42,8 @@ def composer_group_id(item):
     return "shot:%s" % str(item.get("shot_id", "") or item.get("subshot_id", ""))
 
 
-def dynamic_master_chunks(items, compact_item, force_single=False):
-    """Batch master tasks by risk, continuity chain and actual compact size."""
+def dynamic_master_chunks(items, compact_item, max_items=6, force_single=False):
+    """Batch by declared capacity, continuity IDs, and actual compact size."""
     if force_single:
         return [[item] for item in items]
     groups = []
@@ -65,47 +53,39 @@ def dynamic_master_chunks(items, compact_item, force_single=False):
             groups[-1][1].append(item)
         else:
             groups.append([group_id, [item]])
-    chunks, current, capacity = [], [], 10
+    chunks, current = [], []
+    item_cap = max(int(max_items), 1)
     for _, group in groups:
-        group_capacity = batch_risk(group)["batch_capacity"]
-        next_capacity = min(capacity, group_capacity) if current else group_capacity
         if current and (
-            len(current) + len(group) > next_capacity
+            len(current) + len(group) > item_cap
             or not composer_items_fit([compact_item(item) for item in current + group])
         ):
             chunks.append(current)
-            current, capacity, next_capacity = [], 10, group_capacity
+            current = []
         if not current and not composer_items_fit([compact_item(item) for item in group]):
             raise ValueError(
                 "single Master Production task exceeds the packet context budget; "
                 "split that main shot during Orchestrator instead of truncating its source facts"
             )
         current.extend(group)
-        capacity = next_capacity
-        if len(current) >= capacity:
+        if len(current) >= item_cap:
             chunks.append(current)
-            current, capacity = [], 10
+            current = []
     if current:
         chunks.append(current)
     return chunks or [items]
 
 
 def editor_review_chunks(windows, batch_size=None):
-    tiers = {"light": 10, "standard": 8, "high": 6}
-    requested = max(int(batch_size), 1) if batch_size is not None else None
-    chunks, current, capacity = [], [], 10
+    item_cap = max(int(batch_size), 1) if batch_size is not None else 10
+    chunks, current = [], []
     for window in windows:
-        window_capacity = tiers.get(str(window.get("review_tier", "standard")), 6)
-        if requested is not None:
-            window_capacity = min(window_capacity, requested)
-        next_capacity = min(capacity, window_capacity) if current else window_capacity
-        if current and (len(current) >= next_capacity or not editor_items_fit(current + [window])):
+        if current and (len(current) >= item_cap or not editor_items_fit(current + [window])):
             chunks.append(current)
-            current, capacity, next_capacity = [], 10, window_capacity
+            current = []
         if not editor_items_fit([window]):
             raise ValueError("single Editor review capsule exceeds context budget; split the main shot")
         current.append(window)
-        capacity = next_capacity
     if current:
         chunks.append(current)
     return chunks or [windows]

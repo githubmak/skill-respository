@@ -131,60 +131,6 @@ def _validate_dialogue_refs(plan):
     if malformed:
         raise ValueError("dialogue_events invalid: %s" % ", ".join(malformed[:20]))
 
-
-
-
-
-def split_dialogue(text, max_chars_per_segment=None, max_seconds=None, reserve_seconds=0.8):
-    """Split dialogue only at semantic sentence boundaries.
-
-    The current contract prefers duration-based packing. ``max_chars_per_segment`` remains
-    available to the helper, but the Orchestrator should pass the user's
-    confirmed per-shot duration as ``max_seconds``. Text is never rewritten.
-    """
-    import re as _re_sd
-    text = str(text or "")
-    segments = [
-        part.strip()
-        for part in _re_sd.findall(r".+?(?:[。！？]+|…{2,}|—{2,})(?:[”’」』】）\)]*)|.+$", text, flags=_re_sd.S)
-        if part.strip()
-    ]
-    result = []
-    buf = ""
-    for seg in segments:
-        candidate = buf + seg
-        within_chars = max_chars_per_segment is None or len(candidate) <= max_chars_per_segment
-        within_seconds = max_seconds is None or _estimate_dialogue_seconds(candidate) + reserve_seconds <= max_seconds + 1e-6
-        if within_chars and within_seconds:
-            buf += seg
-        else:
-            if buf:
-                result.append(buf)
-            buf = seg
-            if max_seconds is not None and _estimate_dialogue_seconds(buf) + reserve_seconds > max_seconds + 1e-6:
-                raise ValueError(
-                    "single dialogue sentence exceeds user-confirmed max_shot_duration and has no safe semantic split: %s"
-                    % buf
-                )
-            if max_chars_per_segment is not None and len(buf) > max_chars_per_segment:
-                # A single semantic sentence is intentionally preserved.
-                pass
-    if buf:
-        result.append(buf)
-    output = []
-    for s in result:
-        seconds = _estimate_dialogue_seconds(s)
-        output.append((s, seconds))
-    return output
-
-
-def _estimate_dialogue_seconds(text):
-    # Orchestrator splitting must use the exact lower-bound model that preflight
-    # validates.  A local approximation here previously under-budgeted long
-    # dialogue and made fresh runs fail their own duration gate.
-    from validate_durations import _estimate_dialogue_seconds as estimate
-    return estimate(text)
-
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:

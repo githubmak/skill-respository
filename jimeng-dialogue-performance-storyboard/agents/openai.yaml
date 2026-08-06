@@ -1,4 +1,4 @@
 interface:
   display_name: "即梦剧情表演分镜"
-  short_description: "角色专属表演、空间锁定与逐镜门禁的即梦正式分镜"
-  default_prompt: "使用 $jimeng-dialogue-performance-storyboard 将这段剧情转换为角色表演鲜明、机位空间稳定、逐镜校验且可直接投喂即梦的正式分镜。"
+  short_description: "创作主导、工程验收、可直投 Seedance 的剧情分镜"
+  default_prompt: "使用 $jimeng-dialogue-performance-storyboard 将这段剧情创作为表演、摄影机、光影与色卡完整且可直接投喂即梦 Seedance 的正式分镜，并完成确定性交付校验与画面审片。"

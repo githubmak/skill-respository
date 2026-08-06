@@ -19,21 +19,15 @@ ROUTES = {
         "run_only": ["scripts/workflow_supervisor.py"],
     },
     "audit": {
-        "description": "Review an existing prompt package without regenerating prompts or exporting.",
+        "description": "Dispatch model Editor review for an existing package; deterministic code supplies facts only.",
         "requires": [".cache/composer/merged.prompt_package.json"],
-        "agents": False,
-        "read_first": [],
+        "agents": True,
+        "read_first": ["references/dispatch/editor_pass2_note.md"],
         "read_on_demand": [
             ".cache/validate/result.json",
             "references/contracts/contract_index.md",
         ],
-        "run_only": [
-            "scripts/episode_state_graph.py",
-            "scripts/episode_director_audit.py",
-            "scripts/emotion_camera_audit.py",
-            "scripts/validate_modec.py",
-            "scripts/check_export.py",
-        ],
+        "run_only": ["scripts/workflow_supervisor.py"],
     },
     "export": {
         "description": "Export an already validated package; never regenerate creative stages.",
@@ -187,7 +181,7 @@ if __name__ == "__main__":
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--subshot-id")
     parser.add_argument("--intent", choices=("new", "resume", "audit", "reexport"))
-    parser.add_argument("--config", help="Complete JSON configuration for high-quality fast mode.")
+    parser.add_argument("--config", help="Path to a complete JSON configuration file for high-quality fast mode.")
     parser.add_argument("--source", help="Source script for high-quality fast mode.")
     parser.add_argument("--auto-start", action="store_true", help="Confirm complete configuration and start the unchanged full pipeline.")
     args = parser.parse_args()
