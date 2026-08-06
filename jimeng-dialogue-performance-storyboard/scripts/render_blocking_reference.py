@@ -11,6 +11,7 @@ import math
 import re
 import shutil
 import subprocess
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -19,6 +20,8 @@ PALETTE = ("#2563eb", "#d97706", "#dc2626", "#059669", "#7c3aed", "#475569")
 SHOT_TYPES = ("relationship", "over_shoulder")
 AXIS_SIDES = ("positive", "negative")
 FACING_MODES = ("mutual", "independent")
+CAMERA_PATH_MODES = ("push", "pull", "track", "pan", "arc", "rack_focus", "reframe", "handheld")
+BLOCKING_GATE_VERSION = 2
 
 
 def _number(value, label: str) -> float:
@@ -56,6 +59,18 @@ def _boolean(value, label: str, default: bool = False) -> bool:
     raise ValueError(f"{label} must be boolean")
 
 
+def _pixel_offset(value, label: str) -> float:
+    if value is None:
+        return 0.0
+    try:
+        result = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} must be a numeric pixel offset") from exc
+    if not math.isfinite(result) or not -500.0 <= result <= 500.0:
+        raise ValueError(f"{label} must be a finite pixel offset between -500 and 500")
+    return result
+
+
 def _character_by_name(characters: list[dict], name: str, label: str) -> dict:
     character = next((item for item in characters if item["name"] == name), None)
     if character is None:
@@ -68,33 +83,6 @@ def _axis_side_value(point: tuple[float, float], characters: list[dict]) -> floa
     axis_x = second["x"] - first["x"]
     axis_y = second["y"] - first["y"]
     return axis_x * (point[1] - first["y"]) - axis_y * (point[0] - first["x"])
-
-
-def _solve_over_shoulder_camera(camera: dict, characters: list[dict]) -> tuple[float, float, float]:
-    foreground = _character_by_name(characters, str(camera.get("foreground_character", "")).strip(), "foreground_character")
-    target = _character_by_name(characters, str(camera.get("target_character", "")).strip(), "target_character")
-    dx, dy = target["x"] - foreground["x"], target["y"] - foreground["y"]
-    distance = math.hypot(dx, dy)
-    if distance < 0.12:
-        raise ValueError("over-shoulder characters are too close for a stable camera")
-    ux, uy = dx / distance, dy / distance
-    desired_side = str(camera.get("axis_side", "positive"))
-    if desired_side not in AXIS_SIDES:
-        raise ValueError("axis_side must be positive or negative")
-    side_sign = 1.0 if desired_side == "positive" else -1.0
-    canonical_dx = characters[1]["x"] - characters[0]["x"]
-    canonical_dy = characters[1]["y"] - characters[0]["y"]
-    canonical_length = math.hypot(canonical_dx, canonical_dy) or 1.0
-    side_x = -canonical_dy / canonical_length * side_sign
-    side_y = canonical_dx / canonical_length * side_sign
-    back_distance = distance * float(camera.get("back_ratio", 0.30))
-    lateral_distance = distance * float(camera.get("lateral_ratio", 0.14))
-    x = foreground["x"] - ux * back_distance + side_x * lateral_distance
-    y = foreground["y"] - uy * back_distance + side_y * lateral_distance
-    if not 0.0 <= x <= 1.0 or not 0.0 <= y <= 1.0:
-        raise ValueError("auto over-shoulder camera falls outside the scene; change axis_side or blocking")
-    facing = math.degrees(math.atan2(target["y"] - y, target["x"] - x)) % 360.0
-    return x, y, facing
 
 
 def _angle_delta(left: float, right: float) -> float:
@@ -111,6 +99,14 @@ def _point_segment_distance(point, start, end) -> float:
         return math.hypot(px - x1, py - y1)
     ratio = max(0.0, min(1.0, ((px - x1) * dx + (py - y1) * dy) / denominator))
     return math.hypot(px - (x1 + ratio * dx), py - (y1 + ratio * dy))
+
+
+def _boundary_clearance(point: tuple[float, float], boundary: dict) -> float:
+    return _point_segment_distance(
+        point,
+        (boundary["x1"], boundary["y1"]),
+        (boundary["x2"], boundary["y2"]),
+    )
 
 
 def _segment_crossing(first_start, first_end, second_start, second_end):
@@ -179,10 +175,11 @@ def _validate_over_shoulder(camera: dict, characters: list[dict]) -> None:
         )
     if camera["target_character"] not in camera["subjects"]:
         raise ValueError(f'{camera["label"]} target_character must be listed in subjects')
-    for actor, other in ((foreground, target), (target, foreground)):
-        desired = math.degrees(math.atan2(other["y"] - actor["y"], other["x"] - actor["x"])) % 360.0
-        if _angle_delta(actor["facing_deg"], desired) > 55.0:
-            raise ValueError(f'{actor["name"]} must physically face {other["name"]} for this dialogue reverse shot')
+    if camera["facing_mode"] == "mutual":
+        for actor, other in ((foreground, target), (target, foreground)):
+            desired = math.degrees(math.atan2(other["y"] - actor["y"], other["x"] - actor["x"])) % 360.0
+            if _angle_delta(actor["facing_deg"], desired) > 55.0:
+                raise ValueError(f'{actor["name"]} must physically face {other["name"]} for this dialogue reverse shot')
 
 
 def _validate_mutual_facing(camera: dict, characters: list[dict]) -> None:
@@ -220,6 +217,16 @@ def _validate_state_geometry(state: dict) -> None:
         for character in characters:
             if _point_inside_anchor((character["x"], character["y"]), anchor, 0.022):
                 raise ValueError(f'{character["name"]} overlaps solid anchor {anchor["label"]}')
+    for boundary in state["boundaries"]:
+        for character in characters:
+            if character["allow_boundary_overlap"]:
+                continue
+            clearance = _boundary_clearance((character["x"], character["y"]), boundary)
+            if clearance < 0.022:
+                raise ValueError(
+                    f'{character["name"]} is too close to boundary {boundary["label"]}; '
+                    "set allow_boundary_overlap only when the blocking intentionally places the actor in the opening"
+                )
     if camera["shot_type"] == "over_shoulder":
         _validate_over_shoulder(camera, characters)
     elif camera["facing_mode"] == "mutual":
@@ -245,6 +252,34 @@ def _validate_state_geometry(state: dict) -> None:
             _, boundary_ratio = crossing
             if not any(opening["start"] <= boundary_ratio <= opening["end"] for opening in boundary["openings"]):
                 raise ValueError(f'{camera["label"]} view to {subject_name} is blocked by {boundary["label"]}')
+    path = camera.get("path")
+    if path:
+        end_point = (path["end_x"], path["end_y"])
+        for character in characters:
+            if math.hypot(end_point[0] - character["x"], end_point[1] - character["y"]) < 0.045:
+                raise ValueError(f'{camera["label"]} path ends without standing clearance from {character["name"]}')
+        for anchor in state["anchors"]:
+            if anchor["solid"] and _segment_hits_anchor(camera_point, end_point, anchor, 0.018):
+                raise ValueError(f'{camera["label"]} path intersects solid anchor {anchor["label"]}')
+        for boundary in state["boundaries"]:
+            crossing = _segment_crossing(
+                camera_point, end_point,
+                (boundary["x1"], boundary["y1"]),
+                (boundary["x2"], boundary["y2"]),
+            )
+            if crossing is None:
+                continue
+            _, boundary_ratio = crossing
+            if boundary["blocks_view"] and not any(
+                opening["start"] <= boundary_ratio <= opening["end"]
+                for opening in boundary["openings"]
+            ):
+                raise ValueError(f'{camera["label"]} path crosses solid boundary {boundary["label"]}')
+        if len(characters) >= 2 and not path["allow_axis_cross"]:
+            start_side = _axis_side_value(camera_point, characters)
+            end_side = _axis_side_value(end_point, characters)
+            if start_side * end_side <= 0.0:
+                raise ValueError(f'{camera["label"]} path crosses the relationship axis without allow_axis_cross')
 
 
 def validate_spec(spec: dict) -> dict:
@@ -294,6 +329,12 @@ def validate_spec(spec: dict) -> dict:
                     "y": _number(character.get("y"), f"{name}.y"),
                     "facing_deg": _angle(character.get("facing_deg"), f"{name}.facing_deg"),
                     "color": str(character.get("color") or PALETTE[(char_index - 1) % len(PALETTE)]),
+                    "label_dx": _pixel_offset(character.get("label_dx"), f"{name}.label_dx"),
+                    "label_dy": _pixel_offset(character.get("label_dy"), f"{name}.label_dy"),
+                    "allow_boundary_overlap": _boolean(
+                        character.get("allow_boundary_overlap"),
+                        f"{name}.allow_boundary_overlap",
+                    ),
                 })
             raw_anchors = state.get("anchors")
             if not isinstance(raw_anchors, list) or not raw_anchors:
@@ -314,6 +355,8 @@ def validate_spec(spec: dict) -> dict:
                     "width": _number(anchor.get("width", 0.1), f"anchor[{anchor_index}].width"),
                     "height": _number(anchor.get("height", 0.1), f"anchor[{anchor_index}].height"),
                     "solid": _boolean(anchor.get("solid"), f"anchor[{anchor_index}].solid"),
+                    "label_dx": _pixel_offset(anchor.get("label_dx"), f"anchor[{anchor_index}].label_dx"),
+                    "label_dy": _pixel_offset(anchor.get("label_dy"), f"anchor[{anchor_index}].label_dy"),
                 })
             boundaries = []
             for boundary_index, boundary in enumerate(state.get("boundaries", []), start=1):
@@ -332,6 +375,14 @@ def validate_spec(spec: dict) -> dict:
                         "start": start,
                         "end": end,
                         "label": str(opening.get("label", "通道")).strip() or "通道",
+                        "label_dx": _pixel_offset(
+                            opening.get("label_dx"),
+                            f"boundary[{boundary_index}].openings[{opening_index}].label_dx",
+                        ),
+                        "label_dy": _pixel_offset(
+                            opening.get("label_dy"),
+                            f"boundary[{boundary_index}].openings[{opening_index}].label_dy",
+                        ),
                     })
                 boundaries.append({
                     "label": label,
@@ -343,6 +394,12 @@ def validate_spec(spec: dict) -> dict:
                     "y2": _number(boundary.get("y2"), f"boundary[{boundary_index}].y2"),
                     "blocks_view": _boolean(boundary.get("blocks_view"), f"boundary[{boundary_index}].blocks_view"),
                     "openings": openings,
+                    "label_dx": _pixel_offset(boundary.get("label_dx"), f"boundary[{boundary_index}].label_dx"),
+                    "label_dy": _pixel_offset(boundary.get("label_dy"), f"boundary[{boundary_index}].label_dy"),
+                    "side_a_dx": _pixel_offset(boundary.get("side_a_dx"), f"boundary[{boundary_index}].side_a_dx"),
+                    "side_a_dy": _pixel_offset(boundary.get("side_a_dy"), f"boundary[{boundary_index}].side_a_dy"),
+                    "side_b_dx": _pixel_offset(boundary.get("side_b_dx"), f"boundary[{boundary_index}].side_b_dx"),
+                    "side_b_dy": _pixel_offset(boundary.get("side_b_dy"), f"boundary[{boundary_index}].side_b_dy"),
                 })
         raw_cameras = state.get("cameras")
         if not isinstance(raw_cameras, list) or len(raw_cameras) != 1:
@@ -352,7 +409,7 @@ def validate_spec(spec: dict) -> dict:
             shot_type = str(camera.get("shot_type", "relationship"))
             if shot_type not in SHOT_TYPES:
                 raise ValueError(f"camera[{camera_index}].shot_type must be relationship or over_shoulder")
-            default_facing_mode = "mutual" if shot_type == "relationship" and len(normalized_characters) == 2 else "independent"
+            default_facing_mode = "mutual" if len(normalized_characters) == 2 else "independent"
             facing_mode = str(camera.get("facing_mode", default_facing_mode)).strip()
             if facing_mode not in FACING_MODES:
                 raise ValueError(f"camera[{camera_index}].facing_mode must be mutual or independent")
@@ -369,13 +426,15 @@ def validate_spec(spec: dict) -> dict:
                     raise ValueError("axis_side must be positive or negative")
                 auto_position = auto_position or camera.get("x") is None or camera.get("y") is None
             if auto_position:
-                if shot_type != "over_shoulder":
-                    raise ValueError("auto_position is only supported for over_shoulder cameras")
-                solved_x, solved_y, solved_facing = _solve_over_shoulder_camera(camera, normalized_characters)
-            else:
-                solved_x = _number(camera.get("x"), f"camera[{camera_index}].x")
-                solved_y = _number(camera.get("y"), f"camera[{camera_index}].y")
-                solved_facing = _angle(camera.get("facing_deg"), f"camera[{camera_index}].facing_deg")
+                raise ValueError(
+                    f"camera[{camera_index}] requires director-selected explicit x, y and facing_deg; "
+                    "auto_position is disabled because the renderer must not choose a camera. "
+                    "Feasible domain: x/y in [0,1], over-shoulder distance ratio 0.18-0.52, "
+                    "same axis_side, target fully inside the declared FOV"
+                )
+            solved_x = _number(camera.get("x"), f"camera[{camera_index}].x")
+            solved_y = _number(camera.get("y"), f"camera[{camera_index}].y")
+            solved_facing = _angle(camera.get("facing_deg"), f"camera[{camera_index}].facing_deg")
             subjects = camera.get("subjects")
             if subjects is None:
                 subjects = [target] if shot_type == "over_shoulder" else [
@@ -386,6 +445,36 @@ def validate_spec(spec: dict) -> dict:
             subjects = [str(subject).strip() for subject in subjects]
             if len(set(subjects)) != len(subjects) or any(subject not in names for subject in subjects):
                 raise ValueError(f"camera[{camera_index}].subjects must be unique names from this state")
+            raw_path = camera.get("path")
+            if raw_path is None:
+                path = None
+            elif isinstance(raw_path, dict):
+                mode = str(raw_path.get("mode", "")).strip()
+                if mode not in CAMERA_PATH_MODES:
+                    raise ValueError(f"camera[{camera_index}].path.mode must be one of {','.join(CAMERA_PATH_MODES)}")
+                path = {
+                    "mode": mode,
+                    "end_x": _number(raw_path.get("end_x", solved_x), f"camera[{camera_index}].path.end_x"),
+                    "end_y": _number(raw_path.get("end_y", solved_y), f"camera[{camera_index}].path.end_y"),
+                    "end_facing_deg": _angle(
+                        raw_path.get("end_facing_deg", solved_facing),
+                        f"camera[{camera_index}].path.end_facing_deg",
+                    ),
+                    "trigger": str(raw_path.get("trigger", "")).strip(),
+                    "dramatic_gain": str(raw_path.get("dramatic_gain", "")).strip(),
+                    "allow_axis_cross": _boolean(
+                        raw_path.get("allow_axis_cross"),
+                        f"camera[{camera_index}].path.allow_axis_cross",
+                    ),
+                }
+                if not path["trigger"] or not path["dramatic_gain"]:
+                    raise ValueError(f"camera[{camera_index}].path requires trigger and dramatic_gain")
+                if mode in {"push", "pull", "track", "arc", "reframe"} and math.hypot(
+                    path["end_x"] - solved_x, path["end_y"] - solved_y
+                ) < 0.02:
+                    raise ValueError(f"camera[{camera_index}].path {mode} requires visible displacement")
+            else:
+                raise ValueError(f"camera[{camera_index}].path must be an object")
             cameras.append({
                 "label": str(camera.get("label", f"CAM{camera_index}")),
                 "x": solved_x,
@@ -399,6 +488,9 @@ def validate_spec(spec: dict) -> dict:
                 "axis_side": axis_side,
                 "auto_position": auto_position,
                 "facing_mode": facing_mode,
+                "label_dx": _pixel_offset(camera.get("label_dx"), f"camera[{camera_index}].label_dx"),
+                "label_dy": _pixel_offset(camera.get("label_dy"), f"camera[{camera_index}].label_dy"),
+                "path": path,
             })
         normalized_states.append({
             "blocking_id": blocking_id,
@@ -480,7 +572,9 @@ def _render_anchor(anchor: dict, box: tuple[float, float, float, float]) -> str:
         shape = f'<line x1="{x - width / 2:.1f}" y1="{y:.1f}" x2="{x + width / 2:.1f}" y2="{y:.1f}" {style}/>'
     else:
         shape = f'<rect x="{x - width / 2:.1f}" y="{y - height / 2:.1f}" width="{width:.1f}" height="{height:.1f}" rx="5" {style}/>'
-    return shape + f'<text x="{x:.1f}" y="{y + 5:.1f}" text-anchor="middle" class="anchor">{label}</text>'
+    label_x = x + anchor["label_dx"]
+    label_y = y + 5.0 + anchor["label_dy"]
+    return shape + f'<text x="{label_x:.1f}" y="{label_y:.1f}" text-anchor="middle" class="anchor">{label}</text>'
 
 
 def _camera_direction_label(angle: float) -> str:
@@ -553,6 +647,46 @@ def _validate_camera_coverage(
             )
 
 
+def _camera_path_poses(camera: dict, steps: int = 5) -> list[dict]:
+    path = camera.get("path")
+    if not path:
+        return [camera]
+    angle_delta = (path["end_facing_deg"] - camera["facing_deg"] + 180.0) % 360.0 - 180.0
+    poses = []
+    for index in range(steps):
+        ratio = index / (steps - 1)
+        pose = dict(camera)
+        pose["x"] = camera["x"] + (path["end_x"] - camera["x"]) * ratio
+        pose["y"] = camera["y"] + (path["end_y"] - camera["y"]) * ratio
+        pose["facing_deg"] = (camera["facing_deg"] + angle_delta * ratio) % 360.0
+        poses.append(pose)
+    return poses
+
+
+def _render_camera_path(camera: dict, box: tuple[float, float, float, float]) -> str:
+    path = camera.get("path")
+    if not path:
+        return ""
+    start_x, start_y = _point(camera["x"], camera["y"], box)
+    end_x, end_y = _point(path["end_x"], path["end_y"], box)
+    distance = math.hypot(end_x - start_x, end_y - start_y)
+    label_x, label_y = (start_x + end_x) / 2, (start_y + end_y) / 2 - 14
+    if distance >= 8.0:
+        line = (
+            f'<line x1="{start_x:.1f}" y1="{start_y:.1f}" x2="{end_x:.1f}" y2="{end_y:.1f}" '
+            'stroke="#0891b2" stroke-width="5" stroke-dasharray="12 7"/>'
+            + _arrow(end_x - (end_x - start_x) / distance * 24, end_y - (end_y - start_y) / distance * 24,
+                     math.degrees(math.atan2(end_y - start_y, end_x - start_x)), 24, "#0891b2", 5)
+        )
+    else:
+        line = f'<circle cx="{start_x:.1f}" cy="{start_y:.1f}" r="28" fill="none" stroke="#0891b2" stroke-width="5" stroke-dasharray="8 6"/>'
+    return (
+        line
+        + f'<circle cx="{end_x:.1f}" cy="{end_y:.1f}" r="12" fill="#ffffff" stroke="#0891b2" stroke-width="4"/>'
+        + f'<text x="{label_x:.1f}" y="{label_y:.1f}" text-anchor="middle" class="camera" fill="#0e7490">{html.escape(path["mode"])}｜{html.escape(path["dramatic_gain"])}</text>'
+    )
+
+
 def _render_camera(camera: dict, box: tuple[float, float, float, float]) -> str:
     x, y = _point(camera["x"], camera["y"], box)
     angle = camera["facing_deg"]
@@ -560,15 +694,17 @@ def _render_camera(camera: dict, box: tuple[float, float, float, float]) -> str:
     rays = []
     for ray_angle in (angle - fov / 2, angle + fov / 2):
         rays.append(_ray_to_box_edge(x, y, ray_angle, box))
-    label_x = max(box[0] + 110.0, min(box[0] + box[2] - 110.0, x))
-    label_y = y - 54.0 if camera["y"] > 0.72 else y + 50.0
+    label_x = max(box[0] + 110.0, min(box[0] + box[2] - 110.0, x)) + camera["label_dx"]
+    label_y = (y - 54.0 if camera["y"] > 0.72 else y + 50.0) + camera["label_dy"]
     purpose = "近肩" if camera["shot_type"] == "over_shoulder" else "关系镜"
     direction = _camera_direction_label(angle)
     label = f'{camera["label"]}｜{purpose}｜{direction}'
-    return (
+    cone = (
         f'<polygon points="{x:.1f},{y:.1f} {rays[0][0]:.1f},{rays[0][1]:.1f} '
         f'{rays[1][0]:.1f},{rays[1][1]:.1f}" fill="#7c3aed" fill-opacity="0.05" stroke="#7c3aed" '
         f'stroke-width="2" stroke-dasharray="9 7"/>'
+    )
+    foreground = (
         f'<circle cx="{x:.1f}" cy="{y:.1f}" r="15" fill="#0f172a"/>'
         + _arrow(x, y, angle, 45, "#0f172a", 4)
         + f'<g aria-label="{html.escape(label)}">'
@@ -576,6 +712,33 @@ def _render_camera(camera: dict, box: tuple[float, float, float, float]) -> str:
         + f'<text x="{label_x:.1f}" y="{label_y + 22:.1f}" text-anchor="middle" class="camera direction">{html.escape(direction)}</text>'
         + '</g>'
     )
+    return cone + foreground
+
+
+def _render_camera_cone(camera: dict, box: tuple[float, float, float, float]) -> str:
+    x, y = _point(camera["x"], camera["y"], box)
+    rays = [
+        _ray_to_box_edge(x, y, ray_angle, box)
+        for ray_angle in (
+            camera["facing_deg"] - camera["fov_deg"] / 2,
+            camera["facing_deg"] + camera["fov_deg"] / 2,
+        )
+    ]
+    return (
+        f'<polygon points="{x:.1f},{y:.1f} {rays[0][0]:.1f},{rays[0][1]:.1f} '
+        f'{rays[1][0]:.1f},{rays[1][1]:.1f}" fill="#7c3aed" fill-opacity="0.05" stroke="#7c3aed" '
+        f'stroke-width="2" stroke-dasharray="9 7"/>'
+    )
+
+
+def _render_camera_foreground(camera: dict, box: tuple[float, float, float, float]) -> str:
+    rendered = _render_camera(camera, box)
+    cone_end = rendered.find("</polygon>")
+    if cone_end == -1:
+        cone_end = rendered.find("/>") + 2
+    else:
+        cone_end += len("</polygon>")
+    return rendered[cone_end:]
 
 
 def _render_boundary(boundary: dict, box: tuple[float, float, float, float]) -> str:
@@ -610,8 +773,8 @@ def _render_boundary(boundary: dict, box: tuple[float, float, float, float]) -> 
             for start, end in segments
         )
         opening_markup = "".join(
-            f'<text x="{x1 + dx * ((opening["start"] + opening["end"]) / 2):.1f}" '
-            f'y="{y1 + dy * ((opening["start"] + opening["end"]) / 2) - 12:.1f}" '
+            f'<text x="{x1 + dx * ((opening["start"] + opening["end"]) / 2) + opening["label_dx"]:.1f}" '
+            f'y="{y1 + dy * ((opening["start"] + opening["end"]) / 2) - 12 + opening["label_dy"]:.1f}" '
             f'text-anchor="middle" class="side">{html.escape(opening["label"])}</text>'
             for opening in boundary["openings"]
         )
@@ -623,15 +786,16 @@ def _render_boundary(boundary: dict, box: tuple[float, float, float, float]) -> 
         opening_markup = ""
     return (
         line_markup + opening_markup
-        + f'<text x="{label_x:.1f}" y="{label_y:.1f}" text-anchor="middle" class="boundary">{html.escape(boundary["label"])}</text>'
-        f'<text x="{side_a_x:.1f}" y="{side_a_y:.1f}" text-anchor="middle" class="side">{html.escape(boundary["side_a"])}</text>'
-        f'<text x="{side_b_x:.1f}" y="{side_b_y:.1f}" text-anchor="middle" class="side">{html.escape(boundary["side_b"])}</text>'
+        + f'<text x="{label_x + boundary["label_dx"]:.1f}" y="{label_y + boundary["label_dy"]:.1f}" text-anchor="middle" class="boundary">{html.escape(boundary["label"])}</text>'
+        f'<text x="{side_a_x + boundary["side_a_dx"]:.1f}" y="{side_a_y + boundary["side_a_dy"]:.1f}" text-anchor="middle" class="side">{html.escape(boundary["side_a"])}</text>'
+        f'<text x="{side_b_x + boundary["side_b_dx"]:.1f}" y="{side_b_y + boundary["side_b_dy"]:.1f}" text-anchor="middle" class="side">{html.escape(boundary["side_b"])}</text>'
     )
 
 
 def render_svg(spec: dict, width: int = 1400, panel_height: int = 760) -> str:
     spec = validate_spec(spec)
     states = spec["states"]
+    has_camera_paths = any(camera.get("path") for state in states for camera in state["cameras"])
     height = 90 + len(states) * panel_height + 54
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
@@ -655,26 +819,40 @@ def render_svg(spec: dict, width: int = 1400, panel_height: int = 760) -> str:
             f'<rect x="{box[0]:.1f}" y="{box[1]:.1f}" width="{box[2]:.1f}" height="{box[3]:.1f}" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>',
         ])
         for camera in state["cameras"]:
-            _validate_camera_coverage(camera, state["characters"], box)
+            for pose in _camera_path_poses(camera):
+                _validate_camera_coverage(pose, state["characters"], box)
+        for camera in state["cameras"]:
+            parts.append(_render_camera_path(camera, box))
+        for camera in state["cameras"]:
+            parts.append(_render_camera_cone(camera, box))
         for anchor in state["anchors"]:
             parts.append(_render_anchor(anchor, box))
         for boundary in state["boundaries"]:
             parts.append(_render_boundary(boundary, box))
         for camera in state["cameras"]:
-            parts.append(_render_camera(camera, box))
+            parts.append(_render_camera_foreground(camera, box))
         for character in state["characters"]:
             x, y = _point(character["x"], character["y"], box)
             color = html.escape(character["color"])
             parts.extend([
                 f'<circle cx="{x:.1f}" cy="{y:.1f}" r="24" fill="#ffffff" stroke="{color}" stroke-width="6"/>',
                 _arrow(x, y, character["facing_deg"], 70, color),
-                f'<text x="{x:.1f}" y="{y - 36:.1f}" text-anchor="middle" class="name" fill="{color}">{html.escape(character["name"])}</text>',
+                f'<text x="{x + character["label_dx"]:.1f}" y="{y - 36 + character["label_dy"]:.1f}" text-anchor="middle" class="name" fill="{color}">{html.escape(character["name"])}</text>',
             ])
-    parts.append(
-        f'<text x="52" y="{height - 20}" class="legend">场景锚点/边界两侧＝位置基准　人物圆点＝稳定站位　人物箭头＝身体面向　CAM标签/箭头/视锥＝正斜方向与范围；本图不表示运动轨迹</text>'
+    legend = (
+        "场景锚点/边界两侧＝位置基准　人物圆点＝稳定站位　人物箭头＝身体面向　"
+        "CAM标签/箭头/视锥＝正斜方向与范围；青色虚线路径＝有动机的摄影机运动，人物箭头不表示运动轨迹"
+        if has_camera_paths else
+        "场景锚点/边界两侧＝位置基准　人物圆点＝稳定站位　人物箭头＝身体面向　"
+        "CAM标签/箭头/视锥＝正斜方向与范围；本图不表示运动轨迹"
     )
+    parts.append(f'<text x="52" y="{height - 20}" class="legend">{legend}</text>')
     parts.append("</svg>")
-    return "".join(parts)
+    svg = "".join(parts)
+    layout_issues = _label_layout_issues(svg)
+    if layout_issues:
+        raise ValueError("; ".join(layout_issues[:8]))
+    return svg
 
 
 def output_path(output_dir: str | Path, shot_group: str, replace: bool = False) -> Path:
@@ -696,10 +874,80 @@ def png_output_path(svg_path: Path) -> Path:
 def output_directory(storyboard: str | Path | None, output_dir: str | Path | None) -> tuple[Path, Path | None]:
     if storyboard is not None:
         storyboard_path = Path(storyboard).expanduser().resolve()
-        return storyboard_path.parent, storyboard_path
+        # Blocking sheets are evidence artifacts. Keep them out of the planned
+        # output directory until an explicit visual-review promotion.
+        return storyboard_path.parent / "staging" / "blocking", storyboard_path
     if output_dir is not None:
         return Path(output_dir).expanduser().resolve(), None
     raise ValueError("--storyboard or --output-dir is required")
+
+
+def _text_boxes(svg: str) -> list[tuple[str, str, float, float, float, float]]:
+    """Approximate diagram-label boxes for deterministic readability checks."""
+    root = ET.fromstring(svg)
+    allowed = {"name", "anchor", "camera", "direction", "boundary", "side"}
+    font_sizes = {"name": 20.0, "anchor": 17.0, "camera": 17.0, "direction": 15.0, "boundary": 18.0, "side": 17.0}
+    boxes = []
+    for element in root.iter("{http://www.w3.org/2000/svg}text"):
+        klass = element.attrib.get("class", "")
+        if klass not in allowed or not element.text:
+            continue
+        try:
+            x = float(element.attrib["x"])
+            y = float(element.attrib["y"])
+        except (KeyError, ValueError):
+            continue
+        size = font_sizes[klass]
+        width = max(size, len(element.text) * size * 0.92)
+        left = x - width / 2 if element.attrib.get("text-anchor") == "middle" else x
+        boxes.append((element.text, klass, left, y - size, left + width, y + size * 0.28))
+    return boxes
+
+
+def _marker_circles(svg: str) -> list[tuple[float, float, float]]:
+    root = ET.fromstring(svg)
+    circles = []
+    for element in root.iter("{http://www.w3.org/2000/svg}circle"):
+        try:
+            cx = float(element.attrib["cx"])
+            cy = float(element.attrib["cy"])
+            radius = float(element.attrib["r"])
+        except (KeyError, ValueError):
+            continue
+        if radius >= 14.0:
+            circles.append((cx, cy, radius))
+    return circles
+
+
+def _box_intersects_circle(box: tuple[str, str, float, float, float, float], circle: tuple[float, float, float]) -> bool:
+    _, _, left, top, right, bottom = box
+    cx, cy, radius = circle
+    closest_x = min(max(cx, left), right)
+    closest_y = min(max(cy, top), bottom)
+    return (closest_x - cx) ** 2 + (closest_y - cy) ** 2 < radius ** 2
+
+
+def _label_layout_issues(svg: str) -> list[str]:
+    boxes = _text_boxes(svg)
+    issues = []
+    for index, first in enumerate(boxes):
+        for second in boxes[index + 1:]:
+            # A camera direction line is intentionally stacked under its own label.
+            if first[1] == second[1] == "direction" and first[0].split("｜")[0] == second[0].split("｜")[0]:
+                continue
+            overlap_width = min(first[4], second[4]) - max(first[2], second[2])
+            overlap_height = min(first[5], second[5]) - max(first[3], second[3])
+            if overlap_width > 2.0 and overlap_height > 2.0:
+                issues.append(f"label collision: {first[0]} ({first[1]}) overlaps {second[0]} ({second[1]})")
+    for label in boxes:
+        if label[1] not in {"anchor", "boundary", "side"}:
+            continue
+        if any(_box_intersects_circle(label, circle) for circle in _marker_circles(svg)):
+            issues.append(
+                f"label-to-marker collision: {label[0]} ({label[1]}) overlaps a character/CAM marker; "
+                "set an explicit label_dx/label_dy in the director-authored spec"
+            )
+    return issues
 
 
 def export_png(svg_path: Path, png_path: Path) -> str:
@@ -724,11 +972,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("spec", help="JSON blocking specification")
     destination_group = parser.add_mutually_exclusive_group(required=True)
-    destination_group.add_argument("--storyboard", help="planned Markdown output path; images use its parent directory")
+    destination_group.add_argument("--storyboard", help="planned Markdown output path; images use its staging/blocking directory")
     destination_group.add_argument("--output-dir", help="explicit directory for standalone use")
     parser.add_argument("--replace", action="store_true", help="replace the exact shot-number files")
     parser.add_argument("--png", action="store_true", help="also export a same-source PNG for Jimeng")
+    parser.add_argument("--compact", action="store_true")
+    parser.add_argument("--report")
     args = parser.parse_args(argv)
+    if not args.compact or not args.report:
+        parser.error("legacy blocking-reference output is disabled; --compact and --report are required")
     try:
         spec_path = Path(args.spec).expanduser().resolve()
         spec = validate_spec(json.loads(spec_path.read_text(encoding="utf-8-sig")))
@@ -742,6 +994,7 @@ def main(argv: list[str] | None = None) -> int:
             converter = export_png(destination, png_path)
         result = {
             "pass": True,
+            "blocking_gate_version": BLOCKING_GATE_VERSION,
             "shot_group": spec["shot_group"],
             "state_count": len(spec["states"]),
             "output_path": str(destination),
@@ -753,8 +1006,23 @@ def main(argv: list[str] | None = None) -> int:
             "primary_storyboard_modified": False,
         }
     except (OSError, ValueError, json.JSONDecodeError) as exc:
-        result = {"pass": False, "error": str(exc), "primary_storyboard_modified": False}
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+        result = {
+            "pass": False,
+            "blocking_gate_version": BLOCKING_GATE_VERSION,
+            "error": str(exc),
+            "primary_storyboard_modified": False,
+        }
+    report_path = Path(args.report).expanduser().resolve()
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps({
+        "status": "PASS" if result.get("pass") else "FAIL",
+        "shot_group": result.get("shot_group"),
+        "format": result.get("format"),
+        "output_path": result.get("output_path"),
+        "png_path": result.get("png_path"),
+        "report": str(report_path),
+    }, ensure_ascii=False, separators=(",", ":")))
     return 0 if result.get("pass") else 1
 
 

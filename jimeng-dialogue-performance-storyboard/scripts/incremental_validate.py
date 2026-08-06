@@ -36,7 +36,8 @@ FIELD_LABELS = (
 
 
 def analyze(text: str, current_shot: str | None = None) -> dict:
-    records = _shot_records(text)
+    all_records = _shot_records(text)
+    records, scope = _records_for_incremental_scope(all_records, current_shot)
     global_section = validator.extract_top_section(text, "## 全局锁定")
     voice_names = validator.voice_lock_names(global_section) or None
     issues: list[dict] = []
@@ -52,6 +53,11 @@ def analyze(text: str, current_shot: str | None = None) -> dict:
         )
         for message in local:
             issues.append(_issue(message, "field", [record["shot_id"]]))
+        if validator.has_camera_move(record["direct"]) and not validator.motivated_camera_move(record["direct"]):
+            issues.append(_issue(
+                f'{record["shot_id"]}: 运镜缺少可见触发或戏剧收益；不能只写推拉摇移',
+                "shot", [record["shot_id"]],
+            ))
         if not record["cast"] and record["number"] == 1:
             issues.append(_issue(
                 f'{record["group_id"]}: missing group-level 【出现人物】',
@@ -60,6 +66,8 @@ def analyze(text: str, current_shot: str | None = None) -> dict:
 
     for scene_records in by_scene.values():
         for previous, current in zip(scene_records, scene_records[1:]):
+            if current["source_index"] != previous["source_index"] + 1:
+                continue
             for message in validator.temporal_lighting_continuity_issues(previous["direct"], current["direct"]):
                 issues.append(_issue(
                     f'{current["shot_id"]}: 同场时空光照连续性失败 -> {message}',
@@ -89,6 +97,11 @@ def analyze(text: str, current_shot: str | None = None) -> dict:
                 ))
         for index in range(4, len(scene_records)):
             window = scene_records[index - 4:index + 1]
+            if any(
+                right["source_index"] != left["source_index"] + 1
+                for left, right in zip(window, window[1:])
+            ):
+                continue
             anchor_count = sum(
                 validator.is_valid_memory_anchor(item["quality_control"], item["direct"])
                 for item in window
@@ -99,6 +112,32 @@ def analyze(text: str, current_shot: str | None = None) -> dict:
                     f'{shot_ids[0]}~{shot_ids[-1]}: 连续五镜缺少有效签名镜头',
                     "window", shot_ids,
                 ))
+        for index in range(3, len(scene_records)):
+            window = scene_records[index - 3:index + 1]
+            if any(
+                right["source_index"] != left["source_index"] + 1
+                for left, right in zip(window, window[1:])
+            ):
+                continue
+            if all(not validator.has_camera_move(item["direct"]) for item in window):
+                issues.append(_issue(
+                    f'{window[-1]["shot_id"]}: 同场连续四镜固定；多镜场景必须至少出现一处有因运镜，'
+                    '静止只能作为局部情绪手段',
+                    "window", [item["shot_id"] for item in window],
+                ))
+        for index in range(2, len(scene_records)):
+            window = scene_records[index - 2:index + 1]
+            if any(
+                right["source_index"] != left["source_index"] + 1
+                for left, right in zip(window, window[1:])
+            ):
+                continue
+            families = [validator.camera_motion_family(item["direct"]) for item in window]
+            if families[0] == families[1] == families[2] and families[0] not in {"static", "other_move"}:
+                issues.append(_issue(
+                    f'{window[-1]["shot_id"]}: 连续三镜重复同一运镜机制 -> {families[0]}',
+                    "window", [item["shot_id"] for item in window],
+                ))
         for index, record in enumerate(scene_records):
             if not validator.is_valid_memory_anchor(record["quality_control"], record["direct"]):
                 continue
@@ -106,6 +145,8 @@ def analyze(text: str, current_shot: str | None = None) -> dict:
                 if not 0 <= neighbor_index < len(scene_records):
                     continue
                 neighbor = scene_records[neighbor_index]
+                if abs(neighbor["source_index"] - record["source_index"]) != 1:
+                    continue
                 if (
                     validator.signature_neighbor_difference_count(record["direct"], neighbor["direct"])
                     < validator.SIGNATURE_MIN_NEIGHBOR_DIFFERENCES
@@ -118,6 +159,11 @@ def analyze(text: str, current_shot: str | None = None) -> dict:
     for group_records in by_group.values():
         for index in range(2, len(group_records)):
             window = group_records[index - 2:index + 1]
+            if any(
+                right["source_index"] != left["source_index"] + 1
+                for left, right in zip(window, window[1:])
+            ):
+                continue
             signatures = [validator.camera_signature(item["direct"]) for item in window]
             if signatures[0] == signatures[1] == signatures[2] and signatures[2].endswith(":static"):
                 issues.append(_issue(
@@ -125,6 +171,8 @@ def analyze(text: str, current_shot: str | None = None) -> dict:
                     "window", [item["shot_id"] for item in window],
                 ))
         for previous, current in zip(group_records, group_records[1:]):
+            if current["source_index"] != previous["source_index"] + 1:
+                continue
             first_actor = validator.shoulder_actor(previous["direct"])
             second_actor = validator.shoulder_actor(current["direct"])
             if first_actor and first_actor == second_actor:
@@ -133,7 +181,7 @@ def analyze(text: str, current_shot: str | None = None) -> dict:
                     "pair", [previous["shot_id"], current["shot_id"]],
                 ))
 
-    known_shots = {record["shot_id"] for record in records}
+    known_shots = {record["shot_id"] for record in all_records}
     if current_shot and current_shot not in known_shots:
         issues.append({
             "code": "SHOT_NOT_FOUND",
@@ -142,7 +190,7 @@ def analyze(text: str, current_shot: str | None = None) -> dict:
             "fields": ["【镜号】"],
             "message": current_shot + ": current shot was not found in the incremental draft",
         })
-    elif not current_shot and not records:
+    elif not current_shot and not all_records:
         issues.append({
             "code": "SHOT_NOT_FOUND",
             "repair_scope": "shot",
@@ -158,12 +206,50 @@ def analyze(text: str, current_shot: str | None = None) -> dict:
         "mode": "incremental-shot-preflight",
         "current_shot": current_shot or "",
         "checked_shot_count": len(records),
+        "source_shot_count": len(all_records),
+        "checked_scope": scope,
         "issue_count": len(issues),
         "repair_scope_counts": dict(sorted(counts.items())),
         "issues": issues,
         "final_full_validation_required": True,
         "primary_output_modified": False,
     }
+
+
+def _records_for_incremental_scope(
+    records: list[dict], current_shot: str | None,
+) -> tuple[list[dict], str]:
+    """Return only the context required for a shot-level preflight.
+
+    The full validator remains the scene/file gate. Incremental checks need the
+    target plus small continuity windows only; parsing the whole draft for every
+    shot was the dominant repeated-work cost.
+    """
+    if not current_shot:
+        return records, "full-draft"
+    target_index = next(
+        (index for index, item in enumerate(records) if item["shot_id"] == current_shot),
+        None,
+    )
+    if target_index is None:
+        return [], "shot-not-found"
+    target = records[target_index]
+    scene_records = [item for item in records if item["scene_number"] == target["scene_number"]]
+    scene_index = next(index for index, item in enumerate(scene_records) if item["shot_id"] == current_shot)
+    group_records = [item for item in records if item["group_id"] == target["group_id"]]
+    group_index = next(index for index, item in enumerate(group_records) if item["shot_id"] == current_shot)
+    # A +/-4 scene window contains every five-shot signature window touching
+    # the target; +/-2 in the group contains every three-shot camera window.
+    selected = {
+        item["shot_id"]
+        for item in scene_records[max(0, scene_index - 4):scene_index + 5]
+    }
+    selected.update(
+        item["shot_id"]
+        for item in group_records[max(0, group_index - 2):group_index + 3]
+    )
+    scoped = [item for item in records if item["shot_id"] in selected]
+    return scoped, f"shot:{current_shot};scene_window=+/-4;group_window=+/-2"
 
 
 def _shot_records(text: str) -> list[dict]:
@@ -188,6 +274,7 @@ def _shot_records(text: str) -> list[dict]:
                 "direct": validator.direct_prompt(child_block),
                 "state": validator.extract_optional_field(child_block, "【状态继承】"),
                 "quality_control": validator.extract_optional_field(child_block, validator.QUALITY_CONTROL_FIELD),
+                "source_index": len(records),
             })
     return records
 
@@ -208,7 +295,7 @@ def _repair_scope(message: str, default_scope: str) -> str:
         return "shot"
     if any(term in message for term in ("上一镜", "跨镜头组", "物品状态", "支撑点", "连续肩后镜")):
         return "pair"
-    if any(term in message for term in ("连续三镜", "three consecutive", "连续五镜")):
+    if any(term in message for term in ("连续三镜", "连续四镜", "three consecutive", "连续五镜")):
         return "window"
     if any(term in message for term in ("签名镜头", "记忆锚点", "不可降级视觉核心", "前60%")):
         return "shot"
@@ -232,7 +319,7 @@ def _issue_code(message: str) -> str:
         (("朝向", "orientation", "body-facing"), "ORIENTATION_CONTINUITY"),
         (("关系轴", "物理对侧", "越轴"), "AXIS_CONTINUITY"),
         (("支撑", "posture"), "SUPPORT_CONTINUITY"),
-        (("连续三镜", "three consecutive", "肩后镜"), "CAMERA_VARIETY"),
+        (("连续三镜", "连续四镜", "three consecutive", "肩后镜", "运镜机制", "运镜缺少"), "CAMERA_VARIETY"),
         (("可选字段功能超过预算",), "OPTIONAL_FIELD_BUDGET"),
         (("semantic contract incomplete",), "SEMANTIC_COMPLETENESS"),
     )
@@ -267,7 +354,11 @@ def main(argv=None) -> int:
     parser.add_argument("draft")
     parser.add_argument("--current-shot")
     parser.add_argument("--report")
+    parser.add_argument("--compact", action="store_true", help="print a short summary; keep full JSON in --report")
+    parser.add_argument("--max-issues", type=int, default=8)
     args = parser.parse_args(argv)
+    if not args.compact or not args.report:
+        parser.error("legacy incremental validation output is disabled; --compact and --report are required")
     path = Path(args.draft).expanduser().resolve()
     result = analyze(path.read_text(encoding="utf-8-sig"), args.current_shot)
     payload = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
@@ -275,7 +366,21 @@ def main(argv=None) -> int:
         report = Path(args.report).expanduser().resolve()
         report.parent.mkdir(parents=True, exist_ok=True)
         report.write_text(payload, encoding="utf-8")
-    print(payload, end="")
+    if args.compact:
+        status = "PASS" if result["pass"] else "FAIL"
+        summaries = [item["message"] for item in result["issues"][:max(0, args.max_issues)]]
+        print(json.dumps({
+            "status": status,
+            "current_shot": result["current_shot"],
+            "checked_scope": result["checked_scope"],
+            "checked_shot_count": result["checked_shot_count"],
+            "issue_count": result["issue_count"],
+            "repair_scope_counts": result["repair_scope_counts"],
+            "issues": summaries,
+            "report": str(Path(args.report).expanduser().resolve()) if args.report else None,
+        }, ensure_ascii=False, separators=(",", ":")))
+    else:
+        print(payload, end="")
     return 0 if result["pass"] else 1
 
 

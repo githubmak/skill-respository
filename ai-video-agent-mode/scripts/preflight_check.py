@@ -143,6 +143,14 @@ def run(run_dir):
     if any(not value for value in source_values) or len(source_values) != len(set(source_values)):
         issues.append(_issue("GLOBAL", "SOURCE_LEDGER_ID", "source_id values must be non-empty and unique"))
     source_ids = set(source_values)
+    source_record_by_id = {
+        str(record.get("source_id", "") or ""): record for record in source_records
+        if str(record.get("source_id", "") or "")
+    }
+    snapshot_path = os.path.join(run_dir, ".cache", "orchestrator", "source_snapshot.json")
+    if os.path.exists(snapshot_path):
+        _validate_source_snapshot(run_dir, source_records, issues)
+        _validate_dialogue_source_lock(dialogue_events, source_record_by_id, issues)
     required_source_ids = {
         str(record.get("source_id", "") or "")
         for record in source_records
@@ -218,6 +226,56 @@ def _ledger_ids(path, key, id_field, issues, check):
     if any(not value for value in values) or len(values) != len(set(values)):
         issues.append(_issue("GLOBAL", check + "_ID", "%s values must be non-empty and unique" % id_field))
     return set(values)
+
+
+def _validate_source_snapshot(run_dir, source_records, issues):
+    path = os.path.join(run_dir, ".cache", "orchestrator", "source_snapshot.json")
+    if not os.path.exists(path):
+        # Migrated fixtures and historical runs may not have the new evidence
+        # file. Every new supervisor run creates it before model authoring.
+        return
+    try:
+        with open(path, "r", encoding="utf-8-sig") as handle:
+            snapshot = json.load(handle)
+    except Exception as exc:
+        issues.append(_issue("GLOBAL", "SOURCE_SNAPSHOT_PARSE", str(exc)))
+        return
+    line_map = {
+        item.get("line"): item.get("text")
+        for item in snapshot.get("lines", []) if isinstance(item, dict)
+    }
+    for record in source_records:
+        source_id = str(record.get("source_id", "") or "GLOBAL")
+        line = record.get("line")
+        if not isinstance(line, int) or line not in line_map:
+            issues.append(_issue(source_id, "SOURCE_LEDGER_LINE", "line must reference source_snapshot.json"))
+            continue
+        if record.get("text") != line_map[line]:
+            issues.append(_issue(source_id, "SOURCE_LEDGER_TEXT", "text must exactly match the source snapshot line"))
+
+
+def _validate_dialogue_source_lock(dialogue_events, source_record_by_id, issues):
+    for ref, event in dialogue_events.items():
+        if not isinstance(event, dict):
+            continue
+        source_refs = event.get("source_ids")
+        if not isinstance(source_refs, list) or not source_refs:
+            issues.append(_issue(str(ref), "DIALOGUE_SOURCE_IDS", "dialogue event requires non-empty source_ids"))
+            continue
+        source_lines = []
+        unknown = []
+        for source_id in source_refs:
+            record = source_record_by_id.get(str(source_id))
+            if not isinstance(record, dict):
+                unknown.append(str(source_id))
+            else:
+                source_lines.append(str(record.get("text", "") or ""))
+        if unknown:
+            issues.append(_issue(str(ref), "DIALOGUE_SOURCE_UNKNOWN", "unknown source_ids: " + ", ".join(unknown)))
+            continue
+        exact = str(event.get("text", "") or "")
+        if exact and not any(exact in line for line in source_lines):
+            issues.append(_issue(str(ref), "DIALOGUE_SOURCE_TEXT", "dialogue text is not an exact source substring"))
 
 
 if __name__ == "__main__":

@@ -54,6 +54,40 @@ class ReviewManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "reviewer_context_id"):
                 build_manifest(source, [output], "independent", "PASS", "NOT_RUN")
 
+    def test_delivery_inventory_rejects_unregistered_media_but_ignores_staging(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            source = base / "source.txt"
+            output = base / "storyboard.md"
+            staging = base / "staging" / "blocking"
+            reports = base / "reports"
+            manifest = reports / "review.json"
+            source.write_text("剧情", encoding="utf-8")
+            output.write_text("分镜", encoding="utf-8")
+            staging.mkdir(parents=True)
+            reports.mkdir()
+            (staging / "rejected.png").write_bytes(b"rejected")
+            payload = build_manifest(
+                source, [output], "self_check", "PASS", "PASS", delivery_root=base
+            )
+            write_manifest(manifest, payload)
+            self.assertTrue(verify_manifest(manifest, base)["pass"])
+            (base / "unreviewed.png").write_bytes(b"unreviewed")
+            result = verify_manifest(manifest, base)
+            self.assertFalse(result["pass"])
+            self.assertTrue(any(item["reason"] == "unregistered_delivery_file" for item in result["changed"]))
+
+    def test_manifest_requires_outputs_to_leave_staging(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            source = base / "source.txt"
+            staged = base / "staging" / "storyboard.md"
+            source.write_text("剧情", encoding="utf-8")
+            staged.parent.mkdir()
+            staged.write_text("分镜", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "promoted out of staging"):
+                build_manifest(source, [staged], "self_check", "PASS", "PASS", delivery_root=base)
+
 
 if __name__ == "__main__":
     unittest.main()

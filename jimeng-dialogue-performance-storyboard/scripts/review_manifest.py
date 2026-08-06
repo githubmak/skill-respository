@@ -14,6 +14,8 @@ SCHEMA_VERSION = 1
 DESIGN_STATES = ("PASS", "REVISE")
 VISUAL_STATES = ("PASS", "REVISE", "NOT_RUN")
 REVIEW_MODES = ("independent", "self_check")
+DELIVERY_EXTENSIONS = {".md", ".svg", ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".xlsx"}
+NON_DELIVERY_DIRECTORIES = {"reports", "staging", ".staging"}
 
 
 def delivery_status(design_review: str, visual_review: str) -> str:
@@ -36,6 +38,22 @@ def _file_record(path: str | Path) -> dict:
     return {"path": str(resolved), "sha256": sha256_file(resolved)}
 
 
+def _within(path: Path, root: Path) -> bool:
+    return path == root or root in path.parents
+
+
+def _delivery_inventory(root: Path) -> set[Path]:
+    inventory = set()
+    for path in root.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in DELIVERY_EXTENSIONS:
+            continue
+        relative = path.relative_to(root)
+        if any(part in NON_DELIVERY_DIRECTORIES for part in relative.parts[:-1]):
+            continue
+        inventory.add(path.resolve())
+    return inventory
+
+
 def build_manifest(
     source: str | Path,
     outputs: list[str | Path],
@@ -44,6 +62,7 @@ def build_manifest(
     visual_review: str,
     reviewer_context_id: str = "",
     independent: bool | None = None,
+    delivery_root: str | Path | None = None,
 ) -> dict:
     if review_mode not in REVIEW_MODES:
         raise ValueError("review_mode must be independent or self_check")
@@ -58,11 +77,22 @@ def build_manifest(
         raise ValueError("independent review requires reviewer_context_id")
     if not outputs:
         raise ValueError("at least one output is required")
+    resolved_outputs = [Path(path).expanduser().resolve() for path in outputs]
+    resolved_root = Path(delivery_root).expanduser().resolve() if delivery_root else None
+    if resolved_root and any(not _within(path, resolved_root) for path in resolved_outputs):
+        raise ValueError("all outputs must be inside delivery_root")
+    if resolved_root:
+        for path in resolved_outputs:
+            relative = path.relative_to(resolved_root)
+            if relative.parts and relative.parts[0] in NON_DELIVERY_DIRECTORIES:
+                raise ValueError("reviewed outputs must be promoted out of staging/reports before delivery manifest creation")
     return {
         "schema_version": SCHEMA_VERSION,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "source": _file_record(source),
-        "outputs": [_file_record(path) for path in outputs],
+        "outputs": [_file_record(path) for path in resolved_outputs],
+        "delivery_root": str(resolved_root) if resolved_root else "",
+        "inventory_policy": "all deliverable files outside reports/staging must be registered",
         "review": {
             "mode": review_mode,
             "independent": expected_independent,
@@ -86,14 +116,19 @@ def write_manifest(path: str | Path, payload: dict) -> Path:
     return destination
 
 
-def verify_manifest(path: str | Path) -> dict:
+def verify_manifest(path: str | Path, delivery_root: str | Path | None = None) -> dict:
     manifest_path = Path(path).expanduser().resolve()
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     changed: list[dict] = []
+    raw_root = delivery_root or payload.get("delivery_root", "")
+    resolved_root = Path(raw_root).expanduser().resolve() if raw_root else None
     records = [("source", payload.get("source", {}))]
     records.extend(("output", item) for item in payload.get("outputs", []))
     for kind, record in records:
         target = Path(record.get("path", ""))
+        if kind == "output" and resolved_root and not _within(target.resolve(), resolved_root):
+            changed.append({"kind": kind, "path": str(target), "reason": "outside_delivery_root"})
+            continue
         if not target.is_file():
             changed.append({"kind": kind, "path": str(target), "reason": "missing"})
             continue
@@ -106,6 +141,14 @@ def verify_manifest(path: str | Path) -> dict:
                 "expected_sha256": record.get("sha256", ""),
                 "actual_sha256": actual,
             })
+    if resolved_root and resolved_root.is_dir():
+        registered = {
+            Path(item.get("path", "")).expanduser().resolve()
+            for item in payload.get("outputs", [])
+        }
+        source_path = Path(payload.get("source", {}).get("path", "")).expanduser().resolve()
+        for extra in sorted(_delivery_inventory(resolved_root) - registered - {source_path}):
+            changed.append({"kind": "output", "path": str(extra), "reason": "unregistered_delivery_file"})
     status = "stale" if changed else "current"
     return {
         "pass": not changed,
@@ -113,6 +156,7 @@ def verify_manifest(path: str | Path) -> dict:
         "manifest_path": str(manifest_path),
         "changed": changed,
         "recorded_review": payload.get("review", {}),
+        "delivery_root": str(resolved_root) if resolved_root else "",
         "effective_review_status": "STALE" if changed else "CURRENT",
         "delivery_status": "STALE" if changed else payload.get("delivery_status", "PROVISIONAL"),
         "freshness_proof": "byte_hash_only",
@@ -131,9 +175,19 @@ def main(argv: list[str] | None = None) -> int:
     create.add_argument("--reviewer-context-id", default="")
     create.add_argument("--design-review", choices=DESIGN_STATES, required=True)
     create.add_argument("--visual-review", choices=VISUAL_STATES, required=True)
+    create.add_argument("--delivery-root")
+    create.add_argument("--compact", action="store_true")
+    create.add_argument("--report")
     verify = subparsers.add_parser("verify")
     verify.add_argument("--manifest", required=True)
+    verify.add_argument("--delivery-root")
+    verify.add_argument("--compact", action="store_true")
+    verify.add_argument("--report")
     args = parser.parse_args(argv)
+    if not getattr(args, "compact", False) or not getattr(args, "report", None):
+        parser.error("legacy manifest output is disabled; --compact and --report are required")
+    if args.command == "create" and not args.delivery_root:
+        parser.error("create requires --delivery-root so the manifest binds the actual delivery directory")
 
     try:
         if args.command == "create":
@@ -144,14 +198,30 @@ def main(argv: list[str] | None = None) -> int:
                 args.design_review,
                 args.visual_review,
                 args.reviewer_context_id,
+                delivery_root=args.delivery_root,
             )
             destination = write_manifest(args.manifest, payload)
             result = {"pass": True, "status": "current", "manifest_path": str(destination), **payload}
         else:
-            result = verify_manifest(args.manifest)
+            result = verify_manifest(args.manifest, args.delivery_root)
     except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError) as exc:
         result = {"pass": False, "status": "error", "error": str(exc), "primary_output_modified": False}
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    report_path = getattr(args, "report", None)
+    if report_path:
+        destination = Path(report_path).expanduser().resolve()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if getattr(args, "compact", False):
+        print(json.dumps({
+            "status": "PASS" if result.get("pass") else "FAIL",
+            "manifest_path": result.get("manifest_path"),
+            "delivery_status": result.get("delivery_status"),
+            "changed_count": len(result.get("changed", [])),
+            "delivery_root": result.get("delivery_root", ""),
+            "report": str(Path(report_path).expanduser().resolve()) if report_path else None,
+        }, ensure_ascii=False, separators=(",", ":")))
+    else:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result.get("pass") else 1
 
 

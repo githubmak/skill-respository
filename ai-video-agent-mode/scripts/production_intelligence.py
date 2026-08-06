@@ -73,8 +73,11 @@ def classify_visual_prior_risks(prompt, source_text=""):
     source = str(source_text or "")
     risks = []
     for match in NEGATIVE_VISUAL_CLAUSE_RE.finditer(text):
+        matched_clause = match.group(0)
+        if matched_clause in source:
+            continue
         concept = match.group("concept").strip()
-        if not concept or any(term in match.group(0) for term in SAFE_NEGATIVE_ARTIFACT_TERMS):
+        if not concept or any(term in matched_clause for term in SAFE_NEGATIVE_ARTIFACT_TERMS):
             continue
         risks.append(_risk(
             "negative_concept_priming", "high", concept,

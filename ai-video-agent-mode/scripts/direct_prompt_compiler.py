@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
-"""Compile ordered prompt segments into a dense, traceable Jimeng feed."""
+"""Assemble model-authored prompt segments without changing creative meaning."""
 
 import re
 
+from creative_engineering_boundary import creative_rewrite_issue
 from prompt_contract import jimeng_feed_prompt
 
 
-PROTECTED_KINDS = {"visual_prefix", "space", "continuity", "performance", "light"}
-AUXILIARY_KINDS = {"cinematic", "video_texture", "support"}
 CAMERA_TERMS = ("推近", "拉远", "横移", "环绕", "摇镜", "跟拍", "拉焦", "变焦", "甩镜")
 
 
 def compile_direct_prompt(segments, required_fragments=None, max_chars=700, information_budget=None):
-    """Return text plus a compile report without inventing replacement facts."""
+    """Format, exact-deduplicate and count model-authored prompt clauses.
+
+    The compiler deliberately does not select or delete creative clauses. An
+    oversized result is returned intact with CREATIVE_REWRITE_REQUIRED so the
+    model can preserve intent while rewriting it to the platform budget.
+    """
     required_fragments = [str(value).strip() for value in required_fragments or [] if str(value).strip()]
     normalized = []
     seen = set()
@@ -34,32 +38,27 @@ def compile_direct_prompt(segments, required_fragments=None, max_chars=700, info
             normalized.append({"kind": kind, "clauses": clauses})
 
     text = _join(normalized)
-    omitted = []
-    if len(text) > max_chars:
-        normalized, omitted = _fit(normalized, max_chars, required_fragments)
-        text = _join(normalized)
-
-    issues = []
     budget = information_budget if isinstance(information_budget, dict) else {}
     enhancer_limit = budget.get("visual_enhancer_limit")
     active_enhancers = sorted({
         item["kind"] for item in normalized
         if item["kind"] in {"cinematic", "video_texture"} and item["clauses"]
     })
+    issues = []
     if isinstance(enhancer_limit, int) and not isinstance(enhancer_limit, bool):
         if len(active_enhancers) > enhancer_limit:
             issues.append(
                 "直投正文视觉增强层超过prompt_information_budget限制：%s；必须回到Master Production选择主次"
                 % "、".join(active_enhancers)
             )
-    protected_omissions = [item for item in omitted if item["kind"] in PROTECTED_KINDS]
-    if protected_omissions:
-        issues.append("直投编译需要删除硬事实才能满足字数上限，必须回到Master Production重写规范正文")
     missing = [fragment for fragment in required_fragments if fragment not in text]
     if missing:
-        issues.append("直投编译丢失锁定台词/声音文本：" + "、".join(missing[:4]))
+        issues.append("直投编译输入缺少模型锁定事实：" + "、".join(missing[:4]))
     if len(text) > max_chars:
-        issues.append("直投编译结果%d字，超过硬上限%d字" % (len(text), max_chars))
+        issues.append(creative_rewrite_issue(
+            "full_prompt", len(text), max_chars,
+            "工程编译器只做精确去重；请由大模型保留剧情、情绪、表演和镜头意图后重新精炼",
+        ))
     active_camera = [term for term in CAMERA_TERMS if _active_camera_term(text, term)]
     if "横移" in active_camera and "跟拍" in active_camera and re.search(r"横移.{0,4}跟拍", text):
         active_camera.remove("横移")
@@ -69,23 +68,21 @@ def compile_direct_prompt(segments, required_fragments=None, max_chars=700, info
         "text": text,
         "issues": issues,
         "removed_duplicate_count": len(removed_duplicates),
-        "omitted": omitted,
+        "omitted": [],
         "segment_order": [segment["kind"] for segment in normalized],
         "required_fragments": required_fragments,
         "budget_profile": str(budget.get("profile", "") or ""),
         "visual_enhancer_limit": enhancer_limit,
         "active_visual_enhancers": active_enhancers,
+        "creative_rewrite_required": any(
+            issue.startswith("CREATIVE_REWRITE_REQUIRED:") for issue in issues
+        ),
     }
 
 
 def compile_director_card(segments, required_fragments=None, information_budget=None,
                           min_chars=0, max_chars=500):
-    """Compile a compact copy card without weakening protected-fact rules.
-
-    The card is a companion view.  It is allowed to omit only complete
-    auxiliary clauses; if a protected clause must be removed, the result is
-    rejected instead of silently degrading the prompt.
-    """
+    """Validate a model-authored director card without semantic compression."""
     result = compile_direct_prompt(
         segments,
         required_fragments=required_fragments,
@@ -101,33 +98,6 @@ def compile_director_card(segments, required_fragments=None, information_budget=
     result["min_chars"] = min_chars
     result["max_chars"] = max_chars
     return result
-
-
-def _fit(segments, max_chars, required_fragments=None):
-    """Trim whole clauses from low-priority tails; never cut through a clause."""
-    result = [{"kind": item["kind"], "clauses": list(item["clauses"])} for item in segments]
-    omitted = []
-    required_fragments = [str(value).strip() for value in required_fragments or [] if str(value).strip()]
-    removal_order = ("cinematic", "video_texture", "support", "light", "continuity", "space", "performance")
-    for kind in removal_order:
-        while len(_join(result)) > max_chars:
-            candidate = next((
-                item for item in reversed(result)
-                if item["kind"] == kind
-                and item["clauses"]
-                and (kind in AUXILIARY_KINDS or len(item["clauses"]) > 1)
-                and not any(
-                    required in clause
-                    for clause in item["clauses"]
-                    for required in required_fragments
-                )
-            ), None)
-            if candidate is None:
-                break
-            clause = candidate["clauses"].pop()
-            omitted.append({"kind": kind, "text": clause})
-    result = [item for item in result if item["clauses"]]
-    return result, omitted
 
 
 def _clauses(text):

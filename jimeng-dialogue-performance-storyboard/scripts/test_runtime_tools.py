@@ -30,14 +30,40 @@ class RuntimeToolTests(unittest.TestCase):
         self.assertEqual(result["run_during_generation"][0]["script"], "scripts/incremental_validate.py")
         self.assertEqual(
             result["run_during_generation"][0]["arguments"],
-            ["<scene_draft.md>", "--current-shot", "<shot_id>"],
+            [
+                "<scene_draft.md>", "--current-shot", "<shot_id>", "--compact",
+                "--report", "<reports>/<shot_id>.incremental.json",
+            ],
         )
         self.assertNotIn("command", result["run_during_generation"][0])
-        self.assertIn("scripts/validate_storyboard.py", result["run_after_generation"])
+        self.assertEqual("scripts/contract_compile.py", result["run_before_each_shot"]["script"])
+        self.assertFalse(result["run_before_each_shot"]["creative_decisions_modified"])
+        self.assertTrue(
+            result["run_during_generation"][0]["first_shot_requires_strict_contract_recovery_before_next_shot"]
+        )
+        self.assertTrue(any(item.startswith("scripts/validate_storyboard.py ") for item in result["run_after_generation"]))
+        self.assertTrue(any("<output.md>" in item for item in result["run_after_generation"] if "validate_storyboard.py" in item))
         self.assertTrue(any("scene_contract.py" in item for item in result["run_after_generation"]))
         self.assertEqual(result["read_after_generation"], ["references/review-pipeline.md"])
         self.assertEqual(result["optional_after_delivery"], ["scripts/concise_storyboard.py"])
-        self.assertIn("scripts/review_manifest.py verify", result["run_after_review"])
+        self.assertTrue(any(item.startswith("scripts/review_manifest.py verify ") for item in result["run_after_review"]))
+        self.assertEqual(
+            result["scene_contract_camera_design"]["shot_fields"],
+            ["visual_task", "shot_size", "composition", "mode", "trigger", "path", "dramatic_gain", "end_frame"],
+        )
+        self.assertIn("never default to static", result["scene_contract_camera_design"]["overload_policy"])
+        self.assertEqual(
+            result["scene_contract_camera_design"]["motion_ownership_fields"],
+            ["camera_path", "focus_path", "actor_path", "prop_path", "terminal_state"],
+        )
+        self.assertEqual(
+            result["scene_contract_camera_design"]["motion_ownership_required_when"],
+            "camera.mode is not static",
+        )
+        self.assertEqual(
+            result["scene_contract_camera_design"]["conditional_lighting_fields"],
+            ["source_entities", "transport_path", "material_response", "luminance_order", "dark_region"],
+        )
 
     def test_risks_load_only_specialist_references(self):
         with tempfile.TemporaryDirectory() as root:
@@ -57,14 +83,23 @@ class RuntimeToolTests(unittest.TestCase):
         self.assertIn("<planned_output.md>", result["run_before_prompt_compilation"][0]["arguments"])
         self.assertNotIn("--output-dir", result["run_before_prompt_compilation"][0]["arguments"])
         self.assertTrue(result["run_before_prompt_compilation"][0]["exact_shot_number_filenames"])
-        self.assertTrue(result["run_before_prompt_compilation"][0]["same_directory_as_storyboard"])
+        self.assertFalse(result["run_before_prompt_compilation"][0]["same_directory_as_storyboard"])
+        self.assertTrue(result["run_before_prompt_compilation"][0]["staging_required"])
         self.assertTrue(result["run_before_prompt_compilation"][0]["same_source_svg_png"])
+        self.assertEqual(
+            "scripts/blocking_repair_preflight.py",
+            result["run_before_blocking_repair_commit"]["script"],
+        )
+        self.assertTrue(result["run_before_blocking_repair_commit"]["invalid_candidate_does_not_consume_repair_attempt"])
+        self.assertTrue(any("promote_blocking_reference.py promote" in item for item in result["run_after_blocking_visual_review"]))
+        self.assertIn("the model owns narrative", result["execution_policy"]["creative_boundary"])
 
     def test_audit_and_video_review_cannot_bypass_semantic_review(self):
         audit = route("audit")
         video = route("video-review")
         self.assertIn("references/review-pipeline.md", audit["read_first"])
         self.assertTrue(audit["design_review_required"])
+        self.assertIn("--compact --report", audit["run_only"][0])
         self.assertIn("references/review-pipeline.md", video["read_first"])
         self.assertTrue(video["objective_metrics_only"])
         self.assertTrue(video["visual_semantic_review_required"])

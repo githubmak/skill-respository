@@ -20,7 +20,7 @@ Export 阶段导出前加载。
 
 Markdown 只导出直接投喂和人工操作所需内容，禁止出现 QA 元数据、`qa_metadata`、生成控制、`generation_control`：
 
-`画面描述｜直接复制` 由 `direct_prompt_compiler.py` 从规范五段提示词结构化编译。它只整句压缩辅助质感并保护空间、连续性、表演、光影和台词事实；超过 700 字且无法无损压缩时停止导出，不允许截断后继续交付。
+`画面描述｜直接复制` 由 `direct_prompt_compiler.py` 从模型创作的规范五段提示词结构化组装。它只做精确去重并保护空间、连续性、表演、光影和台词事实；无法无损压缩时超过700字返回 `CREATIVE_REWRITE_REQUIRED`，停止导出并回到模型阶段，不允许工程层选择性删句或截断后继续交付。
 成功导出后将每镜段落顺序、字数、精确去重数、整句省略项和受保护台词写入 `.cache/export/direct_prompt_compile_report.json`；该报告只用于 QA 追溯，不进入 Markdown/XLSX 的即梦正文。
 
 ```

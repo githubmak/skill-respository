@@ -79,6 +79,7 @@ from shot_semantics import (
 )
 from contract_registry import PROMPT_CONTRACT_VERSION, QA_REQUIRED_FIELDS, SHOT_REQUIRED_FIELDS
 from incremental_validation import build_repair_report
+from scene_lock_authority import scene_lock_authority_issues
 
 
 FORBIDDEN_ENGINES = ["C4D", "Octane", "Blender", "Redshift", "Arnold", "Unreal Engine"]
@@ -125,6 +126,9 @@ def validate_composer_output(
     expected_canvas = _expected_canvas(project_config)
     hard_max_chars = (project_config.get("prompt_limits", {}) or {}).get("hard_max_chars")
     scaffold_map = _load_scaffold_for_batch(path, run_dir)
+    if run_dir:
+        for problem in scene_lock_authority_issues(shots, path):
+            issues.append(problem + ": Scene Lock权威字段被改写")
     seen = set()
     fight_records = []
     for shot in shots if isinstance(shots, list) else []:

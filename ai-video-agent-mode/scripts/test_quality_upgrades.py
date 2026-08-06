@@ -112,7 +112,11 @@ def run():
     weak_issues = aesthetic_directing_contract_issues(weak_aesthetic, aesthetic_prompt)
     assert any("至少两类材质" in issue for issue in weak_issues)
     assert any("光源、方向、受光面和阴影结果" in issue for issue in weak_issues)
-    export_task = {"full_prompt": aesthetic_prompt, "qa_metadata": aesthetic_metadata, "shot_id": "A1", "subshot_id": "A1-1"}
+    export_task = {
+        "full_prompt": aesthetic_prompt,
+        "director_card": "16:9写实电影短片。室内长桌前，角色A右手压住桌沿，门打开后抬眼看向门口，窗光照亮脸和手背，固定机位停稳，最终手仍压在桌沿。",
+        "qa_metadata": aesthetic_metadata, "shot_id": "A1", "subshot_id": "A1-1",
+    }
     global_quality = "\n".join(_global_quality_control_lines({"shots": [export_task]}))
     for label in ("画面质感基线", "光效与曝光连续", "动态美学基线", "表演与情绪基线", "蒙太奇与剪辑基线", "穿帮与抽卡总控"):
         assert label in global_quality, label
@@ -167,6 +171,14 @@ def run():
         missing_grounding_metadata, "门框压住左侧，角色A位于右侧中景，镜头固定。"
     )
     assert grounded["画面质感"]["grounded"] is True
+    reroll_grounding = production_control_grounding_report(
+        {"reroll_control": {"mitigation_steps": [
+            "锁定可见人数与槽位", "可见结果：双拐始终由卫景耘双手承重"
+        ]}},
+        "卫景耘站在左侧，双拐始终由卫景耘双手承重。",
+    )
+    assert reroll_grounding["抽卡策略的可见降级结果"]["candidate_facts"] == ["双拐始终由卫景耘双手承重"]
+    assert reroll_grounding["抽卡策略的可见降级结果"]["grounded"] is True
 
     weak_motion = {key: dict(value) for key, value in aesthetic_metadata.items()}
     weak_motion["dynamic_aesthetic_contract"]["primary_subject_motion"] = "灵动地表现情绪"
@@ -259,9 +271,9 @@ def run():
         {"kind": "visual_prefix", "text": "16:9动态漫，冷白长桌空间，角色A位于画面左侧。"},
         {"kind": "cinematic", "text": "辅助电影质感" * 30},
     ], max_chars=80)
-    assert not compressed["issues"]
-    assert compressed["omitted"] and compressed["omitted"][0]["kind"] == "cinematic"
-    assert len(compressed["text"]) <= 80
+    assert compressed["creative_rewrite_required"] is True
+    assert compressed["omitted"] == []
+    assert len(compressed["text"]) > 80
 
     hard_overflow = compile_direct_prompt([
         {"kind": "space", "text": "不可删除空间事实" * 30},
@@ -293,6 +305,23 @@ def run():
     ], information_budget={"profile": "dialogue", "visual_enhancer_limit": 1})
     assert any("视觉增强层超过" in issue for issue in over_budget["issues"])
     assert over_budget["budget_profile"] == "dialogue"
+
+    # Static light/material anchors are not a monolithic required fragment;
+    # clause-level compression may retain the visible light evidence.
+    from export_with_validation import _direct_prompt_inputs
+    static_only_task = {
+        "shot_id": "S1",
+        "full_prompt": "生成规格：16:9画幅。\n\n主体与空间锁定：角色A站在室内。\n\n主镜头连续规则：固定机位。\n\n子镜头组：0.0-2.0秒角色A站定。\n\n光照、声音与稳定约束：右上方5600K自然光照亮脸手。",
+        "qa_metadata": {
+            "dialogue_events": [],
+            "prompt_information_budget": {"must_render": "角色A站定"},
+            "dynamic_aesthetic_contract": {"start_state": "角色A起幅站定", "primary_subject_motion": "角色A站定", "end_state": "角色A最终站定"},
+            "static_aesthetic_contract": {"light_design": "右上方5600K自然光照亮脸手", "color_grade": "低饱和自然日景", "material_anchor": "墙面粗糙纹理"},
+        },
+        "generation_control": {"audio_enabled": False},
+    }
+    _segments, required, _budget = _direct_prompt_inputs(static_only_task, {"canvas": "16:9", "visual_style": "3D"})
+    assert all("低饱和自然日景" not in item for item in required)
 
     director_card = compile_director_card([
         {"kind": "visual_prefix", "text": "9:16画幅，写实电影风格，夜雨车站，冷蓝环境光与远处暖色站牌。"},

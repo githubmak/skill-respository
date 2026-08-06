@@ -78,8 +78,12 @@ ROUTES = {
 
 
 def _context_plan(spec):
+    read_first = ["references/creative_engineering_boundary.md"]
+    read_first.extend(
+        path for path in spec.get("read_first", []) if path not in read_first
+    )
     return {
-        "read_first": list(spec.get("read_first", [])),
+        "read_first": read_first,
         "read_on_demand": list(spec.get("read_on_demand", [])),
         "run_only": list(spec.get("run_only", [])),
         "preload_full_contracts": False,
@@ -159,7 +163,9 @@ def high_quality_fast_start(run_dir, config_path, source_path):
         }
     supervisor = run_until_pause(run_dir, source_path)
     status = supervisor.get("status")
-    passed = status in {"host_dispatch_required", "waiting_for_workers", "completed"}
+    # The first run intentionally pauses for model-authored creative outputs.
+    # This is a successful handoff, not a failed setup or hidden retry loop.
+    passed = status in {"creative_authoring_required", "host_dispatch_required", "waiting_for_workers", "completed"}
     return {
         "pass": passed,
         "mode": "full",

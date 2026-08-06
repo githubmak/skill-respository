@@ -41,7 +41,8 @@
 
 ## Supervisor 循环
 
-配置确认后持续调用 `workflow_supervisor.py`。本地阶段自动运行；
+配置确认后持续调用 `workflow_supervisor.py`。首次 Orchestrator 只生成源快照和模型创作请求；
+返回 `creative_authoring_required` 时由主模型提交三份蓝图文件后再续跑。其余本地阶段自动运行；
 `host_dispatch_required` 才派发 Agent；`waiting_for_workers` 只等待回执、心跳或验证结果。
 完成每个 packet 的 provenance 链后立即继续 supervisor。仅 `needs_user_confirm=true` 可以暂停提问。
 

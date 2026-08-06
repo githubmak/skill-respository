@@ -47,7 +47,6 @@ def normalize(run_dir, draft_path=None):
 
     _normalize_ids_and_durations(plan)
     _validate_max_shot_duration(plan)
-    _normalize_scene_names(plan)
     _validate_dialogue_refs(plan)
 
     out_path = os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json")
@@ -64,7 +63,10 @@ def _normalize_ids_and_durations(plan):
         shot_id = shot.get("shot_id") or "S1-%02d" % shot_index
         shot["shot_id"] = shot_id
         shot.setdefault("scene", "")
-        shot.setdefault("core_action", shot.get("description", ""))
+        # Do not derive creative prose from another field. A missing core
+        # action is a model-authored contract error and is left empty for the
+        # validator to report.
+        shot.setdefault("core_action", "")
         subshots = shot.setdefault("subshots", [])
         for sub_index, ss in enumerate(subshots, 1):
             ssid = ss.get("subshot_id") or "%s-%02d" % (shot_id, sub_index)
@@ -95,20 +97,6 @@ def _validate_max_shot_duration(plan):
             "main shot duration exceeds user-confirmed max_shot_duration=%gs: %s"
             % (maximum, ", ".join(over))
         )
-
-
-def _normalize_scene_names(plan):
-    scene_names = {}
-    for shot in plan.get("shots", []):
-        raw = shot.get("scene", "").strip()
-        if not raw:
-            continue
-        cleaned = raw.rstrip("0123456789 ").rstrip("-").strip()
-        scene_names[raw] = cleaned
-    for shot in plan.get("shots", []):
-        raw = shot.get("scene", "").strip()
-        if raw in scene_names:
-            shot["scene"] = scene_names[raw]
 
 
 def _validate_dialogue_refs(plan):

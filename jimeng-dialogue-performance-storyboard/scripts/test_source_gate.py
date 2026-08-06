@@ -60,6 +60,25 @@ class SourceGateTests(unittest.TestCase):
         )
         self.assertEqual("乙：（笑）你也怕了？", second["source_line"])
 
+    def test_speaker_normalization_excludes_cues_channels_and_structure_labels(self) -> None:
+        source = """人物：沈青乔、满满、阿丰、卫景耘、豆宝
+场景：院儿内小屋门口，夜
+满满（兴奋）：爹爹，娘亲带我们去抓鱼了！
+满满：爹爹你看！
+卫景耘（不信）：不会有毒吧？
+沈青乔（皱眉，OS）：还剩点粗盐。
+阿丰（OS）：今天好像不一样了。
+豆宝：发现可食用植物。
+"""
+        result = inspect_text(source)
+        self.assertEqual(
+            ["满满", "卫景耘", "沈青乔", "阿丰", "豆宝"],
+            result["stats"]["speakers"],
+        )
+        self.assertEqual(5, result["stats"]["speaker_count"])
+        self.assertNotIn("人物", result["stats"]["speakers"])
+        self.assertNotIn("场景", result["stats"]["speakers"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -19,7 +19,7 @@ def check(packet):
     external = 0
     for key in (
         "constraints_path", "composer_scaffold_path", "scene_lock_cache_path",
-        "scene_motion_plan_path", "scene_texture_plan_path", "pre_editor_gate_path",
+        "pre_editor_gate_path",
         "emotion_camera_audit_path", "review_packet_path",
     ):
         path = packet.get(key)

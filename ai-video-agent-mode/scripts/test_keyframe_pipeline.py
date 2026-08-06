@@ -58,6 +58,7 @@ def _fixture():
     )
     return {
         "shot_id": "S1", "subshot_id": "S1-A", "duration": 8, "full_prompt": prompt,
+        "director_card": "16:9写实电影级动态漫。角色A在客厅左侧握着手机，听见门响后抬眼看向门口，说：‘你终于回来了。’固定机位停在手机与眼神之间。",
         "qa_metadata": {
             "start_state": "角色A站在画面左侧，右手手机停在腰间",
             "end_state": "角色A稳定站在画面左侧，右手手机停在胸前",

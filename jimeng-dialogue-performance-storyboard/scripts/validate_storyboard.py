@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 import sys
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -104,6 +105,18 @@ STYLE_TERMS = ("3D", "韩漫", "CG", "漫画", "动画", "写实", "视觉风格
 SCENE_TONE_PREFIX_TERMS = (
     "主色", "影调", "色温", "顶光", "侧光", "逆光", "窗光", "暖光", "冷光",
     "冷白", "暖黄", "蓝灰", "暖米", "奶油", "低饱和", "阴影", "肤色",
+)
+TONE_PALETTE_FAMILIES = {
+    "cool_blue_gray": ("蓝灰", "灰蓝", "冷蓝", "青蓝", "冷青", "深蓝", "冷白"),
+    "warm_brown_amber": ("暖棕", "浅暖棕", "土褐", "暖褐", "暖米", "暗暖", "暖黄", "琥珀", "暖金"),
+    "neutral_gray": ("中性灰", "冷灰", "暖灰", "灰米", "灰白", "银灰"),
+    "green_teal": ("暗绿", "墨绿", "青绿", "蓝绿", "青灰"),
+    "red_purple": ("暗红", "深红", "红棕", "紫灰", "淡紫灰", "紫蓝"),
+    "cream_orange": ("奶油", "奶油橙", "暖橙", "浅橙", "橙棕"),
+}
+TONE_VARIATION_AUTH_TERMS = (
+    "明确换光源", "靠近窗边", "走到台灯旁", "情绪峰值",
+    "闪回", "梦境", "时间跳转", "局部火光", "火光仅作点缀", "暖光仅作点缀",
 )
 CUTAWAY_EXPLICIT_TERMS = ("镜头不拍人物", "空镜")
 CUTAWAY_SUBJECT_TERMS = ("空椅", "门缝", "水纹", "走廊灯光")
@@ -416,6 +429,18 @@ CAMERA_MOTION_FAMILIES = {
     "rack_focus": ("转焦", "拉焦"),
     "lateral": ("横移", "侧移"),
 }
+CAMERA_TRIGGER_TERMS = (
+    "听到", "看见", "发现", "说到", "递出", "接住", "起身", "停步", "转身", "门开",
+    "触发", "随着", "当", "之后", "瞬间", "落下", "移开", "靠近", "退开",
+)
+CAMERA_GAIN_TERMS = (
+    "显露", "揭示", "遮蔽", "压迫", "疏离", "关系", "信息", "距离", "焦点", "视线",
+    "出口", "空位", "证据", "反应", "孤立", "逼近", "退让", "权力", "认知", "余波",
+)
+STATIC_BENEFIT_TERMS = (
+    "等待", "观察", "监视", "僵持", "尴尬", "屏息", "留白", "压迫", "无处可退",
+    "关系距离", "空位", "悬念", "不动", "停顿", "沉默", "静止收益",
+)
 PERFORMANCE_ACTION_FAMILIES = {
     "tighten": ("压紧", "收紧", "攥紧", "绷紧", "握紧"),
     "release": ("放松", "松开", "松下", "舒展"),
@@ -453,6 +478,33 @@ MOTIVATED_LIGHT_SOURCE_TERMS = (
     "窗光", "顶光", "台灯", "灯光", "日光", "自然光", "壁灯", "路灯", "灯牌", "吊灯", "落地灯",
     "屏幕光", "车灯", "店招", "天光", "月光", "油灯", "烛火", "火光", "火盆", "门外光",
 )
+REFLECTIVE_OPTICAL_CUES = (
+    "水光", "鳞光", "泪光", "珠光", "湿鳞", "水面闪光", "水面亮光", "镜面闪光", "镜面高光",
+    "湿面高光", "鳞片高光", "金属反光", "玻璃反光", "水面反光", "低亮反光",
+)
+REFLECTIVE_SUBJECT_TERMS = REFLECTIVE_OPTICAL_CUES + (
+    "鱼篓", "鱼身", "水面", "水珠", "泪珠", "玻璃", "金属", "珠宝", "宝石",
+)
+LIGHT_TRANSPORT_TERMS = (
+    "落在", "落到", "斜落", "照在", "照到", "照亮", "掠过", "扫过", "映在", "投在", "穿过", "经由",
+)
+PASSIVE_REFLECTION_TERMS = (
+    "被动受光", "反射月光", "反射火光", "反射窗光", "镜面反射", "镜面高光", "湿面高光", "低亮反光", "窄高光",
+)
+REFLECTION_LUMINANCE_TERMS = (
+    "低亮", "微弱", "亮度低于", "亮度弱于", "暗于", "压暗", "窄高光", "亮度上限", "局部高光",
+)
+REFLECTIVE_CONTAINER_TERMS = ("鱼篓", "菜篮", "篮筐", "竹篮", "桶内", "杯内", "碗内", "盒内", "容器内")
+CONTAINER_DARK_TERMS = (
+    "篓内保持暗", "鱼篓内部保持暗", "篮内保持暗", "菜篮内部保持暗", "容器内部保持暗", "内部暗部", "篓内暗部",
+)
+CAMERA_MOVE_TERMS = ("推近", "拉远", "横移", "侧移", "摇镜", "摇摄", "跟拍", "环绕", "弧移", "升降")
+SMALL_FOLLOW_TARGET_TERMS = ("手指", "指尖", "视线", "叶片", "水光", "鳞光", "道具", "卡片", "照片")
+CONTAINER_BOUND_PROP_TERMS = ("叶片", "野菜", "鱼", "水", "钥匙", "卡片", "纸张", "照片", "珠宝", "宝石")
+PROP_CONTAINER_TERMS = ("菜篮", "鱼篓", "篮筐", "竹篮", "桶", "杯", "碗", "盒", "桌面", "台面", "手中", "掌中", "口袋")
+PROP_INVARIANT_TERMS = ("始终", "仍", "保持", "固定", "留在", "停在", "平放", "装在", "压在", "位于")
+MOTION_PATH_DESTINATION_TERMS = ("到", "向", "落到", "飞到", "飞向", "飘到", "移到", "转到", "追到")
+MOTION_HUMAN_TARGET_TERMS = ("脸", "面部", "双眼", "眼睛", "眼神", "人物", "听者", "对方")
 TIME_STATE_TERMS = (
     "清晨", "早晨", "上午", "正午", "午后", "下午", "傍晚", "黄昏", "夜晚", "夜间", "深夜", "凌晨",
     "白天", "日间", "黎明", "同一夜晚", "同一白天", "子夜", "午夜", "入夜", "破晓", "拂晓", "暮色", "日暮",
@@ -467,7 +519,7 @@ EXTERIOR_BRIGHTNESS_TERMS = (
 )
 LIGHT_CONTINUITY_TERMS = (
     "唯一主光源", "唯一主光", "主要主光源", "主光源", "主光方向", "光线曝光固定", "曝光保持",
-    "曝光不变", "黑位保持", "背景亮度保持", "色温保持", "受光方向保持", "光照方向保持",
+    "曝光不变", "曝光稳定", "光照稳定", "主光保持", "黑位保持", "背景亮度保持", "色温保持", "受光方向保持", "光照方向保持",
 )
 LIGHT_SOURCE_FAMILIES = {
     "oil_lamp": ("油灯", "油灯光"),
@@ -534,6 +586,22 @@ LISTENER_REACTION_TERMS = (
     "探出", "眨眼", "抓住", "抓衣", "放松", "观察", "抬头", "停住",
 )
 INTERPERSON_PROP_TRANSFER_TERMS = ("递", "交给", "接过", "接住", "塞给")
+EMOTION_TRIGGER_TERMS = (
+    "听见", "听到", "看见", "看到", "发现", "察觉", "被", "话音", "提到", "说到", "问完", "之后",
+    "因为", "当", "得知", "意识到", "认出", "触碰到",
+)
+EMOTION_STRATEGY_TERMS = (
+    "试探", "回避", "掩饰", "保护", "逼问", "压住", "克制", "坚持", "退让", "挑衅", "安抚",
+    "转移", "确认", "否认", "承认", "拒绝", "装作", "故意", "不让", "抢先", "顺从", "隐瞒",
+)
+EMOTION_RESIDUE_TERMS = (
+    "余波", "仍", "继续", "没有松开", "没有移开", "停在", "落定", "残留", "保持到结束",
+    "说完闭口", "闭口", "呼吸落下", "手指停住", "视线停住",
+)
+SEMANTIC_OPAQUE_PHRASES = (
+    "朝关系轴拍摄", "沿关系轴拍摄", "沿人物连线拍摄", "摄影机稳定落幅", "空间锁定：", "状态继承：",
+    "氛围光", "情绪光", "神秘光", "高级光影", "关系压力具象化", "视觉化情绪",
+)
 
 
 @dataclass(frozen=True)
@@ -842,6 +910,62 @@ def semantic_completeness_issues(
             missing.append("手机屏幕朝向")
 
     return list(dict.fromkeys(missing))
+
+
+def semantic_ambiguity_issues(direct: str, cast_names: list[str] | None = None) -> list[str]:
+    """Reject internal shorthand that a video model cannot resolve physically."""
+    cast_names = cast_names or []
+    cleaned = strip_quoted_content(direct)
+    issues: list[str] = []
+    if any(phrase in cleaned for phrase in ("朝关系轴拍摄", "沿关系轴拍摄", "沿人物连线拍摄")):
+        physical_direction = re.search(
+            r"(?:摄影机|镜头|机位)[^。；;\n]{0,24}(?:朝|拍向|对准)(?:北|南|东|西|门口|窗边|屋内|屋外|桌面|柜台|人物|沈青乔|卫景耘|甲|乙)",
+            cleaned,
+        )
+        if not physical_direction:
+            issues.append(
+                "摄影机方向使用关系轴元话语而非可执行方向；改成摄影机所在侧、朝向固定物/人物和拍摄方向"
+            )
+    if "空间锁定：" in cleaned:
+        issues.append("直接提示词不能写‘空间锁定：’内部标签；改写为人物位置、面向、可见面和固定物的完整画面事实")
+    if "状态继承：" in cleaned:
+        issues.append("直接提示词不能写‘状态继承：’内部标签；把上一镜终态改写成当前镜头第一帧")
+    if any(term in cleaned for term in ("氛围光", "情绪光", "神秘光", "高级光影", "关系压力具象化", "视觉化情绪")):
+        if not has_executable_visual_detail(cleaned):
+            issues.append("光影/情绪使用抽象名词，缺少光源、受光面、阴影边界或具体关系载体")
+    placeholders = ("某人", "某角色", "人物A", "人物B", "角色A", "角色B", "对方")
+    if cast_names and any(term in cleaned for term in placeholders):
+        named = [name for name in cast_names if name and name in cleaned]
+        if named and any(term in cleaned for term in placeholders):
+            issues.append("直接提示词混用具名人物与‘对方/角色A’占位词；必须统一使用本镜真实人物名")
+    return issues
+
+
+def emotion_depth_issues(direct: str, performance: str = "", shot_type: str = "") -> list[str]:
+    """Require emotion to read as cause -> strategy -> physical leak -> response -> residue."""
+    cleaned = strip_quoted_content(direct)
+    combined = cleaned + "；" + str(performance or "")
+    if shot_type not in {"dialogue_performance", "multi_character_relationship"}:
+        return []
+    if not has_visible_dialogue(direct) and shot_type != "multi_character_relationship":
+        return []
+    checks = {
+        "情绪触发": any(term in combined for term in EMOTION_TRIGGER_TERMS),
+        "对外策略": any(term in combined for term in EMOTION_STRATEGY_TERMS),
+        "身体泄露": any(term in combined for term in FACIAL_DETAIL_TERMS + BODY_PROP_EMOTION_TERMS),
+        "关系回应": any(term in combined for term in LISTENER_REACTION_TERMS + RELATION_CHANGE_TERMS),
+        "句末余波": any(term in combined for term in EMOTION_RESIDUE_TERMS),
+    }
+    missing = [label for label, present in checks.items() if not present]
+    if not missing:
+        return []
+    generic_only = any(term in combined for term in BLAND_EXPRESSION_TERMS + ("紧张", "愤怒", "难过", "开心", "害怕"))
+    if generic_only or len(missing) >= 2:
+        return [
+            "情绪链不完整，缺少" + "、".join(missing) + "; "
+            "必须写清台词/声音触发、人物对外策略、脸/手/呼吸等泄露、唯一听者回应和句末残留"
+        ]
+    return []
 
 
 def header_from_block(block: str) -> str:
@@ -1229,6 +1353,12 @@ def primary_light_sources(text: str) -> set[str]:
         source = _normalized_open_light_source(match.group("source"))
         if source:
             sources.add(source)
+    # Accept compact production prefixes such as “画面左侧月光主光”.
+    # This recognizes an explicit emitter and duty; it never invents either.
+    for family, terms in LIGHT_SOURCE_FAMILIES.items():
+        for term in terms:
+            if re.search(re.escape(term) + r"[^，。；;\n]{0,10}(?:唯一|主要)?主光(?:源)?", cleaned):
+                sources.add(family)
     return sources
 
 
@@ -1252,6 +1382,198 @@ def temporal_lighting_issues(direct: str) -> list[str]:
     signature = time_state_signature(cleaned)
     if "night" in signature and "day" in signature and not any(term in cleaned for term in TIME_CHANGE_AUTH_TERMS):
         issues.append("同一直接提示词同时出现夜晚与白天/日光事实，但没有可见时间变化依据")
+    return issues
+
+
+def _tone_family_hits(text: str, *, marker: str = "") -> set[str]:
+    cleaned = strip_quoted_content(text)
+    if marker:
+        clauses = [part for part in re.split(r"[。；;\n]", cleaned) if marker in part]
+        cleaned = "；".join(clauses)
+    return {
+        family
+        for family, terms in TONE_PALETTE_FAMILIES.items()
+        if any(term in cleaned for term in terms)
+    }
+
+
+def tone_card_signature(text: str) -> dict[str, set[str]]:
+    """Extract only coarse, physically meaningful tone facts for pair checks."""
+    cleaned = strip_quoted_content(text)
+    dominant = _tone_family_hits(cleaned, marker="主色")
+    if not dominant:
+        dominant = {
+            family for family in _tone_family_hits(cleaned)
+            if any(term in cleaned[:220] for term in TONE_PALETTE_FAMILIES[family])
+        }
+    temperature: set[str] = set()
+    if re.search(r"(?:[45-79]\d{3})\s*K", cleaned) or any(term in cleaned for term in ("冷调", "冷色调", "冷光", "冷白")):
+        temperature.add("cool")
+    if re.search(r"(?:2\d{3}|3\d{3}|4[0-4]\d{2})\s*K", cleaned) or any(term in cleaned for term in ("暖调", "暖色调", "暖光", "暖黄")):
+        temperature.add("warm")
+    if any(term in cleaned for term in ("中性", "白平衡精准", "D65", "6500K标准")):
+        temperature.add("neutral")
+    shadow = _tone_family_hits(cleaned, marker="阴影") | _tone_family_hits(cleaned, marker="暗部")
+    if "黑位" in cleaned:
+        shadow |= _tone_family_hits(cleaned)
+    brightness: set[str] = set()
+    if any(term in cleaned for term in ("低亮", "暗", "深蓝黑位", "黑位扎实", "黑位沉实", "背景压暗")):
+        brightness.add("low")
+    if any(term in cleaned for term in ("明亮", "高亮", "白位", "背景亮度高", "通透明亮")):
+        brightness.add("high")
+    contrast: set[str] = set()
+    if any(term in cleaned for term in ("低对比", "低反差", "柔和对比")):
+        contrast.add("low")
+    if any(term in cleaned for term in ("中对比", "适中对比", "明暗平衡")):
+        contrast.add("medium")
+    if any(term in cleaned for term in ("高对比", "中高对比", "硬朗")):
+        contrast.add("high")
+    saturation: set[str] = set()
+    if any(term in cleaned for term in ("低饱和", "降饱和", "淡雅")):
+        saturation.add("low")
+    if any(term in cleaned for term in ("自然饱和", "中饱和", "饱和度适中")):
+        saturation.add("medium")
+    if any(term in cleaned for term in ("高饱和", "鲜艳")):
+        saturation.add("high")
+    return {
+        "dominant_palette": dominant,
+        "temperature": temperature,
+        "shadow_tone": shadow,
+        "background_brightness": brightness,
+        "contrast": contrast,
+        "saturation": saturation,
+    }
+
+
+def compressed_tone_prefix_issues(direct: str) -> list[str]:
+    """Check that each direct prompt carries a compact, executable tone prefix."""
+    prefix = strip_quoted_content(direct[:220])
+    issues: list[str] = []
+    if not _tone_family_hits(prefix) and not any(term in prefix for term in ("主色", "影调", "基调")):
+        issues.append("逐镜前缀缺少明确主色/影调")
+    if not (
+        re.search(r"\d{4}\s*K", prefix)
+        or any(term in prefix for term in ("冷调", "暖调", "冷色调", "暖色调", "中性灰", "D65"))
+    ):
+        issues.append("逐镜前缀缺少色温或白平衡基准")
+    if not any(term in prefix for term in ("主光", "唯一主光", "侧光", "顶光", "窗光", "月光", "油灯", "火光", "台灯", "灯光")):
+        issues.append("逐镜前缀缺少主光方向/物理光源")
+    if not any(term in prefix for term in ("阴影", "暗部", "黑位")):
+        issues.append("逐镜前缀缺少阴影或黑位基线")
+    if not any(term in prefix for term in ("肤色", "脸部受光", "自然血色", "皮肤质感")):
+        issues.append("逐镜前缀缺少正向肤色保护")
+    return issues
+
+
+def reflective_light_transport_issues(direct: str) -> list[str]:
+    """Keep reflective materials subordinate to declared physical light sources."""
+    cleaned = strip_quoted_content(direct)
+    cues = [term for term in REFLECTIVE_OPTICAL_CUES if term in cleaned]
+    if not cues:
+        return []
+    clauses = [part.strip() for part in re.split(r"[。；;\n]", cleaned) if part.strip()]
+    cue_contexts: list[str] = []
+    for index, clause in enumerate(clauses):
+        if any(cue in clause for cue in cues):
+            start = max(0, index - 1)
+            cue_contexts.append("；".join(clauses[start:index + 1]))
+    context = "；".join(cue_contexts)
+    issues: list[str] = []
+    source_pattern = "|".join(re.escape(term) for term in MOTIVATED_LIGHT_SOURCE_TERMS)
+    transport_pattern = "|".join(re.escape(term) for term in LIGHT_TRANSPORT_TERMS)
+    subject_pattern = "|".join(re.escape(term) for term in REFLECTIVE_SUBJECT_TERMS)
+    has_source_path = bool(
+        re.search(
+            rf"(?:{source_pattern})[^。；;\n]{{0,24}}(?:{transport_pattern})[^。；;\n]{{0,24}}(?:{subject_pattern})",
+            context,
+        )
+        or re.search(
+            rf"(?:{subject_pattern})[^。；;\n]{{0,24}}(?:被动受光|反射|映出)[^。；;\n]{{0,16}}(?:{source_pattern})",
+            context,
+        )
+    )
+    if not has_source_path:
+        issues.append("反射/湿亮材质缺少物理光源到该表面的入射路径")
+    passive_response = any(term in context for term in PASSIVE_REFLECTION_TERMS)
+    luminance_control = any(term in context for term in REFLECTION_LUMINANCE_TERMS)
+    if not passive_response or not luminance_control:
+        issues.append("反射物必须写成被动受光，并明确低于主体/环境受光面的亮度层级")
+    if any(term in cleaned for term in REFLECTIVE_CONTAINER_TERMS) and not any(
+        term in cleaned for term in CONTAINER_DARK_TERMS
+    ):
+        issues.append("容器内的水、湿鳞或高光缺少内部暗部，容易被生成成灯笼式自发光")
+    return issues
+
+
+def _has_anchored_prop_invariant(text: str) -> bool:
+    for prop in CONTAINER_BOUND_PROP_TERMS:
+        for anchor in PROP_CONTAINER_TERMS:
+            if re.search(
+                rf"{re.escape(prop)}[^。；;\n]{{0,24}}(?:{'|'.join(PROP_INVARIANT_TERMS)})[^。；;\n]{{0,24}}{re.escape(anchor)}",
+                text,
+            ):
+                return True
+            if re.search(
+                rf"{re.escape(anchor)}[^。；;\n]{{0,24}}{re.escape(prop)}[^。；;\n]{{0,16}}(?:{'|'.join(PROP_INVARIANT_TERMS)})",
+                text,
+            ):
+                return True
+    return False
+
+
+def camera_prop_motion_ownership_issues(direct: str) -> list[str]:
+    """Separate camera/focus paths from actor and container-bound prop motion.
+
+    A camera path is not allowed to use a hand or a container-bound prop as an
+    unstated moving subject.  The common failure is a compressed sentence such
+    as ``摄影机跟随手指从叶片落到听者脸``: a human reader may recover the
+    intended camera reframe, while a video model may animate the leaf toward the
+    listener.  Require separate clauses for camera, focus, hand, and prop state.
+    """
+    cleaned = strip_quoted_content(direct)
+    clauses = [part.strip() for part in re.split(r"[。；;\n]", cleaned) if part.strip()]
+    motion_clauses = [
+        clause for clause in clauses
+        if any(owner in clause for owner in ("摄影机", "镜头", "焦点", "焦平面"))
+        and any(
+            term in clause
+            for term in CAMERA_MOVE_TERMS
+            + MOTION_PATH_DESTINATION_TERMS
+            + ("转焦", "拉焦", "焦点从", "焦平面从")
+        )
+    ]
+    issues: list[str] = []
+    has_explicit_focus_path = any(
+        ("焦点" in clause or "焦平面" in clause)
+        and "从" in clause
+        and any(term in clause for term in MOTION_PATH_DESTINATION_TERMS)
+        for clause in clauses
+    )
+    has_prop_invariant = _has_anchored_prop_invariant(cleaned)
+    for clause in motion_clauses:
+        has_path = "从" in clause and any(term in clause for term in MOTION_PATH_DESTINATION_TERMS)
+        has_prop_anchor = any(term in clause for term in CONTAINER_BOUND_PROP_TERMS + SMALL_FOLLOW_TARGET_TERMS)
+        has_human_target = any(term in clause for term in MOTION_HUMAN_TARGET_TERMS)
+        ambiguous_follow = (
+            "跟随" in clause
+            and has_path
+            and any(term in clause for term in SMALL_FOLLOW_TARGET_TERMS)
+            and not any(term in clause for term in ("焦点从", "焦平面从", "构图从"))
+        )
+        explicit_role_path = any(term in clause for term in ("焦点从", "焦平面从", "构图从"))
+        compressed_camera_prop_path = has_path and has_prop_anchor and has_human_target and not explicit_role_path
+        if ambiguous_follow or compressed_camera_prop_path:
+            issues.append("摄影机、焦点与手指/道具共用一条‘从A到B’路径；必须分句声明各自运动主体")
+            break
+    prop_used_as_camera_anchor = any(
+        any(prop in clause for prop in CONTAINER_BOUND_PROP_TERMS)
+        for clause in motion_clauses
+    )
+    if prop_used_as_camera_anchor and any(anchor in cleaned for anchor in PROP_CONTAINER_TERMS):
+        if not has_prop_invariant:
+            issues.append("运镜或转焦经过容器内道具时，必须声明道具全程留在原容器/表面及稳定终态")
+        if not has_explicit_focus_path and any(term in cleaned for term in ("焦点", "焦平面", "转焦", "拉焦")):
+            issues.append("焦点涉及容器内道具时，必须单独写明焦点起点与终点，不能借用摄影机路径表达")
     return issues
 
 
@@ -1279,6 +1601,25 @@ def temporal_lighting_continuity_issues(previous: str, current: str) -> list[str
             + " -> "
             + "/".join(sorted(current_sources))
         )
+    previous_tone = tone_card_signature(previous)
+    current_tone = tone_card_signature(current)
+    authorized_variation = any(term in combined for term in TONE_VARIATION_AUTH_TERMS)
+    tone_labels = {
+        "dominant_palette": "主色/影调",
+        "temperature": "色温",
+        "shadow_tone": "阴影色",
+        "background_brightness": "背景亮度/黑位",
+        "contrast": "对比度",
+        "saturation": "饱和度",
+    }
+    for key, label in tone_labels.items():
+        before = previous_tone[key]
+        after = current_tone[key]
+        if before and after and before.isdisjoint(after) and not authorized_variation:
+            issues.append(
+                f"同场相邻镜头{label}冲突 -> {'/'.join(sorted(before))} -> {'/'.join(sorted(after))}；"
+                "除非写明剧情触发/允许变化，不得重新选择一套色卡"
+            )
     return issues
 
 
@@ -2655,6 +2996,8 @@ def validate_child(
         issues.append(f"{sid}: direct prompt prefix missing visual style")
     if not any(term in prefix for term in SCENE_TONE_PREFIX_TERMS):
         issues.append(f"{sid}: direct prompt prefix missing compressed scene tone/color/light card")
+    for tone_issue in compressed_tone_prefix_issues(direct):
+        issues.append(f"{sid}: {tone_issue}")
     if not any(term in direct for term in SHOT_SIZE_TERMS):
         issues.append(f"{sid}: direct prompt missing shot size")
     if not any(term in direct for term in CAMERA_TERMS):
@@ -2731,6 +3074,10 @@ def validate_child(
         issues.append(f"{sid}: 空间面向风险 -> {issue}")
     for issue in temporal_lighting_issues(direct):
         issues.append(f"{sid}: 时空光照合同失败 -> {issue}")
+    for issue in reflective_light_transport_issues(direct):
+        issues.append(f"{sid}: 反射物光照归属失败 -> {issue}")
+    for issue in camera_prop_motion_ownership_issues(direct):
+        issues.append(f"{sid}: 运镜与道具运动归属失败 -> {issue}")
     if post_text_inside_direct(direct):
         issues.append(f"{sid}: 后期叠字的具体文字不要写进直接提示词；只预留安全区，具体文字写到【表演与声音】中的后期文字句")
     if "后期叠字" in direct and not any(term in direct for term in ("安全区", "画面左侧", "画面右侧", "贴合屏幕平面", "预留")):
@@ -2820,19 +3167,26 @@ def validate_child(
         if camera_execution and re.search(r"推|拉|移|摇|跟拍|环绕|转焦|拉焦", camera_execution):
             if not any(term in mouth_window for term in ("听者保持", "听者不动", "听者静止", "仅呼吸", "仅视线")):
                 issues.append(f"{sid}: lip-sync with camera move needs listener hold declaration in 【口型分窗】")
-    high_risk_count = sum(
-        bool(condition)
-        for condition in (
-            re.search(r"三人|四人|五人|众人|混混|人群", direct),
-            any(term in direct for term in PROP_TRANSFER_TERMS + CONTACT_TERMS),
-            bool(direct_quotes),
-            has_camera_move(direct),
-            any(term in direct for term in MOVE_TERMS),
-            any(term in direct for term in ("车", "人群", "闪回", "回忆", "梦境")),
-        )
+    non_camera_risks = (
+        bool(re.search(r"三人|四人|五人|众人|混混|人群", direct)),
+        any(term in direct for term in PROP_TRANSFER_TERMS + CONTACT_TERMS),
+        bool(direct_quotes),
+        any(term in direct for term in MOVE_TERMS),
+        any(term in direct for term in POSTURE_RISK_TERMS),
+        any(term in direct for term in ("车", "人群", "闪回", "回忆", "梦境")),
     )
+    non_camera_risk_count = sum(bool(condition) for condition in non_camera_risks)
+    high_risk_count = non_camera_risk_count + int(has_camera_move(direct))
     if high_risk_count >= 4:
-        issues.append(f"{sid}: possible single-shot overload; split or simplify high-risk tasks")
+        issues.append(
+            f"{sid}: possible single-shot overload; split high-risk actions before camera adaptation; "
+            "do not downgrade the selected camera response to a fixed camera"
+        )
+    elif non_camera_risk_count >= 3 and not has_camera_move(direct):
+        issues.append(
+            f"{sid}: high-risk action/dialogue load was hidden behind a fixed camera; "
+            "split prepare/transition/end-state beats before camera selection"
+        )
     action_chain_hits = [term for term in ACTION_CHAIN_TERMS if term in direct]
     if len(action_chain_hits) >= 5 and not (keyframe_image and keyframe_video):
         issues.append(
@@ -2843,17 +3197,106 @@ def validate_child(
         issues.append(
             f"{sid}: direct prompt semantic contract incomplete -> {','.join(semantic_report.missing_slots)}"
         )
+    for ambiguity in semantic_ambiguity_issues(direct, cast_names):
+        issues.append(f"{sid}: Seedance语义歧义 -> {ambiguity}")
+    for emotion_issue in emotion_depth_issues(direct, performance, semantic_report.shot_type):
+        issues.append(f"{sid}: {emotion_issue}")
 
 
 def camera_signature(direct: str) -> str:
-    size = next((term for term in SHOT_SIZE_TERMS if term in direct), "")
-    angle = next((term for term in CAMERA_SIGNATURE_ANGLE_TERMS if term in direct), "")
+    size = next((term for term in sorted(SHOT_SIZE_TERMS, key=len, reverse=True) if term in direct), "")
+    angle = next((term for term in sorted(CAMERA_SIGNATURE_ANGLE_TERMS, key=len, reverse=True) if term in direct), "")
     moving = has_camera_move(direct)
     parts = [size]
     if angle:
         parts.append(angle)
     parts.append("move" if moving else "static")
     return ":".join(parts)
+
+
+def camera_motion_family(direct: str) -> str:
+    if not has_camera_move(direct):
+        return "static"
+    for family, terms in CAMERA_MOTION_FAMILIES.items():
+        if family != "static" and any(term in direct for term in terms):
+            return family
+    return "other_move"
+
+
+def intentional_static_camera(direct: str) -> bool:
+    return not has_camera_move(direct) and any(term in direct for term in STATIC_BENEFIT_TERMS)
+
+
+def motivated_camera_move(direct: str) -> bool:
+    return (
+        has_camera_move(direct)
+        and any(term in direct for term in CAMERA_TRIGGER_TERMS)
+        and any(term in direct for term in CAMERA_GAIN_TERMS)
+    )
+
+
+def scene_camera_design_issues(records: list[tuple[int, str, str, list[str]]]) -> list[str]:
+    by_scene: dict[int, list[tuple[str, str]]] = {}
+    for scene_number, shot_id, direct, _ in records:
+        by_scene.setdefault(scene_number, []).append((shot_id, direct))
+    issues: list[str] = []
+    for scene_number, shots in by_scene.items():
+        shot_count = len(shots)
+        moving = [(shot_id, direct) for shot_id, direct in shots if has_camera_move(direct)]
+        minimum_moves = 0 if shot_count < 2 else max(1, (shot_count + 3) // 4)
+        deliberate_static_scene = (
+            not moving
+            and all(intentional_static_camera(direct) for _, direct in shots)
+            and len({camera_signature(direct) for _, direct in shots}) >= min(3, shot_count)
+        )
+        if shot_count >= 2 and not moving:
+            issues.append(
+                f"S{scene_number}: 多镜场景全部使用固定/静止摄影机；至少选择一处由人物、道具、声音或信息触发的运镜，"
+                "不能用全场静止代替导演选型"
+            )
+        elif len(moving) < minimum_moves and not deliberate_static_scene:
+            issues.append(
+                f"S{scene_number}: 场景摄影机响应不足，{shot_count}镜仅{len(moving)}镜有运动；"
+                f"至少需要{minimum_moves}个由人物/道具/声音/信息变化触发且有关系收益的摄影机响应，"
+                "高风险镜应拆镜而不是降级为固定机位"
+            )
+        for shot_id, direct in moving:
+            if not motivated_camera_move(direct):
+                issues.append(
+                    f"{shot_id}: 运镜缺少可见触发或戏剧收益；不能只写推拉摇移，需说明它显露的关系/信息/距离变化"
+                )
+        for index in range(3, shot_count):
+            window = shots[index - 3:index + 1]
+            if all(not has_camera_move(direct) for _, direct in window) and not all(
+                intentional_static_camera(direct) for _, direct in window
+            ):
+                issues.append(
+                    f"{window[-1][0]}: 同场连续四镜固定且缺少等待/压迫/观察/僵持收益；"
+                    "先重选摄影机响应，动作过载时拆镜"
+                )
+        moving_families = [camera_motion_family(direct) for _, direct in moving]
+        if len(moving_families) >= 3 and len(set(moving_families)) == 1:
+            issues.append(
+                f"S{scene_number}: 所有移动镜头重复{moving_families[0]}机制；"
+                "不得用机械微推替代横移显露、拉远疏离、转焦换权或跟拍空间变化"
+            )
+        if shot_count >= 3:
+            sizes = {
+                next((term for term in sorted(SHOT_SIZE_TERMS, key=len, reverse=True) if term in direct), "")
+                for _, direct in shots
+            }
+            if len(sizes - {""}) < 2:
+                issues.append(
+                    f"S{scene_number}: 三镜以上景别没有形成建立/关系/细节的层次变化；"
+                    "至少选择两种有剧情收益的景别，不能全程同一中景或中近景"
+                )
+            signatures = [camera_signature(direct) for _, direct in shots]
+            if len(set(signatures)) == 1:
+                issues.append(
+                    f"S{scene_number}: 三镜以上复用同一景别、角度和静止/运动状态 -> {signatures[0]}；"
+                    "必须改变观众位置、信息显露、关系几何或焦点"
+                )
+    return issues
 
 
 def composition_family(direct: str) -> str:
@@ -3183,6 +3626,7 @@ def validate(path: Path, text: str | None = None, seedance_target: str = "auto")
         for issue in axis_continuity_issues(previous_direct, current_direct, pair_cast):
             issues.append(f"{current_sid}: 同场人物关系轴连续性失败 -> {issue}")
 
+    issues.extend(scene_camera_design_issues(scene_shot_records))
     issues.extend(memory_anchor_density_issues(scene_memory_records))
 
     # Scene-level camera variety: compare the first child of adjacent groups so a
@@ -3349,9 +3793,41 @@ def seedance_pair_issues(items: list[tuple[Path, str]]) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
+    if "--help" in argv[1:]:
+        print("usage: validate_storyboard.py --compact --report <report.json> [--shadow-report] [--seedance-target auto|2.0|2.5|both] <file.md> [more.md ...]")
+        return 0
     shadow_report = "--shadow-report" in argv[1:]
+    compact = "--compact" in argv[1:]
+    report_path = None
     seedance_target = "auto"
-    args = [arg for arg in argv[1:] if arg != "--shadow-report"]
+    args = [arg for arg in argv[1:] if arg not in {"--shadow-report", "--compact"}]
+    if "--report" in args:
+        index = args.index("--report")
+        if index + 1 >= len(args):
+            print("--report requires a path", file=sys.stderr)
+            return 2
+        report_path = args[index + 1]
+        args = args[:index] + args[index + 2:]
+    else:
+        for index, arg in enumerate(args):
+            if arg.startswith("--report="):
+                report_path = arg.split("=", 1)[1]
+                args = args[:index] + args[index + 1:]
+                break
+    if not compact or not report_path:
+        print(
+            "legacy storyboard validation output is disabled; "
+            "--compact and --report are required",
+            file=sys.stderr,
+        )
+        return 2
+    if "--max-issues" in args:
+        index = args.index("--max-issues")
+        if index + 1 >= len(args):
+            print("--max-issues requires an integer", file=sys.stderr)
+            return 2
+        int(args[index + 1])
+        args = args[:index] + args[index + 2:]
     if "--seedance-target" in args:
         index = args.index("--seedance-target")
         if index + 1 >= len(args):
@@ -3368,34 +3844,57 @@ def main(argv: list[str]) -> int:
     raw_paths = args
     unknown_options = [arg for arg in raw_paths if arg.startswith("-")]
     if not raw_paths or unknown_options:
-        print("usage: validate_storyboard.py [--shadow-report] [--seedance-target auto|2.0|2.5|both] <file.md> [more.md ...]", file=sys.stderr)
+        print("usage: validate_storyboard.py [--compact] [--report path] [--shadow-report] [--seedance-target auto|2.0|2.5|both] <file.md> [more.md ...]", file=sys.stderr)
         return 2
     failed = False
+    report = {"pass": True, "seedance_target": seedance_target, "bundle_issues": [], "files": []}
     items = [(Path(raw), Path(raw).read_text(encoding="utf-8")) for raw in raw_paths]
     feed_items = [(path, text) for path, text in items if "00_双版本索引" not in path.name]
     bundle_issues = bundle_contract_issues(feed_items)
     if seedance_target == "both":
         bundle_issues.extend(seedance_pair_issues(items))
     if bundle_issues:
-        print("PROJECT: FAIL")
-        for issue in bundle_issues:
-            print(f"  - {issue}")
+        report["pass"] = False
+        report["bundle_issues"] = bundle_issues
+        if not compact:
+            print("PROJECT: FAIL")
+            for issue in bundle_issues:
+                print(f"  - {issue}")
         failed = True
     for path, text in items:
         if "00_双版本索引" in path.name:
-            print(f"{path}: SKIP (non-feed comparison index)")
+            if not compact:
+                print(f"{path}: SKIP (non-feed comparison index)")
             continue
         per_target = seedance_target
         if seedance_target == "both":
             per_target = "2.0" if "seedance2.0" in path.name.lower() else "2.5" if "seedance2.5" in path.name.lower() else "auto"
         issues = validate(path, text, per_target)
-        print(f"{path}: {'OK' if not issues else 'FAIL'}")
-        for issue in issues:
-            print(f"  - {issue}")
-        if shadow_report:
-            for diagnostic in shadow_validate(path, text):
+        diagnostics = shadow_validate(path, text) if shadow_report else []
+        report["files"].append({"path": str(path), "pass": not issues, "issues": issues, "shadow": diagnostics})
+        if not compact:
+            print(f"{path}: {'OK' if not issues else 'FAIL'}")
+            for issue in issues:
+                print(f"  - {issue}")
+        if shadow_report and not compact:
+            for diagnostic in diagnostics:
                 print(f"  ~ {diagnostic}")
         failed = failed or bool(issues)
+    report["pass"] = not failed
+    if report_path:
+        destination = Path(report_path).expanduser().resolve()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if compact:
+        print(json.dumps({
+            "status": "PASS" if not failed else "FAIL",
+            "file_count": len(report["files"]),
+            "failed_files": sum(not item["pass"] for item in report["files"]),
+            "bundle_issue_count": len(bundle_issues),
+            "issue_count": sum(len(item["issues"]) for item in report["files"]),
+            "shadow_count": sum(len(item["shadow"]) for item in report["files"]),
+            "report": str(Path(report_path).expanduser().resolve()) if report_path else None,
+        }, ensure_ascii=False, separators=(",", ":")))
     return 1 if failed else 0
 
 

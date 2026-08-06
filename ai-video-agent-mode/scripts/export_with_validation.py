@@ -609,7 +609,18 @@ def _build_director_card(task, plan, compile_reports=None, seedance_target="auto
     )
     if motion_anchor:
         card_required.append(motion_anchor)
-    compiled = compile_director_card(segments, _unique_nonempty(card_required), information_budget)
+    authored_card = str(task.get("director_card", "") or "").strip()
+    if authored_card:
+        # Semantic facts may be rephrased by the model in the companion card;
+        # only verbatim dialogue remains an exact engineering lock.
+        card_required = _dialogue_required_fragments(task)
+    card_segments = (
+        [{"kind": "model_authored_director_card", "text": authored_card}]
+        if authored_card else segments
+    )
+    compiled = compile_director_card(
+        card_segments, _unique_nonempty(card_required), information_budget
+    )
     if compiled["issues"]:
         raise ValueError("导演卡编译失败：" + "；".join(compiled["issues"]))
     if isinstance(compile_reports, list):
@@ -678,7 +689,12 @@ def _direct_prompt_inputs(task, plan, seedance_target="auto"):
     control = task.get("generation_control", {}) if isinstance(task.get("generation_control"), dict) else {}
     required = _dialogue_required_fragments(task)
     required.extend(_budget_render_units(budget))
-    required.extend(value for value in (motion_anchor, static_anchor, terminal_clause) if value)
+    # Static light/material anchors are already carried by the light section
+    # and validated through production-control grounding. Requiring the full
+    # combined sentence here prevents clause-level compression and duplicates
+    # the same facts in video_texture. Keep causal motion, terminal state, and
+    # explicit must_render units hard-protected.
+    required.extend(value for value in (motion_anchor, terminal_clause) if value)
     return segments, _unique_nonempty(required), budget
 
 

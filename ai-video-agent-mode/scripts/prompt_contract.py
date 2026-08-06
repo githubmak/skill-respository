@@ -2487,10 +2487,14 @@ def production_control_grounding_report(metadata, direct_prompt=""):
     reroll = metadata.get("reroll_control", {}) if isinstance(metadata.get("reroll_control"), dict) else {}
     mitigation_steps = reroll.get("mitigation_steps", []) if isinstance(reroll.get("mitigation_steps"), list) else []
     production_only_terms = ("人工", "检查", "复核", "抽卡", "重试", "失败", "后期", "拆镜", "关键帧", "风险")
-    reroll_visible = [
-        str(step).strip() for step in mitigation_steps
-        if str(step).strip() and not any(term in str(step) for term in production_only_terms)
-    ]
+    reroll_visible = []
+    for step in mitigation_steps:
+        value = str(step or "").strip()
+        if not value or any(term in value for term in production_only_terms):
+            continue
+        match = re.match(r"^(?:可见结果|画面结果|降级后画面)[：:]\s*(.+)$", value)
+        if match and match.group(1).strip():
+            reroll_visible.append(match.group(1).strip())
 
     temporal = metadata.get("temporal_transition_contract", {}) if isinstance(metadata.get("temporal_transition_contract"), dict) else {}
     montage = []

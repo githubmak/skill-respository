@@ -212,7 +212,7 @@ RULES = {
             "references/project_config.template.json": ("高质量快速模式", "模板值不等于用户确认"),
             "scripts/configuration_wizard.py": ("def confirm_all", "batch config must explicitly provide"),
             "scripts/route_task.py": ("def high_quality_fast_start", "quality_pipeline_preserved", "skipped_phases"),
-            "scripts/test_fast_start.py": ("host_dispatch_required", "incomplete batch config was accepted", "dirty run_dir was accepted"),
+            "scripts/test_fast_start.py": ("creative_authoring_required", "incomplete batch config was accepted", "dirty run_dir was accepted"),
             "scripts/run_regression_suite.py": ("fast_start", "test_fast_start.py"),
         },
     },
@@ -301,10 +301,10 @@ RULES = {
     "structured_direct_compiler": {
         "label": "结构化直投编译",
         "checks": {
-            "references/format_constraints.md": ("direct_prompt_compiler.py", "受保护事实", "只按完整句"),
+            "references/format_constraints.md": ("direct_prompt_compiler.py", "受保护事实", "CREATIVE_REWRITE_REQUIRED"),
             "references/contracts/direct_copy_contract.md": ("visual_prefix → space → continuity → performance → light → video_texture → cinematic", "不得静默裁切"),
             "references/export_spec.md": ("direct_prompt_compiler.py", "无法无损压缩"),
-            "scripts/direct_prompt_compiler.py": ("def compile_direct_prompt", "PROTECTED_KINDS", "AUXILIARY_KINDS"),
+            "scripts/direct_prompt_compiler.py": ("def compile_direct_prompt", "CREATIVE_REWRITE_REQUIRED", "只做精确去重"),
             "scripts/export_with_validation.py": ("compile_direct_prompt", "direct_prompt_compile_report.json"),
             "scripts/test_quality_upgrades.py": ("hard_overflow", "compressed"),
         },
@@ -426,21 +426,6 @@ RULES = {
             "scripts/current_keyframe.py": ("_static_aesthetic_sentence", "_dynamic_aesthetic_sentence", "均匀棚拍光"),
             "scripts/export_with_validation.py": ("审美优先级", "真实候选审美评分", "审美复核清单"),
             "scripts/test_keyframe_pipeline.py": ("门框留白把视线引向抬眼瞬间", "低幅推近在抬眼后减速停稳"),
-        },
-    },
-    "preproduction_visual_motion_texture_plans": {
-        "label": "前置视觉路由、跨镜动态与场级视频质感底图",
-        "checks": {
-            "references/stage_gates.md": ("scene_motion_plan.json", "scene_texture_plan.json", "video_texture_contract"),
-            "references/visual-direction-profiles.md": ("visual_profile_router.py", "项目回执", "逐场回执"),
-            "references/dispatch/scene_lock_note.md": ("source_rules.style_evidence", "scene_receipt_count", "矛盾证据"),
-            "references/dispatch/master_production_note.md": ("scene_motion_plan_path", "scene_texture_plan_path", "video_texture_contract"),
-            "scripts/visual_profile_router.py": ("route_visual_profile", "scene_receipts", "contradictions"),
-            "scripts/scene_motion_plan.py": ("dynamic_role", "response_budget", "source_grounding_required"),
-            "scripts/scene_texture_plan.py": ("video_texture_contract", "exposure_policy", "continuity_carryover"),
-            "scripts/dispatch_cache.py": ("scene_motion_plan_path", "scene_texture_plan_path", "contract_for_scene"),
-            "scripts/test_preproduction_quality_plans.py": ("mixed_source", "超过声明预算", "语义运动家族"),
-            "scripts/run_regression_suite.py": ("preproduction_quality_plans", "test_preproduction_quality_plans.py"),
         },
     },
 }

@@ -59,13 +59,5 @@
   "global_negative_prompt": "",
   "_global_negative_prompt_desc": "默认由negative_prompts.py按镜头上下文生成精简负面词。仅当目标平台有明确专项要求时填写额外词，不写‘禁止……’式正向命令。",
  "costume_map": {},
- "_costume_map_desc": "角色服装表。key为运行时角色名，value为该角色在运行时场景中的已确认服装描述。Prompt Composer只能从costume_map匹配，不得自行编造。结构示例：{角色A: {场景A: 已确认服装描述, 场景B: 继承场景A服装}}。",
-
-  "source_rules": {
-    "characters": [],
-    "action_keywords": [],
-    "scene_header_pattern": "^\\d+-\\d+",
-    "dialogue_pattern": "角色名（语气）：台词"
-  },
-  "_source_rules_desc": "剧本解析规则。配置确认时由 detect_source_rules.py 自动从源文提取填充。characters=角色列表，action_keywords=动作行关键词（用于区分动作行和对话行），scene_header_pattern=场景头正则，dialogue_pattern=对话行格式描述。generate_shotplan.py 从 project_config.json 读取此字段，不再硬编码项目特定规则。"
+ "_costume_map_desc": "角色服装表。key为运行时角色名，value为该角色在运行时场景中的已确认服装描述。Prompt Composer只能从costume_map匹配，不得自行编造。结构示例：{角色A: {场景A: 已确认服装描述, 场景B: 继承场景A服装}}。"
 }

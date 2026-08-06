@@ -63,8 +63,8 @@
 ## 完成门槛
 
 - 使用当前 `output-template.md`，不输出草稿表、平台适配层或空可选字段。
-- 每个单目标文件运行 `scripts/validate_storyboard.py --shadow-report --seedance-target <auto|2.0|2.5> <output.md>`；
-  `both` 一次传入两个主文件和可选索引：`--seedance-target both <2.0.md> <2.5.md> [00_双版本索引.md]`。
+- 每个单目标文件运行 `scripts/validate_storyboard.py --compact --report <reports>/<target>.storyboard.json --shadow-report --seedance-target <auto|2.0|2.5> <output.md>`；
+  `both` 一次传入两个主文件和可选索引：`--compact --report <reports>/both.storyboard.json --shadow-report --seedance-target both <2.0.md> <2.5.md> [00_双版本索引.md]`。
   `SHADOW` 不改变硬校验结果。
 - 交付时说明文件位置、数量、验证结果和重要假设，不输出内部底图。`both` 必须列出两份可投喂文件
   与索引文件，并明确索引不可投喂。

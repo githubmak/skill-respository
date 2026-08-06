@@ -1,5 +1,8 @@
 # Editor Pass 2 Semantic Review Contract
 
+遵守 `creative_engineering_boundary.md`：本阶段负责语义、情绪、表演和镜头审查；工程层只提供事实差异。
+需要改变语义时明确返回模型修复字段，不得建议 Normalizer、合并器或导出器静默改写创作内容。
+
 只审查 `packet.items` 中的有界场景窗口。先读 `pre_editor_gate_path` 与
 `emotion_camera_audit_path`；本地确定性格式、枚举和字段类型已经检查，不要重复改写。
 

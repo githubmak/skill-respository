@@ -46,6 +46,14 @@ class CreativePreflightTests(unittest.TestCase):
         self.assertEqual(report["findings"], [])
         self.assertEqual(report["shots"][0]["score"], 5)
 
+    def test_physical_luminance_hierarchy_counts_as_lighting_duty(self) -> None:
+        markdown = DISTINCTIVE.replace(
+            "火光映出甲仍未松开的手",
+            "月光从门洞斜落到鱼篓湿鳞，湿鳞只形成低亮反光和窄高光，亮度低于乙的受光侧脸",
+        )
+        report = lint_markdown(markdown)
+        self.assertFalse(any(item["code"] == "GROUP_LIGHTING_DUTY_MISSING" for item in report["findings"]))
+
 
 if __name__ == "__main__":
     unittest.main()

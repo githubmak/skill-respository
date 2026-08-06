@@ -31,6 +31,8 @@ def main():
     args = parser.parse_args()
 
     steps = []
+    steps.append(_run("creative_engineering_boundary", [sys.executable, _script("test_creative_engineering_boundary.py")]))
+    steps.append(_run("model_creative_orchestrator", [sys.executable, _script("test_model_creative_orchestrator.py")]))
     steps.append(_run("rule_consistency", [sys.executable, _script("check_rule_consistency.py")]))
     steps.append(_run("skill_surface", [sys.executable, _script("audit_skill_surface.py")]))
     steps.append(_run("source_gate", [sys.executable, _script("test_source_gate.py")]))

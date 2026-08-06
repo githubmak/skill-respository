@@ -1,5 +1,8 @@
 # Stage Gate Summary
 
+`creative_engineering_boundary.md` 高于本门禁。门禁可以阻断或定位问题，但不得自行改写模型创作语义。
+涉及剧情、情绪、表演、构图、运镜、光影、声音或提示词精炼的失败必须回到对应模型阶段。
+
 阶段顺序、执行者和产物只以 `scripts/contract_registry.py` 为准。本文件只说明 supervisor
 何时继续、何时派发、何时阻断，不复制阶段表或字段合同。生成 shot plan 前先运行
 `scripts/source_gate.py`；它只拦截源文/配置不可读、为空或平台模式不支持的问题，弱场景证据写入
@@ -10,9 +13,9 @@ advisory，并输出多证据 `style_evidence` 供视觉 profile 路由，不要
 | 配置 | `project_config.json` 已完成当前确认 | 只询问 `resolve_run_mode.py` 返回的字段 |
 | 源文闸门 | source gate `blocking=[]`，并生成可复用的源文证据回执 | 仅修复源文可读性、配置平台/模式或空输入 |
 | 本地准备 | shot plan、source/beat ledger、preflight 的 blocking 为空 | 修源文登记、拆镜或配置，不派发 Agent；advisory 进入后续规划 |
-| 前置导演底图 | 项目/逐场 profile 回执与 `scene_motion_plan.json` 已生成 | 弱风格或无动力源只记 advisory；不为满足动态角色新增动作 |
+| 模型创作蓝图 | `creative_blueprint_request.json` 已交付，模型提交 `shot_plan.draft.json`、`source_ledger.json`、`dramatic_beat_ledger.json` | 缺任一文件就暂停并返回 `creative_authoring_required`；工程不得代写分镜 |
 | Scene Lock | 每场景一条通过 validator 的不可变事实记录 | 仅重派失败场景 |
-| 场级动态质感 | `scene_texture_plan.json` 已从 Scene Lock 生成，scaffold 已预填 `video_texture_contract` | 缺失合同阻断当前 Composer；审美偏好差异不阻断 |
+| 场级动态质感 | Master 模型在本镜 QA 中创作 `video_texture_contract` | 工程不从关键词或 profile 预填审美合同 |
 | Master Production | 每主镜一条通过 Composer validator 的 T2V 任务 | 只修点名字段；再次失败缩为单主镜 |
 | Editor | pre-editor gate 通过，所有语义 blocking 已按字段解决 | 回到最早负责字段，不整包重写 |
 | Validate | 全集状态、导演、情绪/镜头、合同与导出预检全部通过 | 按报告定位一个合同切片修复 |

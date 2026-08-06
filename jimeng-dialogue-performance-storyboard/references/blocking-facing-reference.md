@@ -11,10 +11,10 @@
 
 ## 镜头与几何门禁
 
-导演先比较 `侧面双人关系镜 | A肩后看B | B肩后看A`。关系镜建立距离、隔物和出口；肩后镜突出施压、接收或反应。选择镜头类型属于导演判断，脚本只求解/拒绝物理坐标。
+导演先比较 `侧面双人关系镜 | A肩后看B | B肩后看A`。关系镜建立距离、隔物和出口；肩后镜突出施压、接收或反应。镜头类型与机位坐标都属于导演判断，脚本只验证或拒绝已选坐标。
 
 - `shot_type=relationship`：显式写机位坐标、方向、视场和实际入镜 `subjects`。
-- `shot_type=over_shoulder`：写前景、目标和 `axis_side`，优先用 `auto_position=true` 求较近肩后机位；正反打保持同一 `axis_side`。
+- `shot_type=over_shoulder`：写前景、目标、导演选定的 `x/y/facing_deg` 和 `axis_side`；脚本只校验近肩距离、轴侧、遮挡与视场，不替导演求机位。正反打保持同一 `axis_side`。
 - 人物必须真实面对对方；`正面可见` 不等于面向镜头。摄影机只能改变投影，不能改变人物站位、门内外或真实体型。
 - 摄影机须有站立空间；前景肩线只擦过视线边缘，不能贴后脑或挡住目标；声明主体完整落入视锥并留边。
 - 家具等不可穿越物写 `solid=true`；墙/隔断写 `blocks_view=true`，门洞/窗口用 `openings`。人物、机位不得与实体重叠，视线不得穿墙或家具，跨墙拍摄只能通过声明通道。
@@ -43,7 +43,7 @@
         {"name": "卫景耘", "x": 0.70, "y": 0.50, "facing_deg": 180}
       ],
       "cameras": [
-        {"label": "CAM-A", "shot_type": "over_shoulder", "auto_position": true, "foreground_character": "卫景耘", "target_character": "沈青乔", "axis_side": "positive"}
+        {"label": "CAM-A", "shot_type": "over_shoulder", "x": 0.82, "y": 0.56, "facing_deg": 174, "foreground_character": "卫景耘", "target_character": "沈青乔", "axis_side": "positive"}
       ]
     },
     {
@@ -51,7 +51,7 @@
       "label": "沈青乔肩后看卫景耘",
       "reuse_blocking": true,
       "cameras": [
-        {"label": "CAM-B", "shot_type": "over_shoulder", "auto_position": true, "foreground_character": "沈青乔", "target_character": "卫景耘", "axis_side": "positive"}
+        {"label": "CAM-B", "shot_type": "over_shoulder", "x": 0.18, "y": 0.56, "facing_deg": 6, "foreground_character": "沈青乔", "target_character": "卫景耘", "axis_side": "positive"}
       ]
     }
   ]
@@ -63,9 +63,9 @@
 ## 导出与使用
 
 ```bash
-python3 scripts/render_blocking_reference.py <spec.json> --storyboard <计划中的Markdown路径> --png --replace
+python3 scripts/render_blocking_reference.py <spec.json> --storyboard <计划中的Markdown路径> --png --replace --compact --report <reports>/<镜头组>.blocking.json
 ```
 
-- 脚本取Markdown父目录作为导出目录，同源输出精确命名的 `S1-04.svg` 与 `S1-04.png`；`--replace` 只用于重生成当前镜头号文件，不再生成 `-v2/-v3`。
+- 脚本只在 Markdown 父目录下的 `staging/blocking/` 同源输出精确命名的 `S1-04.svg` 与 `S1-04.png`；`--replace` 只重生成当前镜头号文件，不生成 `-v2/-v3`。脚本发现参数、边界净距、视锥或标签碰撞错误时只返回事实，不自动移动人物、摄影机或标签。模型完成创意修订并通过 `blocking_repair_preflight.py` 后重渲染；真实画面 PASS 再用 `promote_blocking_reference.py` 提升。
 - PNG作为即梦空间控制参考时，直接提示词仍须重写当前人数、站位、身体面向、门内外、机位和真实背景，并说明图中文字/箭头/CAM/视锥仅供空间控制、成片不出现。
 - 最终交付列出两类文件路径；不得把SVG源码、JSON或线稿解释写入即梦直接提示词。

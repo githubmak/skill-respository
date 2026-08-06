@@ -28,8 +28,6 @@ from batch_planner import analysis_chunks as _analysis_chunks, batch_risk as _ba
 from batch_planner import dynamic_master_chunks as _plan_dynamic_master_chunks
 from batch_planner import editor_review_chunks as _editor_review_chunks
 from contract_registry import PROMPT_CONTRACT_VERSION, RISK_GATED_QA_FIELDS
-from scene_motion_plan import build as build_scene_motion_plan
-from scene_texture_plan import build as build_scene_texture_plan, contract_for_scene
 
 block_source_pycache_until_run_dir()
 
@@ -109,8 +107,6 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
     scene_lock_cache_path = None
     if phase == "master_production":
         scene_lock_cache_path = _write_scene_lock_cache(run_dir, items, out_dir, group_tag)
-        _motion_plan, scene_motion_plan_path = build_scene_motion_plan(run_dir)
-        scene_texture_plan, scene_texture_plan_path = build_scene_texture_plan(run_dir, scene_lock_cache_path)
     paths = []
 
     for idx, chunk in enumerate(chunks, 1):
@@ -123,7 +119,6 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
         if phase == "master_production":
             scaffold_path = _write_composer_scaffold(
                 run_dir, chunk, out_dir, dispatch_tag, scene_lock_cache_path,
-                scene_motion_plan_path, scene_texture_plan_path, scene_texture_plan,
             )
             packet_items = [_compact_composer_item(item) for item in chunk]
         retry_context_path = None
@@ -572,6 +567,13 @@ def _phase_note_text(skill_dir, phase):
 def _write_constraints_sidecar(run_dir, phase, dispatch_dir, dispatch_tag):
     skill_dir = os.path.dirname(os.path.dirname(__file__))
     source = os.path.join(skill_dir, "references", "format_constraints.md")
+    boundary = (
+        "## 创作主权边界\n\n"
+        "剧情、情绪、表演、构图、运镜、光影、声音和语义精炼由大模型负责；"
+        "工程层只做结构、计数和交付，不得静默删句、改写Scene Lock或删除创作字段。"
+        "需要语义变化时返回 CREATIVE_REWRITE_REQUIRED。完整合同见 "
+        "references/creative_engineering_boundary.md。"
+    )
     out_path = os.path.join(dispatch_dir, "%s_%s_constraints.md" % (phase, dispatch_tag))
     phase_note = _phase_note_text(skill_dir, phase) or {
         "scene_lock": "专业角色：场景锁定 Agent。请返回扁平 scene lock JSON；不得写提示词正文、运镜或人物表演。",
@@ -585,6 +587,7 @@ def _write_constraints_sidecar(run_dir, phase, dispatch_dir, dispatch_tag):
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("# Dispatch Constraints\n\n")
         f.write("phase: %s\n\n" % phase)
+        f.write(boundary + "\n\n")
         f.write(phase_note + "\n\n")
         f.write(selected_contract)
         if contract_slices:
@@ -695,7 +698,6 @@ def _dynamic_master_chunks(items, force_single=False):
 
 def _write_composer_scaffold(
     run_dir, items, dispatch_dir, dispatch_tag, scene_lock_cache_path,
-    scene_motion_plan_path="", scene_texture_plan_path="", scene_texture_plan=None,
 ):
     config = _load_optional_json(os.path.join(run_dir, "project_config.json"))
     project_control = config.get("generation_control", {})
@@ -714,6 +716,7 @@ def _write_composer_scaffold(
             "subshot_id": item.get("subshot_id", ""),
             "duration": duration,
             "full_prompt": "生成规格：\n\n主体与空间锁定：\n\n主镜头连续规则：\n\n子镜头组：\n\n光照、声音与稳定约束：",
+            "director_card": "",
             "negative_prompt": "{{NEGATIVE_PROMPT_AUTO_INJECT}}",
             "qa_metadata": {
                 "dramatic_goal": "",
@@ -809,9 +812,15 @@ def _write_composer_scaffold(
                     "must_preserve": "",
                     "degrade_first": "",
                 },
-                "video_texture_contract": contract_for_scene(
-                    scene_texture_plan or {}, str(item.get("scene", "") or "__default__")
-                ),
+                "video_texture_contract": {
+                    "look_profile": "",
+                    "exposure_policy": "",
+                    "material_motion_policy": "",
+                    "atmosphere_motion_policy": "",
+                    "camera_stability_policy": "",
+                    "continuity_carryover": "",
+                    "risk_controls": "",
+                },
                 "character_scene_objective_contract": {
                     "focus_character": "",
                     "scene_objective": "",
@@ -1097,8 +1106,6 @@ def _write_composer_scaffold(
             "generation_control",
         ],
         "scene_lock_cache_path": scene_lock_cache_path,
-        "scene_motion_plan_path": scene_motion_plan_path,
-        "scene_texture_plan_path": scene_texture_plan_path,
         "shots": shots,
     }
     path = os.path.join(dispatch_dir, "master_production_%s_scaffold.json" % dispatch_tag)

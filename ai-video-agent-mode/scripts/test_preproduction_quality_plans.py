@@ -91,9 +91,10 @@ SCENE 2 现代办公室
         packets = prepare_dispatch_packets(str(run_dir), "master_production", batch_size=1)
         packet = _load(Path(packets[0]))
         scaffold = _load(Path(packet["composer_scaffold_path"]))
-        assert scaffold["scene_motion_plan_path"].endswith("scene_motion_plan.json")
-        assert scaffold["scene_texture_plan_path"].endswith("scene_texture_plan.json")
-        assert scaffold["shots"][0]["qa_metadata"]["video_texture_contract"]
+        assert "scene_motion_plan_path" not in scaffold
+        assert "scene_texture_plan_path" not in scaffold
+        model_texture = scaffold["shots"][0]["qa_metadata"]["video_texture_contract"]
+        assert model_texture and not any(model_texture.values())
 
     overloaded_budget = {"prompt_information_budget": {
         "profile": "dialogue",

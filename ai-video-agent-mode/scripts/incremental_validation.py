@@ -4,6 +4,8 @@
 import hashlib
 import re
 
+from creative_engineering_boundary import ENGINE, field_owner, repair_executor
+
 
 SCOPE_ORDER = {"field": 0, "shot": 1, "pair": 2, "window": 3, "scene": 4}
 ALL_MUTABLE_FIELDS = "__all_mutable__"
@@ -86,12 +88,17 @@ def classify_issue(issue, known_ids, owner_by_id=None):
         owner = owner_by_id.get(subshot_id, subshot_id)
         if owner and owner not in owners:
             owners.append(owner)
+    field_owners = {field: field_owner(field) for field in fields}
+    executors = [repair_executor(field, code) for field in fields] or [repair_executor("", code)]
+    executor = ENGINE if executors and all(value == ENGINE for value in executors) else "model"
     return {
         "code": code,
         "message": text,
         "shot_id": owners[0] if owners else "",
         "subshot_id": ids[0] if ids else "",
         "field_paths": fields,
+        "field_owners": field_owners,
+        "repair_executor": executor,
         "repair_scope": scope,
         "dependent_shot_ids": owners,
         "dependent_subshot_ids": ids,
@@ -146,6 +153,8 @@ def _aggregate_targets(failures, known_ids, owner_by_id, global_failure):
                 "dependent_shot_ids": [],
                 "codes": [],
                 "reasons": [],
+                "repair_executor": failure.get("repair_executor", "model"),
+                "field_owners": {},
             })
             if subshot_id not in target["subshot_ids"]:
                 target["subshot_ids"].append(subshot_id)
@@ -158,6 +167,9 @@ def _aggregate_targets(failures, known_ids, owner_by_id, global_failure):
                 target["codes"].append(failure["code"])
             if failure["message"] not in target["reasons"]:
                 target["reasons"].append(failure["message"])
+            target["field_owners"].update(failure.get("field_owners", {}))
+            if failure.get("repair_executor") == "model":
+                target["repair_executor"] = "model"
     for target in by_owner.values():
         if target["repair_scope"] != "field" and not target["fields"]:
             target["fields"] = [ALL_MUTABLE_FIELDS]

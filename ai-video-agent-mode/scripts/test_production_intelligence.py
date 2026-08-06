@@ -36,6 +36,8 @@ def _test_visual_prior_classifier():
     assert "negative_concept_priming" in _categories("女人不戴护士帽，站在客厅")
     assert "negative_concept_priming" in _categories("人物不要厨师帽，背景不是餐厅")
     assert "negative_concept_priming" not in _categories("不新增人物，不重复主体，避免画面闪烁")
+    source_dialogue = "你先前不是骨头硬得很吗？怎么今日反倒自己找上门来了？"
+    assert "negative_concept_priming" not in _categories(source_dialogue, source_dialogue)
     assert "back_facing_eyeline" in _categories("男人背对镜头，望向某人")
     assert "back_facing_eyeline" not in _categories(
         "男人背对镜头，胸口朝窗，头向画面左转20度，看向门口固定声源"

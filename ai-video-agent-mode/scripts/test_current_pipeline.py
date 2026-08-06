@@ -27,6 +27,7 @@ from dispatch_receipts import heartbeat as receipt_heartbeat, issue as issue_rec
 from pipeline_state import PHASE_ORDER, load_state, record_heartbeat as state_heartbeat, save_state, set_agent_id
 from record_batch_provenance import record as record_provenance, verify as verify_provenance
 from merge_agent_outputs import merge_agent_outputs, _normalize_retry_patch_fields
+from scene_lock_authority import scene_lock_authority_issues
 from pipeline_templates import GATES
 from pipeline_runner import _local_phase_valid, _materialize, _review_target_shot_ids, run as pipeline_runner_run
 from prepare_master_retry import prepare as prepare_master_retry
@@ -47,6 +48,7 @@ from create_benchmark_fixtures import create as create_benchmark_fixtures
 from audit_pipeline_invariants import audit as audit_pipeline_invariants
 from check_rule_consistency import check as check_rule_consistency
 from route_task import ROUTES as TASK_ROUTES, route as task_route
+from normalize_prompt_package import _disabled_risk_field_issues
 
 
 def run():
@@ -61,7 +63,9 @@ def run():
             assert not heavy_contracts.intersection(route_spec["read_first"])
         context_outcome = task_route("full", os.path.join(run_dir, "context-plan"), intent="new")
         assert context_outcome["context_plan"]["preload_full_contracts"] is False
-        assert context_outcome["context_plan"]["read_first"] == ["references/stage_gates.md"]
+        assert context_outcome["context_plan"]["read_first"] == [
+            "references/creative_engineering_boundary.md", "references/stage_gates.md"
+        ]
         os.makedirs(os.path.join(run_dir, ".cache", "analysis"))
         os.makedirs(os.path.join(run_dir, ".cache", "composer"))
         os.makedirs(os.path.join(run_dir, ".cache", "orchestrator"))
@@ -85,6 +89,27 @@ def run():
         lock_path = os.path.join(run_dir, ".cache", "analysis", "scene_locks.json")
         _write(lock_path, locks)
         assert not validate(lock_path)
+        authority_lock = dict(locks["scenes"][0], space_id="SP-A",
+                              space_master_sentence="门在画面右后，长桌横贯中景，甲左乙右",
+                              tone_palette="冷白顶灯、低饱和青灰",
+                              light_texture_purpose="让手与文件夹边缘有浅阴影")
+        _write(lock_path, {"scenes": [authority_lock]})
+        merged_items = [{"scene": "场景A", "qa_metadata": {"scene_tone_palette": {
+            "space_id": "SP-A", "space_master_sentence": "错误主锁定", "tone_palette": "错误色卡"
+        }}}]
+        lock_issues = scene_lock_authority_issues(
+            merged_items, os.path.join(run_dir, ".cache", "composer", "merged.prompt_package.json")
+        )
+        assert "unknown.space_master_sentence" in lock_issues
+        assert "unknown.tone_palette" in lock_issues
+        assert merged_items[0]["qa_metadata"]["scene_tone_palette"]["space_master_sentence"] == "错误主锁定"
+        assert merged_items[0]["qa_metadata"]["scene_tone_palette"]["tone_palette"] == "错误色卡"
+        low_risk_item = {"qa_metadata": {"ai_model_readiness_score": {"overall": {"score": 8}}}}
+        assert _disabled_risk_field_issues(
+            low_risk_item, {"shot_id": "S1", "characters": ["甲"], "shot_type": "dialogue"}
+        ) == ["ai_model_readiness_score"]
+        assert "ai_model_readiness_score" in low_risk_item["qa_metadata"]
+        _write(lock_path, locks)
         rich_locks_path = os.path.join(run_dir, ".cache", "analysis", "rich_scene_locks.json")
         rich_locks = {"scenes": [dict(
             locks["scenes"][0],

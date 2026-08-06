@@ -9,13 +9,14 @@ workflow is allowed to infer production-safe details from the supplied prose.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
 
 
 SCENE_RE = re.compile(r"^(?:场景|地点)[：:]|^\d+-\d+\b|^SCENE\b", re.I)
-DIALOGUE_RE = re.compile(r"^([^：:]{1,24})(?:（[^）]*）)?[：:](.+)$")
+DIALOGUE_RE = re.compile(r"^(?P<speaker>[^：:（）]{1,24}?)(?P<speaker_cue>（[^）]*）)?[：:](?P<body>.+)$")
 PERFORMANCE_CUE_LINE_RE = re.compile(
     r"^(?P<speaker>[^：:]{1,24}?)(?P<speaker_cue>（[^）]*）)?[：:](?P<body>.+)$"
 )
@@ -24,6 +25,10 @@ INLINE_SPEAKER_RE = re.compile(
     r"(?:^|[\n。！？；;”’])\s*([\u4e00-\u9fffA-Za-z0-9_·]{1,12})(?:（[^）]*）)?[：:](?=\s*[“\"‘']|[^/\n]{2,})",
     re.M,
 )
+STRUCTURAL_SPEAKER_LABELS = {
+    "人物", "人物表", "角色", "角色表", "场景", "地点", "时间", "画面", "动作", "镜头",
+    "旁白", "对白", "台词", "音效", "声音", "备注", "说明", "环境", "道具", "服装",
+}
 ACTION_RE = re.compile(r"^(?:△|动作[：:])")
 RISK_TERMS = {
     "physical_support": ("躺", "坐", "靠", "抱", "扶", "摔", "起身", "翻身", "腾空"),
@@ -83,16 +88,19 @@ def inspect_text(text: str) -> dict:
     numbered_lines = [(number, line.strip()) for number, line in enumerate(text.splitlines(), start=1) if line.strip()]
     lines = [line for _, line in numbered_lines]
     scene_lines = [line for line in lines if SCENE_RE.search(line)]
-    dialogue_lines = [line for line in lines if DIALOGUE_RE.match(line) and not SCENE_RE.search(line)]
+    dialogue_lines = [
+        line for line in lines
+        if _dialogue_match(line) is not None and not SCENE_RE.search(line)
+    ]
     action_lines = [line for line in lines if ACTION_RE.search(line)]
     speakers = []
     for line in dialogue_lines:
-        speaker = DIALOGUE_RE.match(line).group(1).strip()
-        if speaker not in speakers:
+        speaker = normalize_speaker(_dialogue_match(line).group("speaker"))
+        if speaker and speaker not in speakers:
             speakers.append(speaker)
     for match in INLINE_SPEAKER_RE.finditer(text):
-        speaker = match.group(1).strip()
-        if speaker not in speakers:
+        speaker = normalize_speaker(match.group(1))
+        if speaker and speaker not in speakers:
             speakers.append(speaker)
     performance_cues = _performance_cues(numbered_lines)
 
@@ -149,7 +157,9 @@ def _performance_cues(numbered_lines: list[tuple[int, str]]) -> list[dict]:
         match = PERFORMANCE_CUE_LINE_RE.match(line)
         if not match:
             continue
-        speaker = match.group("speaker").strip()
+        speaker = normalize_speaker(match.group("speaker"))
+        if not speaker:
+            continue
         body = match.group("body")
         leading = LEADING_PERFORMANCE_CUE_RE.match(body)
         dialogue = leading.group("dialogue").strip() if leading else body.strip()
@@ -171,6 +181,22 @@ def _performance_cues(numbered_lines: list[tuple[int, str]]) -> list[dict]:
     return cues
 
 
+def normalize_speaker(raw: str) -> str:
+    """Return the canonical actor name, excluding channel/cue and document labels."""
+    speaker = re.sub(r"(?:（[^）]*）)\s*$", "", str(raw or "").strip()).strip()
+    speaker = re.sub(r"^(?:角色|人物)\s*[-—]\s*", "", speaker).strip()
+    if not speaker or speaker in STRUCTURAL_SPEAKER_LABELS:
+        return ""
+    return speaker
+
+
+def _dialogue_match(line: str):
+    match = DIALOGUE_RE.match(line)
+    if match is None or not normalize_speaker(match.group("speaker")):
+        return None
+    return match
+
+
 def inspect_path(source_path: str, report_path: str | None = None, include_text: bool = False) -> dict:
     path = Path(source_path).expanduser()
     if not path.is_file():
@@ -186,6 +212,13 @@ def inspect_path(source_path: str, report_path: str | None = None, include_text:
             result = inspect_text("")
             result["blocking"] = [_issue("SOURCE_READ", "读取源文失败：%s" % exc)]
     result["source_path"] = str(path.resolve())
+    if path.is_file():
+        try:
+            result["source_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            result["source_sha256"] = None
+    else:
+        result["source_sha256"] = None
     if report_path:
         destination = Path(report_path).expanduser()
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -221,9 +254,23 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", required=True)
     parser.add_argument("--report")
+    parser.add_argument("--compact", action="store_true")
     args = parser.parse_args(argv)
+    if not args.compact or not args.report:
+        parser.error("legacy source-gate output is disabled; --compact and --report are required")
     result = inspect_path(args.source, args.report)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if args.compact:
+        print(json.dumps({
+            "status": "PASS" if result.get("pass") else "FAIL",
+            "source": result.get("source_path"),
+            "source_sha256": result.get("source_sha256"),
+            "risk_flags": sorted(result.get("risk_flags", {})),
+            "blocking_count": len(result.get("blocking", [])),
+            "advisory_count": len(result.get("advisories", [])),
+            "report": result.get("report_path") or args.report,
+        }, ensure_ascii=False, separators=(",", ":")))
+    else:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result.get("pass") else 1
 
 

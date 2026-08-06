@@ -1,5 +1,7 @@
 """Canonical machine contract shared by every current pipeline component."""
 
+from creative_engineering_boundary import PHASE_AUTHORITY, boundary_issues
+
 PROMPT_CONTRACT_VERSION = "jimeng-t2v-v1"
 PIPELINE_CONTRACT_VERSION = "jimeng-t2v-pipeline-v2"
 
@@ -10,21 +12,25 @@ PIPELINE_PHASE_SPECS = (
     {
         "name": "user_confirm", "executor": "local", "input": (),
         "output": ("project_config.json",), "validator": None,
+        "authority": PHASE_AUTHORITY["user_confirm"],
     },
     {
         "name": "orchestrator", "executor": "local", "input": (),
         "output": (
+            ".cache/orchestrator/source_snapshot.json",
+            ".cache/orchestrator/creative_blueprint_request.json",
             ".cache/orchestrator/shot_plan.json",
             ".cache/orchestrator/source_ledger.json",
             ".cache/orchestrator/dramatic_beat_ledger.json",
         ),
-        "validator": None,
+        "validator": None, "authority": PHASE_AUTHORITY["orchestrator"],
     },
     {
         "name": "scene_lock", "executor": "agent",
         "input": (".cache/orchestrator/shot_plan.json",),
         "output": (".cache/analysis/scene_locks.json",),
         "validator": "scene_lock", "timeout_seconds": 480, "batch_size": 1,
+        "authority": PHASE_AUTHORITY["scene_lock"],
     },
     {
         "name": "master_production", "executor": "agent",
@@ -34,22 +40,26 @@ PIPELINE_PHASE_SPECS = (
         ),
         "output": (".cache/composer/merged.prompt_package.json",),
         "validator": "prompt", "timeout_seconds": 720, "batch_size": 6,
+        "authority": PHASE_AUTHORITY["master_production"],
     },
     {
         "name": "editor_pass1", "executor": "local",
         "input": (".cache/composer/merged.prompt_package.json",),
         "output": (".cache/review/pre_editor_gate.json",), "validator": None,
+        "authority": PHASE_AUTHORITY["editor_pass1"],
     },
     {
         "name": "editor_pass2", "executor": "agent",
         "input": (".cache/composer/merged.prompt_package.json",),
         "output": (".cache/review/llm_gate_result.json",),
         "validator": None, "timeout_seconds": 480, "batch_size": 10,
+        "authority": PHASE_AUTHORITY["editor_pass2"],
     },
     {
         "name": "validate", "executor": "local",
         "input": (".cache/composer/merged.prompt_package.json", "project_config.json"),
         "output": (".cache/validate/result.json",), "validator": None,
+        "authority": PHASE_AUTHORITY["validate"],
     },
     {
         "name": "export", "executor": "local",
@@ -58,6 +68,7 @@ PIPELINE_PHASE_SPECS = (
             ".cache/orchestrator/shot_plan.json",
         ),
         "output": (".cache/export/result.json",), "validator": None,
+        "authority": PHASE_AUTHORITY["export"],
     },
 )
 
@@ -86,6 +97,7 @@ def pipeline_gates():
             "input": list(spec["input"]),
             "output": list(spec["output"]),
             "validator": spec["validator"],
+            "authority": spec["authority"],
         }
         for spec in PIPELINE_PHASE_SPECS
     }
@@ -93,7 +105,7 @@ def pipeline_gates():
 
 def machine_contract_issues():
     """Return deterministic defects in the executable pipeline registry."""
-    issues = []
+    issues = list(boundary_issues())
     if not PIPELINE_PHASES or PIPELINE_PHASES[0] != "user_confirm" or PIPELINE_PHASES[-1] != "export":
         issues.append("pipeline phases must start at user_confirm and end at export")
     if len(PIPELINE_PHASES) != len(set(PIPELINE_PHASES)):
@@ -109,6 +121,8 @@ def machine_contract_issues():
         name = spec["name"]
         if spec["executor"] not in {"agent", "local"}:
             issues.append("%s has an invalid executor" % name)
+        if spec.get("authority") != PHASE_AUTHORITY.get(name):
+            issues.append("%s authority differs from creative boundary" % name)
         if not isinstance(spec.get("input"), tuple) or not isinstance(spec.get("output"), tuple):
             issues.append("%s artifact boundaries must be tuples" % name)
         if spec["executor"] == "agent":

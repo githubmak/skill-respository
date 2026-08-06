@@ -12,9 +12,19 @@ description: >
 用户提供真实成片并明确要求复核时，才运行独立的视频指标或 A/B 校准。`ai_model_readiness_score`
 表示合同执行风险，不代表成片质量。
 
+## 最高优先级：模型创作主权
+
+先读取 `references/creative_engineering_boundary.md`，并让它高于字段合同、验证规则、性能目标和导出便利性：
+
+- 大模型负责剧情、潜台词、人物关系、情绪、表演、拆镜、调度、构图、运镜、光影、声音、语义精炼和审美复审。
+- 工程代码只负责文件、Schema、计数、逐字事实、哈希、调度、恢复、精确去重、排版和导出。
+- 工程层可以拒绝不合法创作，但不得选句、删句、改写 Scene Lock 或静默删除创作字段来让验证通过。
+- 需要改变语义时返回 `CREATIVE_REWRITE_REQUIRED`，由大模型在锁定事实内完成修订。
+- 所有修改先说明根因和所有权；禁止按项目、角色、镜号或单次错误文本打补丁。
+
 ## 执行
 
-1. 先按平台运行路由：Windows 使用
+1. 先读取创作/工程边界，再按平台运行路由：Windows 使用
    `powershell -ExecutionPolicy Bypass -File scripts/run_skill_tool.ps1 scripts/route_task.py <route> --run-dir <run_dir> --intent <intent>`；
    macOS 使用 `python3 scripts/route_task.py <route> --run-dir <run_dir> --intent <intent>`。
 2. 只读取返回的 `context_plan.read_first`；只有当前错误或任务明确命中时，才读取
@@ -22,8 +32,11 @@ description: >
 3. 新任务默认使用 `full --intent new` 和新的空 `run_dir`。只有用户明确要求续跑时使用
    `full --intent resume`。完整配置与源文件已一次提供时，优先使用 `--auto-start`；它不得跳过
    任何阶段、provenance、validator 或导出门禁。
-4. 配置确认后，只循环调用 `workflow_supervisor.py`。`waiting_for_workers` 是内部等待状态，
-   不是用户确认点；只有路由明确返回 `needs_user_confirm=true` 时才提问。
+4. 配置确认后，只循环调用 `workflow_supervisor.py`。首次进入 Orchestrator 时，supervisor 只做源文
+   快照和机械门禁；若返回 `creative_authoring_required`，主模型必须读取该请求和源文，创作
+   `shot_plan.draft.json`、`source_ledger.json`、`dramatic_beat_ledger.json` 后再继续调用 supervisor。
+   这不是失败，也不是用户确认点；不得调用本地关键词分镜生成器代替模型创作。
+   `waiting_for_workers` 是内部等待状态，只有路由明确返回 `needs_user_confirm=true` 时才提问。
 5. supervisor 返回 `host_dispatch_required` 时，按 `references/agent_protocol.md` 处理每个
    packet：注册 Agent、至少一次心跳、等待 batch、记录 provenance，然后立即继续 supervisor。
 6. Agent 只能写 `packet._batch_output_path`。Master Production 每完成一个主镜，先运行 packet 的
@@ -78,8 +91,9 @@ description: >
 - 双人对峙、相见、肩后和正背镜把人物实际面向与摄影机可见面分开：分别写摄影机位置/方向、双方身体/胸口/脚尖面向目标、正面/背面/侧面可见和视线目标。`正面可见` 不等于 `面向镜头`，抽象 `对望/面对面` 不能替代双方相反朝向。
 - 源文明示 POV、对镜口播或打破第四面墙时，允许双人关系中唯一一人直视镜头；必须点名人物、限定时间窗、写身体保持关系或可见转向，以及回看对手/保持直视到落幅的终态。其他人物保持场内视线，普通正反打不得使用该例外。
 - 门口镜逐人绑定门槛内/外侧；回家/进门必须写门外起点、跨门槛中间态和屋内终点。前后景与画面占比只作软锚点，必须补共同地面、真实相对身高、允许遮挡部位和必须露出的脸/手/关键道具。儿童用头顶相对成人肩/胸位置锁定比例；同类道具以持有人加形状、颜色或内容物区分。
-- 直投正文只由 `direct_prompt_compiler.py` 编译：保护源文与硬事实，只整句压缩，超过 700 字
-  且无法无损压缩时阻断；导演卡使用同一事实源，最多 500 字、不设最低字数，不静默截断或用空话补齐。
+- 直投正文只由 `direct_prompt_compiler.py` 做顺序组装、精确去重和计数；不得按类别或关键词选择创作句。
+  超过 700 字返回 `CREATIVE_REWRITE_REQUIRED`，由 Master Production 语义精炼。导演卡最多 500 字，
+  同样必须由大模型创作或精炼，不静默截断、删句或用空话补齐。
 - 复杂度和风险只改变批次与专项合同，不降低 direct-copy、连续性、口型、审美或导出门槛。
 - 只有用户提供真实候选并明确要求视觉复核时才记录候选评分；不得用 Golden 或提示词推测成片。
 - 成片复核必须同时检查动作语义、门槛拓扑、人物面向/视线、纵深比例/遮挡、构图运镜因果、光源连续、伪文字和音轨有效性；FFmpeg/FFprobe 技术指标通过不代表语义通过。
@@ -95,6 +109,7 @@ description: >
 ## 权威来源
 
 - 机器阶段、版本、执行者、产物、超时与批次：`scripts/contract_registry.py`
+- 创作/工程所有权：`references/creative_engineering_boundary.md`、`scripts/creative_engineering_boundary.py`
 - 路由上下文清单：`scripts/route_task.py`；说明版：`references/ROUTES.md`
 - 字段与验证规则：`references/format_constraints.md`
 - 低耗合同定位：`references/contracts/contract_index.md`

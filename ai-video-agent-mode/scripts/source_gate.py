@@ -16,7 +16,6 @@ import os
 import re
 from pathlib import Path
 
-from visual_profile_router import route_visual_profile
 
 
 SCENE_RE = re.compile(r"^(?:场景|地点)[：:]|^\d+-\d+\b|^SCENE\b", re.I)
@@ -106,7 +105,10 @@ def inspect_source(source_path: str, config_path: str | None = None) -> dict:
     return _result(path, text, blocking, advisories, {
         "stats": stats,
         "evidence": evidence,
-        "style_evidence": route_visual_profile(text, config),
+        # Style, character, emotion and shot decisions remain model-owned.
+        # The source gate records only mechanical evidence and never infers a
+        # visual profile for downstream execution.
+        "creative_authority": "model",
     })
 
 
@@ -187,7 +189,11 @@ def _issue(code: str, message: str, severity: str = "blocking") -> dict:
 
 def _style_evidence(text: str) -> dict:
     """Backward-compatible helper retained for callers outside source_gate."""
-    return route_visual_profile(text)
+    return {
+        "deprecated": True,
+        "creative_authority": "model",
+        "message": "source_gate no longer infers visual profiles",
+    }
 
 
 def _sha256(path: Path) -> str:

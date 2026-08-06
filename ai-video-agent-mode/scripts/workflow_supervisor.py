@@ -16,12 +16,10 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(__file__))
-from detect_source_rules import detect_source_rules
-from generate_shotplan import generate
 from build_shotplan import normalize
+from prepare_creative_blueprint import prepare as prepare_creative_blueprint, missing_model_outputs
 from preflight_check import run as preflight_check
 from source_gate import run as source_gate
-from scene_motion_plan import build as build_scene_motion_plan
 from pre_editor_gate import run as pre_editor_gate
 from emotion_camera_audit import audit as emotion_camera_audit
 from episode_state_graph import build_episode_state_graph
@@ -56,6 +54,16 @@ def run_until_pause(run_dir, source_path=None, max_ticks=24):
                 detail = execute_local_phase(run_dir, outcome["phase"], source_path)
             except Exception as exc:
                 return _result("blocked", history, phase=outcome.get("phase"), reason=str(exc))
+            if isinstance(detail, dict) and detail.get("action") == "creative_authoring_required":
+                history.append({"action": "creative_authoring_required", "phase": outcome["phase"], "detail": detail})
+                return _result(
+                    "creative_authoring_required",
+                    history,
+                    phase=outcome.get("phase"),
+                    creative_request_path=detail.get("request_path"),
+                    missing_outputs=detail.get("missing_outputs", []),
+                    reason="模型必须先提交创意蓝图后才能继续确定性门禁",
+                )
             history.append({"action": "local_action_complete", "phase": outcome["phase"], "detail": detail})
             continue
         if action == "spawn":
@@ -85,7 +93,6 @@ def execute_local_phase(run_dir, phase, source_path=None):
         return {"config_path": os.path.join(run_dir, "project_config.json")}
     if phase == "orchestrator":
         source_path = _required_source(run_dir, source_path)
-        _detect_and_persist_source_rules(run_dir, source_path)
         source_report = source_gate(
             run_dir,
             source_path,
@@ -98,14 +105,17 @@ def execute_local_phase(run_dir, phase, source_path=None):
                 for item in failures[:6]
             )
             raise ValueError("source gate failed: " + detail)
-        _persist_source_gate_evidence(run_dir, source_report)
-        generate(
-            source_path,
-            os.path.join(run_dir, ".cache", "orchestrator"),
-            os.path.join(run_dir, "project_config.json"),
-        )
+        creative_request, request_path = prepare_creative_blueprint(run_dir, source_path)
+        missing_outputs = missing_model_outputs(creative_request)
+        if missing_outputs:
+            return {
+                "action": "creative_authoring_required",
+                "request_path": request_path,
+                "source_snapshot_path": creative_request.get("source_snapshot_path", ""),
+                "missing_outputs": missing_outputs,
+                "authority": "model",
+            }
         normalize(run_dir)
-        motion_plan, motion_plan_path = build_scene_motion_plan(run_dir)
         issues = preflight_check(run_dir)
         blocking = [item for item in issues if item.get("severity", "blocking") == "blocking"]
         if blocking:
@@ -118,8 +128,8 @@ def execute_local_phase(run_dir, phase, source_path=None):
             "source_gate_path": source_report.get("report_path", ""),
             "source_gate_advisories": source_report.get("advisories", []),
             "preflight_advisories": [item for item in issues if item.get("severity") == "advisory"],
-            "scene_motion_plan_path": motion_plan_path,
-            "motion_plan_advisories": motion_plan.get("advisories", []),
+            "creative_request_path": request_path,
+            "creative_authority": "model",
         }
     if phase == "editor_pass1":
         result, path = pre_editor_gate(run_dir)
@@ -286,41 +296,6 @@ def _required_source(run_dir, source_path):
     if not path or not os.path.isfile(path):
         raise ValueError("orchestrator needs --source on the first supervisor call")
     return path
-
-
-def _detect_and_persist_source_rules(run_dir, source_path):
-    config_path = os.path.join(run_dir, "project_config.json")
-    config = _load_json(config_path)
-    rules = detect_source_rules(source_path)
-    config["source_rules"] = {
-        "characters": rules.get("characters", []),
-        "action_keywords": rules.get("action_keywords", []),
-        "scene_header_pattern": rules.get("scene_header_pattern", "^SCENE"),
-        "dialogue_pattern": rules.get("dialogue_pattern_desc", "角色名（语气）：台词"),
-    }
-    config["character_list"] = list(rules.get("characters", []))
-    atomic_json(config_path, config)
-
-
-def _persist_source_gate_evidence(run_dir, source_report):
-    """Expose only the internal routing evidence to later local/agent stages."""
-    config_path = os.path.join(run_dir, "project_config.json")
-    config = _load_json(config_path)
-    rules = config.setdefault("source_rules", {})
-    style_evidence = source_report.get("style_evidence", {})
-    if isinstance(style_evidence, dict):
-        # Keep fixed global context compact. Scene Lock can read the persisted
-        # source report once when scene_receipt_count indicates overrides.
-        style_evidence = {
-            key: value for key, value in style_evidence.items()
-            if key != "scene_receipts"
-        }
-        style_evidence["scene_receipt_count"] = len(
-            source_report.get("style_evidence", {}).get("scene_receipts", [])
-        )
-    rules["style_evidence"] = style_evidence
-    rules["source_gate_report"] = source_report.get("report_path", "")
-    atomic_json(config_path, config)
 
 
 def _dispatch_protocol():

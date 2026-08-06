@@ -40,7 +40,7 @@ class SourceGateTests(unittest.TestCase):
         self.assertIn("UNSUPPORTED_PLATFORM", codes)
         self.assertIn("UNSUPPORTED_MODE", codes)
 
-    def test_style_routing_requires_multiple_evidence_channels(self) -> None:
+    def test_source_gate_does_not_infer_creative_style(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             one_signal = Path(root) / "one.txt"
             one_signal.write_text("古装人物站在门边。", encoding="utf-8")
@@ -48,8 +48,10 @@ class SourceGateTests(unittest.TestCase):
             many_signals.write_text("古代府邸，汉服人物在月光下推开木门。", encoding="utf-8")
             one = inspect_source(str(one_signal))
             many = inspect_source(str(many_signals))
-        self.assertEqual(one["style_evidence"]["confidence"], "low")
-        self.assertEqual(many["style_evidence"]["confidence"], "high")
+        self.assertEqual(one["creative_authority"], "model")
+        self.assertEqual(many["creative_authority"], "model")
+        self.assertNotIn("style_evidence", one)
+        self.assertNotIn("style_evidence", many)
 
     def test_run_persists_and_reuses_report(self) -> None:
         with tempfile.TemporaryDirectory() as root:

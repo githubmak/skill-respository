@@ -88,6 +88,33 @@ class BlockingReferenceTests(unittest.TestCase):
         ]}]}
         self.assertIn("CAM1｜关系镜｜斜向·右下→左上", render_svg(closeup))
 
+    def test_camera_path_is_validated_and_drawn_from_same_blocking(self) -> None:
+        moving = {**SPEC, "states": [{**SPEC["states"][0], "cameras": [{
+            **SPEC["states"][0]["cameras"][0],
+            "subjects": ["卫景耘"],
+            "path": {
+                "mode": "track", "end_x": 0.62, "end_y": 0.90, "end_facing_deg": 260,
+                "trigger": "卫景耘退开", "dramatic_gain": "显露关系距离",
+            },
+        }]}]}
+        normalized = validate_spec(moving)
+        self.assertEqual(normalized["states"][0]["cameras"][0]["path"]["mode"], "track")
+        svg = render_svg(moving)
+        self.assertIn("track｜显露关系距离", svg)
+        self.assertIn("青色虚线路径", svg)
+
+        blocked = {**SPEC, "states": [{**SPEC["states"][0], "anchors": [{
+            **SPEC["states"][0]["anchors"][0], "solid": True,
+        }], "cameras": [{
+            **SPEC["states"][0]["cameras"][0],
+            "path": {
+                "mode": "track", "end_x": 0.5, "end_y": 0.1, "end_facing_deg": 90,
+                "trigger": "人物起身", "dramatic_gain": "显露空间变化",
+            },
+        }]}]}
+        with self.assertRaisesRegex(ValueError, "intersects solid anchor 长桌"):
+            validate_spec(blocked)
+
     def test_rejects_invalid_group_coordinates_and_duplicate_names(self) -> None:
         invalid = {**SPEC, "shot_group": "scene-3"}
         with self.assertRaisesRegex(ValueError, "S1-01"):
@@ -181,19 +208,51 @@ class BlockingReferenceTests(unittest.TestCase):
                 output_path(root, "S1-03")
             self.assertEqual(first, output_path(root, "S1-03", replace=True))
 
-    def test_storyboard_path_places_exact_named_images_beside_markdown(self) -> None:
+    def test_storyboard_path_places_exact_named_images_in_staging_blocking(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             base = Path(root)
             storyboard = base / "exports" / "第1场_即梦投喂分镜.md"
             spec_path = base / "blocking.json"
             spec_path.write_text(json.dumps(SPEC, ensure_ascii=False), encoding="utf-8")
             directory, resolved_storyboard = output_directory(storyboard, None)
-            self.assertEqual(storyboard.parent.resolve(), directory)
+            self.assertEqual((storyboard.parent / "staging" / "blocking").resolve(), directory)
             self.assertEqual(storyboard.resolve(), resolved_storyboard)
-            self.assertEqual(0, main([str(spec_path), "--storyboard", str(storyboard), "--replace"]))
-            self.assertTrue((storyboard.parent / "S1-03.svg").is_file())
+            self.assertEqual(0, main([
+                str(spec_path), "--storyboard", str(storyboard), "--replace", "--compact",
+                "--report", str(base / "blocking.report.json"),
+            ]))
+            self.assertTrue((storyboard.parent / "staging" / "blocking" / "S1-03.svg").is_file())
 
-    def test_auto_over_shoulder_reverse_pair_stays_near_and_on_same_axis_side(self) -> None:
+    def test_rejects_character_on_boundary_without_explicit_exception(self) -> None:
+        on_boundary = {**SPEC, "states": [{**SPEC["states"][0], "characters": [
+            {"name": "沈青乔", "x": 0.1, "y": 0.7, "facing_deg": 0},
+            {"name": "卫景耘", "x": 0.65, "y": 0.7, "facing_deg": 180},
+        ]}]}
+        with self.assertRaisesRegex(ValueError, "too close to boundary"):
+            validate_spec(on_boundary)
+
+    def test_rejects_label_collision_after_render_layout(self) -> None:
+        collision = {**SPEC, "states": [{**SPEC["states"][0], "characters": [
+            {"name": "沈青乔", "x": 0.35, "y": 0.7, "facing_deg": 0, "label_dx": 180},
+            {"name": "卫景耘", "x": 0.65, "y": 0.7, "facing_deg": 180, "label_dx": -180},
+        ]}]}
+        with self.assertRaisesRegex(ValueError, "label collision"):
+            render_svg(collision)
+
+    def test_rejects_anchor_label_hidden_by_character_marker(self) -> None:
+        hidden = {**SPEC, "states": [{**SPEC["states"][0], "anchors": [{
+            "label": "菜篮", "shape": "rect", "x": 0.35, "y": 0.7, "width": 0.1, "height": 0.08,
+        }]}]}
+        with self.assertRaisesRegex(ValueError, "label-to-marker collision: 菜篮"):
+            render_svg(hidden)
+
+        offset = {**SPEC, "states": [{**SPEC["states"][0], "anchors": [{
+            "label": "菜篮", "shape": "rect", "x": 0.35, "y": 0.7, "width": 0.1, "height": 0.08,
+            "label_dy": 70,
+        }]}]}
+        self.assertIn("菜篮", render_svg(offset))
+
+    def test_auto_over_shoulder_is_rejected_without_director_camera_choice(self) -> None:
         characters = [
             {"name": "沈青乔", "x": 0.3, "y": 0.5, "facing_deg": 0},
             {"name": "卫景耘", "x": 0.7, "y": 0.5, "facing_deg": 180},
@@ -223,14 +282,33 @@ class BlockingReferenceTests(unittest.TestCase):
                 }]},
             ],
         }
-        normalized = validate_spec(spec)
-        first, second = (state["cameras"][0] for state in normalized["states"])
-        self.assertGreater(first["y"], 0.5)
-        self.assertGreater(second["y"], 0.5)
-        svg = render_svg(spec)
-        self.assertIn("CAM-A｜近肩", svg)
-        self.assertIn("CAM-B｜近肩", svg)
-        self.assertIn("门洞", svg)
+        with self.assertRaisesRegex(ValueError, "auto_position is disabled"):
+            validate_spec(spec)
+
+    def test_independent_over_shoulder_allows_target_to_face_away(self) -> None:
+        state = {
+            "blocking_id": "B-AWAY",
+            "label": "背向近肩",
+            "anchors": [{"label": "矮柜", "shape": "rect", "x": 0.2, "y": 0.2, "width": 0.12, "height": 0.1}],
+            "boundaries": [],
+            "characters": [
+                {"name": "卫景耘", "x": 0.3, "y": 0.5, "facing_deg": 0},
+                {"name": "沈青乔", "x": 0.7, "y": 0.5, "facing_deg": 0},
+            ],
+            "cameras": [{
+                "label": "CAM-A", "shot_type": "over_shoulder", "x": 0.18, "y": 0.56, "facing_deg": 6,
+                "foreground_character": "卫景耘", "target_character": "沈青乔", "axis_side": "positive",
+                "facing_mode": "independent",
+            }],
+        }
+        normalized = validate_spec({"shot_group": "S3-05", "scene": "门槛", "states": [state]})
+        self.assertEqual("independent", normalized["states"][0]["cameras"][0]["facing_mode"])
+
+        default_mutual = {**state, "cameras": [{
+            key: value for key, value in state["cameras"][0].items() if key != "facing_mode"
+        }]}
+        with self.assertRaisesRegex(ValueError, "must physically face"):
+            validate_spec({"shot_group": "S3-05", "scene": "门槛", "states": [default_mutual]})
 
     def test_rejects_occluded_target_and_wrong_reverse_axis_side(self) -> None:
         characters = [
@@ -252,7 +330,7 @@ class BlockingReferenceTests(unittest.TestCase):
             **state,
             "anchors": [{"label": "边桌", "shape": "rect", "x": 0.5, "y": 0.15, "width": 0.1, "height": 0.1}],
             "cameras": [{
-                "label": "CAM-A", "shot_type": "over_shoulder", "auto_position": True,
+                "label": "CAM-A", "shot_type": "over_shoulder", "x": 0.82, "y": 0.56, "facing_deg": 174,
                 "foreground_character": "乙", "target_character": "甲", "axis_side": "positive",
             }],
         }
@@ -260,7 +338,7 @@ class BlockingReferenceTests(unittest.TestCase):
             **reverse_base,
             "label": "错误越轴反打",
             "cameras": [{
-                "label": "CAM-B", "shot_type": "over_shoulder", "auto_position": True,
+                "label": "CAM-B", "shot_type": "over_shoulder", "x": 0.18, "y": 0.44, "facing_deg": 6,
                 "foreground_character": "甲", "target_character": "乙", "axis_side": "negative",
             }],
         }

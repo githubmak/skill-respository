@@ -19,9 +19,13 @@ TEST_SCRIPTS = (
     "test_seedance_target.py",
     "test_review_manifest.py",
     "test_render_blocking_reference.py",
+    "test_blocking_promotion.py",
+    "test_blocking_repair_preflight.py",
+    "test_end_to_end_quality_boundary.py",
     "test_scene_contract.py",
     "test_prompt_preflight.py",
     "test_creative_preflight.py",
+    "test_repair_scope.py",
 )
 
 

@@ -4,10 +4,10 @@
 
 ## 诊断入口
 
-- 合同文件出现重复字段、结果与编辑内容不符：使用 `scene_contract.py` 的严格 JSON 读取；重复键现在直接阻断，不接受“最后一个值覆盖前面的值”。
-- 终态或门槛词反复触发误判：先运行 `scripts/prompt_preflight.py <draft.md> --advisory` 定位负向边界句和过早终态词，完稿后再用严格模式复验；该工具只报风险，不替导演改写正文。
+- 合同文件出现重复字段、结果与编辑内容不符：运行 `scene_contract.py <contract> --strict-completeness --compact --report <reports>/contract.json`；重复键直接阻断，不接受“最后一个值覆盖前面的值”。
+- 终态或门槛词反复触发误判：先运行 `scripts/prompt_preflight.py <draft.md> --advisory --compact --report <reports>/prompt.json` 定位负向边界句和过早终态词，完稿后再用严格模式复验；该工具只报风险，不替导演改写正文。
 - 双人关系线稿出现同向箭头：关系镜默认 `facing_mode=mutual`；有意看向道具、门外或第三目标时显式声明 `facing_mode=independent`，避免把语义例外藏在省略字段里。
-- 工程通过但提示词变得通用：运行 `scripts/creative_preflight.py <draft.md> --advisory`，检查第一焦点、源文专属关系/因果、光影职责、摄影机服务和结束余像；严格结果失败时回导演选型，不继续堆制作控制。
+- 工程通过但提示词变得通用：运行 `scripts/creative_preflight.py <draft.md> --advisory --compact --report <reports>/creative.json`，检查第一焦点、源文专属关系/因果、光影职责、摄影机服务和结束余像；严格结果失败时回导演选型，不继续堆制作控制。
 - 设计审查通过但没有关键帧/视频：manifest 的 `delivery_status` 必须是 `PROVISIONAL`，不能作为最终审美交付。
 
 - 风格误配、画面塑料或题材同质化：检查证据路由后读取 `visual-direction-profiles.md`；单个风格词不得触发强 profile。

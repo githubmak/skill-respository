@@ -1,6 +1,6 @@
 # Visual Direction Profiles
 
-本文件只在用户要求画面质感、灵动、唯美、现代剧质感、古风游戏质感，或自动题材识别命中时读取。它是轻量视觉路由，不增加运行阶段、输出字段或 Agent。
+本文件只在模型需要参考视觉词汇时按需读取。它是人工参考库，不是运行时视觉路由；工程层不得根据关键词自动选择 profile、情绪或镜头。
 
 ## 路由
 
@@ -49,7 +49,7 @@
 
 内部记录轻量解析回执：`base_profile | narrative_modifier | confidence(high/medium/low) | evidence_score | matched_evidence | contradictions | inherited_or_overridden | applied_layers | user_overrides`。它只供 Scene Lock 和审查消费，不进入 `full_prompt`、最终 Markdown 或新增 schema；证据不足时回到通用电影化默认。
 
-当前确定性实现由 `scripts/visual_profile_router.py` 生成项目回执和逐场回执。固定全局配置只保留项目回执与逐场数量，完整逐场回执留在 source gate 报告；Scene Lock 仅在数量大于零时读取当前场景，避免把整集证据复制进每个 packet。
+旧版 `scripts/visual_profile_router.py` 仅为历史兼容保留，不属于当前主链。当前模型必须根据用户风格、源文事实和自身审美判断创作 Scene Lock 与本镜审美合同；工程层不生成项目/逐场回执。
 
 ## 共同视觉底座
 
@@ -89,7 +89,7 @@
 
 ## 信息主次
 
-每镜先分四级：`must_render | important | metadata_only | drop_first`。`must_render` 永远优先台词/口型、人物身份与位置、动作因果、关键道具和稳定终态；`important` 只保留一个受光关系和一个剧情相关视觉增强；profile 判断、审美解释和质量分值留在 `metadata_only`；复杂运镜、额外空气层、第二材质与装饰性反光进入 `drop_first`。长对白、多人、道具转移或支撑变化镜先删 `drop_first`，再删低优先视觉增强，不得删硬事实或用更多修辞补偿。
+每镜先分四级：`must_render | important | metadata_only | drop_first`。`must_render` 永远优先台词/口型、人物身份与位置、动作因果、关键道具和稳定终态；`important` 只保留一个受光关系和一个剧情相关视觉增强；profile 判断、审美解释和质量分值留在 `metadata_only`；复杂运镜、额外空气层、第二材质与装饰性反光进入 `drop_first`。这些等级只作为大模型创作时的信息预算，不授权工程编译器自动删句。长对白、多人、道具转移或支撑变化镜由大模型在保留硬事实的前提下重写或拆镜。
 
 ## 质量闸门
 

@@ -386,6 +386,68 @@ class SpatialFacingContractTests(unittest.TestCase):
 
 
 class CameraVariationAndTerminalTests(unittest.TestCase):
+    def test_scene_rejects_fixed_camera_default_and_entirely_static_design(self) -> None:
+        generic = [
+            (1, f"S1-0{index}-1", "50mm平视中景，固定机位记录人物说话。", [])
+            for index in range(1, 5)
+        ]
+        self.assertTrue(validator.scene_camera_design_issues(generic))
+
+        deliberate_prompts = (
+            "35mm平视全景，固定机位观察门外等待，空位形成悬念。",
+            "50mm侧面中景，镜头固定，沉默僵持压住两人距离。",
+            "85mm轻俯近景，摄影机固定观察她不动，停顿形成压迫。",
+            "50mm低位特写，保持静止看守出口，留白延长等待。",
+        )
+        deliberate = [
+            (1, f"S1-0{index}-1", prompt, [])
+            for index, prompt in enumerate(deliberate_prompts, start=1)
+        ]
+        static_issues = validator.scene_camera_design_issues(deliberate)
+        self.assertTrue(any("全部使用固定/静止" in issue for issue in static_issues), static_issues)
+
+    def test_scene_camera_moves_need_trigger_gain_and_mechanism_variety(self) -> None:
+        prompts = (
+            "固定机位中景观察人物等待，空位形成悬念。",
+            "听到门响后摄影机从中景缓慢推近到中近景，显露两人距离收紧与关系压迫。",
+            "固定机位近景停在沉默僵持，观察对方不动。",
+            "看见对方退开后摄影机从中近景缓慢拉远到中景，显露关系疏离和门口空位。",
+            "固定机位中远景观察人物等待，停顿保留悬念。",
+            "固定近景守住僵持压力和视线。",
+            "固定机位停在空位，留白观察余波。",
+            "固定机位等待回答，关系距离保持。",
+        )
+        records = [(1, f"S1-{index:02d}-1", prompt, []) for index, prompt in enumerate(prompts, start=1)]
+        self.assertEqual(validator.scene_camera_design_issues(records), [])
+
+        repeated = [
+            (1, f"S1-{index:02d}-1", f"听到第{index}次敲门后摄影机轻推，显露关系距离与压迫。", [])
+            for index in range(1, 4)
+        ]
+        issues = validator.scene_camera_design_issues(repeated)
+        self.assertTrue(any("重复push" in issue for issue in issues), issues)
+
+    def test_semantic_ambiguity_rejects_axis_shorthand_and_internal_labels(self) -> None:
+        prompt = "摄影机位于门槛内侧，朝关系轴拍摄。空间锁定：甲在门内，乙在门外。"
+        issues = validator.semantic_ambiguity_issues(prompt, ["甲", "乙"])
+        self.assertTrue(any("关系轴元话语" in issue for issue in issues), issues)
+        self.assertTrue(any("空间锁定" in issue for issue in issues), issues)
+
+    def test_semantic_ambiguity_accepts_physical_camera_direction(self) -> None:
+        prompt = "摄影机位于长桌南侧，朝北拍向甲和乙；甲在桌内侧，乙在桌外侧。"
+        self.assertEqual([], validator.semantic_ambiguity_issues(prompt, ["甲", "乙"]))
+
+    def test_emotion_depth_rejects_generic_micro_expression(self) -> None:
+        direct = "甲听到这句话后微微皱眉，开口说：“我知道了。”乙闭口看着，最后两人停住。"
+        issues = validator.emotion_depth_issues(direct, "", "dialogue_performance")
+        self.assertTrue(any("对外策略" in issue for issue in issues), issues)
+
+    def test_emotion_depth_accepts_cause_strategy_leak_response_and_residue(self) -> None:
+        direct = (
+            "甲听到乙提到旧信后，为了掩饰已经认出字迹，右手压住信封边缘，开口说：“我没见过。”"
+            "乙察觉甲指节收紧后不再追问，只把视线停在信封上；甲说完闭口，右手仍没有松开。"
+        )
+        self.assertEqual([], validator.emotion_depth_issues(direct, "", "dialogue_performance"))
     def test_cross_group_signature_detects_repeated_composition(self) -> None:
         prompt = "50mm平视中景，前景门框形成框景，镜头固定记录人物。"
         signatures = [validator.group_camera_signature(prompt) for _ in range(3)]
@@ -437,6 +499,14 @@ class TemporalLightingContractTests(unittest.TestCase):
         )
         self.assertEqual([], validator.temporal_lighting_issues(prompt))
 
+    def test_compact_directional_moonlight_contract_is_not_a_false_missing_source(self) -> None:
+        prompt = (
+            "16:9，3D精致国风CG，同一夜晚，门外保持深蓝黑位，画面左侧月光主光，"
+            "冷褐阴影，人物脸部保持中性肤色；最后20%背景亮度、主光方向、色温和曝光稳定到结束。"
+        )
+        self.assertEqual([], validator.temporal_lighting_issues(prompt))
+        self.assertIn("moonlight", validator.primary_light_sources(prompt))
+
     def test_adjacent_shots_reject_night_to_day_and_primary_light_change(self) -> None:
         previous = (
             "同一夜晚的小院屋内，门外保持深蓝黑位，右侧油灯是唯一主光源，"
@@ -454,6 +524,33 @@ class TemporalLightingContractTests(unittest.TestCase):
         previous = "同一夜晚，门外保持深蓝黑位，右侧油灯是唯一主光源，曝光保持到结束。"
         current = "同一夜晚，门外保持深蓝黑位，右侧油灯仍是主光源，主光方向和曝光保持到结束。"
         self.assertEqual([], validator.temporal_lighting_continuity_issues(previous, current))
+
+    def test_adjacent_shots_reject_unmotivated_palette_and_shadow_jump(self) -> None:
+        previous = "同一夜晚，蓝灰主色，5500K冷调，月光是主光源，蓝灰阴影，背景低亮，低饱和，曝光保持到结束。"
+        current = "同一夜晚，暖黄主色，3200K暖调，月光仍是主光源，暖棕阴影，背景高亮，高饱和，曝光保持到结束。"
+        issues = validator.temporal_lighting_continuity_issues(previous, current)
+        self.assertTrue(any("主色/影调冲突" in issue for issue in issues), issues)
+        self.assertTrue(any("色温冲突" in issue for issue in issues), issues)
+        self.assertTrue(any("阴影色冲突" in issue for issue in issues), issues)
+        self.assertTrue(any("背景亮度/黑位冲突" in issue for issue in issues), issues)
+        self.assertTrue(any("饱和度冲突" in issue for issue in issues), issues)
+
+    def test_adjacent_shots_allow_declared_local_firelight_variation(self) -> None:
+        previous = "同一夜晚，土褐主色，冷蓝阴影，月光是主光源，低饱和，背景低亮，曝光保持到结束。"
+        current = "同一夜晚，土褐主色，冷蓝阴影，月光是主光源，局部火光仅作点缀，低饱和，背景低亮，曝光保持到结束。"
+        self.assertEqual([], validator.temporal_lighting_continuity_issues(previous, current))
+
+    def test_direct_prompt_requires_full_compressed_tone_prefix(self) -> None:
+        issues = validator.compressed_tone_prefix_issues(
+            "16:9，3D精致CG，夜晚室内，暖褐主色，右侧油灯是主光源，人物站在门边。"
+        )
+        self.assertTrue(any("色温" in issue for issue in issues), issues)
+        self.assertTrue(any("阴影" in issue for issue in issues), issues)
+        self.assertTrue(any("肤色" in issue for issue in issues), issues)
+
+    def test_direct_prompt_full_compressed_tone_prefix_passes(self) -> None:
+        prompt = "16:9，3D精致CG，暖褐主色，3200K暖调，右侧油灯是主光源，暖棕阴影，肤色自然偏暖；夜晚室内。"
+        self.assertEqual([], validator.compressed_tone_prefix_issues(prompt))
 
     def test_time_aliases_are_normalized(self) -> None:
         self.assertEqual({"night"}, validator.time_state_signature("子夜洞窟"))
@@ -1002,6 +1099,36 @@ class ShotTypeShadowTests(unittest.TestCase):
     def test_passive_water_change_does_not_create_silent_causality(self) -> None:
         prompt = "她用粗布擦过脸颊，水珠被带走一部分，摄影机固定记录动作。"
         self.assertNotEqual("silent_causal", validator.detect_shot_type(prompt))
+
+    def test_reflective_subject_requires_physical_light_transport(self) -> None:
+        broken = (
+            "夜晚，月光作为主光源，火光作为辅助光源。鱼篓内鱼身翻腾、水光晃动，"
+            "焦点落在湿鳞银白点缀；月光只照亮人物脸和活动手。"
+        )
+        issues = validator.reflective_light_transport_issues(broken)
+        self.assertTrue(any("入射路径" in issue for issue in issues), issues)
+        self.assertTrue(any("内部暗部" in issue for issue in issues), issues)
+
+        grounded = (
+            "夜晚，月光作为主光源；月光从门外斜落到鱼篓上缘，鱼身湿鳞只形成低亮反光和窄高光，"
+            "亮度低于人物侧脸，篓内保持暗。"
+        )
+        self.assertEqual(validator.reflective_light_transport_issues(grounded), [])
+
+    def test_camera_focus_and_container_prop_motion_need_separate_owners(self) -> None:
+        broken = (
+            "两种野菜放在菜篮里。摄影机平视轻微横移跟随阿丰手指从叶片落到卫景耘脸，"
+            "最后手指停在安全叶片旁。"
+        )
+        issues = validator.camera_prop_motion_ownership_issues(broken)
+        self.assertTrue(any("运动主体" in issue for issue in issues), issues)
+        self.assertTrue(any("原容器" in issue for issue in issues), issues)
+
+        grounded = (
+            "两种野菜始终平放在菜篮内。摄影机沿门槛向右横移0.2米，菜篮保持为固定前景；"
+            "焦点从阿丰停住的指尖转到卫景耘脸，阿丰手指仍停在叶片分界处。"
+        )
+        self.assertEqual(validator.camera_prop_motion_ownership_issues(grounded), [])
 
     def test_high_risk_transition_reports_missing_chain(self) -> None:
         prompt = "16:9，3D CG，客厅暖光，平视中景，镜头固定。她递出卡片，画面停在两人之间。"
