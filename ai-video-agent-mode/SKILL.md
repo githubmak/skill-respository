@@ -33,27 +33,48 @@ description: >
 3. 新任务默认使用 `full --intent new` 和新的空 `run_dir`。只有用户明确要求续跑时使用
    `full --intent resume`。完整配置与源文件已一次提供时，优先使用 `--auto-start`；它不得跳过
    任何阶段、provenance、validator 或导出门禁。
+   相同源文和创作配置默认允许 `verified` 跨运行复用：只有源文 SHA-256、创作配置、Shot Plan、
+   Scene Lock、提示词/管线/创作合同、逐镜输出哈希、Editor 全镜通过结果和最终验证回执全部一致时，
+   才能原样复用模型创作，并为新运行写独立 reuse provenance；任一项变化立即回退模型创作。
+   用户明确要求重新创作时设置 `reuse_policy=fresh`，不得用缓存覆盖新模型草案或 Editor 定点返修。
 4. 配置确认后，只循环调用 `workflow_supervisor.py`。首次进入 Orchestrator 时，supervisor 只做源文
    快照和机械门禁；若返回 `creative_authoring_required`，主模型必须读取该请求和源文，创作
-   `shot_plan.draft.json` 后再继续调用 supervisor。逐行 `source_ledger.json` 由工程根据源文快照自动生成；
+   `shot_plan.draft.json` 与 `scene_locks.draft.json` 后再继续调用 supervisor。前者负责全局导演蓝图，
+   后者在同一次剧本理解中锁定场景空间、光源、影调、色卡和连续性。逐行 `source_ledger.json` 由工程根据源文快照自动生成；
    模型只在分镜草案中引用这些 ID，并自由决定节拍、拆镜和覆盖关系。
-   这不是失败，也不是用户确认点；不得调用本地关键词分镜生成器代替模型创作。
+   先完成整集导演理解，再把两份草案作为首轮最终导演候选落盘；不要把粗稿留给 Editor 补写。按 request 的
+   `checkpoint_policy.progress_command` 在每个已完成场景组后记录机械内容增长；这不是创意评分。
+   `creative_authoring_stalled` 表示 5 分钟无首个内容检查点或已有进度后 3 分钟无增长，宿主必须报告并重启
+   当前创作执行，不能静默等待。不得调用本地关键词分镜生成器代替模型创作。
    `waiting_for_workers` 是内部等待状态，只有路由明确返回 `needs_user_confirm=true` 时才提问；宿主必须
-   至少每分钟继续轮询 supervisor，不能把等待状态当作静默暂停。
+   每 10 秒或 worker 状态变化后立即继续轮询 supervisor，不能把等待状态当作静默暂停。
 5. supervisor 返回 `host_dispatch_required` 时，按 `references/agent_protocol.md` 处理每个
-   packet：注册 Agent、至少一次心跳、等待 batch、记录 provenance，然后立即继续 supervisor。
+   packet：注册 Agent、立即记录存活心跳，并在每个主镜/Editor 窗口完成后原子落盘当前集合、记录内容进度，
+   等待完整 batch、记录 provenance，然后立即继续 supervisor。普通心跳不能代替内容增长：5 分钟无首个
+   非空检查点或已有产出后 3 分钟无增长时定点重派。
    packet 的绝对超时不会被心跳延长；到期后必须中断旧 worker，并使用 supervisor 生成的新 UUID packet
    重派。初始尝试加两次重派仍失败时立即熔断并报告。
-6. Agent 只能写 `packet._batch_output_path`。Master Production 每完成一个主镜，先运行 packet 的
-   `incremental_validation_command` 做字段级校验；批次结束仍必须运行完整 `local_validation_command`。
+6. Agent 只能写 `packet._batch_output_path`。Master Production 必须把每个主镜第一次落盘内容作为可直接交付
+   的最终候选，并在内部完成自由导演自审，不输出自评分或逐字段证据。每完成一个主镜运行 packet 的
+   `checkpoint_command_template`，在同一次确定性调用中完成字段校验与内容进度记录；批次结束仍运行完整
+   `local_validation_command`。
    合并必须使用 provenance 门禁。局部失败按 `字段 → 主镜 → pair/window → scene` 升级，合格主镜可由
-   partial provenance 保留，未解决主镜自动定点重试；两次字段修复后才扩大到单主镜，无法归属镜头的全局
+   partial provenance 保留，未解决主镜自动定点重试；确定性字段错误按机械范围修正，无法归属镜头的全局
    合同错误禁止 partial 复用。任何增量通过都不能替代最终全量 Validate。
-7. Validate 全部通过后，才调用 `export_with_validation.py` 写入配置中已确认的交付路径；导出目标由确认过的
+7. Editor 只做独立验收：失败时输出 `creative_cause`、`affected_shot_ids` 和模型决定的
+   `return_to_phase: orchestrator | master_production`，不得返回替代提示词或字段补丁。全局理解问题重新创作
+   Director Blueprint，单镜实现问题由 Master 整镜重做；工程只按模型显式路由。
+8. Validate 全部通过后，才调用 `export_with_validation.py` 写入配置中已确认的交付路径；导出目标由确认过的
    `seedance_target: auto | 2.0 | 2.5 | both` 决定。`auto` 生成一份 dual-safe 文件，`2.0`/`2.5`
    生成单一优化文件，`both` 从同一份合同原子生成两份可独立投喂 Markdown 和一个非投喂索引。
-8. 从首次初始化运行状态起计算 90 分钟硬截止。超过截止，或按剩余未验证批次、最多三个 worker 和阶段预算
-   预测已无法按时完成时，必须停止派发，写 `.cache/control/fuse_report.json` 并向用户报告；禁止静默续跑。
+9. 从首次初始化运行状态起计算 90 分钟硬截止。超过截止必须立即停止；预测门禁只允许机器合同声明的
+   120 秒调度不确定性带，它不得延长硬截止。按剩余未验证批次、最多三个 worker 和阶段预算确认已无法
+   按时完成时，停止派发，写 `.cache/control/fuse_report.json` 并向用户报告；禁止静默续跑。最终 Export
+   验证通过后必须持久化 `pipeline_status=completed`，耗时使用最终阶段真实完成时间，不使用后续查询时间。
+10. Validate 通过后调用 `verified_reuse.py publish` 登记当前运行。复用索引只保存哈希、路径和验证身份，
+    不改写提示词；阶段报告必须分别记录状态初始化后的管线墙钟、至少一个 worker 活跃的并集时间、Agent
+    阶段空转时间、复用阶段数和复用条目数。真实端到端基准另记配置确认与进程启动在内的外部墙钟；
+    后续 worker 注册不得覆盖阶段首次启动时间。
 
 ## 上下文预算
 
@@ -122,10 +143,8 @@ description: >
 - 增量校验与修复范围：`scripts/validate_main_shot_incremental.py`、`scripts/incremental_validation.py`
 - 运行状态与门禁：`scripts/pipeline_state.py`、`scripts/pipeline_templates.py`
 
-旧 Emotion、Camera、Director 或 Composer 独立阶段及其归档指针已从技能表面移除。当前只派发
-`scene_lock/master_production/editor_pass2`；专业能力由 Master 模型按剧情需要自由调用，不恢复旧阶段或
-脚本风险分级。
-历史 `composer` 脚本名与 `.cache/composer/` 路径仅是稳定产物接口，不表示存在独立 Composer Agent。
+当前只派发 `master_production/editor_pass2`；全局导演模型一次创作分镜与 Scene Lock，专业能力由模型按剧情需要自由调用。
+`.cache/composer/` 只是稳定产物接口，不表示存在独立 Composer Agent。
 
 ## 验证
 

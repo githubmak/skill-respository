@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import sys
 import time
 
@@ -22,6 +23,7 @@ from preflight_check import run as preflight_check
 from source_gate import run as source_gate
 from pre_editor_gate import run as pre_editor_gate
 from validate_modec import main as validate_modec
+from validate_scene_locks import validate as validate_scene_locks
 from export_with_validation import export_with_validation, _record_normalization_provenance
 from normalize_prompt_package import normalize_package
 from pipeline_runner import run as pipeline_run
@@ -29,6 +31,7 @@ from pipeline_runtime import atomic_json
 from pipeline_state import load_state, save_state
 from contract_registry import PROMPT_CONTRACT_VERSION
 from validation_receipt import create_receipt
+from verified_reuse import publish_run as publish_verified_run, reuse_orchestrator_blueprint
 
 
 CONTROL_RELATIVE_PATH = ".cache/control/supervisor.json"
@@ -52,13 +55,17 @@ def run_until_pause(run_dir, source_path=None, max_ticks=24):
                 return _result("blocked", history, phase=outcome.get("phase"), reason=str(exc))
             if isinstance(detail, dict) and detail.get("action") == "creative_authoring_required":
                 history.append({"action": "creative_authoring_required", "phase": outcome["phase"], "detail": detail})
+                status = "creative_authoring_stalled" if detail.get("stalled") else "creative_authoring_required"
                 return _result(
-                    "creative_authoring_required",
+                    status,
                     history,
                     phase=outcome.get("phase"),
                     creative_request_path=detail.get("request_path"),
+                    revision_request_path=detail.get("revision_request_path"),
+                    progress=detail.get("progress"),
+                    progress_command=detail.get("progress_command"),
                     missing_outputs=detail.get("missing_outputs", []),
-                    reason="模型必须先提交创意蓝图后才能继续确定性门禁",
+                    reason=detail.get("reason") or "模型必须先提交创意蓝图后才能继续确定性门禁",
                 )
             history.append({"action": "local_action_complete", "phase": outcome["phase"], "detail": detail})
             continue
@@ -71,9 +78,9 @@ def run_until_pause(run_dir, source_path=None, max_ticks=24):
         if action == "wait_for_workers":
             return _result("waiting_for_workers", history, phase=outcome.get("phase"),
                            worker_status=outcome.get("worker_status", []),
-                           poll_after_seconds=outcome.get("poll_after_seconds", 60),
+                           poll_after_seconds=outcome.get("poll_after_seconds", 10),
                            budget=outcome.get("budget"))
-        if action == "field_patch_retry":
+        if action in ("field_patch_retry", "creative_reauthor_retry"):
             history.append({
                 "action": "targeted_retry_prepared",
                 "phase": outcome.get("phase"),
@@ -81,6 +88,13 @@ def run_until_pause(run_dir, source_path=None, max_ticks=24):
                 "dispatch_packets": outcome.get("dispatch_packets", []),
             })
             continue
+        if action == "creative_reauthor_required":
+            return _result(
+                "creative_authoring_required", history, phase=outcome.get("next", "orchestrator"),
+                revision_request_path=outcome.get("revision_request_path"),
+                target_shot_ids=outcome.get("target_shot_ids", []),
+                reason=outcome.get("reason"),
+            )
         if action == "completed":
             return _result("completed", history)
         if action == "fused":
@@ -110,14 +124,33 @@ def execute_local_phase(run_dir, phase, source_path=None):
             )
             raise ValueError("source gate failed: " + detail)
         creative_request, request_path = prepare_creative_blueprint(run_dir, source_path)
+        revision = _pending_orchestrator_revision(run_dir)
+        if revision:
+            return {
+                "action": "creative_authoring_required",
+                "request_path": request_path,
+                "revision_request_path": revision.get("path", ""),
+                "source_snapshot_path": creative_request.get("source_snapshot_path", ""),
+                "missing_outputs": revision.get("unchanged_outputs", []),
+                "authority": "model",
+                "reason": "model Editor returned a global directing cause to Orchestrator",
+            }
         missing_outputs = missing_model_outputs(creative_request)
+        reuse = {"applied": False, "phase": "orchestrator", "reason": "model-authored drafts already exist"}
         if missing_outputs:
+            reuse = reuse_orchestrator_blueprint(run_dir)
+            missing_outputs = missing_model_outputs(creative_request)
+        if missing_outputs:
+            progress = _creative_progress_status(creative_request)
             return {
                 "action": "creative_authoring_required",
                 "request_path": request_path,
                 "source_snapshot_path": creative_request.get("source_snapshot_path", ""),
                 "missing_outputs": missing_outputs,
                 "authority": "model",
+                "progress": progress,
+                "progress_command": (creative_request.get("checkpoint_policy") or {}).get("progress_command", []),
+                "stalled": progress.get("stalled", False),
             }
         normalize(run_dir)
         issues = preflight_check(run_dir)
@@ -127,7 +160,17 @@ def execute_local_phase(run_dir, phase, source_path=None):
                 str(item.get("msg", item.get("message", item))) if isinstance(item, dict) else str(item)
                 for item in blocking[:8]
             ))
+        scene_locks_draft = os.path.join(run_dir, ".cache", "orchestrator", "scene_locks.draft.json")
+        shot_plan_path = os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json")
+        scene_lock_issues = validate_scene_locks(scene_locks_draft, shot_plan_path)
+        if scene_lock_issues:
+            raise ValueError("orchestrator scene locks failed: " + "; ".join(scene_lock_issues[:8]))
+        _promote_scene_locks(run_dir, scene_locks_draft)
         _write_orchestrator_receipt(run_dir)
+        state = load_state(run_dir)
+        state.get("phases", {}).get("orchestrator", {}).pop("revision_request", None)
+        state.get("phases", {}).get("orchestrator", {}).pop("revision_request_path", None)
+        save_state(run_dir, state)
         return {
             "source_path": source_path,
             "source_gate_path": source_report.get("report_path", ""),
@@ -135,6 +178,7 @@ def execute_local_phase(run_dir, phase, source_path=None):
             "preflight_advisories": [item for item in issues if item.get("severity") == "advisory"],
             "creative_request_path": request_path,
             "creative_authority": "model",
+            "verified_reuse": reuse,
         }
     if phase == "editor_pass1":
         result, path = pre_editor_gate(run_dir)
@@ -161,7 +205,17 @@ def execute_local_phase(run_dir, phase, source_path=None):
                            "deterministic_report": deterministic_path,
                            "validation_receipt": receipt_path,
                            "package_sha256": _sha256(package_path)})
-        return {"result_path": path}
+        try:
+            reuse_record_path, reuse_record = publish_verified_run(run_dir)
+            reuse_publish = {
+                "pass": True,
+                "record_path": reuse_record_path,
+                "shot_count": len(reuse_record.get("shot_ids", [])),
+            }
+        except (OSError, ValueError) as exc:
+            reuse_publish = {"pass": False, "reason": str(exc)}
+            atomic_json(os.path.join(run_dir, ".cache", "reuse", "publish_error.json"), reuse_publish)
+        return {"result_path": path, "verified_reuse_publish": reuse_publish}
     if phase == "export":
         config = _load_json(os.path.join(run_dir, "project_config.json"))
         destination = ((config.get("delivery") or {}).get("markdown_path") or "").strip()
@@ -285,7 +339,7 @@ def _dispatch_protocol():
         "accept only packet._batch_output_path after JSON parsing succeeds",
         "run record_batch_provenance.py, then call workflow_supervisor.py again",
         "pass exact input/output token counts to provenance only when the host exposes them; otherwise leave unavailable",
-        "while any worker is running, poll the supervisor at least once per minute so freed slots are refilled",
+        "while any worker is running, poll the supervisor after 10 seconds or immediately after a worker state change",
     ]
 
 
@@ -297,6 +351,8 @@ def _write_orchestrator_receipt(run_dir):
         "contract_version": PROMPT_CONTRACT_VERSION,
         "draft_sha256": _sha256(os.path.join(orchestrator_dir, "shot_plan.draft.json")),
         "shot_plan_sha256": _sha256(os.path.join(orchestrator_dir, "shot_plan.json")),
+        "scene_locks_draft_sha256": _sha256(os.path.join(orchestrator_dir, "scene_locks.draft.json")),
+        "scene_locks_sha256": _sha256(os.path.join(run_dir, ".cache", "analysis", "scene_locks.json")),
         "source_ledger_sha256": _sha256(os.path.join(orchestrator_dir, "source_ledger.json")),
         "source_snapshot_sha256": _sha256(os.path.join(orchestrator_dir, "source_snapshot.json")),
         "preflight_report_sha256": _sha256(report_path),
@@ -304,6 +360,59 @@ def _write_orchestrator_receipt(run_dir):
         "created_at": time.time(),
     }
     atomic_json(os.path.join(orchestrator_dir, "creative_validation_receipt.json"), receipt)
+
+
+def _pending_orchestrator_revision(run_dir):
+    state = load_state(run_dir)
+    phase = state.get("phases", {}).get("orchestrator", {})
+    revision = phase.get("revision_request") if isinstance(phase, dict) else None
+    if not isinstance(revision, dict):
+        return None
+    orchestrator_dir = os.path.join(run_dir, ".cache", "orchestrator")
+    paths = {
+        "shot_plan_draft": os.path.join(orchestrator_dir, "shot_plan.draft.json"),
+        "scene_locks_draft": os.path.join(orchestrator_dir, "scene_locks.draft.json"),
+    }
+    prior = revision.get("prior_draft_sha256", {}) if isinstance(revision.get("prior_draft_sha256"), dict) else {}
+    unchanged = [
+        path for name, path in paths.items()
+        if not os.path.isfile(path) or (prior.get(name) and _sha256(path) == prior.get(name))
+    ]
+    if not unchanged:
+        return None
+    return {"path": phase.get("revision_request_path", ""), "unchanged_outputs": unchanged}
+
+
+def _creative_progress_status(request, now=None):
+    now = float(now if now is not None else time.time())
+    policy = request.get("checkpoint_policy", {}) if isinstance(request, dict) else {}
+    progress = _load_json(str(policy.get("progress_path", "") or ""))
+    started = request.get("authoring_started_at")
+    started = float(started) if isinstance(started, (int, float)) else now
+    last = progress.get("last_progress_at")
+    startup_stalled = not isinstance(last, (int, float)) and now - started >= 5 * 60
+    content_stalled = isinstance(last, (int, float)) and now - float(last) >= 3 * 60
+    return {
+        "started_at": started,
+        "last_progress_at": last,
+        "progress_count": int(progress.get("progress_count", 0) or 0),
+        "total_items": int(progress.get("total_items", 0) or 0),
+        "total_bytes": int(progress.get("total_bytes", 0) or 0),
+        "stalled": startup_stalled or content_stalled,
+        "stall_reason": (
+            "startup_content_stall" if startup_stalled else
+            "content_progress_stall" if content_stalled else ""
+        ),
+    }
+
+
+def _promote_scene_locks(run_dir, draft_path):
+    """Copy validated model bytes to the stable production path without rewriting them."""
+    output_path = os.path.join(run_dir, ".cache", "analysis", "scene_locks.json")
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    temporary = output_path + ".tmp"
+    shutil.copyfile(draft_path, temporary)
+    os.replace(temporary, output_path)
 
 
 def _result(status, history, **fields):

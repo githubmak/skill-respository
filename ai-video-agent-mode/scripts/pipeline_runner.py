@@ -1,4 +1,4 @@
-"""Current-contract runner: Scene Lock → Master Production → Editor.
+"""Current-contract runner: Director Blueprint → Master Production → Editor.
 
 There is deliberately no compatibility branch for the former Emotion, Scene,
 Camera, Director or Composer stages.  New runs can only enter this pipeline.
@@ -8,10 +8,9 @@ import os
 import sys
 import hashlib
 import time
-import re
 
 sys.path.insert(0, os.path.dirname(__file__))
-from pipeline_state import AGENT_PHASES, LOCAL_PHASES, PHASE_BATCH_SIZE, PHASE_TIMEOUT_SECONDS, advance, load_state, save_state, mark_done, mark_started, mark_waiting
+from pipeline_state import AGENT_PHASES, LOCAL_PHASES, PHASE_BATCH_SIZE, PHASE_TIMEOUT_SECONDS, advance, load_state, save_state, mark_done, mark_pipeline_complete, mark_started, mark_waiting
 from pipeline_templates import GATES
 from dispatch_cache import active_packet_paths, prepare_dispatch_packets
 from dispatch_queue import fill_slots, pending_packet_paths, retire_timed_out_dispatches
@@ -20,6 +19,7 @@ from record_batch_provenance import verify
 from contract_registry import PROMPT_CONTRACT_VERSION
 from pipeline_runtime import atomic_json
 from pipeline_deadline import feasibility, fuse, status as deadline_status
+from verified_reuse import reuse_agent_phase, verify_phase_reuse
 
 
 def run(run_dir):
@@ -38,6 +38,7 @@ def run(run_dir):
     phase = state["current_phase"]
     gate = GATES.get(phase)
     if not gate:
+        mark_pipeline_complete(run_dir)
         return {"action": "completed", "requires_user_input": False}
     if state["phases"][phase].get("status") == "done":
         if not _completed_phase_valid(run_dir, phase, gate):
@@ -57,6 +58,7 @@ def run(run_dir):
                     "reason": "completed phase is missing a current verified artifact",
                     "requires_user_input": False}
         if phase == state.get("phase_order", [])[-1]:
+            mark_pipeline_complete(run_dir)
             return {"action": "completed", "requires_user_input": False}
         advance(run_dir)
         return {"action": "advance", "from": phase, "next": load_state(run_dir)["current_phase"],
@@ -88,6 +90,17 @@ def run(run_dir):
     packets = pending_packet_paths(run_dir, phase)
     packets = _current_source_packets(packets)
     if not packets:
+        reuse = reuse_agent_phase(run_dir, phase)
+        if reuse.get("applied"):
+            mark_done(run_dir, phase)
+            advance(run_dir)
+            return {
+                "action": "advance",
+                "from": phase,
+                "next": load_state(run_dir)["current_phase"],
+                "verified_reuse": reuse,
+                "requires_user_input": False,
+            }
         packets = prepare_dispatch_packets(run_dir, phase, batch_size, subshot_ids=target_ids)
     verified_dispatch_ids = _verified_dispatch_ids(packets)
     recovery = retire_timed_out_dispatches(
@@ -137,7 +150,7 @@ def run(run_dir):
             "budget": forecast,
             "requires_user_input": False,
             "automatic_resume": True,
-            "poll_after_seconds": 60,
+            "poll_after_seconds": 10,
             "next_action": "poll_pipeline_runner_after_worker_state_changes",
         }
     if phase == "master_production":
@@ -182,8 +195,24 @@ def run(run_dir):
     if phase == "editor_pass2":
         review = _load(output)
         if not review.get("pass", False):
-            from prepare_master_retry import prepare
             targets = _review_target_shot_ids(review)
+            return_phases = {
+                str(window.get("return_to_phase", "") or "")
+                for window in review.get("windows", []) if isinstance(window, dict) and not window.get("pass")
+            }
+            if "orchestrator" in return_phases:
+                revision_path = _request_orchestrator_revision(run_dir, review, targets)
+                return {
+                    "action": "creative_reauthor_required",
+                    "phase": "editor_pass2",
+                    "next": "orchestrator",
+                    "revision_request_path": revision_path,
+                    "target_shot_ids": targets,
+                    "reason": "model_editor_returned_global_directing_cause",
+                    "requires_user_input": False,
+                    "automatic_resume": True,
+                }
+            from prepare_master_retry import prepare
             packets = prepare(run_dir, output)
             state = load_state(run_dir)
             master_state = state["phases"]["master_production"]
@@ -199,7 +228,7 @@ def run(run_dir):
                 master_state.pop("target_shot_ids", None)
             state["current_phase"] = "master_production"
             save_state(run_dir, state)
-            return {"action": "field_patch_retry", "phase": "editor_pass2", "next": "master_production",
+            return {"action": "creative_reauthor_retry", "phase": "editor_pass2", "next": "master_production",
                     "dispatch_packets": packets, "target_shot_ids": targets, "reason": "scene_window_blocking",
                     "requires_user_input": False,
                     "automatic_resume": True}
@@ -393,81 +422,93 @@ def _phase_target_ids(state, phase):
 
 def _review_target_shot_ids(review):
     targets = []
-    for target in _review_target_fragments(review):
-        candidates = _target_fragment_shot_ids(target)
-        for shot_id in candidates:
+    for window in review.get("windows", []) if isinstance(review, dict) else []:
+        if not isinstance(window, dict) or window.get("pass"):
+            continue
+        for shot_id in window.get("affected_shot_ids", []) if isinstance(window.get("affected_shot_ids"), list) else []:
+            shot_id = str(shot_id or "").strip()
             if shot_id and shot_id not in targets:
                 targets.append(shot_id)
     if targets:
         return sorted(targets)
-    for window in review.get("windows", []) if isinstance(review, dict) else []:
-        if not isinstance(window, dict) or window.get("pass"):
-            continue
-        current = window.get("current", {}) if isinstance(window.get("current"), dict) else {}
-        shot_id = str(current.get("shot_id", "") or "")
-        if shot_id and shot_id not in targets:
-            targets.append(shot_id)
     return sorted(targets)
-
-
-def _extract_primary_shot_ids(text):
-    matches = re.findall(r"S\d+(?:-\d+)?", text or "")
-    return matches[:1]
-
-
-def _target_fragment_shot_ids(target):
-    if isinstance(target, dict):
-        return [str(target.get("shot_id", "") or target.get("subshot_id", "") or "")]
-    return _extract_primary_shot_ids(str(target or ""))
-
-
-def _review_target_fragments(review):
-    if not isinstance(review, dict):
-        return []
-    fragments = []
-    for key in ("repair_targets", "blocking"):
-        values = review.get(key, [])
-        if isinstance(values, list):
-            fragments.extend(values)
-    for window in review.get("windows", []) if isinstance(review.get("windows"), list) else []:
-        if not isinstance(window, dict) or window.get("pass"):
-            continue
-        for key in ("repair_targets", "blocking"):
-            values = window.get(key, [])
-            if isinstance(values, list):
-                fragments.extend(values)
-    return fragments
 
 
 def _materialize(phase, output, batches):
     os.makedirs(os.path.dirname(output), exist_ok=True)
-    if phase == "scene_lock":
-        scenes = []
-        for batch in batches:
-            data = _load(batch)
-            scenes.extend(data.get("scenes", []))
-        with open(output, "w", encoding="utf-8") as handle:
-            json.dump({"contract_version": PROMPT_CONTRACT_VERSION, "scenes": scenes}, handle, ensure_ascii=False, indent=2)
-        return
     if phase == "editor_pass2":
         windows = []
         for batch in batches:
             windows.extend(_load(batch).get("windows", []))
         blocking = []
-        repair_targets = []
+        return_to_phases = []
+        affected_shot_ids = []
+        creative_causes = []
         for window in windows:
             for issue in window.get("blocking", []) if isinstance(window, dict) else []:
                 if issue not in blocking:
                     blocking.append(issue)
-            for target in window.get("repair_targets", []) if isinstance(window, dict) else []:
-                if target not in repair_targets:
-                    repair_targets.append(target)
+            if not isinstance(window, dict) or window.get("pass"):
+                continue
+            phase_name = str(window.get("return_to_phase", "") or "")
+            if phase_name and phase_name not in return_to_phases:
+                return_to_phases.append(phase_name)
+            for shot_id in window.get("affected_shot_ids", []) if isinstance(window.get("affected_shot_ids"), list) else []:
+                if shot_id not in affected_shot_ids:
+                    affected_shot_ids.append(shot_id)
+            cause = str(window.get("creative_cause", "") or "").strip()
+            if cause and cause not in creative_causes:
+                creative_causes.append(cause)
         with open(output, "w", encoding="utf-8") as handle:
             json.dump({"contract_version": PROMPT_CONTRACT_VERSION, "windows": windows,
                        "pass": bool(windows) and all(item.get("pass") for item in windows),
-                       "blocking": blocking, "repair_targets": repair_targets}, handle, ensure_ascii=False, indent=2)
+                       "blocking": blocking, "return_to_phases": return_to_phases,
+                       "affected_shot_ids": affected_shot_ids,
+                       "creative_causes": creative_causes}, handle, ensure_ascii=False, indent=2)
         return
     merge_agent_outputs(output, *batches, require_provenance=True)
+
+
+def _request_orchestrator_revision(run_dir, review, targets):
+    orchestrator_dir = os.path.join(run_dir, ".cache", "orchestrator")
+    draft_paths = {
+        "shot_plan_draft": os.path.join(orchestrator_dir, "shot_plan.draft.json"),
+        "scene_locks_draft": os.path.join(orchestrator_dir, "scene_locks.draft.json"),
+    }
+    prior_hashes = {
+        name: _sha256(path) for name, path in draft_paths.items() if os.path.isfile(path)
+    }
+    revision = {
+        "authority": "model_editor",
+        "semantic_transform": False,
+        "return_to_phase": "orchestrator",
+        "affected_shot_ids": targets,
+        "creative_causes": [
+            str(window.get("creative_cause", "") or "").strip()
+            for window in review.get("windows", [])
+            if isinstance(window, dict) and not window.get("pass")
+            and window.get("return_to_phase") == "orchestrator"
+            and str(window.get("creative_cause", "") or "").strip()
+        ],
+        "blocking": list(review.get("blocking", []) or []),
+        "prior_draft_sha256": prior_hashes,
+        "rule": "Re-author the global director blueprint; Editor and engineering must not patch prompt fields.",
+    }
+    path = os.path.join(run_dir, ".cache", "review", "orchestrator_revision_request.json")
+    atomic_json(path, revision)
+    state = load_state(run_dir)
+    order = list(state.get("phase_order", []))
+    start = order.index("orchestrator") if "orchestrator" in order else 0
+    for phase_name in order[start:]:
+        phase_state = state.get("phases", {}).get(phase_name, {})
+        phase_state.update({"status": "pending", "agent_id": None})
+        if phase_name != "orchestrator":
+            phase_state.pop("target_shot_ids", None)
+    state["phases"]["orchestrator"]["revision_request"] = revision
+    state["phases"]["orchestrator"]["revision_request_path"] = path
+    state["current_phase"] = "orchestrator"
+    save_state(run_dir, state)
+    return path
 
 
 def _load(path):
@@ -483,6 +524,10 @@ def _completed_phase_valid(run_dir, phase, gate):
         return False
     if phase in LOCAL_PHASES:
         return _local_phase_valid(run_dir, phase)
+    state = load_state(run_dir)
+    phase_state = state.get("phases", {}).get(phase, {})
+    if phase_state.get("reuse_provenance_path"):
+        return verify_phase_reuse(run_dir, phase)[0]
     return True
 
 
@@ -497,6 +542,8 @@ def _local_phase_valid(run_dir, phase):
         expected = {
             "draft_sha256": os.path.join(orchestrator_dir, "shot_plan.draft.json"),
             "shot_plan_sha256": os.path.join(orchestrator_dir, "shot_plan.json"),
+            "scene_locks_draft_sha256": os.path.join(orchestrator_dir, "scene_locks.draft.json"),
+            "scene_locks_sha256": os.path.join(run_dir, ".cache", "analysis", "scene_locks.json"),
             "source_ledger_sha256": os.path.join(orchestrator_dir, "source_ledger.json"),
             "source_snapshot_sha256": os.path.join(orchestrator_dir, "source_snapshot.json"),
             "preflight_report_sha256": os.path.join(run_dir, ".cache", "preflight", "report.json"),

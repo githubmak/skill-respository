@@ -23,10 +23,9 @@ def run():
         _write(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"), {"shots": []})
         _write(os.path.join(run_dir, ".cache", "review", "llm_gate_result.json"), {"pass": True, "blocking": []})
         outputs = []
-        for name in ("episode_state_graph.json", "episode_director_audit.json", "emotion_camera_audit.json"):
-            path = os.path.join(run_dir, ".cache", "validate", name)
-            _write(path, {"pass": True})
-            outputs.append(path)
+        output = os.path.join(run_dir, ".cache", "validate", "result.json")
+        _write(output, {"pass": True})
+        outputs.append(output)
         create_receipt(run_dir, package, outputs)
         assert verify_receipt(run_dir, package)[0] is True
         _write(os.path.join(run_dir, "project_config.json"), {"max_shot_duration": 10})

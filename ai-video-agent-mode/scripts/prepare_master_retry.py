@@ -15,7 +15,26 @@ def prepare(run_dir, review_path=None):
     with open(review_path, encoding="utf-8-sig") as handle:
         review = json.load(handle)
     fields, reasons, scopes, shots = {}, {}, {}, []
+    creative_regeneration = False
     for window in review.get("windows", []):
+        if (
+            isinstance(window, dict)
+            and not window.get("pass")
+            and window.get("return_to_phase") == "master_production"
+        ):
+            creative_regeneration = True
+            creative_reason = str(window.get("creative_cause", "") or "").strip()
+            for shot_id in window.get("affected_shot_ids", []) if isinstance(window.get("affected_shot_ids"), list) else []:
+                shot_id = str(shot_id or "").strip()
+                if not shot_id:
+                    continue
+                shots.append(shot_id)
+                fields.setdefault(shot_id, set()).add(ALL_MUTABLE_FIELDS)
+                scopes[shot_id] = "shot"
+                reasons.setdefault(shot_id, set()).update(
+                    [creative_reason] + [str(value) for value in window.get("blocking", [])]
+                )
+            continue
         window_shots = _extract_window_shot_ids(window)
         window_reasons = _extract_window_reasons(window)
         window_scope = str(window.get("repair_scope", "") or "") if isinstance(window, dict) else ""
@@ -92,7 +111,7 @@ def prepare(run_dir, review_path=None):
             if shot_id in reasons
         }
         packet["retry_context_path"] = atomic_json(packet_path + ".retry.json", {
-            "mode": "field_patch",
+            "mode": "creative_regeneration" if creative_regeneration else "field_patch",
             "fields_by_main_shot": packet_fields,
             "repair_scope_by_main_shot": {
                 shot_id: effective_scopes.get(shot_id, "field") for shot_id in packet_shots
@@ -101,9 +120,19 @@ def prepare(run_dir, review_path=None):
                 shot_id: attempts.get(shot_id, 1) for shot_id in packet_shots
             },
             "failure_reasons_by_main_shot": packet_reasons,
-            "rule": "Return only listed main shots and modify only the authorized scope; locked fields survive validation and merge.",
+            "rule": (
+                "Re-author each listed main shot as one coherent delivery-ready director candidate; preserve locked facts and do not patch isolated phrases."
+                if creative_regeneration else
+                "Return only listed main shots and modify only the authorized mechanical scope; locked fields survive validation and merge."
+            ),
         })
         packet["retry_field_scope"] = packet_fields
+        if creative_regeneration:
+            packet["creative_regeneration"] = True
+            packet["instruction"] += (
+                " Model Editor returned this shot to Master Production. Re-author the complete affected main shot from the episode intent and creative cause; "
+                "do not perform a phrase-level patch and do not preserve failed mutable creative text merely to minimize the diff."
+            )
         atomic_json(packet_path, packet)
     if packets:
         first_packet = json.load(open(packets[0], encoding="utf-8-sig"))

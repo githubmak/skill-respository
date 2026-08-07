@@ -13,10 +13,9 @@
 | 配置 | `project_config.json` 已完成当前确认 | 只询问 `resolve_run_mode.py` 返回的字段 |
 | 源文闸门 | source gate `blocking=[]`，并生成可复用的源文证据回执 | 仅修复源文可读性、配置平台/模式或空输入 |
 | 本地准备 | 工程逐行 source ledger、shot plan 的 JSON、ID、源文映射、逐字台词和时长有效 | 修机械事实；拆镜与节奏问题退回模型 |
-| 模型创作蓝图 | `creative_blueprint_request.json` 和工程 source ledger 已交付，模型提交 `shot_plan.draft.json` | 缺分镜草案就暂停并返回 `creative_authoring_required`；工程不得代写分镜 |
-| Scene Lock | 每场景一个唯一 ID 和非空模型创作资产 | JSON/ID 错误定点重派；创作问题由 Editor 判断 |
-| Master Production | 每主镜一条确定性结构有效、含模型 Seedance 提示词的 T2V 任务 | 机械错误定点修复；语义问题退回模型 |
-| Editor | 独立模型复审通过，`blocking=[]` | 回到最早负责的模型创作字段 |
+| 模型导演蓝图 | `creative_blueprint_request.json` 和工程 source ledger 已交付，模型同时提交 `shot_plan.draft.json` 与 `scene_locks.draft.json` | 缺任一草案就暂停并返回 `creative_authoring_required`；工程不得代写分镜或 Scene Lock |
+| Master Production | 每主镜首次落盘就是模型自审后的最终候选，且确定性结构有效 | 机械错误定点修复；语义问题由模型整镜重做，不做末端补丁 |
+| Editor | 独立模型验收通过，`blocking=[]` | 只说明创作因果并回到 Orchestrator 或 Master，Editor 不改写提示词 |
 | Validate | 确定性事实有效且模型 Editor 已通过 | 机械问题按字段修，创作问题回模型 |
 | Export | provenance、路径、版本映射、字符数和原样排版通过 | 不写临时残件，不改写创作文本 |
 

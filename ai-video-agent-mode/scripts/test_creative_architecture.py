@@ -118,6 +118,13 @@ def run():
         packet = json.load(open(packets[0], encoding="utf-8"))
         assert packet["batch_policy"] == "item_count_chain_ids_and_context_size"
         assert packet["creative_review_scope"] == "full_model_review"
+        assert packet["checkpoint_policy"]["checkpoint_after_each_item"] is True
+        assert packet["checkpoint_policy"]["partial_checkpoint_is_completion"] is False
+        assert packet["progress_command_template"][-2:] == ["{packet_path}", "{agent_id}"]
+        assert packet["checkpoint_command_template"][-2:] == ["--item-id", "{item_id}"]
+        assert os.path.isfile(packet["source_evidence_path"])
+        assert "source_snapshot_path" not in packet["context_policy"]["fixed_global_context"]
+        assert "cacheable_context" not in packet
         assert "risk_tier" not in packet and "risk_reasons" not in packet
         packet_item = packet["items"][0]
         assert "editorial_mode" not in packet_item

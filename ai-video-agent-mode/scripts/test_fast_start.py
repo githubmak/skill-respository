@@ -80,7 +80,7 @@ def run():
         assert outcome["supervisor"]["status"] == "creative_authoring_required"
         assert outcome["supervisor"]["phase"] == "orchestrator"
         assert outcome["supervisor"]["creative_request_path"].endswith("creative_blueprint_request.json")
-        assert len(outcome["supervisor"]["missing_outputs"]) == 1
+        assert len(outcome["supervisor"]["missing_outputs"]) == 2
 
         saved = _read(os.path.join(run_dir, "project_config.json"))
         assert not config_issues(saved, run_dir=run_dir, require_confirmation=True)

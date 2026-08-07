@@ -13,6 +13,7 @@ import secrets
 import time
 
 from contract_registry import PROMPT_CONTRACT_VERSION
+from dispatch_progress import apply_progress
 
 CONTRACT_VERSION = PROMPT_CONTRACT_VERSION
 
@@ -42,17 +43,24 @@ def issue(packet_path, packet, agent_id):
         "nonce": secrets.token_urlsafe(24),
         "heartbeat_count": 0,
         "last_heartbeat_at": None,
+        "output_bytes": 0,
+        "completed_item_count": 0,
+        "progress_count": 0,
+        "first_progress_at": None,
+        "last_progress_at": None,
         "completed_at": None,
     }
     _write(path, receipt)
     return receipt, path
 
 
-def heartbeat(packet_path, packet, agent_id):
+def heartbeat(packet_path, packet, agent_id, progress=None, observed_at=None):
     """Record a worker liveness event tied to the immutable packet identity."""
     receipt, path = load_and_verify(packet_path, packet, agent_id, require_heartbeat=False)
+    now = float(observed_at) if isinstance(observed_at, (int, float)) else time.time()
     receipt["heartbeat_count"] = int(receipt.get("heartbeat_count", 0) or 0) + 1
-    receipt["last_heartbeat_at"] = time.time()
+    receipt["last_heartbeat_at"] = now
+    apply_progress(receipt, progress, now)
     _write(path, receipt)
     return receipt, path
 

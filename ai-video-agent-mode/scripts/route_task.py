@@ -9,7 +9,7 @@ from resolve_run_mode import DEFAULT_INTENTS, resolve
 
 ROUTES = {
     "full": {
-        "description": "Run the complete current eight-stage pipeline for new or materially changed source content.",
+        "description": "Run the complete current seven-stage pipeline for new or materially changed source content.",
         "requires": [],
         "agents": True,
         "read_first": ["references/stage_gates.md"],
@@ -55,7 +55,7 @@ ROUTES = {
     },
     "single-repair": {
         "description": "Repair only one failing subshot in one agent phase.",
-        "requires": ["project_config.json", ".cache/sources.json"],
+        "requires": ["project_config.json", ".cache/orchestrator/shot_plan.json"],
         "agents": True,
         "requires_subshot_id": True,
         "read_first": [

@@ -88,7 +88,7 @@ def main():
             full_result = validate_composer_output(batch_path, run_dir, full_report_path)
         assert full_result == 1
         full_report = json.load(open(full_report_path, encoding="utf-8"))
-        assert any("batch缺少subshot：S2" in issue for issue in full_report["issues"])
+        assert any("BATCH_COVERAGE" in issue for issue in full_report["issues"]), full_report
         assert full_report["partial_reuse_safe"] is False
         assert full_report["failed_subshot_ids"] == ["S1", "S2"]
 
@@ -103,7 +103,7 @@ def main():
             )
         assert incremental_result == 1
         incremental_report = json.load(open(incremental_report_path, encoding="utf-8"))
-        assert not any("batch缺少subshot" in issue for issue in incremental_report["issues"])
+        assert not any("BATCH_COVERAGE" in issue for issue in incremental_report["issues"])
         assert incremental_report["failed_subshot_ids"] == ["S1"]
 
     with tempfile.TemporaryDirectory() as run_dir:
@@ -118,6 +118,9 @@ def main():
             "canvas": "16:9",
             "visual_style": "动态漫",
             "generation_control": {"audio_enabled": True},
+        })
+        _write(os.path.join(run_dir, ".cache", "analysis", "scene_locks.json"), {
+            "scenes": [{"scene": "场景A", "space_id": "SPACE-1", "creative": "模型场景资产"}],
         })
         report_path = os.path.join(run_dir, ".cache", "provenance", "partial.validation.json")
         _write(report_path, {

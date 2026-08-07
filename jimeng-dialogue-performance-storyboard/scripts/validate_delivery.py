@@ -29,6 +29,7 @@ PROMPT_LABELS = (
     "起始画面：", "表演时序：", "摄影机：", "焦点：", "色卡：", "影调：", "光影：", "声音：", "结束画面：",
 )
 ASSET_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov"}
+ENGINEERING_REFERENCE_DIRS = {"approved-lineart", "approved-blocking", "blocking-geometry"}
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 PLAIN_ASSET_RE = re.compile(r"(?<![\w/])([^\s，。；;]+\.(?:png|jpg|jpeg|webp|mp4|mov|svg))", re.I)
 
@@ -177,7 +178,16 @@ def inspect_storyboard(path: Path, expected_source_hash: str) -> dict:
             assets.append(str(asset))
             if asset.suffix.lower() == ".svg":
                 issues.append(_issue("REFERENCE_ROLE", f"{shot_id} SVG blocking diagrams cannot occupy the Seedance reference field", path, shot_id))
-            if "staging" in asset.parts or ".staging" in asset.parts:
+            engineering_dirs = sorted({part for part in asset.parts if part.lower() in ENGINEERING_REFERENCE_DIRS})
+            if engineering_dirs:
+                issues.append(_issue(
+                    "REFERENCE_ROLE",
+                    f"{shot_id} engineering geometry reference cannot occupy the Seedance reference field: {engineering_dirs[0]}",
+                    path, shot_id,
+                ))
+            if ".audit." in asset.name.lower() or asset.suffix.lower() == ".html":
+                issues.append(_issue("REFERENCE_ROLE", f"{shot_id} mannequin audit/runtime assets cannot occupy the Seedance reference field", path, shot_id))
+            if any(part.lower() in {"staging", ".staging"} for part in asset.parts):
                 issues.append(_issue("STAGING_REFERENCE", f"{shot_id} references an asset inside staging: {asset}", path, shot_id))
             if asset.suffix.lower() not in ASSET_EXTENSIONS:
                 issues.append(_issue("REFERENCE_TYPE", f"{shot_id} unsupported Seedance reference type: {asset.suffix}", path, shot_id))

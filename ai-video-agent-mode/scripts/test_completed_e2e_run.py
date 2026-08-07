@@ -22,6 +22,7 @@ from pipeline_state import PHASE_ORDER, load_state
 from record_batch_provenance import verify as verify_batch_provenance
 from validate_modec import main as validate_modec
 from contract_registry import PROMPT_CONTRACT_VERSION
+from verified_reuse import verify_phase_reuse
 
 
 def run(run_dir, source_path=None, expected_shots=None):
@@ -41,7 +42,7 @@ def run(run_dir, source_path=None, expected_shots=None):
     _check_source_manifest(run_dir, source_path, expected_shots, issues)
     _check_validate_result(package_path, validate_result, issues)
     markdown_path = _check_export_result(package_path, export_result, config, issues)
-    _check_merge_provenance(package_path, issues)
+    _check_merge_provenance(run_dir, package_path, issues)
 
     if os.path.isfile(package_path):
         if validate_modec(run_dir) != 0:
@@ -166,7 +167,7 @@ def _check_export_result(package_path, export_result, config, issues):
     return markdown_path
 
 
-def _check_merge_provenance(package_path, issues):
+def _check_merge_provenance(run_dir, package_path, issues):
     manifest_path = package_path + ".merge_provenance.json"
     manifest = _load_json(manifest_path, issues)
     if not isinstance(manifest, dict):
@@ -175,6 +176,11 @@ def _check_merge_provenance(package_path, issues):
         issues.append("merge provenance output_path mismatch")
     if os.path.isfile(package_path) and manifest.get("output_sha256") != _sha256(package_path):
         issues.append("merge provenance output_sha256 is stale")
+    if manifest.get("provenance_mode") == "verified_reuse":
+        valid, reason = verify_phase_reuse(run_dir, "master_production")
+        if not valid:
+            issues.append("invalid verified reuse provenance: " + reason)
+        return
     sources = manifest.get("source_batches", [])
     if not isinstance(sources, list) or not sources:
         issues.append("merge provenance has no source_batches")

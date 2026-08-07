@@ -12,9 +12,10 @@ import hashlib
 import json
 import os
 import sys
+import time
 
 
-REQUEST_VERSION = "model-creative-blueprint-v2"
+REQUEST_VERSION = "model-creative-blueprint-v4"
 
 
 def prepare(run_dir, source_path):
@@ -63,7 +64,9 @@ def prepare(run_dir, source_path):
     request_path = os.path.join(output_dir, "creative_blueprint_request.json")
     required_outputs = {
         "shot_plan_draft": os.path.join(output_dir, "shot_plan.draft.json"),
+        "scene_locks_draft": os.path.join(output_dir, "scene_locks.draft.json"),
     }
+    previous_request = _load_optional_json(request_path)
     request = {
         "request_version": REQUEST_VERSION,
         "action": "MODEL_CREATIVE_AUTHORING_REQUIRED",
@@ -78,6 +81,18 @@ def prepare(run_dir, source_path):
             "references", "contracts", "model_creative_blueprint_contract.md",
         ),
         "required_outputs": required_outputs,
+        "authoring_started_at": previous_request.get("authoring_started_at", time.time()),
+        "checkpoint_policy": {
+            "atomic_replace": True,
+            "progress_after_each_completed_scene_group": True,
+            "semantic_transform": False,
+            "progress_path": os.path.join(run_dir, ".cache", "control", "orchestrator_progress.json"),
+            "progress_command": [
+                sys.executable,
+                os.path.join(os.path.dirname(__file__), "record_creative_progress.py"),
+                request_path,
+            ],
+        },
         "hard_constraints": {
             "canvas": config.get("canvas", ""),
             "visual_style": config.get("visual_style", ""),
@@ -91,7 +106,7 @@ def prepare(run_dir, source_path):
             "dramatic_beats", "shot_splitting", "reaction_ownership", "narrative_weight",
             "shot_function", "coverage_and_duration_strategy", "blocking", "camera", "focus",
             "lighting_and_palette", "action_design", "seedance_semantic_compilation",
-            "visual_punctuation", "final_aesthetic_judgment",
+            "scene_lock_design", "visual_punctuation", "final_aesthetic_judgment",
         ],
         "engine_forbidden_decisions": [
             "infer_emotion", "pack_narrative_beats", "select_reaction_owner",
@@ -129,6 +144,13 @@ def _load_json(path):
     if not isinstance(value, dict):
         raise ValueError("project_config.json must contain an object")
     return value
+
+
+def _load_optional_json(path):
+    try:
+        return _load_json(path)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        return {}
 
 
 def _sha256(path):

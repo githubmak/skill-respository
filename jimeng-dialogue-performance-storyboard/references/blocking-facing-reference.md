@@ -1,6 +1,6 @@
 # 多人站位面向工程图
 
-本文件说明 `render_blocking_reference.py` 所需的几何规格。是否需要线稿由模型根据空间风险判断，不按人数机械生成。线稿只用于几何审核，不承担创作、美术或 Seedance 参考职责。
+本文件说明 `render_blocking_reference.py` 所需的几何规格。是否需要线稿由模型根据空间风险判断，不按人数机械生成。线稿只用于几何审核，不承担创作、美术或 Seedance 参考职责。二维图不能证明站坐支撑、手部接触、道具高度或实际镜头投影；这些问题确实影响成片时，再按需读取 [mannequin-blocking.md](mannequin-blocking.md)，不要逐镜机械生成人偶图。
 
 ## 规格原则
 
@@ -17,6 +17,7 @@
   "shot_group": "S1-04",
   "scene": "门口",
   "states": [{
+    "shot_id": "S1-04",
     "blocking_id": "B1",
     "label": "屋内关系镜",
     "anchors": [

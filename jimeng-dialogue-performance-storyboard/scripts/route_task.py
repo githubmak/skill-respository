@@ -162,11 +162,41 @@ def route(mode: str, source: str | None = None, seedance_target: str = "auto") -
         ],
         "optional_spatial_workflow": {
             "when": "spatial geometry materially affects blocking, boundary, occlusion, or camera FOV",
-            "designer": "model chooses positions, facings, camera, and FOV",
-            "render": "scripts/render_blocking_reference.py",
+            "selection_owner": "model; never source-keyword auto-routing",
+            "designer": "model chooses positions, facings, posture, gaze, hand contacts, camera, and FOV",
+            "base_render": "scripts/render_blocking_reference.py",
+            "vtk_render": "scripts/render_mannequin_reference.py",
+            "vtk_read_when_selected": "references/mannequin-blocking.md",
+            "vtk_when": "2D cannot prove posture/support, body-versus-head facing, hand contact, prop height, occlusion, or actual camera projection",
+            "vtk_per_shot_mandatory": False,
+            "physical_state_hash_deduplication": True,
+            "shared_scene_multiple_camera_views": True,
+            "explicit_shot_id_required": True,
+            "frame_contract": {
+                "width": 1920,
+                "height": 1080,
+                "aspect": "16:9",
+                "capture_scope": "direct 1920x1080 renderer output",
+            },
+            "automatic_capture_required": True,
+            "automatic_capture_owner": "render_mannequin_reference.py",
+            "manual_user_capture": False,
+            "browser_required": False,
+            "html_output": False,
             "staging_only": True,
             "validator_scope": ["collision", "clearance", "occlusion", "axis_side", "field_of_view", "label_layout"],
             "visual_review_before_promotion": True,
+            "mannequin_review_record": (
+                "scripts/promote_mannequin_reference.py record --render-report <mannequin-report.json> "
+                "--screenshot-dir <delivery>/staging/mannequin --decision <PASS|REVISE> "
+                "--review <reports>/mannequin.review.json --compact --report <reports>/mannequin.record.json"
+            ),
+            "mannequin_clean_promotion": (
+                "scripts/promote_mannequin_reference.py promote --review <reports>/mannequin.review.json "
+                "--delivery-dir <delivery>/approved-mannequin --compact --report <reports>/mannequin.promote.json"
+            ),
+            "audit_images_promoted": False,
+            "clean_images_generation_reference_allowed_after_review": True,
         },
         "run_after_generation": [
             "scripts/validate_delivery.py --source <source> --storyboard <output.md> "

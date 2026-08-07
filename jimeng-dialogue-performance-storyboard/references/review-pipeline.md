@@ -21,6 +21,7 @@
 ## 2. 真实画面审片
 
 - 空间 SVG/PNG：先核对具名人物、站位、面向、机位、视锥、遮挡、边界和标签可读性。几何正确后还要由视觉能力查看实际 PNG；双 PASS 后才可提升为工程参考。它仍不是成片美术参考。
+- PyVista/VTK 人偶：执行模型直接查看渲染报告列出的每个 `camera_index` 的 `mode=audit` 与 `mode=clean` 图片，不能把 JSON、文件尺寸或非空像素检查当成视觉审片。核对身份色、姓名、站坐、身体/头部朝向、视线、左右手接触、锚点高度、边界开口、摄影机和视锥；摄影机有 `path` 时还要分别查看起点和终点。再查看同一物理状态同一 `camera_index` 的 clean 图片，核对实际机位中的人物数量、前后层次、遮挡、可见面、支撑、接触和构图。净图必须来自该摄影机的 VTK 透视相机，不是通用俯视观察角；多机位缺少 `camera_index` 时阻断。图片固定为 1920×1080、16:9，报告给出的镜号/状态/机位名必须原样用于文件名，例如 `S1-08_S1-05_state00_cam00.clean.jpg`。未双 PASS 的图片留在 `staging/mannequin/`，不得写入正式 Markdown；人偶只约束空间与动作身份，不提供角色外貌、服装、材质、光影或成片风格。
 - 关键帧：查看人物身份和数量、构图、景别、表演、光影、影调、色卡、比例、支撑、道具和文字。只有与导演方案一致的图才可作为 Seedance 参考。
 - 视频：查看首帧、关键动作帧和尾帧，并检查动作先后、口型、反应传播、摄影机路径、转焦、光影漂移、肤色、背景稳定和结束保持。`review_video.py` 的客观指标不能代替视觉观看。
 
@@ -38,6 +39,6 @@
 
 ## 4. 提升与最终状态
 
-所有视觉资产先放在 `staging/`。空间图通过审核后使用 `promote_blocking_reference.py record` 记录结论，再用 `promote` 提升；未通过或哈希变化的文件不得进入正式层。关键帧与视频也必须记录用途和真实画面 PASS 后再被 Markdown 引用。
+所有视觉资产先放在 `staging/`。二维空间图通过审核后使用 `promote_blocking_reference.py record` 与 `promote` 提升为不可投喂的工程参考；人偶图逐机位完成 audit/clean 双审后使用 `promote_mannequin_reference.py record` 与 `promote`，只把 clean 图提升为空间/机位/姿态/接触参考。未通过或哈希变化的文件不得进入正式层。关键帧与视频也必须记录用途和真实画面 PASS 后再被 Markdown 引用。
 
 使用 `review_manifest.py create` 绑定源文、主输出和正式资产的 SHA-256，再用 `review_manifest.py verify` 验证。任何字节变化都使旧结论失效。最后运行 `validate_delivery.py --final --review-manifest <manifest>`；设计与视觉均 PASS、哈希有效且正式目录无 staging 引用时才标记 `FINAL`。

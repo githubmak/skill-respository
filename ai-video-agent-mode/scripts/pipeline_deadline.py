@@ -9,6 +9,7 @@ import time
 from contract_registry import (
     PHASE_PLANNING_SECONDS,
     PIPELINE_DEADLINE_WARNING_SECONDS,
+    PIPELINE_FORECAST_UNCERTAINTY_SECONDS,
     PIPELINE_HARD_DEADLINE_SECONDS,
     PIPELINE_WORKER_SLOT_CAP,
     PIPELINE_PHASES,
@@ -68,7 +69,7 @@ def estimate_remaining_seconds(run_dir, state, packet_count=None, worker_slots=N
         if phase_state.get("status") in TERMINAL_STATUSES:
             continue
         target = float(PHASE_PLANNING_SECONDS.get(name, 60))
-        if name == phase and packet_count is not None and name in {"scene_lock", "master_production", "editor_pass2"}:
+        if name == phase and packet_count is not None and name in {"master_production", "editor_pass2"}:
             waves = int(math.ceil(max(int(packet_count), 0) / float(slots)))
             estimate += waves * target
         else:
@@ -79,10 +80,16 @@ def estimate_remaining_seconds(run_dir, state, packet_count=None, worker_slots=N
 def feasibility(run_dir, state, packet_count=None, worker_slots=None, now=None):
     budget = status(state, now)
     estimate = estimate_remaining_seconds(run_dir, state, packet_count, worker_slots)
+    forecast_overrun = max(estimate - budget["remaining_seconds"], 0.0)
     return dict(
         budget,
         estimated_remaining_seconds=estimate,
-        feasible=(not budget["expired"] and estimate <= budget["remaining_seconds"]),
+        forecast_uncertainty_seconds=PIPELINE_FORECAST_UNCERTAINTY_SECONDS,
+        forecast_overrun_seconds=round(forecast_overrun, 3),
+        feasible=(
+            not budget["expired"]
+            and forecast_overrun <= PIPELINE_FORECAST_UNCERTAINTY_SECONDS
+        ),
     )
 
 

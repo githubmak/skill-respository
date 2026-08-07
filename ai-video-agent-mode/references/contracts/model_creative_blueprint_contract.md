@@ -6,9 +6,10 @@ Orchestrator 是大模型导演创作阶段。工程先生成逐字源文证据�
 - `.cache/orchestrator/source_ledger.json`
 - `.cache/orchestrator/creative_blueprint_request.json`
 
-模型读取源文、上述证据和项目配置，只需创作：
+模型读取源文、上述证据和项目配置，在同一次全局导演创作中提交：
 
 - `.cache/orchestrator/shot_plan.draft.json`
+- `.cache/orchestrator/scene_locks.draft.json`
 
 ## 最高目标
 
@@ -19,6 +20,16 @@ Orchestrator 是大模型导演创作阶段。工程先生成逐字源文证据�
 模型可自由决定创作分析过程、字段名称和嵌套结构。`dramatic_design`、`duration_design`、节拍 ledger、
 固定权重、固定镜头功能或一节拍一镜都不是必填合同。一个源文单元可被多个镜头引用，一个镜头也可承载
 多个节拍；重复、回切、蒙太奇、长镜头和拆镜均由模型决定。
+
+本阶段不是供末端补丁使用的粗略草稿。模型先完成整集导演理解，再把 `shot_plan.draft.json` 与
+`scene_locks.draft.json` 作为首轮最终导演候选落盘；提交前自行检查剧情因果、观众信息顺序、人物关系与
+情绪推进、镜头组节奏、空间连续、视觉基调和 Seedance 可实现性。该自审是模型的自由导演判断，不要求
+自评分、逐项打勾或抄写证据。
+
+`scene_locks.draft.json` 与分镜来自同一次剧情理解。模型为每个分镜使用的场景创作唯一 `scene`、唯一
+`space_id` 和至少一项非空创作资产；空间关系、入口出口、光源、影调、色卡、材质、声音、环境运动、
+道具活动区及连续性如何组织由模型决定，不设固定创作子字段。工程验证后按字节原样提升为
+`.cache/analysis/scene_locks.json`，不再派发独立 Scene Lock Agent。
 
 ## 工程证据
 
@@ -77,3 +88,4 @@ Orchestrator 是大模型导演创作阶段。工程先生成逐字源文证据�
 
 `build_shotplan.py` 只补机械 ID、锁定确认过的画幅/风格/时长上限并保留模型的全部未知字段。
 `preflight_check.py` 只报告可机械证明的问题；任何需要改变创作语义的修复必须返回模型。
+`validate_scene_locks.py` 只检查 JSON、唯一 ID、非空创作资产和分镜场景覆盖；工程不得补写 Scene Lock。

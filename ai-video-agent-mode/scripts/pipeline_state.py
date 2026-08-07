@@ -11,6 +11,7 @@ from contract_registry import (
 )
 from pipeline_deadline import ensure_state_contract
 from pipeline_runtime import atomic_json, json_lock
+from dispatch_progress import apply_progress
 
 # ========== Constants ==========
 MAX_RETRIES = 3          # Block when failure count reaches 3: initial attempt + 2 retries
@@ -108,7 +109,13 @@ def set_agent_id(run_dir, phase, agent_id, dispatch_id=None, spawn_time=None):
         phase_state = state["phases"][phase]
         phase_state["agent_id"] = agent_id
         phase_state["status"] = "running"
-        phase_state["spawn_time"] = now
+        # Preserve the first worker start as the phase wall-clock origin.  A
+        # later packet registration must not make earlier queue waves disappear
+        # from performance telemetry.
+        if not isinstance(phase_state.get("started_at"), (int, float)):
+            phase_state["started_at"] = now
+        if not isinstance(phase_state.get("spawn_time"), (int, float)):
+            phase_state["spawn_time"] = now
         phase_state["heartbeat_at"] = now
         if dispatch_id:
             phase_state.setdefault("dispatches", {})[dispatch_id] = {
@@ -116,15 +123,20 @@ def set_agent_id(run_dir, phase, agent_id, dispatch_id=None, spawn_time=None):
                 "status": "running",
                 "spawn_time": now,
                 "heartbeat_at": now,
+                "output_bytes": 0,
+                "completed_item_count": 0,
+                "progress_count": 0,
+                "first_progress_at": None,
+                "last_progress_at": None,
             }
         save_state(run_dir, state)
 
 
-def record_heartbeat(run_dir, phase, agent_id=None, dispatch_id=None):
+def record_heartbeat(run_dir, phase, agent_id=None, dispatch_id=None, progress=None, observed_at=None):
     """Record a real worker liveness signal without changing phase outcome."""
     with json_lock(get_state_path(run_dir)):
         state = load_state(run_dir)
-        now = time.time()
+        now = float(observed_at) if isinstance(observed_at, (int, float)) else time.time()
         entry = state["phases"][phase]
         # A phase can own several concurrent dispatches.  The phase-level id is
         # only a legacy summary; dispatch ownership is the authoritative check.
@@ -138,6 +150,7 @@ def record_heartbeat(run_dir, phase, agent_id=None, dispatch_id=None):
             if agent_id and dispatch.get("agent_id") != agent_id:
                 raise ValueError("agent_id does not own dispatch")
             dispatch["heartbeat_at"] = now
+            apply_progress(dispatch, progress, now)
         save_state(run_dir, state)
         return now
 
@@ -167,6 +180,25 @@ def mark_done(run_dir, phase):
     if isinstance(started_at, (int, float)):
         entry["elapsed_seconds"] = round(max(completed_at - started_at, 0), 3)
     save_state(run_dir, state)
+
+
+def mark_pipeline_complete(run_dir):
+    """Persist the terminal state after the final validated export."""
+    state = load_state(run_dir)
+    final_phase = state.get("phase_order", PHASE_ORDER)[-1]
+    final_completed_at = state.get("phases", {}).get(final_phase, {}).get("completed_at")
+    completed_at = (
+        float(final_completed_at)
+        if isinstance(final_completed_at, (int, float))
+        else time.time()
+    )
+    state["pipeline_status"] = "completed"
+    state["pipeline_completed_at"] = completed_at
+    started_at = state.get("pipeline_started_at")
+    if isinstance(started_at, (int, float)):
+        state["pipeline_elapsed_seconds"] = round(max(completed_at - started_at, 0), 3)
+    save_state(run_dir, state)
+    return state
 
 
 def mark_failed(run_dir, phase):

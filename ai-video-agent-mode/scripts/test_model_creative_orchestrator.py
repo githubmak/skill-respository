@@ -38,7 +38,7 @@ def run():
 
         request, request_path = prepare(run_dir, source_path)
         assert request["authority"] == "model"
-        assert list(request["required_outputs"]) == ["shot_plan_draft"]
+        assert set(request["required_outputs"]) == {"shot_plan_draft", "scene_locks_draft"}
         assert os.path.isfile(request_path)
         snapshot = json.load(open(request["source_snapshot_path"], encoding="utf-8"))
         assert snapshot["source_sha256"] == request["source_sha256"]
@@ -63,6 +63,7 @@ def run():
         assert detail["action"] == "creative_authoring_required"
         assert not os.path.exists(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"))
         assert not os.path.exists(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.draft.json"))
+        assert not os.path.exists(os.path.join(run_dir, ".cache", "orchestrator", "scene_locks.draft.json"))
         assert os.path.exists(os.path.join(run_dir, ".cache", "orchestrator", "source_ledger.json"))
 
     with tempfile.TemporaryDirectory(prefix="creative-source-reuse-") as root:
@@ -72,6 +73,7 @@ def run():
         _write(os.path.join(run_dir, "project_config.json"), {
             "project_name": "复用测试", "canvas": "16:9", "visual_style": "模型自定",
             "max_shot_duration": 15, "target_platform": "即梦",
+            "generation_control": {"mode": "t2v", "audio_enabled": True},
         })
         prepare(run_dir, source_path)
         _write(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.draft.json"), {
@@ -94,8 +96,19 @@ def run():
                 }]},
             ],
         })
+        _write(os.path.join(run_dir, ".cache", "orchestrator", "scene_locks.draft.json"), {
+            "scenes": [{
+                "scene": "场景一", "space_id": "SPACE-1",
+                "creative_scene_contract": {"model_freeform": "同一次导演理解生成的场景资产"},
+            }],
+        })
         normalize(run_dir)
         assert preflight_run(run_dir) == []
+        detail = execute_local_phase(run_dir, "orchestrator", source_path)
+        assert detail["creative_authority"] == "model"
+        promoted = os.path.join(run_dir, ".cache", "analysis", "scene_locks.json")
+        draft = os.path.join(run_dir, ".cache", "orchestrator", "scene_locks.draft.json")
+        assert open(promoted, "rb").read() == open(draft, "rb").read()
 
     with tempfile.TemporaryDirectory(prefix="creative-receipt-") as root:
         orchestrator = os.path.join(root, ".cache", "orchestrator")
@@ -103,6 +116,8 @@ def run():
         paths = {
             "draft_sha256": os.path.join(orchestrator, "shot_plan.draft.json"),
             "shot_plan_sha256": os.path.join(orchestrator, "shot_plan.json"),
+            "scene_locks_draft_sha256": os.path.join(orchestrator, "scene_locks.draft.json"),
+            "scene_locks_sha256": os.path.join(root, ".cache", "analysis", "scene_locks.json"),
             "source_ledger_sha256": os.path.join(orchestrator, "source_ledger.json"),
             "source_snapshot_sha256": os.path.join(orchestrator, "source_snapshot.json"),
             "preflight_report_sha256": preflight,

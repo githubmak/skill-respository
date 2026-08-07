@@ -16,7 +16,7 @@
 |---|---|
 | JSON、ID、覆盖、时长、逐字台词、T2V 结构、版本字段 | `validate_deterministic_package.py` |
 | Scene Lock 文件结构与唯一 ID | `validate_scene_locks.py` |
-| provenance、hash、staging、超时、重派与熔断 | `record_batch_provenance.py`、`pipeline_deadline.py`、`workflow_supervisor.py` |
+| provenance、hash、跨运行验证复用、staging、超时、重派与熔断 | `record_batch_provenance.py`、`verified_reuse.py`、`pipeline_deadline.py`、`workflow_supervisor.py` |
 | 原样版本选择与 Markdown/XLSX 排版 | `export_with_validation.py`、`check_export.py` |
 
 “是否有创意、是否平淡、运镜是否有因果、表演是否自然、光影是否漂亮、Seedance 是否理解、最终审美是否

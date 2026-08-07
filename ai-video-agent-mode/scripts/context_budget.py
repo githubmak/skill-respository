@@ -6,7 +6,12 @@ MAX_PACKET_CHARS = 12000
 # Reserve the remainder of MAX_PACKET_CHARS for dispatch provenance, paths,
 # instructions, and phase metadata.
 MAX_EDITOR_ITEMS_CHARS = 8000
-MAX_COMPOSER_ITEMS_CHARS = 9500
+# Master packets carry roughly 5.3k characters of fixed dispatch metadata and
+# instructions inside MAX_PACKET_CHARS. Keep complete creative records, while
+# leaving at least about 0.7k characters of headroom for serialization drift.
+# This is a mechanical context budget only; it never evaluates or rewrites
+# model-authored creative content.
+MAX_COMPOSER_ITEMS_CHARS = 6000
 # Worker context includes packet JSON plus the fixed files the packet instructs
 # the Agent to read. Keep this separate from MAX_PACKET_CHARS so compact packet
 # serialization remains stable while effective context is bounded too.
@@ -17,10 +22,15 @@ def check(packet):
     if size > MAX_PACKET_CHARS:
         raise ValueError("packet exceeds %d characters; split by main-shot or scene window" % MAX_PACKET_CHARS)
     external = 0
-    for key in (
-        "constraints_path", "composer_scaffold_path", "scene_lock_cache_path",
+    default_fields = (
+        "project_config_path", "source_snapshot_path", "source_ledger_path",
+        "source_evidence_path", "constraints_path", "composer_scaffold_path", "scene_lock_cache_path",
         "pre_editor_gate_path", "review_packet_path", "editor_creative_context_path",
-    ):
+    )
+    policy = packet.get("context_policy", {}) if isinstance(packet.get("context_policy"), dict) else {}
+    declared = policy.get("fixed_global_context")
+    fields = tuple(declared) if isinstance(declared, list) and declared else default_fields
+    for key in fields:
         path = packet.get(key)
         if not path or not isinstance(path, str) or not os.path.isfile(path):
             continue

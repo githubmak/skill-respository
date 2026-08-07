@@ -19,6 +19,7 @@ from record_batch_provenance import verify as verify_provenance
 from seedance_target import TARGET_LABELS, normalize_target, variant_paths
 from validate_deterministic_package import selected_seedance_prompt, validate_package
 from validate_master_tasks import validate as validate_master_tasks
+from verified_reuse import verify_phase_reuse
 
 
 def export_with_validation(md_path, run_dir):
@@ -306,6 +307,14 @@ def _require_agent_dispatch_gates(run_dir, package_path):
         raise SystemExit("DISPATCH_GATE: verified merge provenance is required before export")
     if manifest.get("output_sha256") != _sha256(package_path):
         raise SystemExit("DISPATCH_GATE: prompt package changed after verified merge")
+    if manifest.get("provenance_mode") == "verified_reuse":
+        valid, reason = verify_phase_reuse(run_dir, "master_production")
+        reuse_path = str(manifest.get("reuse_provenance_path", "") or "")
+        if not valid:
+            raise SystemExit("DISPATCH_GATE: verified reuse provenance is invalid: " + reason)
+        if not reuse_path or not os.path.isfile(reuse_path) or manifest.get("reuse_provenance_sha256") != _sha256(reuse_path):
+            raise SystemExit("DISPATCH_GATE: verified reuse provenance changed after materialization")
+        return
     sources = manifest.get("source_batches")
     if not isinstance(sources, list) or not sources:
         raise SystemExit("DISPATCH_GATE: merge provenance has no verified worker batches")

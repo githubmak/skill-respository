@@ -42,8 +42,9 @@ def run(source_path, min_shots=1):
             raise ValueError("source gate failed: %s" % source_report.get("blocking"))
         request, request_path = prepare(run_dir, source_path)
         missing = missing_model_outputs(request)
-        if len(missing) != 1 or not missing[0].endswith("shot_plan.draft.json"):
-            raise ValueError("creative authoring handoff must require only the model-authored shot plan")
+        expected = {"shot_plan.draft.json", "scene_locks.draft.json"}
+        if {os.path.basename(path) for path in missing} != expected:
+            raise ValueError("creative authoring handoff must require the combined director blueprint")
         snapshot_path = request.get("source_snapshot_path", "")
         with open(snapshot_path, encoding="utf-8-sig") as handle:
             snapshot = json.load(handle)

@@ -3,12 +3,17 @@
 from creative_engineering_boundary import PHASE_AUTHORITY, boundary_issues
 
 PROMPT_CONTRACT_VERSION = "jimeng-t2v-v1"
-PIPELINE_CONTRACT_VERSION = "jimeng-t2v-pipeline-v2"
+PIPELINE_CONTRACT_VERSION = "jimeng-t2v-pipeline-v4"
+REUSE_CONTRACT_VERSION = "verified-run-reuse-v1"
 
 # Wall-clock reliability contract. This is a hard production deadline, not a
 # benchmark target. The supervisor must stop and emit a report when it expires.
 PIPELINE_HARD_DEADLINE_SECONDS = 90 * 60
 PIPELINE_DEADLINE_WARNING_SECONDS = 10 * 60
+# Forecasts use coarse phase targets and can be off by a small scheduling
+# interval. This tolerance never extends the hard deadline; it only prevents a
+# premature projected-deadline fuse when the estimate is within two minutes.
+PIPELINE_FORECAST_UNCERTAINTY_SECONDS = 2 * 60
 # Codex exposes four total agent slots in the normal desktop runtime.  The
 # supervisor occupies one of them, so a plan that assumes four workers is not
 # executable and systematically underestimates queue waves.
@@ -17,8 +22,7 @@ PIPELINE_WORKER_SLOT_CAP = 3
 # Conservative planning targets used to reject a run that can no longer
 # finish before the hard deadline. They do not relax per-worker timeouts.
 PHASE_PLANNING_SECONDS = {
-    "orchestrator": 15 * 60,
-    "scene_lock": 5 * 60,
+    "orchestrator": 10 * 60,
     "master_production": 10 * 60,
     "editor_pass1": 60,
     "editor_pass2": 5 * 60,
@@ -42,16 +46,10 @@ PIPELINE_PHASE_SPECS = (
             ".cache/orchestrator/creative_blueprint_request.json",
             ".cache/orchestrator/shot_plan.json",
             ".cache/orchestrator/source_ledger.json",
+            ".cache/analysis/scene_locks.json",
             ".cache/orchestrator/creative_validation_receipt.json",
         ),
         "validator": None, "authority": PHASE_AUTHORITY["orchestrator"],
-    },
-    {
-        "name": "scene_lock", "executor": "agent",
-        "input": (".cache/orchestrator/shot_plan.json",),
-        "output": (".cache/analysis/scene_locks.json",),
-        "validator": "scene_lock", "timeout_seconds": 480, "batch_size": 1,
-        "authority": PHASE_AUTHORITY["scene_lock"],
     },
     {
         "name": "master_production", "executor": "agent",
@@ -104,6 +102,14 @@ LOCAL_PHASE_NAMES = frozenset(
 PHASE_TIMEOUT_SECONDS = {
     spec["name"]: spec["timeout_seconds"]
     for spec in PIPELINE_PHASE_SPECS if "timeout_seconds" in spec
+}
+PHASE_STARTUP_PROGRESS_SECONDS = {
+    "master_production": 5 * 60,
+    "editor_pass2": 5 * 60,
+}
+PHASE_STALL_PROGRESS_SECONDS = {
+    "master_production": 3 * 60,
+    "editor_pass2": 3 * 60,
 }
 PHASE_BATCH_SIZE = {
     spec["name"]: spec["batch_size"]

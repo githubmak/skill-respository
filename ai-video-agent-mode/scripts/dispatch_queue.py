@@ -9,7 +9,12 @@ import uuid
 sys.path.insert(0, os.path.dirname(__file__))
 from pipeline_state import MAX_RETRIES, PHASE_TIMEOUT_SECONDS, TIMEOUT_SECONDS, load_state, save_state
 from dispatch_cache import active_packet_paths
-from contract_registry import PIPELINE_WORKER_SLOT_CAP, PROMPT_CONTRACT_VERSION
+from contract_registry import (
+    PHASE_STALL_PROGRESS_SECONDS,
+    PHASE_STARTUP_PROGRESS_SECONDS,
+    PIPELINE_WORKER_SLOT_CAP,
+    PROMPT_CONTRACT_VERSION,
+)
 from pipeline_runtime import atomic_json, json_lock
 
 
@@ -80,7 +85,12 @@ def retire_timed_out_dispatches(run_dir, phase, packet_paths, verified_dispatch_
         dispatch_id = str(packet.get("dispatch_id", "") or "")
         if dispatch_id:
             packet_by_id[dispatch_id] = (path, packet)
-    result = {"retired_dispatch_ids": [], "replacement_packets": [], "exhausted_dispatch_ids": []}
+    result = {
+        "retired_dispatch_ids": [],
+        "replacement_packets": [],
+        "exhausted_dispatch_ids": [],
+        "retirement_reasons": {},
+    }
     state_path = os.path.join(run_dir, ".cache", "pipeline_state.json")
     with json_lock(state_path):
         state = load_state(run_dir)
@@ -95,25 +105,43 @@ def retire_timed_out_dispatches(run_dir, phase, packet_paths, verified_dispatch_
             if not isinstance(spawn_time, (int, float)):
                 continue
             timeout = PHASE_TIMEOUT_SECONDS.get(phase, TIMEOUT_SECONDS)
-            if now - float(spawn_time) < timeout:
+            elapsed = now - float(spawn_time)
+            first_progress = entry.get("first_progress_at")
+            last_progress = entry.get("last_progress_at", first_progress)
+            reason = None
+            if elapsed >= timeout:
+                reason = "absolute_packet_timeout"
+            elif not isinstance(first_progress, (int, float)):
+                startup_limit = PHASE_STARTUP_PROGRESS_SECONDS.get(phase)
+                if isinstance(startup_limit, (int, float)) and elapsed >= startup_limit:
+                    reason = "startup_content_stall"
+            elif isinstance(last_progress, (int, float)):
+                stall_limit = PHASE_STALL_PROGRESS_SECONDS.get(phase)
+                if isinstance(stall_limit, (int, float)) and now - float(last_progress) >= stall_limit:
+                    reason = "content_progress_stall"
+            if not reason:
                 continue
             packet_record = packet_by_id.get(str(dispatch_id))
             if not packet_record:
                 entry.update({"status": "timed_out", "retired_at": now,
-                              "retirement_reason": "packet_timeout_missing_active_packet"})
+                              "retirement_reason": reason,
+                              "active_packet_missing": True,
+                              "elapsed_seconds": round(max(elapsed, 0), 3)})
                 result["retired_dispatch_ids"].append(str(dispatch_id))
                 result["exhausted_dispatch_ids"].append(str(dispatch_id))
+                result["retirement_reasons"][str(dispatch_id)] = reason
                 continue
             packet_path, packet = packet_record
             attempt = max(int(packet.get("dispatch_attempt", 1) or 1), 1)
             entry.update({"status": "timed_out", "retired_at": now,
-                          "retirement_reason": "absolute_packet_timeout",
+                          "retirement_reason": reason,
                           "elapsed_seconds": round(max(now - float(spawn_time), 0), 3)})
             result["retired_dispatch_ids"].append(str(dispatch_id))
+            result["retirement_reasons"][str(dispatch_id)] = reason
             if attempt >= MAX_RETRIES:
                 result["exhausted_dispatch_ids"].append(str(dispatch_id))
                 continue
-            replacement = _unique_replacement(run_dir, packet_path, packet, attempt + 1, now)
+            replacement = _unique_replacement(run_dir, packet_path, packet, attempt + 1, now, reason)
             result["replacement_packets"].append(replacement)
         if result["retired_dispatch_ids"]:
             phase_state["timeout_count"] = int(phase_state.get("timeout_count", 0) or 0) + len(
@@ -128,7 +156,7 @@ def retire_timed_out_dispatches(run_dir, phase, packet_paths, verified_dispatch_
     return result
 
 
-def _unique_replacement(run_dir, packet_path, packet, attempt, now):
+def _unique_replacement(run_dir, packet_path, packet, attempt, now, reason):
     dispatch_id = str(uuid.uuid4())
     tag = dispatch_id.split("-")[0]
     replacement = dict(packet)
@@ -137,11 +165,18 @@ def _unique_replacement(run_dir, packet_path, packet, attempt, now):
         "created_at": now,
         "dispatch_attempt": attempt,
         "retry_of_dispatch_id": packet.get("dispatch_id", ""),
-        "retry_reason": "absolute_packet_timeout",
+        "retry_reason": reason,
     })
     old_output = str(packet.get("_batch_output_path", "") or "")
     root, ext = os.path.splitext(old_output)
     replacement["_batch_output_path"] = "%s_retry%d_%s%s" % (root, attempt, tag, ext or ".json")
+    checkpoint_reuse = _checkpoint_reuse(packet, run_dir)
+    if checkpoint_reuse:
+        replacement["checkpoint_reuse"] = checkpoint_reuse
+        replacement["instruction"] = str(replacement.get("instruction", "")) + (
+            " Resume from checkpoint_reuse.path. Copy every listed validated item unchanged into the new output, "
+            "then create only unresolved items; do not regenerate or rewrite validated creative records."
+        )
     directory = os.path.dirname(packet_path)
     replacement_path = os.path.join(
         directory, "%s_timeout_retry%d_%s_packet.json" % (phase_safe(packet.get("phase")), attempt, tag)
@@ -153,6 +188,57 @@ def _unique_replacement(run_dir, packet_path, packet, attempt, now):
         "packet_path": replacement_path,
         "batch_output_path": replacement["_batch_output_path"],
         "attempt": attempt,
+        "retirement_reason": reason,
+        "checkpoint_reuse": checkpoint_reuse,
+    }
+
+
+def _checkpoint_reuse(packet, run_dir):
+    path = str(packet.get("_batch_output_path", "") or "")
+    if not path or not os.path.isfile(path):
+        return None
+    payload = _load(path)
+    phase = str(packet.get("phase", "") or "")
+    key = "shots" if phase == "master_production" else "windows" if phase == "editor_pass2" else ""
+    rows = payload.get(key, []) if isinstance(payload, dict) and key else []
+    if not isinstance(rows, list) or not rows:
+        return None
+    validated = []
+    if phase == "master_production":
+        from validate_composer_output import validate_composer_output
+        report_dir = os.path.join(run_dir, ".cache", "provenance", "checkpoint_reuse")
+        os.makedirs(report_dir, exist_ok=True)
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            item_id = str(row.get("shot_id", "") or row.get("subshot_id", "") or "")
+            if not item_id:
+                continue
+            report_path = os.path.join(report_dir, "%s.json" % item_id)
+            if validate_composer_output(
+                path, run_dir, report_path, allow_incomplete=True, selected_shot_ids=[item_id]
+            ) == 0:
+                validated.append(item_id)
+    else:
+        for row in rows:
+            if not isinstance(row, dict) or not row.get("window_id") or not isinstance(row.get("pass"), bool):
+                continue
+            if row.get("pass") is True and not row.get("blocking"):
+                validated.append(str(row["window_id"]))
+            elif (
+                row.get("pass") is False
+                and row.get("return_to_phase") in {"orchestrator", "master_production"}
+                and row.get("blocking")
+                and row.get("affected_shot_ids")
+                and str(row.get("creative_cause", "") or "").strip()
+            ):
+                validated.append(str(row["window_id"]))
+    if not validated:
+        return None
+    return {
+        "path": os.path.abspath(path),
+        "validated_item_ids": validated,
+        "semantic_transform": False,
     }
 
 
@@ -187,7 +273,7 @@ def _replace_manifest_entries(run_dir, phase, replacements, now, active_paths=No
             continue
         replacement = by_old[str(entry.get("dispatch_id", ""))]
         old = dict(entry, effective=False, superseded_at=now,
-                   superseded_reason="absolute_packet_timeout")
+                   superseded_reason=replacement["retirement_reason"])
         superseded.append(old)
         packet = _load(replacement["packet_path"])
         updated.append(dict(entry,

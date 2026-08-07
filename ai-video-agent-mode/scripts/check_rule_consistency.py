@@ -22,8 +22,6 @@ DETERMINISTIC_RUNTIME_FILES = (
 )
 
 FORBIDDEN_RUNTIME_CALLS = (
-    "emotion_camera_audit",
-    "episode_director_audit",
     "production_control_grounding_issues",
     "aesthetic_directing_contract_issues",
     "camera_competition_issues",

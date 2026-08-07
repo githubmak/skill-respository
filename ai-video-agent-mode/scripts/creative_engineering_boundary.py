@@ -15,7 +15,6 @@ HYBRID = "hybrid"
 PHASE_AUTHORITY = {
     "user_confirm": ENGINE,
     "orchestrator": HYBRID,
-    "scene_lock": MODEL,
     "master_production": MODEL,
     "editor_pass1": ENGINE,
     "editor_pass2": MODEL,

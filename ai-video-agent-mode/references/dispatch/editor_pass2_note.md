@@ -1,7 +1,8 @@
 # Editor Pass 2 Semantic Review Contract
 
-遵守 `creative_engineering_boundary.md`：本阶段负责语义、情绪、表演和镜头审查；工程层只提供事实差异。
-需要改变语义时明确返回模型修复字段，不得建议 Normalizer、合并器或导出器静默改写创作内容。
+遵守 `creative_engineering_boundary.md`：本阶段只负责独立语义与审美验收；工程层只提供事实差异。
+Editor 不补写、拼接、润色或返回替代提示词。需要改变语义时，说明创作因果并指定最早责任阶段，让该阶段
+重新创作完整导演候选；不得把问题转换成末端字段补丁。
 
 只审查 `packet.items` 中的有界场景窗口。先读 `pre_editor_gate_path`、源文事实、Scene Lock、相邻镜和
 完整创作包；本地只检查确定性格式、时长和逐字事实，没有提供任何可代替导演判断的语义评分。
@@ -20,11 +21,16 @@
 输出顶层只能是：
 
 ```json
-{"windows":[{"window_id":"W001","pass":true,"blocking":[],"repair_targets":[]}]}
+{"windows":[{"window_id":"W001","pass":true,"blocking":[],"return_to_phase":null,"affected_shot_ids":[],"creative_cause":""}]}
 ```
 
-每个输入窗口按原顺序输出一次。`window_id` 逐字继承；`pass` 必须是布尔值；`blocking` 只写具体
-语义问题；`repair_targets` 只写最早负责的最小字段，格式为
-`{"shot_id":"S1","field_path":"qa_metadata.continuity_contract.end_anchor"}`。
-存在 blocking 时 `pass=false`；通过时两个数组都为空。不要返回完整提示词、`items`、分析散文、
-纯格式问题或未被源文支持的新事实。
+每个输入窗口按原顺序输出一次。`window_id` 逐字继承；`pass` 必须是布尔值；`blocking` 只写具体问题。
+存在 blocking 时 `pass=false`，`return_to_phase` 只能是 `orchestrator` 或 `master_production`，
+`affected_shot_ids` 写受影响主镜，`creative_cause` 说明为什么首轮导演意图没有实现；全局剧本理解、人物关系、
+镜头组节奏或 Scene Lock 根因返回 `orchestrator`，单镜导演执行根因返回 `master_production`。通过时
+`return_to_phase=null`、两个数组为空且 `creative_cause` 为空。不要返回字段补丁、完整提示词、`items`、
+分析散文、纯格式问题或未被源文支持的新事实。
+
+每完成一个窗口，先把当前完整 `{"windows":[...]}` 原子替换到 `_batch_output_path`，再运行 packet 的
+`progress_command_template`。该检查点只用于恢复和停滞判断，不算最终完成；所有输入窗口完成后才记录
+provenance。

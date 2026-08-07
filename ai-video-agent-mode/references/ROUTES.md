@@ -1,7 +1,7 @@
 # Route Context Policy
 
 `scripts/route_task.py` 是机器来源。先运行它，再遵守返回的 `context_plan`；本文件仅解释
-各路由为什么需要这些上下文。不要在路由前加载完整 runbook 或大合同。
+各路由为什么需要这些上下文。不要在路由前加载完整合同。
 
 | Route | 适用任务 | `read_first` | `read_on_demand` | `run_only` |
 |---|---|---|---|---|
@@ -42,7 +42,7 @@
 ## Supervisor 循环
 
 配置确认后持续调用 `workflow_supervisor.py`。首次 Orchestrator 只生成源快照和模型创作请求；
-返回 `creative_authoring_required` 时由主模型提交三份蓝图文件后再续跑。其余本地阶段自动运行；
+返回 `creative_authoring_required` 时由主模型提交 `shot_plan.draft.json` 与 `scene_locks.draft.json` 后再续跑。其余本地阶段自动运行；
 `host_dispatch_required` 才派发 Agent；`waiting_for_workers` 只等待回执、心跳或验证结果。
 完成每个 packet 的 provenance 链后立即继续 supervisor。仅 `needs_user_confirm=true` 可以暂停提问。
 
@@ -54,5 +54,5 @@
 `check_export.py`。摄影、情绪、Seedance 和审美审查必须派发模型 Editor。仅在调试状态机实现时读取
 `pipeline_runner.py`、`pipeline_state.py`、`pipeline_runtime.py` 或 `sources.py`。
 
-`dispatch/scene_lock_note.md`、`dispatch/master_production_note.md` 与
-`dispatch/editor_pass2_note.md` 由 `dispatch_cache.py` 自动写入阶段 sidecar，宿主不重复预读。
+`dispatch/master_production_note.md` 与 `dispatch/editor_pass2_note.md` 由 `dispatch_cache.py`
+自动写入阶段 sidecar，宿主不重复预读。

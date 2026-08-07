@@ -16,10 +16,10 @@ stage and does not change the T2V-only contract. It prevents continuity rules fr
 visual direction. Every shot must carry a visual intention, then translate that intention into
 visible light, composition, material, and motion evidence.
 
-When the user requests a more beautiful, lively, modern-drama, ancient-game, wuxia, or anti-AI
-look, or the source has strong genre evidence, read `../visual-direction-profiles.md`. Resolve one
-profile before the Visual Bible, then translate it into scene-specific facts. Style words inside
-source dialogue do not activate a profile.
+When the user requests a specific visual style, or the source has strong genre evidence, let the
+model decide the visual thesis and translate it into scene-specific facts. Do not use a profile
+router, keyword score, or fixed genre template. Style words inside source dialogue are not visual
+direction unless the model finds a story-grounded reason to use them.
 
 When the user explicitly requests lively/natural motion, a previous output looks mechanical, or
 the scene has a usable physical driver, also read `../liveness-motion-grammar.md`. Fold its scene

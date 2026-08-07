@@ -107,6 +107,11 @@ def record(packet_path, allow_partial=False, input_tokens=None, output_tokens=No
         if isinstance(input_tokens, int) and isinstance(output_tokens, int)
         else {"status": "unavailable", "reason": "host did not provide exact per-dispatch token usage"}
     )
+    first_progress_at = provenance_state.get("first_progress_at")
+    time_to_first_progress = (
+        round(max(float(first_progress_at) - float(spawn_time), 0), 3)
+        if isinstance(first_progress_at, (int, float)) else None
+    )
     manifest = {
         "contract_version": PROMPT_CONTRACT_VERSION,
         "dispatch_id": packet["dispatch_id"],
@@ -133,6 +138,10 @@ def record(packet_path, allow_partial=False, input_tokens=None, output_tokens=No
         "dispatch_receipt_sha256": receipt_sha256(receipt_path),
         "dispatch_receipt_nonce": receipt.get("nonce"),
         "dispatch_heartbeat_count": receipt.get("heartbeat_count"),
+        "time_to_first_progress_seconds": time_to_first_progress,
+        "last_progress_at": provenance_state.get("last_progress_at"),
+        "checkpoint_count": int(provenance_state.get("progress_count", 0) or 0),
+        "completed_item_count": int(provenance_state.get("completed_item_count", 0) or 0),
         "recorded_at": recorded_at,
         "worker_elapsed_seconds": round(max(recorded_at - spawn_time, 0), 3),
         "batch_bytes": os.path.getsize(batch_path),
@@ -178,7 +187,11 @@ def _mark_dispatch_recorded(run_dir, phase, dispatch_id, validation_mode, manife
             dispatch["recorded_at"] = time.time()
             if isinstance(dispatch.get("spawn_time"), (int, float)):
                 dispatch["elapsed_seconds"] = round(max(dispatch["recorded_at"] - dispatch["spawn_time"], 0), 3)
-            for field in ("batch_bytes", "batch_characters", "shot_count", "worker_elapsed_seconds", "token_usage"):
+            for field in (
+                "batch_bytes", "batch_characters", "shot_count", "worker_elapsed_seconds",
+                "token_usage", "time_to_first_progress_seconds", "last_progress_at",
+                "checkpoint_count", "completed_item_count",
+            ):
                 if isinstance(manifest, dict) and field in manifest:
                     dispatch[field] = manifest[field]
         dispatches = phase_state.get("dispatches", {})
@@ -245,25 +258,42 @@ def verify(batch_path):
 
 
 def _validate(phase, batch_path, run_dir, validation_report_path=None):
-    if phase == "scene_lock":
-        from validate_scene_locks import validate as validate_scene_locks
-        return "validate_scene_locks", not validate_scene_locks(batch_path)
     if phase == "master_production":
         return "validate_composer_output", validate_composer_output(
             batch_path, run_dir, validation_report_path
         ) == 0
     if phase == "editor_pass2":
         data = _load(batch_path)
+        windows = data.get("windows", []) if isinstance(data, dict) else []
         valid = (
             isinstance(data, dict)
-            and isinstance(data.get("windows"), list)
-            and bool(data["windows"])
+            and isinstance(windows, list)
+            and bool(windows)
             and all(isinstance(item, dict) and item.get("window_id") and isinstance(item.get("pass"), bool)
-                    and isinstance(item.get("blocking", []), list) and isinstance(item.get("repair_targets", []), list)
-                    for item in data["windows"])
+                    and isinstance(item.get("blocking", []), list)
+                    and _valid_editor_routing(item)
+                    for item in windows)
         )
         return "editor_scene_window_contract", valid
     return "json_parse", isinstance(_load(batch_path), dict)
+
+
+def _valid_editor_routing(item):
+    if item.get("pass") is True:
+        return (
+            not item.get("blocking")
+            and item.get("return_to_phase") in (None, "")
+            and item.get("affected_shot_ids", []) == []
+            and str(item.get("creative_cause", "") or "") == ""
+        )
+    return (
+        bool(item.get("blocking"))
+        and item.get("return_to_phase") in {"orchestrator", "master_production"}
+        and isinstance(item.get("affected_shot_ids"), list)
+        and bool(item.get("affected_shot_ids"))
+        and bool(str(item.get("creative_cause", "") or "").strip())
+        and "repair_targets" not in item
+    )
 
 
 def _sha256(path):

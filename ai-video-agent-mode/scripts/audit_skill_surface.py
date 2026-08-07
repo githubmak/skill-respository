@@ -9,7 +9,7 @@ import re
 from contract_registry import AGENT_PHASE_NAMES
 
 
-CURRENT_AGENT_PHASES = frozenset({"scene_lock", "master_production", "editor_pass2"})
+CURRENT_AGENT_PHASES = frozenset({"master_production", "editor_pass2"})
 RETIRED_RELATIVE_PATHS = (
     "references/agents/01_orchestrator_storyboard_agent.md",
     "references/agents/02_director_enhancement_agent.md",
@@ -26,6 +26,25 @@ RETIRED_RELATIVE_PATHS = (
     "scripts/validator/contamination.py",
     "scripts/validator/field_types.py",
     "scripts/validator/quality.py",
+    "references/runbook.md",
+    "references/dispatch/scene_lock_note.md",
+    "references/dynamic_performance_reference.md",
+    "references/visual-direction-profiles.md",
+    "scripts/visual_profile_router.py",
+    "scripts/emotion_camera_audit.py",
+    "scripts/episode_director_audit.py",
+    "scripts/episode_state_graph.py",
+    "scripts/scene_motion_plan.py",
+    "scripts/scene_texture_plan.py",
+    "scripts/spatial_storyboard.py",
+    "scripts/current_keyframe.py",
+    "scripts/negative_prompts.py",
+    "scripts/scene_lock_authority.py",
+    "scripts/test_current_pipeline.py",
+    "scripts/test_keyframe_pipeline.py",
+    "scripts/test_preproduction_quality_plans.py",
+    "scripts/test_quality_control_matrix.py",
+    "scripts/test_quality_upgrades.py",
 )
 PROJECT_SPECIFIC_RUNTIME_PATTERNS = (
     re.compile(r"\bif\s+(?:shot_id|subshot_id)\s*==\s*['\"]S\d", re.I),

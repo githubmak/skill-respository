@@ -17,7 +17,7 @@ if not os.environ.get("PYTHONPYCACHEPREFIX") and not getattr(sys, "pycache_prefi
     sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(__file__))
 from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_prefix
-from context_budget import check as check_context_budget
+from context_budget import MAX_EFFECTIVE_CONTEXT_CHARS, check as check_context_budget, size as context_size
 from batch_planner import analysis_chunks as _analysis_chunks, batch_profile as _batch_profile
 from batch_planner import dynamic_master_chunks as _plan_dynamic_master_chunks
 from batch_planner import editor_review_chunks as _editor_review_chunks
@@ -27,13 +27,11 @@ block_source_pycache_until_run_dir()
 
 
 PHASE_OUTPUTS = {
-    "scene_lock": ".cache/analysis/scene_locks.json",
     "master_production": ".cache/composer/merged.prompt_package.json",
     "editor_pass2": ".cache/review/llm_gate_result.json",
 }
 
 PHASE_INPUTS = {
-    "scene_lock": ".cache/orchestrator/shot_plan.json",
     "master_production": ".cache/orchestrator/shot_plan.json",
     "editor_pass2": ".cache/composer/merged.prompt_package.json",
 }
@@ -68,8 +66,6 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
         all_items = _extract_items(data, set())
         owner_ids = {item.get("shot_id") for item in items}
         items = [item for item in all_items if item.get("shot_id") in owner_ids]
-    if phase == "scene_lock":
-        items = _scene_lock_items(data)
     if not items:
         return []
 
@@ -92,6 +88,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
     else:
         size = max(len(items), 1)
         chunks = [items]
+    chunks = _split_for_actual_context(run_dir, phase, chunks)
     out_dir = os.path.join(run_dir, ".cache", "dispatch")
     os.makedirs(out_dir, exist_ok=True)
     dispatch_group_id = str(uuid.uuid4())
@@ -114,6 +111,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
                 run_dir, chunk, out_dir, dispatch_tag, scene_lock_cache_path,
             )
             packet_items = [_compact_composer_item(item) for item in chunk]
+            source_evidence_path = _write_source_evidence(run_dir, chunk, out_dir, dispatch_tag)
         retry_context_path = None
         retry_mode = None
         if is_retry and phase == "master_production":
@@ -132,6 +130,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             "source_sha256": _sha256(source_path),
             "source_snapshot_path": os.path.join(run_dir, ".cache", "orchestrator", "source_snapshot.json"),
             "source_ledger_path": os.path.join(run_dir, ".cache", "orchestrator", "source_ledger.json"),
+            "scene_locks_path": os.path.join(run_dir, ".cache", "analysis", "scene_locks.json"),
             "project_config_path": os.path.join(run_dir, "project_config.json"),
             "constraints_path": constraints_path,
             "output_path": public_output,
@@ -147,6 +146,27 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             "master_shot_count": len(chunk),
             "context_item_count": len(chunk),
             "items": packet_items,
+            "checkpoint_policy": {
+                "atomic_replace": True,
+                "checkpoint_after_each_item": True,
+                "progress_evidence": "output_bytes_and_completed_item_count",
+                "partial_checkpoint_is_completion": False,
+                "top_level_collection": "shots" if phase == "master_production" else "windows",
+            },
+            "progress_command_template": [
+                sys.executable,
+                os.path.join(os.path.dirname(__file__), "record_dispatch_heartbeat.py"),
+                "{packet_path}",
+                "{agent_id}",
+            ],
+            "checkpoint_command_template": [
+                sys.executable,
+                os.path.join(os.path.dirname(__file__), "record_worker_checkpoint.py"),
+                "{packet_path}",
+                "{agent_id}",
+                "--item-id",
+                "{item_id}",
+            ],
             "instruction": (
                 "Process only packet.items and write exactly one JSON file "
                 "to _batch_output_path. Do not write output_path; the main agent merges batch files. "
@@ -158,19 +178,14 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             ),
         }
         if phase == "master_production":
+            packet["source_evidence_path"] = source_evidence_path
             packet["local_validation_command"] = [
                 sys.executable,
                 os.path.join(os.path.dirname(__file__), "validate_composer_output.py"),
                 batch_output,
                 "--run-dir",
                 run_dir,
-            ]
-            packet["incremental_validation_command"] = [
-                sys.executable,
-                os.path.join(os.path.dirname(__file__), "validate_main_shot_incremental.py"),
-                batch_output,
-                "--shot-id",
-                "{shot_id}",
+                "--allow-incomplete",
             ]
             packet["context_policy"] = {
                 "fixed_global_context": [
@@ -178,8 +193,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
                     "constraints_path",
                     "composer_scaffold_path",
                     "scene_lock_cache_path",
-                    "source_snapshot_path",
-                    "source_ledger_path",
+                    "source_evidence_path",
                 ],
                 "per_shot_context": [
                     "packet.items[] complete model-authored record",
@@ -192,7 +206,11 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             packet["instruction"] += (
                 " Composer batch output top-level must be exactly {\"shots\": [...]}; "
                 "omit contract_version. Preserve only scaffold locked_fields; all other creative fields are model-owned. "
-                "After each main shot, run incremental_validation_command with its shot id and patch only the reported scope. "
+                "Treat the first persisted version of every main shot as a delivery-ready final candidate. Before writing it, "
+                "perform the model's own holistic director review against the episode intent and viewer experience; do not emit a self-score or checklist. "
+                "After each main shot, atomically replace _batch_output_path with the current complete {\"shots\": [...]} checkpoint, "
+                "then run checkpoint_command_template with that shot id so deterministic validation and content progress are recorded in one call. "
+                "A checkpoint never counts as completed provenance. "
                 "Then run the exact full-batch local_validation_command; it must PASS and cannot be replaced by an incremental PASS."
             )
         if retry_context_path:
@@ -218,13 +236,25 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             packet["review_packet_path"] = os.path.join(run_dir, ".cache", "review", "llm_gate_review.md")
             packet["pre_editor_gate_path"] = pre_editor_gate_path
             packet["editor_creative_context_path"] = editor_context_path
+            packet["context_policy"] = {
+                "fixed_global_context": [
+                    "project_config_path", "constraints_path", "pre_editor_gate_path",
+                    "editor_creative_context_path",
+                ],
+                "history_policy": "Use the bounded exact source records plus complete model-authored global and adjacent-shot context.",
+            }
             packet["instruction"] += (
-                " For editor_pass2, read pre_editor_gate_path and editor_creative_context_path in full. The latter contains the exact, "
+                " For editor_pass2, read pre_editor_gate_path and editor_creative_context_path in full. The latter contains bounded exact source records, "
                 "unclipped model-authored prompts, director cards, creative metadata, plan facts, and adjacent shots for this bounded window. "
-                "It also points to the immutable source snapshot and engineering ledger for verbatim source review. "
+                "It also contains the complete model-authored global director context needed to judge the bounded window. "
                 "The local gate proves only mechanical validity. Independently judge script interpretation, emotional causality, "
                 "performance, shot rhythm, blocking, camera, movement, focus, lighting, palette, Seedance comprehensibility, and final aesthetics. "
-                "Do not defer any semantic decision to keyword or regex reports. Every window receives the same full model review standard."
+                "Do not defer any semantic decision to keyword or regex reports. Every window receives the same full model review standard. "
+                "Act only as an independent acceptance reviewer: never write replacement prompts or field patches. On failure, identify whether "
+                "the earliest creative owner is orchestrator or master_production, explain the creative cause, and list affected main-shot IDs."
+                " After each completed window, atomically replace _batch_output_path with the current complete {\"windows\": [...]} checkpoint, "
+                "then run checkpoint_command_template so content growth is recorded. A checkpoint never counts as completed provenance; "
+                "only the final complete windows batch may proceed to record_batch_provenance.py."
             )
         check_context_budget(packet)
         suffix = "" if len(chunks) == 1 else "_batch%03d" % idx
@@ -246,6 +276,14 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
 
 def _write_editor_creative_context(run_dir, source_path, windows, out_dir, dispatch_tag):
     """Stage exact bounded creative text for model Editor review."""
+    payload = _editor_creative_context_payload(run_dir, source_path, windows)
+    path = os.path.join(out_dir, "editor_creative_context_%s.json" % dispatch_tag)
+    os.makedirs(out_dir, exist_ok=True)
+    _write_json(path, payload)
+    return path
+
+
+def _editor_creative_context_payload(run_dir, source_path, windows):
     package = _load_json(source_path)
     wanted = set()
     for window in windows:
@@ -270,19 +308,18 @@ def _write_editor_creative_context(run_dir, source_path, windows, out_dir, dispa
         item for item in locks.get("scenes", [])
         if isinstance(item, dict) and str(item.get("scene", "")) in scene_names
     ]
-    path = os.path.join(out_dir, "editor_creative_context_%s.json" % dispatch_tag)
-    os.makedirs(out_dir, exist_ok=True)
-    _write_json(path, {
+    return {
         "authority": "model_editor",
         "semantic_transform": False,
-        "source_snapshot_path": os.path.join(run_dir, ".cache", "orchestrator", "source_snapshot.json"),
-        "source_ledger_path": os.path.join(run_dir, ".cache", "orchestrator", "source_ledger.json"),
         "target_shot_ids": sorted(wanted),
+        "global_director_context": {
+            key: copy.deepcopy(value) for key, value in plan.items() if key != "shots"
+        },
+        "source_records": _source_records(run_dir, planned),
         "shots": shots,
         "planned_shots": planned,
         "scene_locks": scene_locks,
-    })
-    return path
+    }
 
 
 def prepare_dispatch_packet(run_dir, phase, batch_size=None, subshot_ids=None):
@@ -531,25 +568,6 @@ def _extract_items(data, wanted):
     return items
 
 
-def _scene_lock_items(shot_plan):
-    """Group full model-authored shot records by the model-declared scene."""
-    scenes = {}
-    for shot in shot_plan.get("shots", []):
-        scene = str(shot.get("scene", "") or "__default__")
-        entry = scenes.setdefault(scene, {
-            "scene": scene, "scene_type": shot.get("scene_type", ""),
-            "shot_ids": [], "subshot_ids": [], "characters": [], "shots": [],
-        })
-        entry["shot_ids"].append(shot.get("shot_id", ""))
-        entry["shots"].append(copy.deepcopy(shot))
-        for subshot in shot.get("subshots", []):
-            entry["subshot_ids"].append(subshot.get("subshot_id", ""))
-            for character in subshot.get("characters", []):
-                if character not in entry["characters"]:
-                    entry["characters"].append(character)
-    return list(scenes.values())
-
-
 def _batch_output_path(public_output, phase, idx, total, dispatch_tag):
     """Return the only file a worker may write for this packet."""
     directory = os.path.dirname(public_output)
@@ -583,7 +601,6 @@ def _phase_note_text(skill_dir, phase):
     editing dispatcher code.
     """
     note_files = {
-        "scene_lock": "scene_lock_note.md",
         "master_production": "master_production_note.md",
         "editor_pass2": "editor_pass2_note.md",
     }
@@ -605,7 +622,6 @@ def _write_constraints_sidecar(run_dir, phase, dispatch_dir, dispatch_tag):
     )
     out_path = os.path.join(dispatch_dir, "%s_%s_constraints.md" % (phase, dispatch_tag))
     phase_note = _phase_note_text(skill_dir, phase) or {
-        "scene_lock": "专业角色：场景锁定 Agent。请返回扁平 scene lock JSON；不得写提示词正文、运镜或人物表演。",
         "master_production": "专业角色：AI 短剧导演与提示词监督。遵守本 sidecar 的 T2V-only、source basemap、质量合同、直投密度和 provenance 规则。",
         "editor_pass2": "使用 §B/§C 作为审查上下文。不要改写纯格式问题；只返回语义审查 JSON。",
     }.get(phase, "遵守所引用阶段的契约。")
@@ -635,9 +651,6 @@ def _select_contract_sections(body, phase):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(body)
         sections[match.group(1)] = body[match.start():end].rstrip()
     wanted = {
-        # Scene Lock is governed by scene_lock_note.md.  §A is an archive-only
-        # analysis format and must never be injected into a current dispatch.
-        "scene_lock": (),
         "master_production": ("B",),
         "editor_pass2": (),
     }.get(phase, tuple(sections))
@@ -779,22 +792,19 @@ def _write_model_owned_scaffold(run_dir, items, dispatch_dir, dispatch_tag, scen
 
 
 def _write_retry_context(run_dir, phase, items, dispatch_dir, dispatch_tag):
-    """Expose only validator facts for the retry batch, never prior creative text."""
-    sources = _load_optional_json(os.path.join(run_dir, ".cache", "sources.json"))
+    """Expose current validator/model-review facts, never stale compatibility state."""
+    facts = _latest_retry_facts(run_dir)
     selected = []
-    max_retries = 0
     for item in items:
-        subshot_id = str(item.get("subshot_id", "") or "")
-        record = sources.get(subshot_id, {}) if isinstance(sources, dict) else {}
-        retries = int(record.get("retries", 0) or 0)
-        max_retries = max(max_retries, retries)
+        subshot_id = str(item.get("shot_id", "") or item.get("subshot_id", "") or "")
+        record = facts.get(subshot_id, {})
         selected.append({
             "subshot_id": subshot_id,
-            "issues": record.get("qa_issues", []),
-            "passed_phases": record.get("passed_phases", []),
-            "repair_fields": _repair_fields(record.get("qa_issues", [])),
+            "issues": record.get("issues", []),
+            "repair_fields": record.get("fields", ["validator_reported_field"]),
+            "repair_scope": record.get("repair_scope", "shot"),
         })
-    mode = "validator_targeted" if max_retries <= 1 else "single_subshot_field_repair"
+    mode = "current_structured_diagnostics"
     payload = {
         "contract_version": PROMPT_CONTRACT_VERSION,
         "phase": phase,
@@ -805,6 +815,56 @@ def _write_retry_context(run_dir, phase, items, dispatch_dir, dispatch_tag):
     path = os.path.join(dispatch_dir, "%s_%s_retry.json" % (phase, dispatch_tag))
     _write_json(path, payload)
     return path, mode
+
+
+def _latest_retry_facts(run_dir):
+    facts = {}
+    directories = (
+        os.path.join(run_dir, ".cache", "provenance"),
+        os.path.join(run_dir, ".cache", "review"),
+    )
+    candidates = []
+    for directory in directories:
+        if not os.path.isdir(directory):
+            continue
+        candidates.extend(
+            os.path.join(directory, name)
+            for name in os.listdir(directory)
+            if name.endswith(".json")
+        )
+    for path in sorted(candidates, key=lambda value: os.path.getmtime(value)):
+        report = _load_optional_json(path)
+        targets = report.get("repair_targets", []) if isinstance(report, dict) else []
+        for target in targets if isinstance(targets, list) else []:
+            if not isinstance(target, dict):
+                continue
+            shot_id = str(target.get("shot_id", "") or target.get("subshot_id", "") or "")
+            if not shot_id:
+                continue
+            fields = target.get("fields", []) if isinstance(target.get("fields"), list) else []
+            field_path = str(target.get("field_path", "") or "").strip()
+            if field_path:
+                fields = list(fields) + [field_path]
+            reasons = target.get("reasons", []) if isinstance(target.get("reasons"), list) else []
+            facts[shot_id] = {
+                "fields": [str(value) for value in fields if str(value).strip()] or ["validator_reported_field"],
+                "issues": [str(value) for value in reasons if str(value).strip()],
+                "repair_scope": str(target.get("repair_scope", "shot") or "shot"),
+            }
+        for window in report.get("windows", []) if isinstance(report, dict) else []:
+            if not isinstance(window, dict) or window.get("pass"):
+                continue
+            if window.get("return_to_phase") != "master_production":
+                continue
+            for shot_id in window.get("affected_shot_ids", []) if isinstance(window.get("affected_shot_ids"), list) else []:
+                facts[str(shot_id)] = {
+                    "fields": ["__all_mutable__"],
+                    "issues": [str(window.get("creative_cause", "") or "")] + [
+                        str(value) for value in window.get("blocking", [])
+                    ],
+                    "repair_scope": "shot",
+                }
+    return facts
 
 
 def _repair_fields(issues):
@@ -833,6 +893,69 @@ def _write_scene_lock_cache(run_dir, items, dispatch_dir, group_tag):
         "CREATIVE_AUTHORING_REQUIRED: model-authored scene_locks.json is missing; "
         "engineering cannot synthesize lighting, space, continuity, or visual direction"
     )
+
+
+def _write_source_evidence(run_dir, items, dispatch_dir, dispatch_tag):
+    path = os.path.join(dispatch_dir, "source_evidence_%s.json" % dispatch_tag)
+    _write_json(path, {
+        "authority": "engineering_verbatim_source_slice",
+        "semantic_transform": False,
+        "records": _source_records(run_dir, items),
+    })
+    return path
+
+
+def _source_records(run_dir, values):
+    wanted = set()
+
+    def walk(value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key == "source_ids" and isinstance(child, list):
+                    wanted.update(str(item) for item in child if str(item).strip())
+                else:
+                    walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    walk(values)
+    ledger = _load_optional_json(os.path.join(run_dir, ".cache", "orchestrator", "source_ledger.json"))
+    return [
+        copy.deepcopy(unit) for unit in ledger.get("units", [])
+        if isinstance(unit, dict) and str(unit.get("source_id", "")) in wanted
+    ]
+
+
+def _split_for_actual_context(run_dir, phase, chunks):
+    """Split multi-item work before writing packets using the real creative payload size."""
+    result = []
+    queue = list(chunks)
+    while queue:
+        chunk = queue.pop(0)
+        estimated = _estimated_chunk_context(run_dir, phase, chunk)
+        if estimated <= MAX_EFFECTIVE_CONTEXT_CHARS or len(chunk) <= 1:
+            result.append(chunk)
+            continue
+        midpoint = max(len(chunk) // 2, 1)
+        queue[0:0] = [chunk[:midpoint], chunk[midpoint:]]
+    return result
+
+
+def _estimated_chunk_context(run_dir, phase, chunk):
+    fixed_paths = [os.path.join(run_dir, "project_config.json")]
+    payload_size = context_size(chunk)
+    if phase == "master_production":
+        fixed_paths.append(os.path.join(run_dir, ".cache", "analysis", "scene_locks.json"))
+        payload_size += context_size(_source_records(run_dir, chunk))
+    elif phase == "editor_pass2":
+        fixed_paths.append(os.path.join(run_dir, ".cache", "review", "pre_editor_gate.json"))
+        source_path = os.path.join(run_dir, PHASE_INPUTS[phase])
+        payload_size += context_size(_editor_creative_context_payload(run_dir, source_path, chunk))
+    external = sum(os.path.getsize(path) for path in fixed_paths if os.path.isfile(path))
+    # Reserve deterministic packet, constraints and scaffold overhead without
+    # interpreting or truncating any creative field.
+    return payload_size + external + 20000
 
 
 def _compact_composer_item(item):
