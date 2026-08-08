@@ -5,14 +5,14 @@ description: >
   Returns quantified shot size, camera angle, lens/focal length, movement parameters,
   axis rule check, transition type, shot-size gradient check, and 3D virtual-set camera
   coordinates for one shot. Also handles adjacent-shot pair analysis for continuity validation.
-  Invoked by split-script-to-storyboard during shot design; can also be called standalone for
-  camera/movement planning.
+  Can be called by an upstream storyboard workflow during shot design or used standalone
+  for camera and movement planning.
 ---
 
 <!-- PIPELINE_KERNEL:START -->
-> 以下段由 `split-script-to-storyboard` v7 pipeline 在运行时提取并注入融合 agent prompt。
+> 以下段可由兼容的上游分镜流程提取并注入融合 agent prompt。
 >
-> **Mode C v4 dispatch exception:** 当输入 packet 含 `contract_version=modec-v4` 时，本 Kernel 内的景别配额、强制机位轮换、相邻镜头必须变化、复合运镜、全片百分比与强制数值化规则全部降级为参考；只执行本文后方“AI Video Agent Mode 输出覆盖规则”。
+> **Mode C v4 compatibility exception:** 当显式输入 packet 含 `contract_version=modec-v4` 时，本 Kernel 内的景别配额、强制机位轮换、相邻镜头必须变化、复合运镜、全片百分比与强制数值化规则全部降级为参考；只执行本文后方“兼容数据包输出规则”。
 
 ## PIPELINE KERNEL: 运镜景别核心规则
 
@@ -49,9 +49,9 @@ description: >
 
 # Camera Analysis — 单镜运镜景别分析器
 
-## AI Video Agent Mode 输出覆盖规则
+## 兼容数据包输出规则（非默认调用）
 
-当由 `ai-video-agent-mode` 作为 Phase 2c 子Agent调用，并收到 dispatch packet 路径时，本技能必须服从调用方 packet，不使用下方独立 Markdown Output Contract。
+当前 `ai-video-agent-mode` 不固定派发本技能。仅当调用方明确提供兼容的 dispatch packet 路径时，才使用本节数据包合同，并服从调用方 packet，不使用下方独立 Markdown Output Contract。
 
 - 读取 packet JSON。
 - `packet.contract_version` 必须为 `modec-v4`；缺失或版本不符时停止并要求主 Agent 重新派发。
@@ -102,7 +102,7 @@ description: >
 
 ## Core Use
 
-将单个分镜的摄影机需求转化为可执行的量化指令。不处理情绪（`$emotion-analysis`）、画面内容（`$frames-analysis`）、多镜编排（`$split-script-to-storyboard`）。独立调用时作为摄影机/运镜规划工具使用。
+将单个分镜的摄影机需求转化为可执行的量化指令。不处理情绪（`$emotion-analysis`）、画面内容（`$frames-analysis`）或多镜编排。独立调用时作为摄影机/运镜规划工具使用。
 
 > 📖 13种电影级运镜模式（量化参数+情绪-运镜速查表+画幅适配）→ `references/cinematic-movement-library.md`
 
@@ -343,12 +343,12 @@ Ladder: `大远景 → 远景 → 全景 → 中景 → 中近景 → 近景 →
 ## Structured JSON Reminder
 
 独立调用时可使用上方 Markdown Output Contract。  
-被 `ai-video-agent-mode` 调用时，必须使用本文开头的 **AI Video Agent Mode 输出覆盖规则**：根对象为 `{"items": [...]}`，每项包含 `id`、`shot_id` 和 `subshot_id`，并写入 dispatch packet 的 `_batch_output_path`；禁止写公共 `output_path`。
+收到显式兼容 dispatch packet 时，必须使用本文开头的数据包输出规则：根对象为 `{"items": [...]}`，每项包含 `id`、`shot_id` 和 `subshot_id`，并写入 dispatch packet 的 `_batch_output_path`；禁止写公共 `output_path`。
 
 
 ---
 
-## 质量标准（同步自 ai-video-agent-mode）
+## 独立调用质量参考
 
 **景别规范：**
 - 仅使用中文景别名称：大特写/特写/中近景/中景/全景/大远景

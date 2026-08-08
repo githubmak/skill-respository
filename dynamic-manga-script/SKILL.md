@@ -178,16 +178,11 @@ description: 严格按照参考格式将小说文本转换为标准动态漫剧�
 
 ## 现有技能关系
 
-- `novel-script` 技能提供更全面的商用级小说转剧本流程（含xlsx导出、角色造型卡、向量知识库等扩展功能）
-- 本 `dynamic-manga-script` 技能专注于严格遵循参考示例的格式输出，适用于需要精确格式控制的场景
-- 用户已安装 `novel-script` 时，若本技能更符合需求则优先使用本技能
+- 本 `dynamic-manga-script` 技能专注于严格遵循参考示例的格式输出，适用于需要精确格式控制的场景。
+- 不依赖个人技能库中不存在的小说转换、场景提示词或项目状态技能。
 
 ## 可配合的技能
 
 本技能主要输出剧本正文。用户如需将剧本生成AI图文/视频，可后续配合以下技能：
 - `cinematic-character-prompt` - 角色画面提示词
 - `nine-panel-video-storyboard` - 九宫格视频分镜
-- `scene-prompt` - 场景提示词
-- `music-prompt` - 配乐提示词
-
-完成剧本转化后建议用户使用 `/project-bible save` 保存当前剧本创作状态，或用 `/project-bible update` 更新项目圣经。

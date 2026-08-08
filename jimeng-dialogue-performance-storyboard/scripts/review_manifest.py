@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create and verify non-feed review manifests for storyboard deliverables."""
+"""Create and verify byte-bound review attestations for storyboard deliverables."""
 
 from __future__ import annotations
 
@@ -10,17 +10,19 @@ import json
 from pathlib import Path
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DESIGN_STATES = ("PASS", "REVISE")
-VISUAL_STATES = ("PASS", "REVISE", "NOT_RUN")
+VISUAL_STATES = ("PASS", "REVISE", "NOT_APPLICABLE", "NOT_RUN")
 REVIEW_MODES = ("independent", "self_check")
 DELIVERY_EXTENSIONS = {".md", ".svg", ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".xlsx"}
 NON_DELIVERY_DIRECTORIES = {"reports", "staging", ".staging"}
+VISUAL_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov"}
 
 
 def delivery_status(design_review: str, visual_review: str) -> str:
-    """Engineering/design completion is provisional until real visual evidence passes."""
-    return "FINAL" if design_review == "PASS" and visual_review == "PASS" else "PROVISIONAL"
+    """Visual review is required only when visual evidence is part of delivery."""
+    visual_complete = visual_review in {"PASS", "NOT_APPLICABLE"}
+    return "FINAL" if design_review == "PASS" and visual_complete else "PROVISIONAL"
 
 
 def sha256_file(path: Path) -> str:
@@ -69,7 +71,7 @@ def build_manifest(
     if design_review not in DESIGN_STATES:
         raise ValueError("design_review must be PASS or REVISE")
     if visual_review not in VISUAL_STATES:
-        raise ValueError("visual_review must be PASS, REVISE, or NOT_RUN")
+        raise ValueError("visual_review must be PASS, REVISE, NOT_APPLICABLE, or NOT_RUN")
     expected_independent = review_mode == "independent"
     if independent is not None and independent != expected_independent:
         raise ValueError("review_mode and independent flag conflict")
@@ -78,6 +80,11 @@ def build_manifest(
     if not outputs:
         raise ValueError("at least one output is required")
     resolved_outputs = [Path(path).expanduser().resolve() for path in outputs]
+    visual_outputs = [path for path in resolved_outputs if path.suffix.lower() in VISUAL_EXTENSIONS]
+    if visual_review == "NOT_APPLICABLE" and visual_outputs:
+        raise ValueError("visual_review=NOT_APPLICABLE is invalid when visual outputs are registered")
+    if visual_review == "PASS" and not visual_outputs:
+        raise ValueError("visual_review=PASS requires at least one registered visual output; use NOT_APPLICABLE for text-only delivery")
     resolved_root = Path(delivery_root).expanduser().resolve() if delivery_root else None
     if resolved_root and any(not _within(path, resolved_root) for path in resolved_outputs):
         raise ValueError("all outputs must be inside delivery_root")
@@ -88,6 +95,7 @@ def build_manifest(
                 raise ValueError("reviewed outputs must be promoted out of staging/reports before delivery manifest creation")
     return {
         "schema_version": SCHEMA_VERSION,
+        "record_type": "review_attestation",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "source": _file_record(source),
         "outputs": [_file_record(path) for path in resolved_outputs],
@@ -99,9 +107,11 @@ def build_manifest(
             "reviewer_context_id": reviewer_context_id.strip(),
             "design_review": design_review,
             "visual_review": visual_review,
+            "visual_evidence_count": len(visual_outputs),
         },
         "delivery_status": delivery_status(design_review, visual_review),
         "limitations": [
+            "This record attests declared review results; it does not prove review quality or reviewer independence.",
             "SHA-256 verifies reviewed bytes, not reviewer identity or context freshness.",
             "Any source or output byte change makes the recorded review stale.",
         ],

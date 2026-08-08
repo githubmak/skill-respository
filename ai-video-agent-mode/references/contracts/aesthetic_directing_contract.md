@@ -13,8 +13,8 @@
 
 This contract is an internal handoff inside `Master Production`; it is not a new runtime
 stage and does not change the T2V-only contract. It prevents continuity rules from replacing
-visual direction. Every shot must carry a visual intention, then translate that intention into
-visible light, composition, material, and motion evidence.
+visual direction. The model chooses the visual intention and the amount of visible light,
+composition, material, and motion evidence that serves each shot.
 
 When the user requests a specific visual style, or the source has strong genre evidence, let the
 model decide the visual thesis and translate it into scene-specific facts. Do not use a profile
@@ -32,20 +32,20 @@ text. Preserve source facts, provenance, validators, and the 700-character hard 
 
 ## Visual Bible
 
-Create one project/scene visual bible before composing shots. It is the stable source for:
+When a scene benefits from a reusable visual thesis, the model may create a project/scene visual
+bible as a compact continuity aid. It is not a required per-shot schema or a completeness checklist:
 
 `visual_thesis | palette_system | light_motivation | contrast_exposure |
 composition_grammar | material_world | atmosphere_rule | imperfection_policy |
 reference_policy | continuity_lock`
 
-For every scene with two or more shots, also freeze a compact `camera_variation_plan`
-inside the scene bible or sequence plan. It names the available composition families and
-assigns each shot a single family and a single camera family. The plan must be source-supported:
+For a multi-shot scene where variation or continuity is difficult, the model may also author a
+compact `camera_variation_plan`. It can name useful composition families without assigning every
+shot to a compulsory category. Decisions must be source-supported:
 for example, a three-person triangle, diagonal riverbank depth line, foreground frame, central
 void, low-angle reveal, overhead pressure, lateral reveal, or pull-back isolation. Do not cycle
-families mechanically when the blocking does not support them. Three adjacent shots may not
-repeat the same `shot size + angle + composition family + movement family` unless the story is
-intentionally frozen and the reason is stated.
+families mechanically when the blocking does not support them. Repetition may be an intentional
+directorial choice; the model Editor judges whether it helps the scene.
 
 Rules:
 
@@ -75,7 +75,8 @@ one composition decision, one light decision, and one or two material/atmosphere
 
 ## Static Frame
 
-For a keyframe, fill `static_aesthetic_contract` with:
+For a keyframe that needs an explicit visual handoff, the model may use
+`static_aesthetic_contract` with any relevant subset of:
 
 `visual_intent | composition_hierarchy | light_design | color_grade | lens_rendering |
 depth_atmosphere | material_anchor | signature_frame | aesthetic_exclusions`
@@ -111,7 +112,8 @@ Static-frame rules:
 
 ## Moving Shot
 
-For a T2V shot, fill `dynamic_aesthetic_contract` with:
+For a T2V shot that needs an explicit motion handoff, the model may use
+`dynamic_aesthetic_contract` with any relevant subset of:
 
 `motion_thesis | start_state | trigger | primary_subject_motion | secondary_environment_motion |
 camera_path | focus_behavior | material_motion | atmosphere_motion | tempo_easing |
@@ -123,15 +125,12 @@ Stage motion in three beats:
 2. **Change:** one source-triggered action or emotional turn changes the visual relationship.
 3. **End:** settle on a stable physical and emotional state that can be inherited by the next shot.
 
-Dynamic motion budget:
+Possible motion-budget guidance, selected and adjusted by the model:
 
-- one primary subject action;
-- one camera path or a deliberate locked camera;
-- one causal response chain with at most two low-amplitude, source-coupled responses in low-risk
-  shots; keep only one response for long dialogue, multi-character, prop-transfer, complex-support,
-  or airborne shots;
-- at most one focus handoff;
-- no second independent action chain inside the same shot.
+- keep primary actions and camera intent legible within the available duration;
+- reduce independent response chains when dialogue, multi-character blocking, prop transfer,
+  support/contact, or airborne motion already consumes the generation budget;
+- use focus handoffs and secondary motion only when they clarify the beat.
 
 Camera movement must have a visual reason: push for pressure or recognition, pull for isolation or
 relationship failure, lateral move for a revealed spatial relation, or pan/tilt for a source-driven
@@ -153,27 +152,21 @@ small blink/eyelid flutter, and light haze/volumetric ray as the same motion fam
 
 ### Terminal frame contract
 
-Every shot, and especially the final shot of a scene or sequence, carries a terminal frame
-contract. It is not a negative prompt. It is compiled into visible positive facts:
+When a shot has elevated end-state risk, especially a scene ending, the model may author a terminal
+frame contract. It is not a required suffix or negative prompt; use only the visible positive facts
+needed by that shot:
 
 `visible_count | final_slot_map | identity_visibility | face_and_limb_separation |
 prop_and_garment_state | support_and_contact | camera_lock | light_exposure_lock |
 no_new_entrant | no_duplicate_subject | final_hold`
 
-The final 20% of the clip must reduce to one readable composition. The camera decelerates and
-holds; no new person, duplicate body, prop handoff, costume change, spatial re-layout, exposure
-jump, or light-source change is introduced. In a three-person frame, write fixed screen slots and
-explicit separation of faces, hands, shoulders, and legs. If a person is not visible, write that
-the voice remains offscreen instead of letting the model invent a body. A complex action, UI,
-transition, or new entrance must finish before the terminal hold or move to another shot.
-
-The direct prompt must contain a natural sentence equivalent to: `最后20%画面只保留当前可见
-人数和站位，人物边界与接触点分开，摄影机减速停住，光线和曝光锁定，不新增人物、重复人物、
-道具或动作，保持稳定到结束。`
+The model decides whether the ending should hold, continue moving, cut on action, or remain
+deliberately unsettled. State concrete end-state facts only where identity, support/contact, prop,
+blocking, exposure, or entrant stability is genuinely at risk; do not append a universal sentence.
 
 ## Aesthetic Review
 
-Export an aesthetic review checklist with every package. The skill does not call, watch, or score
+Do not export a compulsory aesthetic checklist with every package. The skill does not call, watch, or score
 generated media by default and must never fabricate render evidence. Only when the user supplies
 real candidates and explicitly requests visual review may the review record `candidate_id`,
 `visual_score`, `fact_score`, `motion_score`, `failed_dimensions`, and `reroll_decision`.
@@ -196,19 +189,10 @@ Dynamic review dimensions:
 - identity, anatomy, and prop stability;
 - visual payoff at the end state.
 
-Deterministic validation treats the contracts as visible evidence, not descriptive metadata:
-`palette_system` assigns at least two color responsibilities and screen locations;
-`light_motivation/light_design` state source, direction, receiving surface, and shadow result;
-`material_world` distinguishes at least two material families and their response;
-`imperfection_policy` keeps one motivated irregularity. In moving shots, at least two of trigger,
-primary motion, and stable end state, plus one causal response or deliberate hold, must reach the
-model prompt. Non-hold motion must also contain an executable body/eye/weight action and a temporal
-cue such as first, later, delayed response, aftershock, deceleration, or stable landing. The export
-compiler protects one compact `start → trigger → action → response → end` sentence and one static
-light/color/material anchor; it fails rather than silently dropping either when the prompt budget is
-too small. Across one scene, three repeated paraphrases from the same liveness family warn and four
-fail the episode director audit; four consecutive shots with no semantic motion or performance
-change raise a dead-motion warning.
+Deterministic validation may check only structure, types, locked facts, duration, character count,
+and exact source dialogue. It must not infer aesthetic quality from keywords, require a fixed number
+of palette/material/motion clauses, or reject deliberate repetition. The model Editor performs the
+holistic aesthetic and Seedance-semantic judgment from complete creative records.
 
 When real review evidence exists, reroll after revising the aesthetic contract if the frame is
 factually correct but visually flat, evenly lit, generic, or has no readable focal hierarchy.

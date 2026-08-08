@@ -13,10 +13,10 @@ sys.path.insert(0, os.path.dirname(__file__))
 from pipeline_state import AGENT_PHASES, LOCAL_PHASES, PHASE_BATCH_SIZE, PHASE_TIMEOUT_SECONDS, advance, load_state, save_state, mark_done, mark_pipeline_complete, mark_started, mark_waiting
 from pipeline_templates import GATES
 from dispatch_cache import active_packet_paths, prepare_dispatch_packets
-from dispatch_queue import fill_slots, pending_packet_paths, retire_timed_out_dispatches
+from dispatch_queue import pending_packet_paths, plan_worker_leases, retire_timed_out_dispatches
 from merge_agent_outputs import merge_agent_outputs
 from record_batch_provenance import verify
-from contract_registry import PROMPT_CONTRACT_VERSION
+from contract_registry import MAX_CREATIVE_REAUTHOR_ROUNDS, PROMPT_CONTRACT_VERSION
 from pipeline_runtime import atomic_json
 from pipeline_deadline import feasibility, fuse, status as deadline_status
 from verified_reuse import reuse_agent_phase, verify_phase_reuse
@@ -71,7 +71,11 @@ def run(run_dir):
         # Local phases are deterministic gates whose output is produced by the
         # caller's dedicated scripts.  Do not silently revive old handlers.
         absent = [path for path in gate.get("output", []) if not os.path.exists(os.path.join(run_dir, path))]
-        if absent or not _local_phase_valid(run_dir, phase):
+        force_local_action = (
+            phase == "orchestrator"
+            and isinstance(state["phases"][phase].get("revision_request"), dict)
+        )
+        if force_local_action or absent or not _local_phase_valid(run_dir, phase):
             if not state["phases"][phase].get("started_at"):
                 mark_started(run_dir, phase)
             return {"action": "local_action_required", "phase": phase, "expected_outputs": absent,
@@ -87,7 +91,8 @@ def run(run_dir):
     batch_size = PHASE_BATCH_SIZE.get(phase)
     if phase == "editor_pass2" and target_ids and int(state["phases"][phase].get("targeted_retry_rounds", 0) or 0) >= 2:
         batch_size = 1
-    packets = pending_packet_paths(run_dir, phase)
+    force_reprepare = bool(state["phases"][phase].get("force_reprepare"))
+    packets = [] if force_reprepare else pending_packet_paths(run_dir, phase)
     packets = _current_source_packets(packets)
     if not packets:
         reuse = reuse_agent_phase(run_dir, phase)
@@ -102,6 +107,10 @@ def run(run_dir):
                 "requires_user_input": False,
             }
         packets = prepare_dispatch_packets(run_dir, phase, batch_size, subshot_ids=target_ids)
+        if force_reprepare:
+            state = load_state(run_dir)
+            state["phases"][phase].pop("force_reprepare", None)
+            save_state(run_dir, state)
     verified_dispatch_ids = _verified_dispatch_ids(packets)
     recovery = retire_timed_out_dispatches(
         run_dir, phase, packets, verified_dispatch_ids=verified_dispatch_ids,
@@ -118,7 +127,8 @@ def run(run_dir):
                 "budget": deadline_status(state), "requires_user_input": False}
     if recovery["replacement_packets"]:
         packets = _current_source_packets(pending_packet_paths(run_dir, phase))
-    ready = fill_slots(run_dir, phase, packets)
+    worker_leases = plan_worker_leases(run_dir, phase, packets)
+    ready = [path for lease in worker_leases for path in lease["packet_paths"]]
     verified = _verified_packets(run_dir, phase)
     remaining_packet_count = max(len(packets) - len(verified), 0)
     state = load_state(run_dir)
@@ -132,10 +142,11 @@ def run(run_dir):
     if ready:
         return {"action": "spawn", "phase": phase, "dispatch_packets": ready,
                 "dispatch_packet": ready[0], "timeout": PHASE_TIMEOUT_SECONDS.get(phase),
+                "worker_leases": worker_leases,
                 "requires_user_input": False,
                 "budget": forecast,
                 "interrupt_dispatch_ids": recovery["retired_dispatch_ids"],
-                "after_spawn": "register_dispatch_agent_then_record_heartbeat_then_record_batch_provenance"}
+                "after_spawn": "register_dispatch_lease_then_start_each_packet_then_heartbeat_then_provenance"}
     # A phase may only be materialized once *every* packet has provenance and
     # validation.  Previously, one completed batch plus a full worker pool
     # could be merged while sibling packets were still running.
@@ -156,6 +167,15 @@ def run(run_dir):
     if phase == "master_production":
         retry = _prepare_incremental_master_retry(run_dir, verified)
         if retry:
+            if retry.get("repair_executor") == "engine":
+                return {
+                    "action": "local_action_required",
+                    "phase": "master_production",
+                    "reason": "mechanical_validation_repair",
+                    "repair_report_path": retry["repair_report_path"],
+                    "target_shot_ids": retry["target_shot_ids"],
+                    "requires_user_input": False,
+                }
             state = load_state(run_dir)
             master_state = state["phases"]["master_production"]
             master_state.update({
@@ -166,19 +186,21 @@ def run(run_dir):
             state["current_phase"] = "master_production"
             save_state(run_dir, state)
             active_retry_packets = _phase_packet_paths(run_dir, "master_production")
-            ready = fill_slots(run_dir, "master_production", active_retry_packets)
+            retry_leases = plan_worker_leases(run_dir, "master_production", active_retry_packets)
+            ready = [path for lease in retry_leases for path in lease["packet_paths"]]
             if ready:
                 return {
                     "action": "spawn",
                     "phase": "master_production",
                     "dispatch_packets": ready,
+                    "worker_leases": retry_leases,
                     "dispatch_packet": ready[0],
                     "timeout": PHASE_TIMEOUT_SECONDS.get("master_production"),
                     "target_shot_ids": retry["target_shot_ids"],
                     "repair_scope": retry["repair_scope"],
                     "automatic_resume": True,
                     "requires_user_input": False,
-                    "after_spawn": "register_dispatch_agent_then_record_heartbeat_then_record_batch_provenance",
+                    "after_spawn": "register_dispatch_lease_then_start_each_packet_then_heartbeat_then_provenance",
                 }
             mark_waiting(run_dir, "master_production")
             return {
@@ -191,7 +213,10 @@ def run(run_dir):
                 "requires_user_input": False,
             }
     output = os.path.join(run_dir, gate["output"][0])
-    _materialize(phase, output, verified)
+    _materialize(
+        phase, output, verified,
+        preserve_existing=phase == "editor_pass2" and bool(target_ids),
+    )
     if phase == "editor_pass2":
         review = _load(output)
         if not review.get("pass", False):
@@ -201,6 +226,16 @@ def run(run_dir):
                 for window in review.get("windows", []) if isinstance(window, dict) and not window.get("pass")
             }
             if "orchestrator" in return_phases:
+                reauthor = _record_creative_reauthor_round(
+                    run_dir, review, "orchestrator"
+                )
+                if reauthor["exhausted"]:
+                    state = load_state(run_dir)
+                    report = fuse(run_dir, state, "creative_reauthor_exhausted", forecast=reauthor)
+                    save_state(run_dir, state)
+                    return {"action": "fused", "phase": phase, "report": report,
+                            "report_path": state.get("fuse_report_path"),
+                            "requires_user_input": False}
                 revision_path = _request_orchestrator_revision(run_dir, review, targets)
                 return {
                     "action": "creative_reauthor_required",
@@ -213,12 +248,24 @@ def run(run_dir):
                     "automatic_resume": True,
                 }
             from prepare_master_retry import prepare
+            reauthor = _record_creative_reauthor_round(
+                run_dir, review, "master_production"
+            )
+            if reauthor["exhausted"]:
+                state = load_state(run_dir)
+                report = fuse(run_dir, state, "creative_reauthor_exhausted", forecast=reauthor)
+                save_state(run_dir, state)
+                return {"action": "fused", "phase": phase, "report": report,
+                        "report_path": state.get("fuse_report_path"),
+                        "requires_user_input": False}
             packets = prepare(run_dir, output)
             state = load_state(run_dir)
             master_state = state["phases"]["master_production"]
             master_state.update({"status": "pending", "agent_id": None})
             editor_state = state["phases"]["editor_pass2"]
-            editor_state.update({"status": "pending", "agent_id": None})
+            editor_state.update({
+                "status": "pending", "agent_id": None, "force_reprepare": True,
+            })
             if targets:
                 editor_state["target_shot_ids"] = targets
                 master_state["target_shot_ids"] = targets
@@ -315,7 +362,29 @@ def _prepare_incremental_master_retry(run_dir, verified_outputs):
                 "fields": ["validator_reported_field"],
                 "repair_scope": "shot",
                 "reasons": ["incremental validation failed without a structured target"],
+                "repair_executor": "model",
             })
+    mechanical_targets = [
+        target for target in targets
+        if str(target.get("repair_executor", "model")) == "engine"
+    ]
+    if mechanical_targets:
+        repair_path = os.path.join(
+            run_dir, ".cache", "review", "mechanical_master_repair_required.json"
+        )
+        atomic_json(repair_path, {
+            "authority": "engineering",
+            "semantic_transform": False,
+            "repair_executor": "engine",
+            "target_shot_ids": unresolved,
+            "repair_targets": mechanical_targets,
+            "rule": "Repair structure or locked facts locally; do not dispatch a creative model.",
+        })
+        return {
+            "repair_executor": "engine",
+            "repair_report_path": repair_path,
+            "target_shot_ids": unresolved,
+        }
     review_path = os.path.join(run_dir, ".cache", "review", "incremental_master_retry_review.json")
     windows = []
     for index, target in enumerate(targets, 1):
@@ -434,12 +503,19 @@ def _review_target_shot_ids(review):
     return sorted(targets)
 
 
-def _materialize(phase, output, batches):
+def _materialize(phase, output, batches, preserve_existing=False):
     os.makedirs(os.path.dirname(output), exist_ok=True)
     if phase == "editor_pass2":
-        windows = []
+        windows_by_id = {}
+        existing = _load(output) if preserve_existing and os.path.isfile(output) else {}
+        for window in existing.get("windows", []) if isinstance(existing, dict) else []:
+            if isinstance(window, dict) and window.get("window_id"):
+                windows_by_id[str(window["window_id"])] = window
         for batch in batches:
-            windows.extend(_load(batch).get("windows", []))
+            for window in _load(batch).get("windows", []):
+                if isinstance(window, dict) and window.get("window_id"):
+                    windows_by_id[str(window["window_id"])] = window
+        windows = [windows_by_id[key] for key in sorted(windows_by_id)]
         blocking = []
         return_to_phases = []
         affected_shot_ids = []
@@ -478,11 +554,12 @@ def _request_orchestrator_revision(run_dir, review, targets):
     prior_hashes = {
         name: _sha256(path) for name, path in draft_paths.items() if os.path.isfile(path)
     }
+    scene_targets = _expand_scene_targets(run_dir, targets)
     revision = {
         "authority": "model_editor",
         "semantic_transform": False,
         "return_to_phase": "orchestrator",
-        "affected_shot_ids": targets,
+        "affected_shot_ids": scene_targets,
         "creative_causes": [
             str(window.get("creative_cause", "") or "").strip()
             for window in review.get("windows", [])
@@ -497,18 +574,71 @@ def _request_orchestrator_revision(run_dir, review, targets):
     path = os.path.join(run_dir, ".cache", "review", "orchestrator_revision_request.json")
     atomic_json(path, revision)
     state = load_state(run_dir)
-    order = list(state.get("phase_order", []))
-    start = order.index("orchestrator") if "orchestrator" in order else 0
-    for phase_name in order[start:]:
-        phase_state = state.get("phases", {}).get(phase_name, {})
-        phase_state.update({"status": "pending", "agent_id": None})
-        if phase_name != "orchestrator":
-            phase_state.pop("target_shot_ids", None)
+    state["phases"]["orchestrator"].update({
+        "status": "pending", "agent_id": None, "target_shot_ids": scene_targets,
+    })
+    state["phases"]["master_production"].update({
+        "status": "pending", "agent_id": None, "target_shot_ids": scene_targets,
+        "force_reprepare": True,
+    })
+    state["phases"]["editor_pass2"].update({
+        "status": "pending", "agent_id": None, "target_shot_ids": scene_targets,
+        "force_reprepare": True,
+    })
     state["phases"]["orchestrator"]["revision_request"] = revision
     state["phases"]["orchestrator"]["revision_request_path"] = path
     state["current_phase"] = "orchestrator"
     save_state(run_dir, state)
     return path
+
+
+def _expand_scene_targets(run_dir, targets):
+    plan = _load(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"))
+    rows = [row for row in plan.get("shots", []) if isinstance(row, dict)]
+    wanted = {str(value) for value in targets if str(value).strip()}
+    scenes = {
+        str(row.get("scene", "") or "__default__")
+        for row in rows if str(row.get("shot_id", "")) in wanted
+    }
+    expanded = [
+        str(row.get("shot_id", "")) for row in rows
+        if str(row.get("scene", "") or "__default__") in scenes
+        and str(row.get("shot_id", "")).strip()
+    ]
+    return expanded or sorted(wanted)
+
+
+def _record_creative_reauthor_round(run_dir, review, return_to_phase):
+    causes = sorted({
+        str(window.get("creative_cause", "") or "").strip()
+        for window in review.get("windows", [])
+        if isinstance(window, dict) and not window.get("pass")
+        and window.get("return_to_phase") == return_to_phase
+        and str(window.get("creative_cause", "") or "").strip()
+    })
+    root_payload = json.dumps(
+        {"return_to_phase": return_to_phase, "creative_causes": causes},
+        ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    )
+    root_id = hashlib.sha256(root_payload.encode("utf-8")).hexdigest()
+    state = load_state(run_dir)
+    history = state.setdefault("creative_reauthor_history", {})
+    entry = history.setdefault(root_id, {
+        "return_to_phase": return_to_phase,
+        "creative_causes": causes,
+        "rounds": 0,
+    })
+    entry["rounds"] = int(entry.get("rounds", 0) or 0) + 1
+    entry["last_seen_at"] = time.time()
+    save_state(run_dir, state)
+    return {
+        "root_id": root_id,
+        "return_to_phase": return_to_phase,
+        "creative_causes": causes,
+        "rounds": entry["rounds"],
+        "max_rounds": MAX_CREATIVE_REAUTHOR_ROUNDS,
+        "exhausted": entry["rounds"] > MAX_CREATIVE_REAUTHOR_ROUNDS,
+    }
 
 
 def _load(path):

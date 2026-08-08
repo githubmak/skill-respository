@@ -66,7 +66,7 @@
 ```json
 {
   "pipeline_type": "split-storyboard-to-nine-panel-batch",
-  "source": "split-script-to-storyboard",
+  "source": "shot-table",
   "bundle_count": 0,
   "total_shot_count": 0,
   "bundles": [

@@ -29,6 +29,7 @@ STRUCTURAL_SPEAKER_LABELS = {
     "人物", "人物表", "角色", "角色表", "场景", "地点", "时间", "画面", "动作", "镜头",
     "旁白", "对白", "台词", "音效", "声音", "备注", "说明", "环境", "道具", "服装",
 }
+AUDIO_CHANNEL_LABELS = {"旁白", "音效", "声音", "系统音", "系统提示", "广播", "画外音"}
 ACTION_RE = re.compile(r"^(?:△|动作[：:])")
 RISK_TERMS = {
     "physical_support": ("躺", "坐", "靠", "抱", "扶", "摔", "起身", "翻身", "腾空"),
@@ -100,8 +101,6 @@ def inspect_text(text: str) -> dict:
             hits.extend(match.group(0) for match in pattern.finditer(text))
         if hits:
             risk_flags[key] = list(dict.fromkeys(hits))[:16]
-    if len(speakers) >= 2:
-        risk_flags.setdefault("multi_person", []).append("multiple_named_speakers")
     if not speakers and dialogue_lines:
         advisories.append(_issue("SPEAKER_UNCERTAIN", "对白存在但说话者标签不稳定；原样保留并在使用说明记录疑点", "advisory"))
 
@@ -166,16 +165,17 @@ def normalize_speaker(raw: str) -> str:
     """Return the canonical actor name, excluding channel/cue and document labels."""
     speaker = re.sub(r"(?:（[^）]*）)\s*$", "", str(raw or "").strip()).strip()
     speaker = re.sub(r"^(?:角色|人物)\s*[-—]\s*", "", speaker).strip()
-    if not speaker or speaker in STRUCTURAL_SPEAKER_LABELS:
+    if not speaker or speaker in STRUCTURAL_SPEAKER_LABELS or speaker in AUDIO_CHANNEL_LABELS:
         return ""
     return speaker
 
 
 def _dialogue_match(line: str):
     match = DIALOGUE_RE.match(line)
-    if match is None or not normalize_speaker(match.group("speaker")):
+    if match is None:
         return None
-    return match
+    raw_speaker = re.sub(r"(?:（[^）]*）)\s*$", "", match.group("speaker").strip()).strip()
+    return match if raw_speaker in AUDIO_CHANNEL_LABELS or normalize_speaker(match.group("speaker")) else None
 
 
 def inspect_path(source_path: str, report_path: str | None = None, include_text: bool = False) -> dict:

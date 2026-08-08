@@ -42,6 +42,7 @@ def main():
     steps.append(_run("verified_reuse", [sys.executable, _script("test_verified_reuse.py")]))
     steps.append(_run("context_budget", [sys.executable, _script("test_context_budget.py")]))
     steps.append(_run("pipeline_deadline", [sys.executable, _script("test_pipeline_deadline.py")]))
+    steps.append(_run("execution_efficiency", [sys.executable, _script("test_execution_efficiency.py")]))
     steps.append(_run("incremental_master_validation", [sys.executable, _script("test_incremental_master_validation.py")]))
     steps.append(_run("quality_frontload", [sys.executable, _script("test_quality_frontload.py")]))
     steps.append(_run("preflight_severity", [sys.executable, _script("test_preflight_severity.py")]))

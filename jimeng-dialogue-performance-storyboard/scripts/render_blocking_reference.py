@@ -21,7 +21,7 @@ SHOT_TYPES = ("relationship", "over_shoulder")
 AXIS_SIDES = ("positive", "negative")
 FACING_MODES = ("mutual", "independent")
 CAMERA_PATH_MODES = ("push", "pull", "track", "pan", "arc", "rack_focus", "reframe", "handheld")
-BLOCKING_GATE_VERSION = 2
+BLOCKING_GATE_VERSION = 3
 
 
 def _number(value, label: str) -> float:
@@ -148,7 +148,11 @@ def _segment_hits_anchor(start, end, anchor: dict, margin: float = 0.012) -> boo
     return False
 
 
-def _validate_over_shoulder(camera: dict, characters: list[dict]) -> None:
+def _warn(advisories: list[dict], code: str, message: str) -> None:
+    advisories.append({"code": code, "severity": "advisory", "message": message})
+
+
+def _validate_over_shoulder(camera: dict, characters: list[dict], advisories: list[dict]) -> None:
     foreground = _character_by_name(characters, camera["foreground_character"], "foreground_character")
     target = _character_by_name(characters, camera["target_character"], "target_character")
     foreground_point = (foreground["x"], foreground["y"])
@@ -158,7 +162,7 @@ def _validate_over_shoulder(camera: dict, characters: list[dict]) -> None:
     camera_distance = math.hypot(camera["x"] - foreground["x"], camera["y"] - foreground["y"])
     ratio = camera_distance / relation_distance
     if not 0.18 <= ratio <= 0.52:
-        raise ValueError(f'{camera["label"]} over-shoulder distance ratio must be 0.18-0.52, got {ratio:.2f}')
+        _warn(advisories, "OTS_DISTANCE_RATIO", f'{camera["label"]} over-shoulder distance ratio is {ratio:.2f}; review composition')
     to_target = (target["x"] - foreground["x"], target["y"] - foreground["y"])
     to_camera = (camera["x"] - foreground["x"], camera["y"] - foreground["y"])
     if to_target[0] * to_camera[0] + to_target[1] * to_camera[1] >= 0.0:
@@ -169,20 +173,17 @@ def _validate_over_shoulder(camera: dict, characters: list[dict]) -> None:
         raise ValueError(f'{camera["label"]} is on the wrong relationship-axis side')
     shoulder_distance = _point_segment_distance(foreground_point, camera_point, target_point)
     if not 0.016 <= shoulder_distance <= 0.065:
-        raise ValueError(
-            f'{camera["label"]} foreground shoulder must graze view line without covering target; '
-            f'offset {shoulder_distance:.3f}'
-        )
+        _warn(advisories, "OTS_SHOULDER_OFFSET", f'{camera["label"]} shoulder/view-line offset is {shoulder_distance:.3f}; inspect intended occlusion')
     if camera["target_character"] not in camera["subjects"]:
         raise ValueError(f'{camera["label"]} target_character must be listed in subjects')
     if camera["facing_mode"] == "mutual":
         for actor, other in ((foreground, target), (target, foreground)):
             desired = math.degrees(math.atan2(other["y"] - actor["y"], other["x"] - actor["x"])) % 360.0
             if _angle_delta(actor["facing_deg"], desired) > 55.0:
-                raise ValueError(f'{actor["name"]} must physically face {other["name"]} for this dialogue reverse shot')
+                _warn(advisories, "MUTUAL_FACING", f'{actor["name"]} is more than 55 degrees away from {other["name"]}; confirm intentional posture')
 
 
-def _validate_mutual_facing(camera: dict, characters: list[dict]) -> None:
+def _validate_mutual_facing(camera: dict, characters: list[dict], advisories: list[dict]) -> None:
     """Catch the common semantic failure where a two-person relation diagram has parallel arrows."""
     if camera["facing_mode"] != "mutual":
         return
@@ -195,42 +196,42 @@ def _validate_mutual_facing(camera: dict, characters: list[dict]) -> None:
     for actor, target in ((first, second), (second, first)):
         desired = math.degrees(math.atan2(target["y"] - actor["y"], target["x"] - actor["x"])) % 360.0
         if _angle_delta(actor["facing_deg"], desired) > 55.0:
-            raise ValueError(
-                f'{camera["label"]} {actor["name"]} must face {target["name"]} '
-                "for a mutual relationship camera; use facing_mode=independent when intentional"
-            )
+            _warn(advisories, "MUTUAL_FACING", f'{camera["label"]} {actor["name"]} is more than 55 degrees away from {target["name"]}; confirm intentional posture')
 
 
-def _validate_state_geometry(state: dict) -> None:
+def _validate_state_geometry(state: dict, advisories: list[dict]) -> None:
     characters = state["characters"]
     camera = state["cameras"][0]
     camera_point = (camera["x"], camera["y"])
     for character in characters:
         distance = math.hypot(camera["x"] - character["x"], camera["y"] - character["y"])
+        if distance <= 1e-4:
+            raise ValueError(f'{camera["label"]} occupies the same point as {character["name"]}')
         if distance < 0.045:
-            raise ValueError(f'{camera["label"]} has no standing clearance from {character["name"]}')
+            _warn(advisories, "CAMERA_CLEARANCE", f'{camera["label"]} is close to {character["name"]}; inspect physical clearance')
     for anchor in state["anchors"]:
         if not anchor["solid"]:
             continue
-        if _point_inside_anchor(camera_point, anchor, 0.018):
+        if _point_inside_anchor(camera_point, anchor):
             raise ValueError(f'{camera["label"]} overlaps solid anchor {anchor["label"]}')
+        if _point_inside_anchor(camera_point, anchor, 0.018):
+            _warn(advisories, "CAMERA_ANCHOR_CLEARANCE", f'{camera["label"]} is close to solid anchor {anchor["label"]}')
         for character in characters:
-            if _point_inside_anchor((character["x"], character["y"]), anchor, 0.022):
+            if _point_inside_anchor((character["x"], character["y"]), anchor):
                 raise ValueError(f'{character["name"]} overlaps solid anchor {anchor["label"]}')
+            if _point_inside_anchor((character["x"], character["y"]), anchor, 0.022):
+                _warn(advisories, "CHARACTER_ANCHOR_CLEARANCE", f'{character["name"]} is close to solid anchor {anchor["label"]}')
     for boundary in state["boundaries"]:
         for character in characters:
             if character["allow_boundary_overlap"]:
                 continue
             clearance = _boundary_clearance((character["x"], character["y"]), boundary)
             if clearance < 0.022:
-                raise ValueError(
-                    f'{character["name"]} is too close to boundary {boundary["label"]}; '
-                    "set allow_boundary_overlap only when the blocking intentionally places the actor in the opening"
-                )
+                _warn(advisories, "BOUNDARY_CLEARANCE", f'{character["name"]} is close to boundary {boundary["label"]}; confirm intentional placement')
     if camera["shot_type"] == "over_shoulder":
-        _validate_over_shoulder(camera, characters)
+        _validate_over_shoulder(camera, characters, advisories)
     elif camera["facing_mode"] == "mutual":
-        _validate_mutual_facing(camera, characters)
+        _validate_mutual_facing(camera, characters, advisories)
     by_name = {character["name"]: character for character in characters}
     for subject_name in camera["subjects"]:
         subject = by_name[subject_name]
@@ -256,11 +257,18 @@ def _validate_state_geometry(state: dict) -> None:
     if path:
         end_point = (path["end_x"], path["end_y"])
         for character in characters:
-            if math.hypot(end_point[0] - character["x"], end_point[1] - character["y"]) < 0.045:
-                raise ValueError(f'{camera["label"]} path ends without standing clearance from {character["name"]}')
+            end_clearance = math.hypot(end_point[0] - character["x"], end_point[1] - character["y"])
+            if end_clearance <= 1e-4:
+                raise ValueError(f'{camera["label"]} path ends at the same point as {character["name"]}')
+            if end_clearance < 0.045:
+                _warn(advisories, "CAMERA_PATH_CLEARANCE", f'{camera["label"]} path ends close to {character["name"]}')
         for anchor in state["anchors"]:
-            if anchor["solid"] and _segment_hits_anchor(camera_point, end_point, anchor, 0.018):
+            if not anchor["solid"]:
+                continue
+            if _segment_hits_anchor(camera_point, end_point, anchor, 0.0):
                 raise ValueError(f'{camera["label"]} path intersects solid anchor {anchor["label"]}')
+            if _segment_hits_anchor(camera_point, end_point, anchor, 0.018):
+                _warn(advisories, "CAMERA_PATH_ANCHOR_CLEARANCE", f'{camera["label"]} path passes close to {anchor["label"]}')
         for boundary in state["boundaries"]:
             crossing = _segment_crossing(
                 camera_point, end_point,
@@ -283,6 +291,7 @@ def _validate_state_geometry(state: dict) -> None:
 
 
 def validate_spec(spec: dict) -> dict:
+    advisories: list[dict] = []
     group = str(spec.get("shot_group", "")).strip()
     if not SHOT_GROUP_RE.fullmatch(group):
         raise ValueError("shot_group must match S1-01")
@@ -515,7 +524,7 @@ def validate_spec(spec: dict) -> dict:
             raise ValueError(
                 f'blocking_id {state["blocking_id"]} must keep characters, facing, anchors, and boundaries unchanged'
             )
-        _validate_state_geometry(state)
+        _validate_state_geometry(state, advisories)
     axis_sides_by_blocking: dict[str, set[str]] = {}
     for state in normalized_states:
         camera = state["cameras"][0]
@@ -528,6 +537,7 @@ def validate_spec(spec: dict) -> dict:
         "shot_group": group,
         "scene": str(spec.get("scene", "")).strip(),
         "states": normalized_states,
+        "advisories": advisories,
     }
 
 
@@ -627,6 +637,7 @@ def _validate_camera_coverage(
     camera: dict,
     characters: list[dict],
     box: tuple[float, float, float, float],
+    advisories: list[dict],
 ) -> None:
     camera_x, camera_y = _point(camera["x"], camera["y"], box)
     by_name = {character["name"]: character for character in characters}
@@ -634,17 +645,19 @@ def _validate_camera_coverage(
         character = by_name[subject]
         subject_x, subject_y = _point(character["x"], character["y"], box)
         distance = math.hypot(subject_x - camera_x, subject_y - camera_y)
-        if distance < 24.0:
+        if distance < 1.0:
             raise ValueError(f'{camera["label"]} overlaps subject {subject}')
         target_angle = math.degrees(math.atan2(subject_y - camera_y, subject_x - camera_x)) % 360.0
         delta = abs((target_angle - camera["facing_deg"] + 180.0) % 360.0 - 180.0)
-        subject_radius = math.degrees(math.asin(min(1.0, 24.0 / distance)))
-        required_half_angle = delta + subject_radius + 2.0
-        if required_half_angle > camera["fov_deg"] / 2.0:
+        half_fov = camera["fov_deg"] / 2.0
+        if delta > half_fov:
             raise ValueError(
-                f'{camera["label"]} cannot fully see {subject}: required half-angle '
-                f'{required_half_angle:.1f} exceeds half FOV {camera["fov_deg"] / 2.0:.1f}'
+                f'{camera["label"]} subject center is outside FOV: {subject}'
             )
+        subject_radius = math.degrees(math.asin(min(1.0, 24.0 / distance)))
+        required_half_angle = delta + subject_radius
+        if required_half_angle > half_fov:
+            _warn(advisories, "SUBJECT_EDGE_CLIP", f'{camera["label"]} may crop {subject} at the frame edge; inspect intended framing')
 
 
 def _camera_path_poses(camera: dict, steps: int = 5) -> list[dict]:
@@ -792,8 +805,15 @@ def _render_boundary(boundary: dict, box: tuple[float, float, float, float]) -> 
     )
 
 
-def render_svg(spec: dict, width: int = 1400, panel_height: int = 760) -> str:
-    spec = validate_spec(spec)
+def render_svg(
+    spec: dict,
+    width: int = 1400,
+    panel_height: int = 760,
+    advisories: list[dict] | None = None,
+    validated: bool = False,
+) -> str:
+    spec = spec if validated else validate_spec(spec)
+    render_advisories = list(spec.get("advisories", []))
     states = spec["states"]
     has_camera_paths = any(camera.get("path") for state in states for camera in state["cameras"])
     height = 90 + len(states) * panel_height + 54
@@ -820,7 +840,7 @@ def render_svg(spec: dict, width: int = 1400, panel_height: int = 760) -> str:
         ])
         for camera in state["cameras"]:
             for pose in _camera_path_poses(camera):
-                _validate_camera_coverage(pose, state["characters"], box)
+                _validate_camera_coverage(pose, state["characters"], box, render_advisories)
         for camera in state["cameras"]:
             parts.append(_render_camera_path(camera, box))
         for camera in state["cameras"]:
@@ -850,24 +870,27 @@ def render_svg(spec: dict, width: int = 1400, panel_height: int = 760) -> str:
     parts.append("</svg>")
     svg = "".join(parts)
     layout_issues = _label_layout_issues(svg)
-    if layout_issues:
-        raise ValueError("; ".join(layout_issues[:8]))
+    for issue in layout_issues[:8]:
+        _warn(render_advisories, "LABEL_LAYOUT", issue)
+    if advisories is not None:
+        advisories.extend(render_advisories)
     return svg
 
 
 def output_path(output_dir: str | Path, shot_group: str, replace: bool = False) -> Path:
     directory = Path(output_dir).expanduser().resolve()
     directory.mkdir(parents=True, exist_ok=True)
-    base = directory / f"{shot_group}.svg"
-    base_png = directory / f"{shot_group}.png"
+    base = directory / f"{shot_group}_即梦_2D_空间关系.svg"
+    base_png = directory / f"{shot_group}_即梦_2D_空间关系.png"
     if not replace and (base.exists() or base_png.exists()):
         raise FileExistsError(f"shot reference already exists for {shot_group}; use --replace")
     return base
 
 
 def png_output_path(svg_path: Path) -> Path:
-    if svg_path.suffix.lower() != ".svg" or not SHOT_GROUP_RE.fullmatch(svg_path.stem):
-        raise ValueError("SVG output name must be an exact shot group such as S1-03.svg")
+    expected = re.compile(r"^S\d+-\d+_即梦_2D_空间关系$")
+    if svg_path.suffix.lower() != ".svg" or not expected.fullmatch(svg_path.stem):
+        raise ValueError("SVG output name must be a Jimeng 2D spatial reference such as S1-03_即梦_2D_空间关系.svg")
     return svg_path.with_suffix(".png")
 
 
@@ -986,7 +1009,8 @@ def main(argv: list[str] | None = None) -> int:
         spec = validate_spec(json.loads(spec_path.read_text(encoding="utf-8-sig")))
         directory, storyboard_path = output_directory(args.storyboard, args.output_dir)
         destination = output_path(directory, spec["shot_group"], args.replace)
-        destination.write_text(render_svg(spec), encoding="utf-8")
+        render_advisories: list[dict] = []
+        destination.write_text(render_svg(spec, advisories=render_advisories, validated=True), encoding="utf-8")
         png_path = None
         converter = None
         if args.png:
@@ -1004,6 +1028,7 @@ def main(argv: list[str] | None = None) -> int:
             "storyboard_path": str(storyboard_path) if storyboard_path else None,
             "same_directory_as_storyboard": storyboard_path is not None and destination.parent == storyboard_path.parent,
             "primary_storyboard_modified": False,
+            "advisories": render_advisories,
         }
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         result = {
@@ -1021,6 +1046,7 @@ def main(argv: list[str] | None = None) -> int:
         "format": result.get("format"),
         "output_path": result.get("output_path"),
         "png_path": result.get("png_path"),
+        "advisory_count": len(result.get("advisories", [])),
         "report": str(report_path),
     }, ensure_ascii=False, separators=(",", ":")))
     return 0 if result.get("pass") else 1

@@ -1,15 +1,15 @@
 ---
 name: storyboard-to-nine-panel-pipeline
-description: Bridge and orchestrate full outputs from split-script-to-storyboard into batch nine-panel storyboards. Explicit slash commands include /九宫格, /九宫格剧情包, /剧情九宫格, /批量九宫格, /分镜转九宫格, /剧情包转九宫格, and /剧情包. Use when the user asks for 剧情包, 九宫格剧情节拍包, 分镜转九宫格, batch-convert 分镜脚本 to 剧情九宫格, or feed those beat bundles into nine-panel-video-storyboard. Preserve the original script, outline, dialogue, OV, narration, and OS while only reasonably splitting shots or adding visible details implied by the source.
+description: Bridge and orchestrate an existing shot table or an approved ai-video-agent-mode package into batch nine-panel storyboards. Explicit slash commands include /九宫格, /九宫格剧情包, /剧情九宫格, /批量九宫格, /分镜转九宫格, /剧情包转九宫格, and /剧情包. Use when the user asks for 剧情包, 九宫格剧情节拍包, 分镜转九宫格, batch-convert 分镜脚本 to 剧情九宫格, or feed those beat bundles into nine-panel-video-storyboard. Preserve the original script, outline, dialogue, OV, narration, and OS while only reasonably splitting shots or adding visible details implied by the source.
 ---
 
 # Storyboard To Nine Panel Pipeline
 
 ## Core Use
 
-Convert `$split-script-to-storyboard` output into multiple compact story beat bundles, then use `$nine-panel-video-storyboard` on each bundle to produce strict 9-panel JSON storyboards.
+Convert an existing shot table or approved `$ai-video-agent-mode` package into compact story beat bundles, then use `$nine-panel-video-storyboard` on each bundle to produce strict 1-9 panel JSON storyboards.
 
-Bridge/orchestration skill — do not replace either source skill. Preserve detailed shot-table information while adapting it into narrative nine-panel grid structure.
+Bridge/orchestration skill — do not regenerate an approved upstream package. Preserve detailed shot-table information while adapting it into narrative nine-panel grid structure.
 
 Automatically pass through emotion-analysis performance data when source contains speaking characters, reactions, emotional turns, OV/OS: `触发原因→核心情绪→外化控制(6部位)→表演支点`.
 
@@ -17,8 +17,8 @@ Automatically pass through emotion-analysis performance data when source contain
 
 ## Required Skill Order
 
-1. Raw script/prose/dialogue/novel/outline → use `$split-script-to-storyboard` first, complete shot table.
-2. Existing shot table → parse directly, do not regenerate.
+1. Raw script/prose/dialogue/novel/outline is not direct input. For Jimeng T2V, `$ai-video-agent-mode` may produce an approved upstream package; otherwise obtain a compatible shot table without assuming a deleted skill.
+2. Existing shot table or approved package → parse directly, do not regenerate.
 3. Build intermediate beat bundles from shot table.
 4. For each beat bundle, use `$nine-panel-video-storyboard` in narrative mode (unless user explicitly asks for single-shot keyframe grid).
 
@@ -157,7 +157,7 @@ If bundle comes from Seedance/video prompt column, extract underlying event firs
 ```json
 {
  "pipeline_type": "split-storyboard-to-nine-panel-batch",
- "source": "split-script-to-storyboard",
+ "source": "shot-table",
  "upstream_contract": {
    "source_type": "ai-video-agent-mode or shot-table",
    "contract_version": "jimeng-t2v-v1 or null",

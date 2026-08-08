@@ -1,6 +1,6 @@
 # Beat Bundle Schema
 
-Use this reference when converting `$split-script-to-storyboard` outputs into intermediate beat bundles.
+Use this reference when converting an existing shot table or approved `$ai-video-agent-mode` package into intermediate beat bundles.
 
 ## Required Object
 

@@ -15,6 +15,20 @@ INPUT_PATHS = (
     ".cache/orchestrator/shot_plan.json",
     ".cache/review/llm_gate_result.json",
 )
+VALIDATOR_BUNDLE_FILES = (
+    "contract_registry.py",
+    "creative_engineering_boundary.py",
+    "dialogue_timing.py",
+    "incremental_validation.py",
+    "prompt_contract.py",
+    "seedance_target.py",
+    "speech_events.py",
+    "validate_composer_output.py",
+    "validate_deterministic_package.py",
+    "validate_durations.py",
+    "validate_main_shot_incremental.py",
+    "validation_receipt.py",
+)
 
 
 def create_receipt(run_dir, package_path, validation_outputs):
@@ -53,13 +67,10 @@ def verify_receipt(run_dir, package_path):
 def validator_bundle_sha256():
     scripts_dir = os.path.dirname(__file__)
     digest = hashlib.sha256()
-    names = sorted(
-        name for name in os.listdir(scripts_dir)
-        if name.endswith(".py")
-        and not name.startswith("test_")
-    )
-    for name in names:
+    for name in VALIDATOR_BUNDLE_FILES:
         path = os.path.join(scripts_dir, name)
+        if not os.path.isfile(path):
+            raise ValueError("validator dependency is missing: " + name)
         digest.update(name.encode("utf-8"))
         digest.update(b"\0")
         digest.update(_sha256(path).encode("ascii"))

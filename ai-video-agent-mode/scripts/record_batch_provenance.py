@@ -62,7 +62,7 @@ def record(packet_path, allow_partial=False, input_tokens=None, output_tokens=No
         provenance_dir, packet["dispatch_id"] + ".validation.json"
     )
     validator_name, validation_pass = _validate(
-        phase, batch_path, run_dir, validation_report_path
+        phase, batch_path, run_dir, validation_report_path, packet=packet
     )
     validated_subshot_ids = []
     failed_subshot_ids = []
@@ -257,7 +257,7 @@ def verify(batch_path):
     return True, "verified", manifest
 
 
-def _validate(phase, batch_path, run_dir, validation_report_path=None):
+def _validate(phase, batch_path, run_dir, validation_report_path=None, packet=None):
     if phase == "master_production":
         return "validate_composer_output", validate_composer_output(
             batch_path, run_dir, validation_report_path
@@ -265,12 +265,26 @@ def _validate(phase, batch_path, run_dir, validation_report_path=None):
     if phase == "editor_pass2":
         data = _load(batch_path)
         windows = data.get("windows", []) if isinstance(data, dict) else []
+        expected = {
+            str(item.get("window_id", "")): [str(value) for value in item.get("shot_ids", [])]
+            for item in (packet or {}).get("items", [])
+            if isinstance(item, dict) and item.get("window_id")
+        }
+        actual = {
+            str(item.get("window_id", "")): item
+            for item in windows if isinstance(item, dict) and item.get("window_id")
+        }
         valid = (
             isinstance(data, dict)
             and isinstance(windows, list)
             and bool(windows)
+            and len(actual) == len(windows)
+            and set(actual) == set(expected)
             and all(isinstance(item, dict) and item.get("window_id") and isinstance(item.get("pass"), bool)
                     and isinstance(item.get("blocking", []), list)
+                    and item.get("reviewed_shot_ids") == expected.get(str(item.get("window_id", "")))
+                    and set(str(value) for value in item.get("affected_shot_ids", []))
+                        <= set(expected.get(str(item.get("window_id", "")), []))
                     and _valid_editor_routing(item)
                     for item in windows)
         )

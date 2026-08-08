@@ -7,6 +7,7 @@ the only batching input is serialized character count and declared item cap.
 
 from batch_planner import dynamic_master_chunks
 from context_budget import MAX_COMPOSER_ITEMS_CHARS, MAX_PACKET_CHARS, composer_items_fit, size
+from dispatch_cache import _json_file_size
 
 FIXED_PACKET_FIXTURE_CHARS = 5292
 
@@ -20,6 +21,9 @@ def _item(index, payload_chars=1300):
 
 
 def run():
+    unicode_payload = {"text": "真实中文场景" * 500}
+    assert _json_file_size(unicode_payload) > size(unicode_payload)
+
     four = [_item(index) for index in range(1, 5)]
     four_size = size(four)
     assert four_size > 4500, four_size

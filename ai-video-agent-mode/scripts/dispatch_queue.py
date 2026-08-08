@@ -10,11 +10,60 @@ sys.path.insert(0, os.path.dirname(__file__))
 from pipeline_state import MAX_RETRIES, PHASE_TIMEOUT_SECONDS, TIMEOUT_SECONDS, load_state, save_state
 from dispatch_cache import active_packet_paths
 from contract_registry import (
+    MAX_PACKETS_PER_WORKER_LEASE,
     PHASE_STALL_PROGRESS_SECONDS,
     PHASE_STARTUP_PROGRESS_SECONDS,
     PIPELINE_WORKER_SLOT_CAP,
     PROMPT_CONTRACT_VERSION,
 )
+
+
+def plan_worker_leases(run_dir, phase, packet_paths, max_workers=None):
+    """Assign all currently unclaimed packets to a bounded persistent pool."""
+    config = _load(os.path.join(run_dir, "project_config.json"))
+    configured = int(max_workers or (config.get("execution", {}) or {}).get(
+        "worker_slots", PIPELINE_WORKER_SLOT_CAP) or PIPELINE_WORKER_SLOT_CAP)
+    capacity = min(max(configured, 1), PIPELINE_WORKER_SLOT_CAP)
+    state = load_state(run_dir)
+    dispatches = state.get("phases", {}).get(phase, {}).get("dispatches", {})
+    active_agents = {
+        str(entry.get("agent_id", ""))
+        for entry in dispatches.values() if isinstance(entry, dict)
+        and entry.get("status") in {"leased", "running", "waiting"}
+        and str(entry.get("agent_id", "")).strip()
+    }
+    free = max(capacity - len(active_agents), 0)
+    if free <= 0:
+        return []
+    available = []
+    for path in sorted(packet_paths):
+        packet = _load(path)
+        status = (dispatches.get(packet.get("dispatch_id")) or {}).get("status")
+        if status in {"leased", "running", "waiting", "done", "partial"}:
+            continue
+        available.append(path)
+    if not available:
+        return []
+    worker_count = min(free, len(available))
+    lanes = [[] for _ in range(worker_count)]
+    for index, path in enumerate(available):
+        lane = index % worker_count
+        if len(lanes[lane]) < MAX_PACKETS_PER_WORKER_LEASE:
+            lanes[lane].append(path)
+    assigned = {path for lane in lanes for path in lane}
+    leftovers = [path for path in available if path not in assigned]
+    # Preserve bounded leases. Remaining packets are leased after a worker lane
+    # completes, without another worker cold start when the host keeps it alive.
+    return [
+        {
+            "lease_id": str(uuid.uuid4()),
+            "phase": phase,
+            "packet_paths": lane,
+            "packet_count": len(lane),
+            "remaining_unleased_count": len(leftovers),
+        }
+        for lane in lanes if lane
+    ]
 from pipeline_runtime import atomic_json, json_lock
 
 
@@ -34,7 +83,7 @@ def fill_slots(run_dir, phase, packet_paths, max_workers=None):
     active = sum(
         1 for entry in dispatches.values()
         if isinstance(entry, dict)
-        and entry.get("status") in ("running", "waiting")
+        and entry.get("status") in ("leased", "running", "waiting")
     )
     free = max(capacity - active, 0)
     selected = []
@@ -44,7 +93,7 @@ def fill_slots(run_dir, phase, packet_paths, max_workers=None):
         status = (dispatches.get(dispatch_id) or {}).get("status")
         if status in ("done", "partial"):
             continue
-        if status in ("running", "waiting"):
+        if status in ("leased", "running", "waiting"):
             continue
         if free <= 0:
             break
@@ -99,23 +148,32 @@ def retire_timed_out_dispatches(run_dir, phase, packet_paths, verified_dispatch_
         for dispatch_id, entry in list(dispatches.items()) if isinstance(dispatches, dict) else []:
             if dispatch_id in verified or not isinstance(entry, dict):
                 continue
-            if entry.get("status") not in ("running", "waiting"):
+            if entry.get("status") not in ("leased", "running", "waiting"):
                 continue
-            spawn_time = entry.get("spawn_time")
+            if entry.get("status") == "leased":
+                leased_at = entry.get("leased_at")
+                position = max(int(entry.get("lease_position", 1) or 1), 1)
+                timeout = PHASE_TIMEOUT_SECONDS.get(phase, TIMEOUT_SECONDS)
+                if not isinstance(leased_at, (int, float)) or now - float(leased_at) < timeout * position:
+                    continue
+                reason = "lease_queue_timeout"
+                spawn_time = leased_at
+            else:
+                reason = None
+                spawn_time = entry.get("spawn_time")
             if not isinstance(spawn_time, (int, float)):
                 continue
             timeout = PHASE_TIMEOUT_SECONDS.get(phase, TIMEOUT_SECONDS)
             elapsed = now - float(spawn_time)
             first_progress = entry.get("first_progress_at")
             last_progress = entry.get("last_progress_at", first_progress)
-            reason = None
-            if elapsed >= timeout:
+            if reason is None and elapsed >= timeout:
                 reason = "absolute_packet_timeout"
-            elif not isinstance(first_progress, (int, float)):
+            elif reason is None and not isinstance(first_progress, (int, float)):
                 startup_limit = PHASE_STARTUP_PROGRESS_SECONDS.get(phase)
                 if isinstance(startup_limit, (int, float)) and elapsed >= startup_limit:
                     reason = "startup_content_stall"
-            elif isinstance(last_progress, (int, float)):
+            elif reason is None and isinstance(last_progress, (int, float)):
                 stall_limit = PHASE_STALL_PROGRESS_SECONDS.get(phase)
                 if isinstance(stall_limit, (int, float)) and now - float(last_progress) >= stall_limit:
                     reason = "content_progress_stall"
@@ -304,6 +362,10 @@ def _packet_shot_ids(packet):
     for item in packet.get("items", []) if isinstance(packet.get("items"), list) else []:
         if not isinstance(item, dict):
             continue
+        for value in item.get("shot_ids", []) if isinstance(item.get("shot_ids"), list) else []:
+            identity = str(value or "").strip()
+            if identity and identity not in result:
+                result.append(identity)
         identity = str(item.get("shot_id", "") or item.get("subshot_id", "") or item.get("scene", "")).strip()
         if identity and identity not in result:
             result.append(identity)
@@ -325,4 +387,8 @@ def _load(path):
 if __name__ == "__main__":
     if len(sys.argv) < 4:
         raise SystemExit("usage: dispatch_queue.py <run_dir> <phase> <packet> [...]")
-    print("\n".join(fill_slots(sys.argv[1], sys.argv[2], sys.argv[3:])))
+    print(json.dumps(
+        plan_worker_leases(sys.argv[1], sys.argv[2], sys.argv[3:]),
+        ensure_ascii=False,
+        indent=2,
+    ))

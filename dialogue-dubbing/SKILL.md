@@ -4,9 +4,9 @@ description: >
   Single-shot dialogue dubbing and voiceover analyzer for AI storyboard and video production.
   Produces punctuation-controlled pause timing, emotion-stratified delivery, tone subdivision,
   standardized line annotation format, and pitfall avoidance for manhua-style storyboard
-  dialogue. Adapts output for Jimeng (即梦) and all major AI dubbing tools. Invoked by
-  split-script-to-storyboard during shot design when a shot contains dialogue, OV, or OS;
-  can also be called standalone for dialogue rehearsal or voiceover planning.
+  dialogue. Adapts output for Jimeng (即梦) and all major AI dubbing tools. Can be
+  called by an upstream storyboard workflow when a shot contains dialogue, OV, or OS,
+  or used standalone for dialogue rehearsal and voiceover planning.
 ---
 
 <!-- PIPELINE_KERNEL:START -->

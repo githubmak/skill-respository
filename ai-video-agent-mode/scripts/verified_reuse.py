@@ -20,7 +20,7 @@ import time
 import uuid
 
 sys.path.insert(0, os.path.dirname(__file__))
-from contract_registry import PIPELINE_CONTRACT_VERSION, PROMPT_CONTRACT_VERSION, REUSE_CONTRACT_VERSION
+from contract_registry import PROMPT_CONTRACT_VERSION, REUSE_CONTRACT_VERSION
 from pipeline_runtime import atomic_json, json_lock, sha256_json
 from pipeline_state import load_state, save_state
 from validation_receipt import verify_receipt as verify_validation_receipt
@@ -49,10 +49,10 @@ PUBLISHED_ARTIFACTS = (
 )
 
 CREATIVE_CONTRACT_FILES = (
-    "SKILL.md",
     "references/creative_engineering_boundary.md",
     "references/format_constraints.md",
-    "references/agent_protocol.md",
+    "references/contracts/aesthetic_directing_contract.md",
+    "references/contracts/direct_copy_contract.md",
     "references/contracts/model_creative_blueprint_contract.md",
     "references/dispatch/master_production_note.md",
     "references/dispatch/editor_pass2_note.md",
@@ -77,7 +77,7 @@ def reuse_enabled(run_dir):
 
 
 def publish_run(run_dir):
-    """Publish a completed validation result to its delivery-local index."""
+    """Publish a completed validation result to the stable verified index."""
     run_dir = os.path.abspath(run_dir)
     package_path = os.path.join(run_dir, PACKAGE)
     origin_ok, origin_reason = _verify_master_origin(run_dir, package_path)
@@ -115,6 +115,9 @@ def publish_run(run_dir):
         },
         "per_shot_output_hashes": shots,
         "editor_window_hashes": editor_hashes,
+        "per_scene_artifact_hashes": _scene_artifact_hashes(
+            run_dir, package, review
+        ),
         "shot_ids": list(shots),
         "validation_receipt_verified": True,
         "editor_pass_verified": True,
@@ -313,7 +316,6 @@ def build_identity(run_dir, require_blueprint):
         "source_sha256": source_sha,
         "project_creative_config_sha256": sha256_json(_creative_config(config)),
         "prompt_contract_version": PROMPT_CONTRACT_VERSION,
-        "pipeline_contract_version": PIPELINE_CONTRACT_VERSION,
         "creative_contract_bundle_sha256": creative_contract_bundle_sha256(),
     }
     if require_blueprint:
@@ -377,6 +379,8 @@ def _verify_candidate(target_run_dir, candidate, require_blueprint):
         return None, "prior Editor window hashes changed"
     if _editor_covered_shot_ids(review) != set(candidate.get("per_shot_output_hashes", {})):
         return None, "prior Editor coverage changed"
+    if _scene_artifact_hashes(source_run, package, review) != candidate.get("per_scene_artifact_hashes"):
+        return None, "prior per-scene creative identity changed"
     return candidate, "verified"
 
 
@@ -443,10 +447,60 @@ def _editor_covered_shot_ids(review):
     for window in windows if isinstance(windows, list) else []:
         if not isinstance(window, dict):
             continue
+        reviewed = window.get("reviewed_shot_ids", [])
+        if isinstance(reviewed, list):
+            result.update(str(value) for value in reviewed if str(value).strip())
+            continue
+        # Recovery compatibility for publications created before scene windows.
         current = window.get("current", {}) if isinstance(window.get("current"), dict) else {}
         shot_id = str(current.get("shot_id", "") or "")
         if shot_id:
             result.add(shot_id)
+    return result
+
+
+def _scene_artifact_hashes(run_dir, package, review):
+    plan = _load(os.path.join(run_dir, SHOT_PLAN))
+    locks = _load(os.path.join(run_dir, SCENE_LOCKS))
+    shot_hashes = _shot_hashes(package)
+    window_hashes = _editor_window_hashes(review)
+    windows = review.get("windows", []) if isinstance(review, dict) else []
+    scenes = {}
+    for row in plan.get("shots", []) if isinstance(plan, dict) else []:
+        if not isinstance(row, dict):
+            continue
+        scene = str(row.get("scene", "") or "__default__")
+        scene_row = scenes.setdefault(scene, {"plan_rows": [], "shot_ids": []})
+        scene_row["plan_rows"].append(row)
+        shot_id = str(row.get("shot_id", "") or "")
+        if shot_id:
+            scene_row["shot_ids"].append(shot_id)
+    lock_by_scene = {
+        str(row.get("scene", "") or "__default__"): row
+        for row in locks.get("scenes", []) if isinstance(row, dict)
+    }
+    result = {}
+    for scene, row in scenes.items():
+        shot_ids = row["shot_ids"]
+        scene_windows = {}
+        for window in windows if isinstance(windows, list) else []:
+            if not isinstance(window, dict):
+                continue
+            reviewed = {
+                str(value) for value in window.get("reviewed_shot_ids", [])
+                if str(value).strip()
+            }
+            window_id = str(window.get("window_id", "") or "")
+            if reviewed.intersection(shot_ids) and window_id in window_hashes:
+                scene_windows[window_id] = window_hashes[window_id]
+        result[scene] = sha256_json({
+            "plan_rows": row["plan_rows"],
+            "scene_lock": lock_by_scene.get(scene),
+            "shot_output_hashes": {
+                shot_id: shot_hashes.get(shot_id) for shot_id in shot_ids
+            },
+            "editor_window_hashes": scene_windows,
+        })
     return result
 
 
@@ -519,11 +573,13 @@ def _index_path(run_dir):
     if explicit:
         root = os.path.abspath(explicit)
     else:
-        export_base = str(config.get("export_base", "") or "").strip()
-        delivery = config.get("delivery", {}) if isinstance(config.get("delivery"), dict) else {}
-        markdown_path = str(delivery.get("markdown_path", "") or "").strip()
-        base = export_base or (os.path.dirname(os.path.abspath(markdown_path)) if markdown_path else os.path.dirname(run_dir))
-        root = os.path.join(os.path.abspath(base), REUSE_DIRECTORY_NAME)
+        codex_home = str(os.environ.get("CODEX_HOME", "") or "").strip()
+        cache_home = str(os.environ.get("XDG_CACHE_HOME", "") or "").strip()
+        base = codex_home or (
+            os.path.join(cache_home, "codex") if cache_home
+            else os.path.join(os.path.expanduser("~"), ".cache", "codex")
+        )
+        root = os.path.join(os.path.abspath(base), "ai-video-agent-mode", REUSE_DIRECTORY_NAME)
     return os.path.join(root, "index.json")
 
 

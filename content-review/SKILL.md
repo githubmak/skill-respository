@@ -4,8 +4,8 @@ description: >
   Single-shot content compliance auditor for AI storyboard and video production.
   Audits one shot/frame description and its dialogue against a 10-dimension
   platform-sensitive review matrix. Returns risk level, affected dimensions,
-  and executable modification proposals. Invoked by split-script-to-storyboard
-  during final checks; can also be called standalone to audit scripts, dialogue,
+  and executable modification proposals. Can be called by an upstream storyboard
+  workflow during final checks or used standalone to audit scripts, dialogue,
   or scene descriptions for Douyin/Kuaishou/Bilibili/global-platform compliance.
 ---
 
@@ -15,7 +15,7 @@ description: >
 
 将单个分镜的画面描述和台词与平台敏感内容审查矩阵对照，输出风险等级、违规维度和可执行的修改方案。
 
-**不处理**: 情绪表演（`$emotion-analysis`）、画面内容（`$frames-analysis`）、运镜景别（`$camera-analysis`）、音效设计（`$audio-design`）、AI提示词汇编（`$ai-prompt-builder`）、连续性追踪（`$continuity-ledger`）、多镜工作流编排（`$split-script-to-storyboard`）。
+**不处理**: 情绪表演（`$emotion-analysis`）、画面内容（`$frames-analysis`）、运镜景别（`$camera-analysis`）、音效设计（`$audio-design`）、AI提示词汇编（`$ai-prompt-builder`）、连续性追踪（`$continuity-ledger`）和多镜工作流编排。
 
 当独立调用时，作为任意文本内容的平台合规审查工具使用。
 
@@ -121,7 +121,7 @@ description: >
 
 ## 批量审查
 
-当被传入多个镜头时（如由 `$split-script-to-storyboard` 批量调用），逐镜输出审查结果，每镜一个 `## 违规审查结果 - 镜号 {N}` 块。
+当上游批量传入多个镜头时，逐镜输出审查结果，每镜一个 `## 违规审查结果 - 镜号 {N}` 块。
 
 ---
 

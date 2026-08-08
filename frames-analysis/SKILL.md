@@ -6,14 +6,14 @@ description: >
   midground/background layers, lighting design with color temperature, composition rules,
   character positions and actions, prop states, and visual-side continuity anchors for one
   shot. Also handles adjacent-shot pair analysis for lighting/composition/action matching.
-  Invoked by split-script-to-storyboard during shot design; can also be called standalone
+  Can be called by an upstream storyboard workflow during shot design or used standalone
   for frame composition and lighting planning.
 ---
 
 <!-- PIPELINE_KERNEL:START -->
-> 以下段由 `split-script-to-storyboard` v7 pipeline 在运行时提取并注入融合 agent prompt。
+> 以下段可由兼容的上游分镜流程提取并注入融合 agent prompt。
 >
-> **Mode C v4 dispatch exception:** 当输入 packet 含 `contract_version=modec-v4` 时，本 Kernel 内的固定配色、BJD/古风材质、强制三层填满、强制轮廓光、每镜动态改光和材质数量配额全部失效；只执行本文后方“AI Video Agent Mode 输出覆盖规则”。
+> **Mode C v4 compatibility exception:** 当显式输入 packet 含 `contract_version=modec-v4` 时，本 Kernel 内的固定配色、BJD/古风材质、强制三层填满、强制轮廓光、每镜动态改光和材质数量配额全部失效；只执行本文后方“兼容数据包输出规则”。
 
 ## PIPELINE KERNEL: 画面内容核心规则
 
@@ -49,9 +49,9 @@ BJD: 瓷白肌肤/玻璃眼瞳/柔和塑胶反光(roughness 0.3)/球形关节/�
 
 # Frames Analysis — 单镜画面内容分析器
 
-## AI Video Agent Mode 输出覆盖规则
+## 兼容数据包输出规则（非默认调用）
 
-当由 `ai-video-agent-mode` 作为 Phase 2b 子Agent调用，并收到 dispatch packet 路径时，本技能必须服从调用方 packet，不使用下方独立 Markdown Output Contract。
+当前 `ai-video-agent-mode` 不固定派发本技能。仅当调用方明确提供兼容的 dispatch packet 路径时，才使用本节数据包合同，并服从调用方 packet，不使用下方独立 Markdown Output Contract。
 
 - 读取 packet JSON。
 - `packet.contract_version` 必须为 `modec-v4`；缺失或版本不符时停止并要求主 Agent 重新派发。
@@ -100,7 +100,7 @@ BJD: 瓷白肌肤/玻璃眼瞳/柔和塑胶反光(roughness 0.3)/球形关节/�
 
 ## Core Use
 
-将单个分镜的画面内容转化为可执行的可视化指令。不处理情绪（`$emotion-analysis`）、运镜（`$camera-analysis`）、多镜编排（`$split-script-to-storyboard`）。独立调用时作为画面构图/光影规划工具使用。
+将单个分镜的画面内容转化为可执行的可视化指令。不处理情绪（`$emotion-analysis`）、运镜（`$camera-analysis`）或多镜编排。独立调用时作为画面构图/光影规划工具使用。
 
 > 📖 精确光色体系（五大色系+色名规范+材质反光+空气透视）、光的软硬分级、专属光影效果、标准光源模板 → [references/lighting-color-encyclopedia.md](references/lighting-color-encyclopedia.md)
 
@@ -344,7 +344,7 @@ BJD: 瓷白肌肤/玻璃眼瞳/柔和塑胶反光(roughness 0.3)/球形关节/�
 
 ---
 
-## 质量标准（同步自 ai-video-agent-mode）
+## 独立调用质量参考
 
 **光照四要素（目标级）：**
 - 每个子镜必须输出：light_type（主光源类型）、light_temp（色温 K 值）、light_direction（光源方向）、light_hardness（soft/hard/mixed）

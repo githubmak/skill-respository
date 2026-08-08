@@ -100,7 +100,7 @@ def save_state(run_dir, state):
     atomic_json(path, state)
 
 
-def set_agent_id(run_dir, phase, agent_id, dispatch_id=None, spawn_time=None):
+def set_agent_id(run_dir, phase, agent_id, dispatch_id=None, spawn_time=None, status="running"):
     # Several packets may be registered at once. Serialize the full
     # read-modify-write so one worker cannot erase another dispatch record.
     with json_lock(get_state_path(run_dir)):
@@ -114,15 +114,60 @@ def set_agent_id(run_dir, phase, agent_id, dispatch_id=None, spawn_time=None):
         # from performance telemetry.
         if not isinstance(phase_state.get("started_at"), (int, float)):
             phase_state["started_at"] = now
-        if not isinstance(phase_state.get("spawn_time"), (int, float)):
+        if status == "running" and not isinstance(phase_state.get("spawn_time"), (int, float)):
             phase_state["spawn_time"] = now
-        phase_state["heartbeat_at"] = now
+        if status == "running":
+            phase_state["heartbeat_at"] = now
         if dispatch_id:
-            phase_state.setdefault("dispatches", {})[dispatch_id] = {
+            existing = phase_state.setdefault("dispatches", {}).get(dispatch_id, {})
+            entry = {
                 "agent_id": agent_id,
-                "status": "running",
-                "spawn_time": now,
-                "heartbeat_at": now,
+                "status": status,
+                "spawn_time": now if status == "running" else None,
+                "heartbeat_at": now if status == "running" else None,
+                "output_bytes": 0,
+                "completed_item_count": 0,
+                "progress_count": 0,
+                "first_progress_at": None,
+                "last_progress_at": None,
+            }
+            if status == "leased":
+                entry["leased_at"] = now
+            for key in ("lease_id", "lease_position", "lease_size"):
+                if key in existing:
+                    entry[key] = existing[key]
+            phase_state["dispatches"][dispatch_id] = entry
+        save_state(run_dir, state)
+
+
+def reserve_dispatch_lease(run_dir, phase, agent_id, lease_id, packet_records, leased_at=None):
+    """Bind one real worker to queued packets without starting packet timers."""
+    with json_lock(get_state_path(run_dir)):
+        state = load_state(run_dir)
+        now = float(leased_at) if isinstance(leased_at, (int, float)) else time.time()
+        phase_state = state["phases"][phase]
+        phase_state["status"] = "running"
+        phase_state["agent_id"] = agent_id
+        if not isinstance(phase_state.get("started_at"), (int, float)):
+            phase_state["started_at"] = now
+        dispatches = phase_state.setdefault("dispatches", {})
+        size = len(packet_records)
+        for position, record in enumerate(packet_records, 1):
+            dispatch_id = str(record.get("dispatch_id", "") or "")
+            if not dispatch_id:
+                raise ValueError("lease packet is missing dispatch_id")
+            current = dispatches.get(dispatch_id, {})
+            if current.get("status") in {"running", "waiting", "done", "partial"}:
+                raise ValueError("dispatch is already active or complete: " + dispatch_id)
+            dispatches[dispatch_id] = {
+                "agent_id": agent_id,
+                "status": "leased",
+                "leased_at": now,
+                "lease_id": lease_id,
+                "lease_position": position,
+                "lease_size": size,
+                "spawn_time": None,
+                "heartbeat_at": None,
                 "output_bytes": 0,
                 "completed_item_count": 0,
                 "progress_count": 0,
@@ -130,6 +175,28 @@ def set_agent_id(run_dir, phase, agent_id, dispatch_id=None, spawn_time=None):
                 "last_progress_at": None,
             }
         save_state(run_dir, state)
+
+
+def start_leased_dispatch(run_dir, phase, agent_id, dispatch_id, started_at=None):
+    """Start the absolute timeout only when a leased packet begins execution."""
+    with json_lock(get_state_path(run_dir)):
+        state = load_state(run_dir)
+        entry = state["phases"][phase].get("dispatches", {}).get(dispatch_id)
+        if not isinstance(entry, dict) or entry.get("status") != "leased":
+            raise ValueError("dispatch is not leased: " + str(dispatch_id))
+        if entry.get("agent_id") != agent_id:
+            raise ValueError("agent_id does not own leased dispatch")
+        now = float(started_at) if isinstance(started_at, (int, float)) else time.time()
+        entry["status"] = "running"
+        entry["spawn_time"] = now
+        entry["heartbeat_at"] = None
+        state["phases"][phase]["spawn_time"] = min(
+            value for value in (
+                state["phases"][phase].get("spawn_time"), now
+            ) if isinstance(value, (int, float))
+        )
+        save_state(run_dir, state)
+        return now
 
 
 def record_heartbeat(run_dir, phase, agent_id=None, dispatch_id=None, progress=None, observed_at=None):

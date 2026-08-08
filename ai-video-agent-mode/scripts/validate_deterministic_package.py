@@ -131,6 +131,32 @@ def validate_package(
         review = _load_optional(os.path.join(run_dir, ".cache", "review", "llm_gate_result.json"))
         if review.get("pass") is not True or not isinstance(review.get("blocking"), list) or review.get("blocking"):
             issues.append("MODEL_EDITOR: final creative review is missing or blocking")
+        review_windows = review.get("windows", []) if isinstance(review.get("windows"), list) else []
+        reviewed_ids = []
+        actual_by_window = {}
+        for window in review_windows:
+            if not isinstance(window, dict):
+                continue
+            window_id = str(window.get("window_id", "") or "")
+            values = window.get("reviewed_shot_ids", [])
+            if not window_id or window_id in actual_by_window or not isinstance(values, list):
+                issues.append("MODEL_EDITOR_COVERAGE: window IDs and reviewed_shot_ids must be unique arrays")
+                continue
+            normalized = [str(value) for value in values if str(value).strip()]
+            actual_by_window[window_id] = normalized
+            reviewed_ids.extend(normalized)
+        if len(reviewed_ids) != len(set(reviewed_ids)) or set(reviewed_ids) != seen_ids:
+            issues.append("MODEL_EDITOR_COVERAGE: reviewed shots must exactly cover the delivered package")
+        try:
+            from editor_scene_windows import build as build_editor_windows
+            expected_by_window = {
+                str(window.get("window_id", "")): [str(value) for value in window.get("shot_ids", [])]
+                for window in build_editor_windows(run_dir)
+            }
+        except (OSError, ValueError, TypeError):
+            expected_by_window = {}
+        if actual_by_window != expected_by_window:
+            issues.append("MODEL_EDITOR_COVERAGE: reviewed scene windows do not match the planned windows")
 
     report = {
         "contract_version": PROMPT_CONTRACT_VERSION,

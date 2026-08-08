@@ -47,7 +47,10 @@ def run():
         _write(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"), plan)
         _write(os.path.join(run_dir, "project_config.json"), {"seedance_target": "auto"})
         _write(os.path.join(run_dir, ".cache", "review", "llm_gate_result.json"), {
-            "pass": True, "blocking": [], "windows": [{"pass": True}],
+            "pass": True, "blocking": [], "windows": [{
+                "window_id": "W001", "pass": True, "blocking": [],
+                "reviewed_shot_ids": ["S1"],
+            }],
         })
         creative = "摄影机保持克制的重复构图；甲说“你回来了。”；这一选择由导演判断，不需要关键词证明。"
         shot = {
@@ -82,7 +85,7 @@ def run():
         assert creative in markdown and "模型导演卡原文" in markdown and "你回来了。" in markdown
         context_path = _write_editor_creative_context(
             run_dir, package_path,
-            [{"previous": None, "current": {"shot_id": "S1"}, "next": None}],
+            [{"window_id": "W001", "shot_ids": ["S1"]}],
             os.path.join(run_dir, ".cache", "dispatch"), "test",
         )
         context = json.load(open(context_path, encoding="utf-8"))
@@ -129,9 +132,17 @@ def run():
         packet_item = packet["items"][0]
         assert "editorial_mode" not in packet_item
         assert "shot_group" not in packet["instruction"]
-        assert packet_item["parent_shot_context"]["model_unknown_shot_field"] == plan["shots"][0]["model_unknown_shot_field"]
-        assert packet_item["source_subshots"][0]["model_unknown_child_field"] == plan["shots"][0]["subshots"][0]["model_unknown_child_field"]
-        assert packet_item["source_subshots"][1]["model_unknown_child_field"] == plan["shots"][0]["subshots"][1]["model_unknown_child_field"]
+        assert set(packet_item) == {
+            "shot_id", "subshot_id", "source_subshot_ids", "duration",
+            "scene_lock_ref", "composer_scaffold_ref",
+        }
+        master_context = json.load(open(packet["master_creative_context_path"], encoding="utf-8"))
+        record = master_context["records"][0]
+        assert record["model_unknown_shot_field"] == plan["shots"][0]["model_unknown_shot_field"]
+        assert record["subshots"][0]["model_unknown_child_field"] == plan["shots"][0]["subshots"][0]["model_unknown_child_field"]
+        assert record["subshots"][1]["model_unknown_child_field"] == plan["shots"][0]["subshots"][1]["model_unknown_child_field"]
+        assert "parent_shot_context" not in json.dumps(master_context, ensure_ascii=False)
+        assert "source_subshots" not in json.dumps(master_context, ensure_ascii=False)
         os.remove(scene_locks_path)
         try:
             _write_scene_lock_cache(run_dir, [], "", "")

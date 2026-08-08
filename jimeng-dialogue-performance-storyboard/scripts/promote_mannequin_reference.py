@@ -12,9 +12,9 @@ import struct
 from pathlib import Path
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 5
 RENDER_BACKEND = "pyvista_vtk_offscreen"
-RENDER_PROFILE = "proxy_v2"
+RENDER_PROFILE = "proxy_v3_neutral"
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 DEFAULT_FRAME_CONTRACT = {"width": 1920, "height": 1080, "aspect": "16:9"}
 
@@ -141,9 +141,11 @@ def record_review(
                     "sha256": sha256_file(path),
                     "shot_id": item.get("shot_id"),
                     "physical_state_index": item.get("physical_state_index"),
+                    "physical_phase": item.get("physical_phase", "static"),
                     "camera_index": camera_index,
                     "camera_label": camera_label,
                     "pose": item.get("pose"),
+                    "pose_source": item.get("pose_source", "static"),
                     "mode": item.get("mode"),
                     "width": width,
                     "height": height,
@@ -201,9 +203,11 @@ def promote(review_path: str | Path, delivery_dir: str | Path, replace: bool = F
             "sha256": sha256_file(destination),
             "shot_id": item.get("shot_id"),
             "physical_state_index": item.get("physical_state_index"),
+            "physical_phase": item.get("physical_phase", "static"),
             "camera_index": item.get("camera_index"),
             "camera_label": item.get("camera_label"),
             "pose": item.get("pose"),
+            "pose_source": item.get("pose_source", "static"),
             "reference_role": "mannequin_spatial_action_reference",
         })
     if not promoted:

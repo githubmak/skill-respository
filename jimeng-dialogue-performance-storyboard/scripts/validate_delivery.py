@@ -21,13 +21,19 @@ from source_gate import _dialogue_match
 TARGETS = {"auto", "2.0", "2.5", "both"}
 SHOT_HEADING_RE = re.compile(r"^####\s+(S\d+-\d+)｜([^\n]+)\s*$", re.M)
 FIELD_RE = re.compile(r"^【([^】]+)】\s*$", re.M)
-TARGET_RE = re.compile(r"^-\s*Seedance\s*目标：\s*(auto|2\.0|2\.5)\s*$", re.M)
+TARGET_RE = re.compile(r"^-\s*Seedance\s*目标：\s*(2\.0|2\.5)\s*$", re.M)
 SOURCE_HASH_RE = re.compile(r"^-\s*源文\s*SHA-256：\s*([0-9a-fA-F]{64})\s*$", re.M)
 STATUS_RE = re.compile(r"^-\s*交付状态：\s*(DRAFT|PROVISIONAL|FINAL)\s*$", re.M)
 DURATION_RE = re.compile(r"^(\d+(?:\.\d+)?)s$", re.I)
-PROMPT_LABELS = (
-    "起始画面：", "表演时序：", "摄影机：", "焦点：", "色卡：", "影调：", "光影：", "声音：", "结束画面：",
+CORE_PROMPT_LABELS = ("主体与起态", "动作时间线", "台词", "稳定结尾")
+OPTIONAL_PROMPT_LABELS = ("摄影机", "焦点", "视觉控制", "声音设计")
+FORBIDDEN_INTERNAL_REFERENCES = ("VC-S", "同上镜", "同前", "继承前镜", "继承上一镜", "沿用上一镜", "沿用前镜")
+AMBIGUOUS_BLOCKING_RE = re.compile(r"(?<!画面)(?<!左)(?<!右)(?<!前)(?<!后)(?<!门洞)(?<!门框)(?<!厨房)(?<!灶台)(?:侧后|深景|稍后)(?!方)")
+PROMPT_CLAUSE_RE = re.compile(
+    rf"^(?P<label>{'|'.join((*CORE_PROMPT_LABELS, *OPTIONAL_PROMPT_LABELS))})：(?P<inline>.*)$",
+    re.M,
 )
+SCENE_PLAN_RE = re.compile(r"^###\s+(S\d+)｜[^\n]+$", re.M)
 ASSET_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov"}
 ENGINEERING_REFERENCE_DIRS = {"approved-lineart", "approved-blocking", "blocking-geometry"}
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
@@ -68,6 +74,24 @@ def _audio_field_lines(value: str) -> list[str]:
     if not value or value.strip() == "无":
         return []
     return [line.strip() for line in value.splitlines() if line.strip() and line.strip() != "无"]
+
+
+def _prompt_clauses(prompt: str) -> dict[str, str]:
+    matches = list(PROMPT_CLAUSE_RE.finditer(prompt))
+    clauses: dict[str, str] = {}
+    for index, match in enumerate(matches):
+        label = match.group("label")
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(prompt)
+        value = (match.group("inline") + prompt[match.end():end]).strip()
+        if label in clauses:
+            raise ValueError(f"duplicate prompt clause: {label}")
+        clauses[label] = value
+    return clauses
+
+
+def _blocking_ambiguities(clause: str) -> list[str]:
+    """Find bare blocking shorthand that lacks a named spatial reference."""
+    return sorted({match.group(0) for match in AMBIGUOUS_BLOCKING_RE.finditer(clause)})
 
 
 def _asset_paths(value: str, storyboard: Path) -> list[Path]:
@@ -119,6 +143,18 @@ def inspect_storyboard(path: Path, expected_source_hash: str) -> dict:
     elif hash_match.group(1).lower() != expected_source_hash:
         issues.append(_issue("SOURCE_HASH", "source SHA-256 marker does not match source bytes", path))
 
+    if "## 事实连续性台账（非投喂）" not in text:
+        issues.append(_issue("CONTINUITY_LEDGER", "missing factual continuity ledger section", path))
+    scene_plans = list(SCENE_PLAN_RE.finditer(text))
+    if not scene_plans:
+        issues.append(_issue("SCENE_PLAN", "no scene director plan found", path))
+    for index, scene_match in enumerate(scene_plans):
+        scene_id = scene_match.group(1)
+        end = scene_plans[index + 1].start() if index + 1 < len(scene_plans) else len(text)
+        scene_block = text[scene_match.end():end]
+        if f"视觉连续性基线 VC-{scene_id}：" not in scene_block:
+            issues.append(_issue("VISUAL_BASELINE", f"{scene_id} missing 视觉连续性基线 VC-{scene_id}", path))
+
     headings = list(SHOT_HEADING_RE.finditer(text))
     if not headings:
         issues.append(_issue("SHOT_MISSING", "no valid shot heading found", path))
@@ -138,7 +174,7 @@ def inspect_storyboard(path: Path, expected_source_hash: str) -> dict:
         except ValueError as exc:
             issues.append(_issue("FIELD_DUPLICATE", str(exc), path, shot_id))
             fields = {}
-        required = ("时长", "出现人物", "Seedance 直投提示", "声音原文", "审核后参考素材")
+        required = ("时长", "出现人物", "Seedance 直投提示", "审核后参考素材")
         for name in required:
             if name not in fields or not fields[name].strip():
                 issues.append(_issue("FIELD_MISSING", f"{shot_id} missing 【{name}】", path, shot_id))
@@ -154,23 +190,37 @@ def inspect_storyboard(path: Path, expected_source_hash: str) -> dict:
                 issues.append(_issue("DURATION_RANGE", f"{shot_id} duration {duration:g}s must be >0 and <=15s", path, shot_id))
 
         prompt = fields.get("Seedance 直投提示", "")
-        for label in PROMPT_LABELS:
-            if label not in prompt:
-                issues.append(_issue("PROMPT_SCHEMA", f"{shot_id} missing prompt clause {label}", path, shot_id))
+        try:
+            prompt_clauses = _prompt_clauses(prompt)
+        except ValueError as exc:
+            issues.append(_issue("PROMPT_SCHEMA", f"{shot_id} {exc}", path, shot_id))
+            prompt_clauses = {}
+        for label in CORE_PROMPT_LABELS:
+            if not prompt_clauses.get(label, "").strip():
+                issues.append(_issue("PROMPT_SCHEMA", f"{shot_id} missing core prompt clause {label}：", path, shot_id))
+        blocking_clause = prompt_clauses.get("主体与起态", "")
+        ambiguous_blocking = _blocking_ambiguities(blocking_clause)
+        if ambiguous_blocking:
+            issues.append(_issue(
+                "PROMPT_SPATIAL_AMBIGUITY",
+                f"{shot_id} 主体与起态 contains unreferenced blocking shorthand: {ambiguous_blocking}; name the reference person/anchor and final screen position",
+                path,
+                shot_id,
+            ))
         prompt_length = len(re.sub(r"\s+", "", prompt))
         if prompt_length > 700:
             issues.append(_issue("PROMPT_HARD_LIMIT", f"{shot_id} prompt has {prompt_length} non-space characters; hard limit is 700", path, shot_id))
+        forbidden = [term for term in FORBIDDEN_INTERNAL_REFERENCES if term in prompt]
+        if forbidden:
+            issues.append(_issue(
+                "PROMPT_INTERNAL_REFERENCE",
+                f"{shot_id} direct prompt contains internal continuity reference(s): {forbidden}; expand them into visible natural language",
+                path,
+                shot_id,
+            ))
 
-        shot_audio = _audio_field_lines(fields.get("声音原文", ""))
+        shot_audio = _audio_field_lines(prompt_clauses.get("台词", ""))
         audio_lines.extend(shot_audio)
-        for source_line in shot_audio:
-            spoken_body = source_line.split("：", 1)[-1].strip()
-            if spoken_body and spoken_body not in prompt:
-                issues.append(_issue(
-                    "AUDIO_NOT_IN_PROMPT",
-                    f"{shot_id} source audio text is absent from the copy-ready Seedance prompt: {source_line}",
-                    path, shot_id,
-                ))
         spoken_chars = sum(len(re.sub(r"[^\w\u4e00-\u9fff]", "", line.split("：", 1)[-1])) for line in shot_audio)
         estimated_floor = spoken_chars / 4.5 if spoken_chars else 0.0
 
@@ -185,7 +235,7 @@ def inspect_storyboard(path: Path, expected_source_hash: str) -> dict:
                     f"{shot_id} engineering geometry reference cannot occupy the Seedance reference field: {engineering_dirs[0]}",
                     path, shot_id,
                 ))
-            if ".audit." in asset.name.lower() or asset.suffix.lower() == ".html":
+            if ".audit." in asset.name.lower() or asset.name.endswith(("_审核.jpg", "_审核.jpeg", "_审核.png", "_审核.webp")) or asset.suffix.lower() == ".html":
                 issues.append(_issue("REFERENCE_ROLE", f"{shot_id} mannequin audit/runtime assets cannot occupy the Seedance reference field", path, shot_id))
             if any(part.lower() in {"staging", ".staging"} for part in asset.parts):
                 issues.append(_issue("STAGING_REFERENCE", f"{shot_id} references an asset inside staging: {asset}", path, shot_id))
@@ -247,7 +297,8 @@ def validate_delivery(
         advisories.extend(record["advisories"])
 
     targets = {record["target"] for record in records if record["target"]}
-    if seedance_target == "both":
+    resolved_target = "2.0" if seedance_target == "auto" else seedance_target
+    if resolved_target == "both":
         if targets != {"2.0", "2.5"}:
             issues.append(_issue("TARGET_SET", f"both requires 2.0 and 2.5 outputs; found {sorted(targets)}"))
         signatures: dict[str, list[tuple[str, float | None]]] = {}
@@ -262,13 +313,13 @@ def validate_delivery(
         if signatures.get("2.0") != signatures.get("2.5"):
             issues.append(_issue("VERSION_DRIFT", "2.0 and 2.5 shot IDs or durations differ"))
     else:
-        if targets and targets != {seedance_target}:
-            issues.append(_issue("TARGET_MISMATCH", f"expected target {seedance_target}; found {sorted(targets)}"))
+        if targets and targets != {resolved_target}:
+            issues.append(_issue("TARGET_MISMATCH", f"expected target {resolved_target}; found {sorted(targets)}"))
         actual_audio = [line for record in records for line in record["audio_lines"]]
-        issues.extend(_audio_comparison(expected_audio, actual_audio, f"Seedance {seedance_target}"))
+        issues.extend(_audio_comparison(expected_audio, actual_audio, f"Seedance {resolved_target}"))
 
     all_shot_ids = [shot["shot_id"] for record in records for shot in record["shots"]]
-    if seedance_target != "both" and len(all_shot_ids) != len(set(all_shot_ids)):
+    if resolved_target != "both" and len(all_shot_ids) != len(set(all_shot_ids)):
         issues.append(_issue("SHOT_DUPLICATE_BUNDLE", "shot IDs must be unique across storyboard files"))
 
     manifest_result = None
@@ -284,7 +335,7 @@ def validate_delivery(
                 if not manifest_result.get("pass"):
                     issues.append(_issue("MANIFEST_STALE", "review manifest is missing files or hashes no longer match", review_manifest))
                 if manifest_result.get("delivery_status") != "FINAL":
-                    issues.append(_issue("REVIEW_INCOMPLETE", "FINAL requires design_review=PASS and visual_review=PASS", review_manifest))
+                    issues.append(_issue("REVIEW_INCOMPLETE", "FINAL requires design PASS and visual PASS or NOT_APPLICABLE", review_manifest))
                 manifest_payload = json.loads(review_manifest.read_text(encoding="utf-8"))
                 registered = {Path(item.get("path", "")).expanduser().resolve() for item in manifest_payload.get("outputs", [])}
                 required_files = {path.resolve() for path in storyboards}
@@ -305,6 +356,8 @@ def validate_delivery(
         "storyboard_count": len(records),
         "shot_count": sum(len(record["shots"]) for record in records),
         "targets": sorted(targets),
+        "requested_seedance_target": seedance_target,
+        "resolved_seedance_target": resolved_target,
         "issues": issues,
         "advisories": advisories,
         "files": records,

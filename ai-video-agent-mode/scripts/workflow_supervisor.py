@@ -72,6 +72,7 @@ def run_until_pause(run_dir, source_path=None, max_ticks=24):
         if action == "spawn":
             return _result("host_dispatch_required", history, phase=outcome.get("phase"),
                            dispatch_packets=outcome.get("dispatch_packets", []),
+                           worker_leases=outcome.get("worker_leases", []),
                            interrupt_dispatch_ids=outcome.get("interrupt_dispatch_ids", []),
                            budget=outcome.get("budget"),
                            protocol=_dispatch_protocol())
@@ -215,6 +216,7 @@ def execute_local_phase(run_dir, phase, source_path=None):
         except (OSError, ValueError) as exc:
             reuse_publish = {"pass": False, "reason": str(exc)}
             atomic_json(os.path.join(run_dir, ".cache", "reuse", "publish_error.json"), reuse_publish)
+            raise ValueError("validated reuse publication failed: " + str(exc))
         return {"result_path": path, "verified_reuse_publish": reuse_publish}
     if phase == "export":
         config = _load_json(os.path.join(run_dir, "project_config.json"))
@@ -332,14 +334,15 @@ def _required_source(run_dir, source_path):
 
 def _dispatch_protocol():
     return [
-        "spawn one worker for each dispatch packet",
-        "register the returned Agent ID with register_dispatch_agent.py",
-        "record at least one heartbeat while the worker is running",
+        "spawn one persistent worker for each worker_lease, never one worker per packet",
+        "register every packet in that lease with register_dispatch_lease.py and the returned Agent ID",
+        "before each packet, run start_leased_dispatch.py and then record its first heartbeat",
+        "process lease packet_paths in order and keep the same worker alive between packets",
         "do not wait beyond the packet timeout; interrupt the worker and call the supervisor again",
         "accept only packet._batch_output_path after JSON parsing succeeds",
         "run record_batch_provenance.py, then call workflow_supervisor.py again",
         "pass exact input/output token counts to provenance only when the host exposes them; otherwise leave unavailable",
-        "while any worker is running, poll the supervisor after 10 seconds or immediately after a worker state change",
+        "poll immediately after a lease finishes or fails; use the 10-second poll only while no state change occurs",
     ]
 
 

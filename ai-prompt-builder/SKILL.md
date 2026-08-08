@@ -8,21 +8,20 @@ description: >
   mandatory fields, and platform-specific formatting. Specialized for 即梦
   (Jimeng) platform with separate static image and dynamic video templates,
   mandatory art-style prefixing, character consistency anchoring, and
-  standardized negative prompt library. Invoked by split-script-to-storyboard
-  during deliverable production; can also be called standalone to format
-  prompts from manually provided shot data.
+  standardized negative prompt library. Can consume compatible upstream shot
+  data during deliverable production or run standalone on manually provided data.
 ---
 
 # AI Prompt Builder — 单镜AI提示词汇编器
 
 
-> **Pipeline default: when called by ai-video-agent-mode Phase 6 Composer, MUST use Mode C (director narrative fusion). Mode A/B word limits and ordering rules apply ONLY to standalone use.**
+> **Compatibility rule:** current `ai-video-agent-mode` does not fixed-dispatch this skill. Use Mode C only when an explicit caller supplies the compatible director-fusion contract; Mode A/B remain the standalone paths.
 
 ## Core Use
 
 根据上游所有分析器（情绪/画面/运镜/音效/审查）的合并输出，按目标平台的格式规范，汇编四种不同类型的AI生成提示词。
 
-**不处理**: 任何分析——情绪（`$emotion-analysis`）、画面（`$frames-analysis`）、运镜（`$camera-analysis`）、音效（`$audio-design`）、审查（`$content-review`）。本技能仅汇编上游输出为最终提示词文本。也不处理连续性追踪（`$continuity-ledger`）和多镜工作流编排（`$split-script-to-storyboard`）。
+**不处理**: 任何分析——情绪（`$emotion-analysis`）、画面（`$frames-analysis`）、运镜（`$camera-analysis`）、音效（`$audio-design`）、审查（`$content-review`）。本技能仅汇编上游输出为最终提示词文本，也不处理连续性追踪（`$continuity-ledger`）和多镜工作流编排。
 
 当独立调用时，作为提示词格式化工具使用。
 
@@ -306,7 +305,7 @@ $ai-prompt-builder --template "{全局模板路径}" --compact "{精简YAML}"
 
 #### 模式 C：分镜表引用调用（新增）
 
-直接读取分镜表 MD 文件中指定镜号的行，自动提取各列数据生成提示词。分镜表可以是 `$split-script-to-storyboard` 的标准输出，也可以是任何包含相同列名的 MD 表格。
+直接读取分镜表 MD 文件中指定镜号的行，自动提取各列数据生成提示词。分镜表可以来自任何包含相同列名的兼容上游流程。
 
 ```
 $ai-prompt-builder --md "{分镜表MD路径}" --shot-id "S01-004"
@@ -361,7 +360,7 @@ $ai-prompt-builder --md "{分镜表MD路径}" --shot-id "S01-004"
 
 ### 精简单镜数据包格式
 
-替代原 ~40 字段的完整 YAML 数据包。精简包只携带 L2 镜头级字段 + 模板引用。`$split-script-to-storyboard` 可在分镜表中用此格式替代原完整数据包。
+替代原 ~40 字段的完整 YAML 数据包。精简包只携带 L2 镜头级字段 + 模板引用；兼容的上游分镜流程可用此格式替代原完整数据包。
 
 ```yaml
 # 精简单镜数据包（≤15个字段）
@@ -416,10 +415,10 @@ $ai-prompt-builder --template "全局模板_双胞胎.md" --compact "精简YAML"
 | ⑤ | `动作打斗` | 如全局模板 | 硬光+动态模糊+速度线 | 大幅肢体动作中景 |
 | ⑥ | `闪回记忆` | 如全局模板 | 冷蓝滤镜+饱和度-15%+暗角+微尘 | 任何景别的回忆/过去 |
 
-### 与 `$split-script-to-storyboard` 的接口约定
+### 与上游分镜流程的接口约定
 
 ```
-当 split-script-to-storyboard 调用本技能时，采用高效批量模式：
+当兼容的上游分镜流程调用本技能时，采用高效批量模式：
 
 1. 场次开始前 → 生成全局模板（--export-template）
    - 一次性输出 L0+L1，写入文件
@@ -620,7 +619,7 @@ $ai-prompt-builder --template "全局模板_双胞胎.md" --compact "精简YAML"
 
 ### 模块 9：行为负面提示词整合（v11.2约束优先·剧情行为禁令）
 
-> **此模块对应 `$split-script-to-storyboard` v11.2 §0.5 约束系统**。防止 AI 自由发挥导致角色动作崩坏、尊卑错位、目标混淆。
+> **此模块保留 v11.2 行为约束语义**，用于防止角色动作崩坏、尊卑错位和目标混淆；不再绑定已删除的上游技能名称。
 
 **§9.1 通用行为负面**（所有多人镜必带）：
 
@@ -861,9 +860,9 @@ $ai-prompt-builder --template "全局模板_双胞胎.md" --compact "精简YAML"
 8. **角色版本冲突 → 若精简包中角色ID在全局模板中存在多个版本，默认取最新版本(vN最大的)；若需指定旧版本，在characters字段写`角色ID·vN`**
 9. **v11.2 约束合规冲突 → 若上游分镜输出与约束规则抵触（如F值不统一/坐标缺失/声线错配），标记`[约束冲突: {维度}]`并向上游请求修正——不静默覆盖**
 
-## 与 `$split-script-to-storyboard` 的接口约定
+## 与上游分镜流程的接口约定
 
-当 `$split-script-to-storyboard` 调用本技能时采用高效批量模式，避免每镜重复传输全局不变字段：
+当兼容的上游分镜流程调用本技能时采用高效批量模式，避免每镜重复传输全局不变字段：
 
 ```
 1. 分镜设计完成、首镜调用前：
@@ -901,14 +900,14 @@ $ai-prompt-builder --template "全局模板_双胞胎.md" --compact "精简YAML"
    - 人物模板缺 → 警告用户「人物模板缺失可能导致人物不一致，建议提供固定人物设定」
    - 负面提示词 → 始终使用标准负面库
 6. 输出语言默认中文，适配即梦格式
-7. **当作为 `$split-script-to-storyboard` 的子技能调用时，永远不应用默认值——缺失字段必须标记"[上游缺失]"并向上游请求，不得静默补全。若检测到 v11.2 约束违规（空间锁定缺失/动作目标缺失/声线错配/F值冲突/行为负面缺失），同时标记`[约束冲突: {维度}]`。**
+7. **当由兼容的上游分镜流程调用时，永远不应用默认值——缺失字段必须标记"[上游缺失]"并向上游请求，不得静默补全。若检测到 v11.2 约束违规（空间锁定缺失/动作目标缺失/声线错配/F值冲突/行为负面缺失），同时标记`[约束冲突: {维度}]`。**
 8. **当使用 `--export-template` 生成全局模板时，用户提供的角色信息以完整描述为佳——这是保证跨镜人物一致性的核心**
 
 
 ## 模式 C：导演级叙事融合提示词（短剧全镜完整投喂）
 
-适用场景：Phase 6 Prompt Composer，目标产出为可直接投喂即梦平台的单镜融合提示词。
-当由 `ai-video-agent-mode` 调用时，以调用方 `references/format_constraints.md` 为唯一权威；本节只作为单独使用时的简要提醒。
+适用场景：调用方显式要求导演级融合合同，目标产出为可直接投喂即梦平台的单镜融合提示词。
+收到兼容合同与 `references/format_constraints.md` 时，以调用方合同为权威；当前 `ai-video-agent-mode` 不固定调用本技能。
 
 ### 核心差异（vs 模式 A/B）
 

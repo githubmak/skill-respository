@@ -14,12 +14,15 @@ Scene Lock 由全局导演蓝图同一次创作，不单独派发。Worker 只�
 Orchestrator，不能转换成末端字段补丁。
 不得派发其他 Agent 角色或阶段。
 
-状态监督器每返回一个 packet，宿主必须按固定顺序执行：spawn 一个 worker，调用 `register_dispatch_agent.py`，
-立即记录一次存活心跳。Master 每完成一个主镜、Editor 每完成一个窗口，都必须把当前完整集合原子替换到
+状态监督器返回 `worker_leases[]` 后，宿主按租约数量 spawn 最多三个长驻 worker，而不是按 packet 数量冷启动。
+每个 worker 先用 `register_dispatch_lease.py` 登记租约内全部 packet；处理每个 packet 前运行
+`start_leased_dispatch.py`，再立即记录一次存活心跳。排队中的 `leased` packet 不启动绝对超时；只有进入
+`running` 后才计时。Master 每完成一个主镜、Editor 每完成一个窗口，都必须把当前完整集合原子替换到
 `_batch_output_path`，再调用 packet 的 `checkpoint_command_template`。Master 的该命令在同一次本地调用中核对
 机械事实并记录字节数/完成条目数；Editor 只记录进度，不解析、评分或改写创作语义。等待最终可解析的完整 batch 文件后，调用
 `record_batch_provenance.py`，然后继续状态监督器。宿主在任一 worker 运行时每 10 秒或 worker 状态变化后立即轮询 supervisor；
-只要有槽位释放就立即续派，不得等待整个 worker 组结束。
+同一租约中的 packet 按顺序连续处理并分别记录 provenance，Agent 不退出、不重新冷启动。只要租约完成或失败
+就立即继续 supervisor；10 秒轮询只用于没有状态变化的等待期。
 
 注册后 5 分钟仍没有第一个可解析且非空的内容检查点，或已有检查点后连续 3 分钟没有字节数/完成条目数增长，
 supervisor 就退役该 packet 并定点重派；普通心跳不能刷新这两个内容计时器。packet 到达
@@ -29,6 +32,6 @@ supervisor 就退役该 packet 并定点重派；普通心跳不能刷新这两�
 无法在剩余预算内完成时，同样必须停止并报告，不能继续等待。
 
 进入 Editor Pass 2 前，本地 `pre_editor_gate.py` 只写按 SHA-256 缓存的确定性审查产物。它不生成摄影、
-情绪或审美结论。Editor 必须从源文、Scene Lock、相邻镜和完整提示词独立完成语义、Seedance 适配与
-最终审美复审。每个窗口都读取未经截断的上一镜、当前镜、下一镜及对应场景资产；批次只控制上下文容量，
-不产生质量等级。
+情绪或审美结论。Editor 必须从源文、Scene Lock、场内完整镜头链、前后边界镜和完整提示词独立完成语义、
+Seedance 适配与最终审美复审。每个窗口覆盖一个连续场景，输出 `reviewed_shot_ids` 必须与输入
+`shot_ids` 完全一致；批次只控制上下文容量，不产生质量等级。

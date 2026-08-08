@@ -1,11 +1,6 @@
 ---
 name: document-review
-trigger:
-  - command: "/check"
-  - command: "/review"
-  - keywords: ["帮我审核文案", "帮我检查文案", "校对一下", "review一下", "check一下", "有没有语病", "有没有错别字", "这段话有没有问题", "帮我检查小说", "检查设定有没有矛盾", "人设有没有崩", "时间线对不对", "前后有没有冲突", "帮我捉虫", "content正确性检查", "proofread", "fact-check", "consistency check"]
-  - conditions: ["用户提供文本要求审核/校对", "用户提供文件路径要求审核"]
-description: 文案审核与校对。专注于剧情bug、错别字、语法错误检查，标注具体修改位置。支持txt/docx/md文件路径。
+description: 文案审核与校对，专注于剧情bug、错别字、语法错误、设定矛盾和时间线冲突，并标注具体修改位置。支持直接文本及 txt/docx/md 文件。用户要求“审核文案”“校对”“检查小说”“有没有语病/错别字”“人设或时间线是否冲突”，或使用 /check、/review、proofread、fact-check、consistency check 时使用。
 ---
 
 # document-review — 文案审核与校对

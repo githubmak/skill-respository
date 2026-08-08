@@ -5,8 +5,8 @@ description: >
   Tracks character positions, body states, props, eyelines, emotional residue,
   screen direction, and camera axis across shots in a scene. Produces per-shot
   continuity anchors, four-shot character audits, and cross-shot consistency
-  warnings. Invoked by split-script-to-storyboard after each shot design;
-  can also be called standalone for continuity planning.
+  warnings. Can be called by an upstream storyboard workflow after each shot
+  design or used standalone for continuity planning.
 ---
 
 # Continuity Ledger — 跨镜连续性状态管理器
@@ -15,7 +15,7 @@ description: >
 
 维护场景级连续性账本——追踪角色位置/身体状态/道具/视线/情绪残留/屏幕方向/摄影机轴线——在每镜设计完成后自动更新，生成承接锚点文本和跨镜一致性告警。
 
-**不处理**: 任何单镜分析——情绪（`$emotion-analysis`）、画面（`$frames-analysis`）、运镜（`$camera-analysis`）、音效（`$audio-design`）、审查（`$content-review`）、提示词汇编（`$ai-prompt-builder`）、多镜工作流编排（`$split-script-to-storyboard`）。
+**不处理**: 任何单镜分析——情绪（`$emotion-analysis`）、画面（`$frames-analysis`）、运镜（`$camera-analysis`）、音效（`$audio-design`）、审查（`$content-review`）、提示词汇编（`$ai-prompt-builder`）和多镜工作流编排。
 
 当独立调用时，作为连续性规划工具使用。
 
@@ -112,7 +112,7 @@ description: >
 
 ### 紧凑状态块 (COMPACT_STATE)
 
-每镜输出末尾附加以下机器可读块，供 `$split-script-to-storyboard` 直接解析后组装下一镜的子技能输入，无需依赖 Markdown 解析：
+每镜输出末尾附加以下机器可读块，供兼容的上游分镜流程直接解析并组装下一镜输入，无需依赖 Markdown 解析：
 
 ```
 <!--COMPACT_STATE
@@ -246,4 +246,4 @@ EMOTION_RESIDUE: 告密者:震惊→恐惧→崩溃
 
 ---
 
-> **质量标准**：本技能输出需通过主 SKILL.md（ai-video-agent-mode）的 Phase 8 穿帮审查（10 项检查）和 Phase 9 最终验证（22 项自检）。质量门禁详见主 SKILL.md 第八章 Quality Gates。
+> **质量标准**：本技能独立检查人物位置、身体状态、道具、视线、屏幕方向和摄影机轴线；若上游流程另有验证合同，以显式传入的合同为准，不假定固定主技能或阶段。

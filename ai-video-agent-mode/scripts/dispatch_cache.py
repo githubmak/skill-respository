@@ -17,7 +17,7 @@ if not os.environ.get("PYTHONPYCACHEPREFIX") and not getattr(sys, "pycache_prefi
     sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(__file__))
 from pycache_policy import block_source_pycache_until_run_dir, ensure_pycache_prefix
-from context_budget import MAX_EFFECTIVE_CONTEXT_CHARS, check as check_context_budget, size as context_size
+from context_budget import MAX_EFFECTIVE_CONTEXT_CHARS, check as check_context_budget
 from batch_planner import analysis_chunks as _analysis_chunks, batch_profile as _batch_profile
 from batch_planner import dynamic_master_chunks as _plan_dynamic_master_chunks
 from batch_planner import editor_review_chunks as _editor_review_chunks
@@ -35,6 +35,7 @@ PHASE_INPUTS = {
     "master_production": ".cache/orchestrator/shot_plan.json",
     "editor_pass2": ".cache/composer/merged.prompt_package.json",
 }
+EDITOR_EFFECTIVE_CONTEXT_TARGET_CHARS = 150000
 
 
 def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
@@ -95,8 +96,11 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
     group_tag = dispatch_group_id.split("-")[0]
     constraints_path = _write_constraints_sidecar(run_dir, phase, out_dir, group_tag)
     scene_lock_cache_path = None
+    editor_global_context_path = None
     if phase == "master_production":
         scene_lock_cache_path = _write_scene_lock_cache(run_dir, items, out_dir, group_tag)
+    elif phase == "editor_pass2":
+        editor_global_context_path = _write_editor_global_context(run_dir, out_dir, group_tag)
     paths = []
 
     for idx, chunk in enumerate(chunks, 1):
@@ -112,6 +116,9 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             )
             packet_items = [_compact_composer_item(item) for item in chunk]
             source_evidence_path = _write_source_evidence(run_dir, chunk, out_dir, dispatch_tag)
+            master_context_path = _write_master_creative_context(
+                chunk, out_dir, dispatch_tag
+            )
         retry_context_path = None
         retry_mode = None
         if is_retry and phase == "master_production":
@@ -142,7 +149,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             "batch_policy": batch_profile["basis"],
             "creative_review_scope": "full_model_review",
             "total_item_count": len(items),
-            "subshot_count": sum(len(item.get("source_subshots", [item])) for item in chunk),
+            "subshot_count": sum(len(item.get("subshots", [item])) for item in chunk),
             "master_shot_count": len(chunk),
             "context_item_count": len(chunk),
             "items": packet_items,
@@ -173,12 +180,13 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
                 "Require the current contract_version from contract_registry and read constraints_path for the full phase contract; "
                 "a missing or older contract version requires redispatch. For master_production, start from "
                 "composer_scaffold_path, preserve every locked field, and create exactly one Jimeng task per packet item; the model decides each task's dramatic coverage, internal rhythm, and editorial form; read scene_lock_cache_path once per scene; "
-                "source_path is fallback context only and must not be read in full unless packet data is insufficient. "
+                "source_path is fallback context only and must not be read in full unless the bounded sidecars are insufficient. "
                 "Do not paste unchanged source content back into chat."
             ),
         }
         if phase == "master_production":
             packet["source_evidence_path"] = source_evidence_path
+            packet["master_creative_context_path"] = master_context_path
             packet["local_validation_command"] = [
                 sys.executable,
                 os.path.join(os.path.dirname(__file__), "validate_composer_output.py"),
@@ -194,11 +202,11 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
                     "composer_scaffold_path",
                     "scene_lock_cache_path",
                     "source_evidence_path",
+                    "master_creative_context_path",
                 ],
                 "per_shot_context": [
-                    "packet.items[] complete model-authored record",
-                    "packet.items[].source_subshots complete model-authored children",
-                    "packet.items[].dialogue_events locked source facts",
+                    "packet.items[] mechanical task index",
+                    "master_creative_context_path complete model-authored records",
                 ],
                 "history_policy": "Use the complete bounded scene context needed for directing. Scene locks are model-authored references, not engineering prescriptions.",
                 "quality_policy": "Use scaffold structures only when they help the shot. Creative depth is chosen by the model and judged by the model Editor.",
@@ -207,7 +215,7 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
                 " Composer batch output top-level must be exactly {\"shots\": [...]}; "
                 "omit contract_version. Preserve only scaffold locked_fields; all other creative fields are model-owned. "
                 "Treat the first persisted version of every main shot as a delivery-ready final candidate. Before writing it, "
-                "perform the model's own holistic director review against the episode intent and viewer experience; do not emit a self-score or checklist. "
+                "read master_creative_context_path in full, then perform the model's own holistic director review against the episode intent and viewer experience; do not emit a self-score or checklist. "
                 "After each main shot, atomically replace _batch_output_path with the current complete {\"shots\": [...]} checkpoint, "
                 "then run checkpoint_command_template with that shot id so deterministic validation and content progress are recorded in one call. "
                 "A checkpoint never counts as completed provenance. "
@@ -236,22 +244,24 @@ def prepare_dispatch_packets(run_dir, phase, batch_size=None, subshot_ids=None):
             packet["review_packet_path"] = os.path.join(run_dir, ".cache", "review", "llm_gate_review.md")
             packet["pre_editor_gate_path"] = pre_editor_gate_path
             packet["editor_creative_context_path"] = editor_context_path
+            packet["editor_global_context_path"] = editor_global_context_path
             packet["context_policy"] = {
                 "fixed_global_context": [
                     "project_config_path", "constraints_path", "pre_editor_gate_path",
-                    "editor_creative_context_path",
+                    "editor_global_context_path", "editor_creative_context_path",
                 ],
                 "history_policy": "Use the bounded exact source records plus complete model-authored global and adjacent-shot context.",
             }
             packet["instruction"] += (
                 " For editor_pass2, read pre_editor_gate_path and editor_creative_context_path in full. The latter contains bounded exact source records, "
                 "unclipped model-authored prompts, director cards, creative metadata, plan facts, and adjacent shots for this bounded window. "
-                "It also contains the complete model-authored global director context needed to judge the bounded window. "
+                "Read editor_global_context_path once for the complete model-authored global director context. "
                 "The local gate proves only mechanical validity. Independently judge script interpretation, emotional causality, "
                 "performance, shot rhythm, blocking, camera, movement, focus, lighting, palette, Seedance comprehensibility, and final aesthetics. "
                 "Do not defer any semantic decision to keyword or regex reports. Every window receives the same full model review standard. "
                 "Act only as an independent acceptance reviewer: never write replacement prompts or field patches. On failure, identify whether "
-                "the earliest creative owner is orchestrator or master_production, explain the creative cause, and list affected main-shot IDs."
+                "the earliest creative owner is orchestrator or master_production, explain the creative cause, and list affected main-shot IDs. "
+                "For every output window, copy packet.items[].shot_ids exactly into reviewed_shot_ids; do not omit, add, or reorder IDs."
                 " After each completed window, atomically replace _batch_output_path with the current complete {\"windows\": [...]} checkpoint, "
                 "then run checkpoint_command_template so content growth is recorded. A checkpoint never counts as completed provenance; "
                 "only the final complete windows batch may proceed to record_batch_provenance.py."
@@ -283,12 +293,30 @@ def _write_editor_creative_context(run_dir, source_path, windows, out_dir, dispa
     return path
 
 
+def _write_editor_global_context(run_dir, out_dir, group_tag):
+    plan = _load_optional_json(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"))
+    path = os.path.join(out_dir, "editor_global_context_%s.json" % group_tag)
+    _write_json(path, {
+        "authority": "model_editor",
+        "semantic_transform": False,
+        "global_director_context": {
+            key: copy.deepcopy(value) for key, value in plan.items() if key != "shots"
+        },
+    })
+    return path
+
+
 def _editor_creative_context_payload(run_dir, source_path, windows):
     package = _load_json(source_path)
     wanted = set()
     for window in windows:
         if not isinstance(window, dict):
             continue
+        wanted.update(str(value) for value in window.get("shot_ids", []) if str(value).strip())
+        for key in ("previous_boundary_shot_id", "next_boundary_shot_id"):
+            if str(window.get(key, "")).strip():
+                wanted.add(str(window[key]))
+        # Recovery compatibility for packets built before scene windows.
         for relation in ("previous", "current", "next"):
             item = window.get(relation)
             if isinstance(item, dict) and item.get("shot_id"):
@@ -312,9 +340,6 @@ def _editor_creative_context_payload(run_dir, source_path, windows):
         "authority": "model_editor",
         "semantic_transform": False,
         "target_shot_ids": sorted(wanted),
-        "global_director_context": {
-            key: copy.deepcopy(value) for key, value in plan.items() if key != "shots"
-        },
         "source_records": _source_records(run_dir, planned),
         "shots": shots,
         "planned_shots": planned,
@@ -519,6 +544,10 @@ def _packet_shot_ids(packet):
     for item in packet.get("items", []) if isinstance(packet.get("items"), list) else []:
         if not isinstance(item, dict):
             continue
+        for value in item.get("shot_ids", []) if isinstance(item.get("shot_ids"), list) else []:
+            shot_id = str(value or "").strip()
+            if shot_id and shot_id not in ids:
+                ids.append(shot_id)
         shot_id = str(item.get("shot_id", "") or item.get("subshot_id", "") or "").strip()
         if shot_id and shot_id not in ids:
             ids.append(shot_id)
@@ -714,16 +743,22 @@ def _to_master_tasks(items):
     masters = []
     for key in order:
         children = groups[key]
-        first = copy.deepcopy(children[0])
-        first["shot_id"] = key
-        first["subshot_id"] = key  # output identity is the main shot
-        first["source_subshot_ids"] = [str(child.get("subshot_id", "")) for child in children]
-        first["source_subshots"] = copy.deepcopy(children)
-        first["duration"] = round(sum(float(child.get("duration", 0) or 0) for child in children), 3)
-        first["dialogue_refs"] = [ref for child in children for ref in child.get("dialogue_refs", [])]
-        first["dialogue_events"] = [event for child in children for event in child.get("dialogue_events", [])]
-        first["master_task"] = True
-        masters.append(first)
+        parent = copy.deepcopy(children[0].get("parent_shot_context", {}))
+        clean_children = []
+        for child in children:
+            clean = copy.deepcopy(child)
+            clean.pop("parent_shot_context", None)
+            clean_children.append(clean)
+        task = parent
+        task["shot_id"] = key
+        task["subshot_id"] = key  # output identity is the main shot
+        task["source_subshot_ids"] = [str(child.get("subshot_id", "")) for child in clean_children]
+        task["subshots"] = clean_children
+        task["duration"] = round(sum(float(child.get("duration", 0) or 0) for child in clean_children), 3)
+        task["dialogue_refs"] = [ref for child in clean_children for ref in child.get("dialogue_refs", [])]
+        task["dialogue_events"] = [event for child in clean_children for event in child.get("dialogue_events", [])]
+        task["master_task"] = True
+        masters.append(task)
     return masters
 
 
@@ -905,6 +940,17 @@ def _write_source_evidence(run_dir, items, dispatch_dir, dispatch_tag):
     return path
 
 
+def _write_master_creative_context(items, dispatch_dir, dispatch_tag):
+    """Persist every model-authored field once, outside the mechanical packet."""
+    path = os.path.join(dispatch_dir, "master_creative_context_%s.json" % dispatch_tag)
+    _write_json(path, {
+        "authority": "model_master",
+        "semantic_transform": False,
+        "records": copy.deepcopy(items),
+    })
+    return path
+
+
 def _source_records(run_dir, values):
     wanted = set()
 
@@ -931,10 +977,14 @@ def _split_for_actual_context(run_dir, phase, chunks):
     """Split multi-item work before writing packets using the real creative payload size."""
     result = []
     queue = list(chunks)
+    target = (
+        EDITOR_EFFECTIVE_CONTEXT_TARGET_CHARS
+        if phase == "editor_pass2" else MAX_EFFECTIVE_CONTEXT_CHARS
+    )
     while queue:
         chunk = queue.pop(0)
         estimated = _estimated_chunk_context(run_dir, phase, chunk)
-        if estimated <= MAX_EFFECTIVE_CONTEXT_CHARS or len(chunk) <= 1:
+        if estimated <= target or len(chunk) <= 1:
             result.append(chunk)
             continue
         midpoint = max(len(chunk) // 2, 1)
@@ -944,26 +994,40 @@ def _split_for_actual_context(run_dir, phase, chunks):
 
 def _estimated_chunk_context(run_dir, phase, chunk):
     fixed_paths = [os.path.join(run_dir, "project_config.json")]
-    payload_size = context_size(chunk)
+    payload_size = _json_file_size(chunk)
     if phase == "master_production":
         fixed_paths.append(os.path.join(run_dir, ".cache", "analysis", "scene_locks.json"))
-        payload_size += context_size(_source_records(run_dir, chunk))
+        payload_size += _json_file_size(_source_records(run_dir, chunk))
     elif phase == "editor_pass2":
         fixed_paths.append(os.path.join(run_dir, ".cache", "review", "pre_editor_gate.json"))
         source_path = os.path.join(run_dir, PHASE_INPUTS[phase])
-        payload_size += context_size(_editor_creative_context_payload(run_dir, source_path, chunk))
+        payload_size += _json_file_size(
+            _editor_creative_context_payload(run_dir, source_path, chunk)
+        )
+        plan = _load_optional_json(os.path.join(run_dir, ".cache", "orchestrator", "shot_plan.json"))
+        payload_size += _json_file_size({
+            key: value for key, value in plan.items() if key != "shots"
+        })
     external = sum(os.path.getsize(path) for path in fixed_paths if os.path.isfile(path))
     # Reserve deterministic packet, constraints and scaffold overhead without
     # interpreting or truncating any creative field.
     return payload_size + external + 20000
 
 
+def _json_file_size(value):
+    return len(json.dumps(value, ensure_ascii=False, indent=2).encode("utf-8"))
+
+
 def _compact_composer_item(item):
-    """Pass the complete model-authored item and append only file references."""
-    copied = copy.deepcopy(item)
-    copied["scene_lock_ref"] = str(item.get("scene", "") or "__default__")
-    copied["composer_scaffold_ref"] = str(item.get("subshot_id", ""))
-    return copied
+    """Return only the mechanical index; creative records live in a sidecar."""
+    return {
+        "shot_id": str(item.get("shot_id", "") or ""),
+        "subshot_id": str(item.get("subshot_id", "") or ""),
+        "source_subshot_ids": list(item.get("source_subshot_ids", []) or []),
+        "duration": item.get("duration", 0),
+        "scene_lock_ref": str(item.get("scene", "") or "__default__"),
+        "composer_scaffold_ref": str(item.get("subshot_id", "") or ""),
+    }
 
 
 def _compact_source_subshot(source):

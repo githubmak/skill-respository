@@ -7,15 +7,15 @@ description: >
   for one storyboard shot at a time. Also provides a standardized emotion library with
   11 copy-paste AI prompt templates for short-drama facial expressions, character archetype
   emotion presets, cinematic micro-expression techniques, lighting/color-grading tables,
-  and one-click universal prompt templates. Invoked by split-script-to-storyboard during
-  shot design; can also be called standalone for dialogue rehearsal or character emotion breakdown.
+  and one-click universal prompt templates. Can be called by an upstream storyboard workflow
+  during shot design or used standalone for dialogue rehearsal and character emotion breakdown.
 ---
 
 <!-- PIPELINE_KERNEL:START -->
-> 以下段由 `split-script-to-storyboard` v7 pipeline 在运行时提取并注入融合 agent prompt。
+> 以下段可由兼容的上游分镜流程提取并注入融合 agent prompt。
 > 更新情绪表演规则只需修改本文件——管线自动同步，零副本维护。
 >
-> **Mode C v4 dispatch exception:** 当输入 packet 含 `contract_version=modec-v4` 时，本 Kernel 中“每角色三处面部细节、每人独立动作、面部四维全写、固定生理指标密度”等配额全部失效；只执行本文后方“AI Video Agent Mode 输出覆盖规则”。
+> **Mode C v4 compatibility exception:** 当显式输入 packet 含 `contract_version=modec-v4` 时，本 Kernel 中“每角色三处面部细节、每人独立动作、面部四维全写、固定生理指标密度”等配额全部失效；只执行本文后方“兼容数据包输出规则”。
 
 ## PIPELINE KERNEL: 情绪表演核心规则 (v11.2)
 
@@ -120,17 +120,17 @@ IF genre = action / fantasy / wuxia: Use default templates. Heightened but motiv
 社会关系语境（君臣/夫妻/主仆/仇人/恋人）+ 空间语境（公开/私密/被监视）+ 时间压力（紧急/从容/倒计时）
 
 ### 情绪光色绑定
-推荐光色/光位/软硬——供 visual-analysis 使用
+推荐光色/光位/软硬——供 `frames-analysis` 使用
 
 ### 推荐景别
-供 visual-analysis 使用
+供 `camera-analysis` 使用
 <!-- PIPELINE_KERNEL:END -->
 
 # Emotion Analysis — 单镜情绪表演分析器
 
-## AI Video Agent Mode 输出覆盖规则
+## 兼容数据包输出规则（非默认调用）
 
-当由 `ai-video-agent-mode` 作为 Phase 2a 子Agent调用，并收到 dispatch packet 路径时，本技能必须服从调用方 packet，不使用下方独立 Markdown Output Contract。
+当前 `ai-video-agent-mode` 不固定派发本技能。仅当调用方明确提供兼容的 dispatch packet 路径时，才使用本节数据包合同，并服从调用方 packet，不使用下方独立 Markdown Output Contract。
 
 - 读取 packet JSON。
 - `packet.contract_version` 必须为 `modec-v4`；缺失或版本不符时停止并要求主 Agent 重新派发。
@@ -180,13 +180,7 @@ IF genre = action / fantasy / wuxia: Use default templates. Heightened but motiv
 
 将单个分镜中的人物表演、台词表达、情绪变化、心理流转化为可执行的导演级表演指令。输入是一个镜头的角色信息和语境，输出是结构化的情绪分析结果。
 
-不处理运镜/景别/角度/焦段（委派 `$camera-analysis`）；不处理画面内容/空间分层/光影/构图/人物动作（委派 `$frames-analysis`）；不编排多镜工作流（由 `$split-script-to-storyboard` 主控）。当独立调用时，作为对话排练/角色情绪拆解工具使用。
-
----
-
-## NEP 替代声明
-
-本技能吸收并替代 `$natural-emotion-performance` 的全部功能。其他技能引用 NEP 的四要素模型时，改用本技能的表演控制表+因果链系统。自然度规则和对话表达模式库已内联至本文末尾。
+不处理运镜/景别/角度/焦段（交给 `$camera-analysis`）；不处理画面内容/空间分层/光影/构图/人物动作（交给 `$frames-analysis`）；不编排多镜工作流。当独立调用时，作为对话排练/角色情绪拆解工具使用。
 
 ---
 
@@ -494,7 +488,7 @@ AI 必须将**眼神+嘴角+呼吸+面部肌肉**拆解为可渲染文字指令�
 
 ---
 
-## 自然度规则（继承自 natural-emotion-performance）
+## 自然度规则
 
 ### 规则一：情绪变化必须有即时触发
 每个情绪转折必须有具体、可视的触发原因——一句话、一个视线、一个道具、一个声音、一次沉默、一个距离变化、一句指控。禁止无来由的情绪变化。
@@ -633,20 +627,19 @@ AI 必须将**眼神+嘴角+呼吸+面部肌肉**拆解为可渲染文字指令�
 
 ---
 
-## 质量标准（同步自 ai-video-agent-mode）
+## 独立调用质量参考
 
-本技能的输出将被主 SKILL.md 的 Phase 2a spawn 模板注入以下质量要求。此处同步备份，确保 Agent 在独立调用时也有规则参照：
+以下规则由本技能自行负责，不代表其他主流程会固定调用本技能。收到显式兼容 packet 时，以调用方合同为准：
 
-**面部特征密度：**
-- 目标：每角色 >=5 个独立面部特征描述（眼睑开合幅度、瞳孔聚焦方向与缩放、唇线弧度与张力、鼻翼扩张/收缩、呼吸节奏与胸廓起伏幅度、眉毛走向）
-- 门禁：在 Emotion Agent 首次输出和 Composer 前合同校验中确认每镜达到 >=3 个景别可见面部关键词、>=70% 覆盖率（非实体角色除外）。不达标时只回传失败子镜给 Emotion Agent 重派，并重新生成其 `performance_chain`；禁止在导出阶段通过后处理脚本补写面部细节。
+**可见表演密度：**
+- 表演细节服从景别与时长，只写观众实际可见、能推动因果的面部和身体变化。
+- 不使用固定面部关键词数量、覆盖率或逐角色配额；信息不足时返回上游补充，不在导出阶段机械补写。
 
 **跨镜一致性：**
 - 同一角色在不同子镜中的 micro_expression 和 body_parts_focus 禁止完全相同。每镜必须从当前情境重新生成，不得使用角色级默认模板
 - 多人镜中每个角色的 beat_transition 独立，禁止共用同一段动作推进描述
 
-**物理表情 + 氛围感双结合（见主 SKILL.md 铁律 14）：**
-- 每镜动作过程段同时包含物理表情（>=5 项/角色）和氛围文字（>=2 句/镜）
-- 物理描述承载动作，氛围描述赋予情绪灵魂，两者交替布局
+**物理表情与氛围结合：**
+- 物理描述承载动作，氛围描述服务情绪；按镜头需要取舍，不设置固定数量。
 
 **非实体角色：** 系统/UI 等角色的 facial_4d 字段写 "N/A"，不强制物理表情。

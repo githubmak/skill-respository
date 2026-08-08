@@ -4,9 +4,9 @@ description: >
   Single-shot audio and sound design analyzer for AI storyboard and video production.
   Produces structured sound layering (human voice, ambience, foley, emotional FX,
   transition FX, music) with precise timing windows, volume hierarchy, and
-  ducking rules for one storyboard shot. Invoked by split-script-to-storyboard
-  during audio-visual synchronization; can also be called standalone for scene
-  sound design or audio planning.
+  ducking rules for one storyboard shot. Can be called by an upstream storyboard
+  workflow during audio-visual synchronization or used standalone for scene sound
+  design and audio planning.
 ---
 
 # Audio Design — 单镜音效设计分析器
@@ -15,7 +15,7 @@ description: >
 
 将单个分镜的音效需求——人声分层、环境底噪、拟音、情绪音效、转场音效、音乐——转化为精确到帧的可执行音效指令。输入是一个镜头的画面信息和情绪基调，输出是分层音效设计结果。
 
-**不处理**: 情绪表演（`$emotion-analysis`）、画面内容（`$frames-analysis`）、运镜景别（`$camera-analysis`）、违规审查（`$content-review`）、AI提示词汇编（`$ai-prompt-builder`）、多镜工作流编排（`$split-script-to-storyboard`）。
+**不处理**: 情绪表演（`$emotion-analysis`）、画面内容（`$frames-analysis`）、运镜景别（`$camera-analysis`）、违规审查（`$content-review`）、AI提示词汇编（`$ai-prompt-builder`）和多镜工作流编排。
 
 当独立调用时，作为场景音效设计规划工具使用。
 

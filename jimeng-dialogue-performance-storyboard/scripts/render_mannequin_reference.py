@@ -26,7 +26,8 @@ from render_blocking_reference import validate_spec
 HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 SHOT_ID_RE = re.compile(r"(?<![A-Za-z0-9])S\d+-\d+(?![A-Za-z0-9])")
 POSTURES = {"standing", "sitting"}
-SCHEMA_VERSION = 3
+PHYSICAL_PHASES = {"static", "start", "end"}
+SCHEMA_VERSION = 5
 FRAME_CONTRACT = {
     "width": 1920,
     "height": 1080,
@@ -34,7 +35,7 @@ FRAME_CONTRACT = {
     "capture_scope": "direct renderer output",
 }
 RENDER_BACKEND = "pyvista_vtk_offscreen"
-RENDER_PROFILE = "proxy_v2"
+RENDER_PROFILE = "proxy_v3_neutral"
 
 
 def _finite_number(value, label: str, minimum: float, maximum: float) -> float:
@@ -68,9 +69,19 @@ def _shot_id(raw_state: dict, label: str, state_index: int) -> str:
     return explicit
 
 
+def _physical_phase(raw_state: dict, state_index: int) -> str:
+    phase = str(raw_state.get("physical_phase", "static")).strip().lower()
+    if phase not in PHYSICAL_PHASES:
+        raise ValueError(
+            f"states[{state_index}].physical_phase must be static, start, or end"
+        )
+    return phase
+
+
 def _image_stem(shot_group: str, shot_id: str, state_index: int, camera_index: int) -> str:
-    prefix = f"{shot_group}_" if shot_group != shot_id else ""
-    return f"{prefix}{shot_id}_state{state_index:02d}_cam{camera_index:02d}"
+    # State and camera indexes remain in the report; the image name stays
+    # readable when selected directly in Jimeng.
+    return f"{shot_id}_即梦_3D_空间关系"
 
 
 def _mannequin_character(raw: dict, normalized: dict, names: set[str], anchors: set[str]) -> dict:
@@ -167,6 +178,7 @@ def compile_states(spec: dict) -> dict:
     }
     raw_geometry_by_blocking: dict[str, dict] = {}
     grouped: dict[str, dict] = {}
+    shot_phases: dict[str, dict[str, dict]] = {}
     for index, (raw_state, state) in enumerate(zip(spec["states"], normalized["states"]), start=1):
         blocking_id = state["blocking_id"]
         if not raw_state.get("reuse_blocking"):
@@ -181,19 +193,54 @@ def compile_states(spec: dict) -> dict:
         characters = [_mannequin_character(raw_characters.get(item["name"], {}), item, names, anchor_names) for item in state["characters"]]
         anchors = [_mannequin_anchor(raw_anchors.get(item["label"], {}), item) for item in state["anchors"]]
         physical = {"schema_version": SCHEMA_VERSION, "scene": scene, "characters": characters, "anchors": anchors, "boundaries": state["boundaries"]}
+        _validate_hand_reach(physical, scene)
         physical_hash = _hash_payload(physical)
         camera = _mannequin_camera(raw_state["cameras"][0], state["cameras"][0])
+        label = state["label"]
+        state_shot_id = _shot_id(raw_state, label, index)
+        physical_phase = _physical_phase(raw_state, index)
+        if physical_phase != "static" and camera.get("path"):
+            raise ValueError(
+                f"states[{index}] cannot combine physical_phase={physical_phase} with camera path; "
+                "put the start camera in the start state and the end camera in the end state"
+            )
+        phase_records = shot_phases.setdefault(state_shot_id, {})
+        if physical_phase in phase_records:
+            raise ValueError(
+                f"shot {state_shot_id} has duplicate physical_phase={physical_phase}"
+            )
+        phase_records[physical_phase] = {
+            "state_index": index,
+            "physical_hash": physical_hash,
+        }
         view_hash = _hash_payload(camera)
         group = grouped.setdefault(physical_hash, {"physical_hash": physical_hash, "blocking_ids": [], "labels": [], "shot_ids": [], "view_sources": {}, "payload": physical, "views": [], "view_hashes": set()})
         if blocking_id not in group["blocking_ids"]: group["blocking_ids"].append(blocking_id)
-        label = state["label"]
-        state_shot_id = _shot_id(raw_state, label, index)
         group["labels"].append(label)
         if state_shot_id not in group["shot_ids"]: group["shot_ids"].append(state_shot_id)
-        group["view_sources"].setdefault(view_hash, []).append({"shot_id": state_shot_id, "label": label})
+        group["view_sources"].setdefault(view_hash, []).append({
+            "shot_id": state_shot_id,
+            "label": label,
+            "physical_phase": physical_phase,
+        })
         if view_hash not in group["view_hashes"]:
             group["view_hashes"].add(view_hash)
             group["views"].append({"view_hash": view_hash, **camera})
+    for shot_id, phases in shot_phases.items():
+        phase_names = set(phases)
+        if "static" in phase_names:
+            if phase_names != {"static"}:
+                raise ValueError(
+                    f"shot {shot_id} cannot mix physical_phase=static with start/end"
+                )
+            continue
+        if phase_names != {"start", "end"}:
+            missing = "end" if "start" in phase_names else "start"
+            raise ValueError(f"shot {shot_id} physical transition is missing {missing} state")
+        if phases["start"]["state_index"] > phases["end"]["state_index"]:
+            raise ValueError(f"shot {shot_id} start state must appear before end state")
+        if phases["start"]["physical_hash"] == phases["end"]["physical_hash"]:
+            raise ValueError(f"shot {shot_id} start and end physical states are identical")
     results = []
     for group in grouped.values():
         group["view_hashes"] = sorted(group["view_hashes"])
@@ -201,6 +248,10 @@ def compile_states(spec: dict) -> dict:
             sources = group["view_sources"].get(view["view_hash"], [])
             view["source_shots"] = list(dict.fromkeys(item["shot_id"] for item in sources))
             view["source_labels"] = [item["label"] for item in sources]
+            view["sources"] = sources
+            view["physical_phases"] = list(dict.fromkeys(
+                item["physical_phase"] for item in sources
+            ))
         group["payload"]["views"] = group["views"]
         results.append(group)
     return {"schema_version": SCHEMA_VERSION, "shot_group": normalized["shot_group"], "scene": scene, "source_state_count": len(normalized["states"]), "physical_state_count": len(results), "view_count": sum(len(item["views"]) for item in results), "groups": results}
@@ -221,6 +272,30 @@ def _world(scene: dict, x: float, y: float, height: float = 0.0) -> tuple[float,
     return ((x - 0.5) * scene["world_width_m"], (0.5 - y) * scene["world_depth_m"], height)
 
 
+def _validate_hand_reach(payload: dict, scene: dict) -> None:
+    """Reject contacts that would require stretching a limb beyond human reach."""
+    for character in payload["characters"]:
+        h = character["height_m"]
+        base_z = 0.03 if character["posture"] == "standing" else 0.48
+        pos = np.asarray(_world(scene, character["x"], character["z"], base_z), dtype=float)
+        facing = math.radians(character["body_facing_deg"])
+        forward = np.array([math.cos(facing), -math.sin(facing), 0.0])
+        lateral = np.array([-forward[1], forward[0], 0.0])
+        shoulder_z = base_z + h * 0.18 + h * 0.38
+        shoulders = np.array([pos[0], pos[1], shoulder_z - h * 0.015])
+        max_reach = h * 0.45 + 0.03
+        for hand, target in character["hand_targets"].items():
+            hand_side = 1 if hand == "left" else -1
+            shoulder = shoulders + lateral * hand_side * h * 0.13
+            end = np.asarray(_target_point(payload, character, target, scene), dtype=float)
+            required = float(np.linalg.norm(end - shoulder))
+            if required > max_reach:
+                raise ValueError(
+                    f'{character["name"]}.{hand} hand target is unreachable: '
+                    f'{required:.2f}m from shoulder exceeds {max_reach:.2f}m arm reach'
+                )
+
+
 def _hex_rgb(color: str) -> tuple[float, float, float]:
     value = color.lstrip("#")
     return tuple(int(value[i:i + 2], 16) / 255 for i in (0, 2, 4))
@@ -239,11 +314,10 @@ def _head_marker(head, head_facing_deg: float, height_m: float) -> tuple[np.ndar
 
 
 def _add_surface(plotter, mesh, color: str, opacity: float = 1.0, *, roughness: float = 0.72, metallic: float = 0.04, smooth: bool = True):
-    """Apply restrained PBR-like response while keeping the proxy readable."""
+    """Use a neutral engineering material that does not imply finished-look lighting."""
     return plotter.add_mesh(
         mesh, color=color, opacity=opacity, smooth_shading=smooth,
-        pbr=True, metallic=metallic, roughness=roughness,
-        ambient=0.18, diffuse=0.78, specular=0.34, specular_power=24,
+        pbr=False, ambient=0.58, diffuse=0.42, specular=0.0,
     )
 
 
@@ -261,18 +335,34 @@ def _target_point(payload: dict, character: dict, target: dict, scene: dict) -> 
         other = next(item for item in payload["characters"] if item["name"] == target["character"])
         return _world(scene, other["x"], other["z"], target["height_m"])
     anchor = next(item for item in payload["anchors"] if item["label"] == target["anchor"])
-    return _world(scene, anchor["x"], anchor["z"], anchor["elevation_m"] + target["height_m"])
+    return _world(scene, anchor["x"], anchor["z"], target["height_m"])
+
+
+def _solve_elbow(shoulder: np.ndarray, hand: np.ndarray, preferred_bend: np.ndarray, upper: float, lower: float) -> np.ndarray:
+    """Solve one stable two-bone arm without inventing an extra forearm."""
+    vector = hand - shoulder
+    distance = float(np.linalg.norm(vector))
+    if distance < 1e-6:
+        raise ValueError("hand target cannot occupy the shoulder point")
+    direction = vector / distance
+    along = (upper * upper - lower * lower + distance * distance) / (2.0 * distance)
+    along = max(-upper, min(upper, along))
+    bend = preferred_bend - direction * float(np.dot(preferred_bend, direction))
+    bend_length = float(np.linalg.norm(bend))
+    if bend_length < 1e-6:
+        bend = np.cross(direction, np.array([0.0, 0.0, 1.0]))
+        bend_length = float(np.linalg.norm(bend))
+    bend = bend / max(bend_length, 1e-6)
+    perpendicular = math.sqrt(max(0.0, upper * upper - along * along))
+    return shoulder + direction * along + bend * perpendicular
 
 
 def _build_scene(plotter: pv.Plotter, payload: dict, mode: str, scene: dict, camera_state: dict) -> None:
-    plotter.set_background(scene["background_color"])
-    # Warm key, cool fill and a restrained rim light separate silhouettes without
-    # turning the engineering proxy into a finished character render.
-    plotter.add_light(pv.Light(position=(-5.0, -6.0, 7.0), focal_point=(0.0, 0.0, 1.0), color="#f4d9ad", intensity=1.25, positional=True))
-    plotter.add_light(pv.Light(position=(5.0, 2.0, 4.0), focal_point=(0.0, 0.0, 1.0), color="#9fc8ff", intensity=0.72, positional=True))
-    plotter.add_light(pv.Light(position=(-2.0, 5.0, 5.0), focal_point=(0.0, 0.0, 1.2), color="#b7d4ff", intensity=0.62, positional=True))
+    plotter.set_background("#d9dde1" if mode == "clean" else "#263038")
+    plotter.add_light(pv.Light(position=(-5.0, -6.0, 7.0), focal_point=(0.0, 0.0, 1.0), color="#ffffff", intensity=0.9, positional=True))
+    plotter.add_light(pv.Light(position=(5.0, 2.0, 4.0), focal_point=(0.0, 0.0, 1.0), color="#ffffff", intensity=0.45, positional=True))
     width, depth = scene["world_width_m"], scene["world_depth_m"]
-    _add_surface(plotter, pv.Box(bounds=(-width / 2, width / 2, -depth / 2, depth / 2, -0.08, 0)), scene["floor_color"], roughness=0.9, metallic=0.0, smooth=False)
+    _add_surface(plotter, pv.Box(bounds=(-width / 2, width / 2, -depth / 2, depth / 2, -0.08, 0)), "#b8bdc3", smooth=False)
     for anchor in payload["anchors"]:
         center = _world(scene, anchor["x"], anchor["z"], anchor["elevation_m"] + anchor["height_m"] / 2)
         w, d, h = anchor["width"] * width, anchor["depth"] * depth, anchor["height_m"]
@@ -282,7 +372,8 @@ def _build_scene(plotter: pv.Plotter, payload: dict, mode: str, scene: dict, cam
             mesh = pv.Sphere(radius=max(w, d) / 2, center=center)
         else:
             mesh = pv.Box(bounds=(center[0] - w / 2, center[0] + w / 2, center[1] - d / 2, center[1] + d / 2, center[2] - h / 2, center[2] + h / 2))
-        _add_surface(plotter, mesh, anchor["color"], opacity=0.88 if anchor["solid"] else 0.35, roughness=0.82, metallic=0.02)
+        anchor_color = anchor["color"] if mode == "audit" else "#8c9298"
+        _add_surface(plotter, mesh, anchor_color, opacity=0.88 if anchor["solid"] else 0.35)
         if mode == "audit":
             plotter.add_point_labels(np.array([center]), [anchor["label"]], font_size=12, text_color="white", point_size=0, shape=None)
     for boundary in payload["boundaries"]:
@@ -308,9 +399,9 @@ def _build_scene(plotter: pv.Plotter, payload: dict, mode: str, scene: dict, cam
         _add_surface(plotter, pv.Cylinder(center=neck, direction=(0, 0, 1), radius=h * 0.065, height=h * 0.11, resolution=14), secondary, roughness=0.70)
         head = (pos[0], pos[1], shoulder_z + h * 0.22)
         _add_surface(plotter, pv.Sphere(center=head, radius=h * 0.135, theta_resolution=20, phi_resolution=14), color, roughness=0.56)
-        # A small forward wedge makes head direction visible independently of torso facing.
         face_tip, head_forward = _head_marker(head, character["head_facing_deg"], h)
-        _add_surface(plotter, pv.Cone(center=face_tip, direction=head_forward, height=h * 0.12, radius=h * 0.065, resolution=8), secondary, roughness=0.58)
+        if mode == "audit":
+            _add_surface(plotter, pv.Cone(center=face_tip, direction=head_forward, height=h * 0.12, radius=h * 0.065, resolution=8), secondary)
         if character["posture"] == "standing":
             for side in (-1, 1):
                 hip = np.array([pos[0], pos[1], hip_z]) + lateral * side * h * 0.075
@@ -329,20 +420,22 @@ def _build_scene(plotter: pv.Plotter, payload: dict, mode: str, scene: dict, cam
                 _add_surface(plotter, pv.Sphere(center=knee, radius=h * 0.065, theta_resolution=12, phi_resolution=8), secondary, roughness=0.72)
         shoulders = np.array([pos[0], pos[1], shoulder_z - h * 0.015])
         for side in (-1, 1):
+            hand = "left" if side == 1 else "right"
             shoulder = shoulders + lateral * side * h * 0.13
-            elbow = shoulder + np.array(forward) * h * 0.06 + np.array([0.0, 0.0, -h * 0.13]) + lateral * side * h * 0.035
-            wrist = elbow + np.array(forward) * h * 0.06 + np.array([0.0, 0.0, -h * 0.11]) + lateral * side * h * 0.02
+            target = character["hand_targets"].get(hand)
+            if target:
+                wrist = np.array(_target_point(payload, character, target, scene))
+                elbow = _solve_elbow(
+                    shoulder, wrist, lateral * side + np.array([0.0, 0.0, -0.35]),
+                    h * 0.19, h * 0.26 + 0.03,
+                )
+            else:
+                elbow = shoulder + np.array(forward) * h * 0.06 + np.array([0.0, 0.0, -h * 0.13]) + lateral * side * h * 0.035
+                wrist = elbow + np.array(forward) * h * 0.06 + np.array([0.0, 0.0, -h * 0.11]) + lateral * side * h * 0.02
             _add_cylinder(plotter, shoulder, elbow, h * 0.038, color, 12)
             _add_surface(plotter, pv.Sphere(center=elbow, radius=h * 0.045, theta_resolution=12, phi_resolution=8), secondary, roughness=0.70)
             _add_cylinder(plotter, elbow, wrist, h * 0.034, secondary, 12)
             _add_surface(plotter, pv.Sphere(center=wrist, radius=h * 0.04, theta_resolution=12, phi_resolution=8), color, roughness=0.62)
-        for hand, target in character["hand_targets"].items():
-            hand_side = 1 if hand == "left" else -1
-            shoulder = shoulders + lateral * hand_side * h * 0.13
-            elbow = shoulder + np.array(forward) * h * 0.06 + np.array([0.0, 0.0, -h * 0.13]) + lateral * hand_side * h * 0.035
-            end = np.array(_target_point(payload, character, target, scene))
-            _add_cylinder(plotter, elbow, end, h * 0.034, color, 12)
-            _add_surface(plotter, pv.Sphere(center=end, radius=h * 0.05, theta_resolution=12, phi_resolution=8), color, roughness=0.60)
         if mode == "audit":
             plotter.add_point_labels(np.array([head]), [character["name"]], font_size=14, text_color="white", point_size=0, shape=None)
             if character["gaze_target"]:
@@ -372,14 +465,22 @@ def _font(size: int):
     return ImageFont.load_default()
 
 
-def _audit_overlay(image_path: Path, payload: dict, camera: dict, physical_hash: str, pose: str) -> None:
+def _audit_overlay(
+    image_path: Path,
+    payload: dict,
+    camera: dict,
+    physical_hash: str,
+    pose: str,
+    physical_phase: str,
+    pose_source: str,
+) -> None:
     image = Image.open(image_path).convert("RGB")
     draw = ImageDraw.Draw(image, "RGBA")
     draw.rectangle((20, 20, 700, 208), fill=(5, 12, 18, 205), outline=(120, 160, 180, 255), width=2)
-    title = f"VTK AUDIT  {camera['label']}  {pose}"
+    title = f"VTK AUDIT  {camera['label']}  {pose}  {pose_source}"
     draw.text((38, 34), title, fill=(240, 246, 248), font=_font(26))
     draw.text((38, 72), f"physical_state {physical_hash[:12]}  |  1920x1080 16:9", fill=(190, 211, 220), font=_font(18))
-    draw.text((38, 96), f"camera ({camera['x']:.3f},{camera['z']:.3f})  facing {camera['facing_deg']:.0f}°  FOV {camera['fov_deg']:.0f}°", fill=(190, 211, 220), font=_font(17))
+    draw.text((38, 96), f"physical phase {physical_phase}  |  camera ({camera['x']:.3f},{camera['z']:.3f})  facing {camera['facing_deg']:.0f}°  FOV {camera['fov_deg']:.0f}°", fill=(190, 211, 220), font=_font(17))
     y = 124
     for char in payload["characters"]:
         draw.ellipse((40, y + 3, 55, y + 18), fill=char["identity_color"])
@@ -388,17 +489,33 @@ def _audit_overlay(image_path: Path, payload: dict, camera: dict, physical_hash:
     image.save(image_path, quality=94, subsampling=0)
 
 
-def _render_image(payload: dict, scene: dict, camera: dict, mode: str, pose: str, output_path: Path, physical_hash: str) -> None:
-    plotter = pv.Plotter(off_screen=True, window_size=(FRAME_CONTRACT["width"], FRAME_CONTRACT["height"]))
-    _build_scene(plotter, payload, mode, scene, camera)
+def _apply_camera(plotter: pv.Plotter, scene: dict, camera: dict, pose: str) -> None:
     camera_position, look = _camera_pose(scene, camera, pose)
     plotter.camera.position = camera_position
     plotter.camera.focal_point = look
     plotter.camera.up = (0, 0, 1)
     plotter.camera.view_angle = camera["fov_deg"]
-    plotter.show(screenshot=str(output_path), auto_close=True)
-    if mode == "audit":
-        _audit_overlay(output_path, payload, camera, physical_hash, pose)
+
+
+def _render_tasks(payload: dict, scene: dict, mode: str, tasks: list[dict], physical_hash: str) -> None:
+    if not tasks:
+        return
+    plotter = pv.Plotter(off_screen=True, window_size=(FRAME_CONTRACT["width"], FRAME_CONTRACT["height"]))
+    _build_scene(plotter, payload, mode, scene, tasks[0]["camera"])
+    _apply_camera(plotter, scene, tasks[0]["camera"], tasks[0]["pose"])
+    plotter.show(auto_close=False, interactive=False)
+    try:
+        for task in tasks:
+            _apply_camera(plotter, scene, task["camera"], task["pose"])
+            plotter.render()
+            plotter.screenshot(str(task["output_path"]))
+            if mode == "audit":
+                _audit_overlay(
+                    task["output_path"], payload, task["camera"], physical_hash,
+                    task["pose"], task["physical_phase"], task["pose_source"],
+                )
+    finally:
+        plotter.close()
 
 
 def renderer_versions() -> dict:
@@ -410,24 +527,95 @@ def render_scenes(compiled: dict, directory: Path, replace: bool = False) -> dic
     outputs = []
     for state_index, group in enumerate(compiled["groups"]):
         view_records = []
+        tasks_by_mode = {"audit": [], "clean": []}
+        reuse_links: list[tuple[Path, Path]] = []
         for camera_index, view in enumerate(group["views"]):
             image_names, screenshots = [], []
-            poses = ("start", "end") if view.get("path") else ("static",)
-            for shot_id in view["source_shots"]:
-                stem = _image_stem(compiled["shot_group"], shot_id, state_index, camera_index)
-                for pose in poses:
-                    suffix = f".{pose}" if pose != "static" else ""
+            sources = view.get("sources", [])
+            if not sources:
+                raise ValueError(f'camera {view["label"]} has no source state mapping')
+            if view.get("path"):
+                if any(item["physical_phase"] != "static" for item in sources):
+                    raise ValueError(
+                        f'camera {view["label"]} path cannot be combined with physical start/end states'
+                    )
+                pose_batches = [
+                    ("start", "camera_path", sources),
+                    ("end", "camera_path", sources),
+                ]
+            else:
+                pose_batches = []
+                for phase in ("static", "start", "end"):
+                    phase_sources = [
+                        item for item in sources if item["physical_phase"] == phase
+                    ]
+                    if phase_sources:
+                        pose = phase if phase in {"start", "end"} else "static"
+                        pose_source = "physical_state" if phase != "static" else "static"
+                        pose_batches.append((pose, pose_source, phase_sources))
+            for pose, pose_source, pose_sources in pose_batches:
+                pose_label = pose if pose in {"start", "end"} else ""
+                primary_paths = {}
+                for source_index, source in enumerate(pose_sources):
+                    shot_id = source["shot_id"]
+                    physical_phase = source["physical_phase"]
+                    stem = _image_stem(compiled["shot_group"], shot_id, state_index, camera_index)
                     for mode in ("audit", "clean"):
-                        filename = f"{stem}{suffix}.{mode}.jpg"
+                        mode_label = "_审核" if mode == "audit" else ""
+                        pose_suffix = f"_{pose_label}" if pose_label else ""
+                        filename = f"{stem}{pose_suffix}{mode_label}.jpg"
                         image_names.append(filename)
-                        screenshots.append({"shot_id": shot_id, "physical_state_index": state_index, "camera_index": camera_index, "pose": pose, "mode": mode, "filename": filename, "render_backend": RENDER_BACKEND})
+                        record = {
+                            "shot_id": shot_id,
+                            "physical_state_index": state_index,
+                            "physical_phase": physical_phase,
+                            "camera_index": camera_index,
+                            "pose": pose,
+                            "pose_source": pose_source,
+                            "mode": mode,
+                            "filename": filename,
+                            "render_backend": RENDER_BACKEND,
+                        }
+                        screenshots.append(record)
                         output_path = directory / filename
-                        if output_path.exists() and not replace:
-                            raise FileExistsError(f"destination exists; use --replace: {output_path}")
-                        _render_image(group["payload"], compiled["scene"], view, mode, pose, output_path, group["physical_hash"])
-            view_records.append({"camera_index": camera_index, "physical_state_index": state_index, "view_hash": view["view_hash"], "camera_contract": {key: view[key] for key in ("view_hash", "label", "x", "z", "facing_deg", "fov_deg", "subjects", "shot_type", "foreground_character", "target_character", "axis_side", "facing_mode", "path", "height_m", "look_height_m")}, "source_shots": view["source_shots"], "source_labels": view["source_labels"], "suggested_image_names": image_names, "screenshots": screenshots})
+                        if output_path.exists():
+                            if not replace:
+                                raise FileExistsError(f"destination exists; use --replace: {output_path}")
+                            output_path.unlink()
+                        if source_index == 0:
+                            primary_paths[mode] = output_path
+                            tasks_by_mode[mode].append({
+                                "camera": view,
+                                "pose": pose,
+                                "physical_phase": physical_phase,
+                                "pose_source": pose_source,
+                                "output_path": output_path,
+                            })
+                        else:
+                            record["render_reused_from"] = primary_paths[mode].name
+                            reuse_links.append((output_path, primary_paths[mode]))
+            view_records.append({
+                "camera_index": camera_index,
+                "physical_state_index": state_index,
+                "physical_phases": view["physical_phases"],
+                "view_hash": view["view_hash"],
+                "camera_contract": {key: view[key] for key in (
+                    "view_hash", "label", "x", "z", "facing_deg", "fov_deg",
+                    "subjects", "shot_type", "foreground_character",
+                    "target_character", "axis_side", "facing_mode", "path",
+                    "height_m", "look_height_m",
+                )},
+                "source_shots": view["source_shots"],
+                "source_labels": view["source_labels"],
+                "suggested_image_names": image_names,
+                "screenshots": screenshots,
+            })
+        for mode in ("audit", "clean"):
+            _render_tasks(group["payload"], compiled["scene"], mode, tasks_by_mode[mode], group["physical_hash"])
+        for destination, source in reuse_links:
+            destination.hardlink_to(source)
         outputs.append({"physical_hash": group["physical_hash"], "blocking_ids": group["blocking_ids"], "labels": group["labels"], "view_count": len(group["views"]), "views": view_records, "render_backend": RENDER_BACKEND, "screenshots_required": ["audit", "clean"]})
-    return {"pass": True, "schema_version": SCHEMA_VERSION, "render_backend": RENDER_BACKEND, "render_profile": RENDER_PROFILE, "renderer_versions": renderer_versions(), "frame_contract": FRAME_CONTRACT, "shot_group": compiled["shot_group"], "source_state_count": compiled["source_state_count"], "physical_state_count": compiled["physical_state_count"], "view_count": compiled["view_count"], "deduplicated_state_count": compiled["source_state_count"] - compiled["physical_state_count"], "outputs": outputs, "staging_only": True, "primary_storyboard_modified": False}
+    return {"pass": True, "schema_version": SCHEMA_VERSION, "render_backend": RENDER_BACKEND, "render_profile": RENDER_PROFILE, "renderer_versions": renderer_versions(), "frame_contract": FRAME_CONTRACT, "scene_reuse": "one plotter per physical state and mode; camera views reuse geometry", "shot_render_reuse": "identical physical-state/camera/pose images use hard links", "shot_group": compiled["shot_group"], "source_state_count": compiled["source_state_count"], "physical_state_count": compiled["physical_state_count"], "view_count": compiled["view_count"], "deduplicated_state_count": compiled["source_state_count"] - compiled["physical_state_count"], "outputs": outputs, "staging_only": True, "primary_storyboard_modified": False}
 
 
 def main(argv: list[str] | None = None) -> int:

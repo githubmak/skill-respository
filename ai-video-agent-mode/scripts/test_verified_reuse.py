@@ -41,6 +41,7 @@ def _config(export_base, style="model-authored-style", delivery="out.md"):
         "seedance_target": "auto",
         "generation_control": {"mode": "t2v", "audio_enabled": True},
         "export_base": export_base,
+        "reuse": {"cache_dir": os.path.join(export_base, "reuse-cache")},
         "delivery": {"markdown_path": os.path.join(export_base, delivery)},
         "confirmation": {"confirmed_at": delivery},
     }
@@ -92,8 +93,8 @@ def _source_fixture(run_dir, export_base):
         "pass": True,
         "blocking": [],
         "windows": [
-            {"window_id": "W001", "pass": True, "blocking": [], "current": {"shot_id": "S001"}},
-            {"window_id": "W002", "pass": True, "blocking": [], "current": {"shot_id": "S002"}},
+            {"window_id": "W001", "pass": True, "blocking": [],
+             "reviewed_shot_ids": ["S001", "S002"]},
         ],
     })
     deterministic = os.path.join(run_dir, ".cache", "validate", "deterministic_package.json")
@@ -132,6 +133,7 @@ def test_verified_reuse_happy_path(root):
     record_path, published = publish_run(source_run)
     assert os.path.isfile(record_path)
     assert len(published["per_shot_output_hashes"]) == 2
+    assert len(published["per_scene_artifact_hashes"]) == 1
 
     _target_fixture(target_run, export_base)
     orchestrator = reuse_orchestrator_blueprint(target_run)
@@ -149,7 +151,7 @@ def test_verified_reuse_happy_path(root):
     assert verify_phase_reuse(target_run, "master_production")[0] is True
 
     editor = reuse_agent_phase(target_run, "editor_pass2")
-    assert editor["applied"] is True and editor["reused_item_count"] == 2
+    assert editor["applied"] is True and editor["reused_item_count"] == 1
     assert verify_phase_reuse(target_run, "editor_pass2")[0] is True
 
 

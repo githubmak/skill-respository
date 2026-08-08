@@ -9,18 +9,17 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from pathlib import Path
 
 from source_gate import inspect_path
 
 
-BASE_READ = ["references/runtime-core.md", "references/output-template.md"]
+BASE_READ = ["references/runtime-core.md"]
 SEEDANCE_TARGETS = {"auto", "2.0", "2.5", "both"}
 CREATIVE_REFERENCE_CATALOG = {
     "palette_and_lighting": {
         "path": "references/color-palette-library.md",
-        "when": "the project has no locked palette, or a scene needs distinct per-shot palette, tonal, and lighting design",
+        "when": "the project has no locked scene visual baseline, or a scene needs a motivated visual-state transition",
     },
     "liveness": {
         "path": "references/liveness-motion-grammar.md",
@@ -59,23 +58,16 @@ CREATIVE_REFERENCE_CATALOG = {
         "when": "an actual keyframe or video has identity, occlusion, framing, action, camera, focus, exposure, material, or reference-conflict failures that need model-led diagnosis",
     },
 }
-RISK_REFERENCES = {
-    "physical_support": "references/physical-structure-continuity.md",
-    "prop_transfer": "references/physical-structure-continuity.md",
-    "screen_or_text": "references/generation-risk-guards.md",
-    "multi_person": "references/spatial-camera-runtime.md",
-    "lighting_change": "references/visual-attraction-rules.md",
-}
-PERFORMANCE_SIGNAL = re.compile(
-    r"拒绝|承认|否认|质问|坦白|道歉|告别|保护|隐瞒|秘密|"
-    r"别进来|别走|住手|我知道了|原来是你"
-)
-
-
-def _append(items: list[str], reasons: dict[str, list[str]], reference: str, reason: str) -> None:
-    if reference not in items:
-        items.append(reference)
-    reasons.setdefault(reference, []).append(reason)
+def _minimal_intake(intake: dict) -> dict:
+    """Keep the route report useful without embedding source-derived prose."""
+    return {
+        "source_path": intake.get("source_path"),
+        "source_sha256": intake.get("source_sha256"),
+        "stats": intake.get("stats", {}),
+        "blocking": intake.get("blocking", []),
+        "advisory_codes": [item.get("code") for item in intake.get("advisories", [])],
+        "risk_signals": sorted(intake.get("risk_flags", {})),
+    }
 
 
 def route(mode: str, source: str | None = None, seedance_target: str = "auto") -> dict:
@@ -108,63 +100,33 @@ def route(mode: str, source: str | None = None, seedance_target: str = "auto") -
     if not source:
         return {"pass": False, "mode": mode, "blocking": ["generate requires --source"]}
 
-    intake = inspect_path(source, include_text=True)
+    intake = inspect_path(source)
     if not intake.get("pass"):
-        return {"pass": False, "mode": mode, "blocking": intake.get("blocking", []), "source_gate": intake}
-    text = intake.pop("_source_text", "")
-    on_demand: list[str] = []
-    reasons: dict[str, list[str]] = {}
-    creative_suggestions: list[str] = []
-    creative_reasons: dict[str, list[str]] = {}
-    for flag in intake.get("risk_flags", {}):
-        reference = RISK_REFERENCES.get(flag)
-        if reference:
-            _append(on_demand, reasons, reference, f"source risk: {flag}")
-    if "multi_person" in intake.get("risk_flags", {}):
-        _append(on_demand, reasons, "references/blocking-facing-reference.md", "multi-person spatial relationship")
-    if (
-        intake.get("stats", {}).get("speaker_count", 0) >= 2
-        or intake.get("performance_cues")
-        or PERFORMANCE_SIGNAL.search(text)
-    ):
-        _append(on_demand, reasons, "references/prompt-performance-runtime.md", "dialogue performance relationship")
-        _append(creative_suggestions, creative_reasons, "references/performance-baseline-library.md", "individualized dialogue performance")
-        _append(creative_suggestions, creative_reasons, "references/liveness-motion-grammar.md", "dialogue and reaction liveness")
-    risk_flags = intake.get("risk_flags", {})
-    if any(flag in risk_flags for flag in ("multi_person", "prop_transfer", "screen_or_text")):
-        _append(creative_suggestions, creative_reasons, "references/shot-patterns.md", "complex staging or prop/camera readability")
-    if (
-        intake.get("stats", {}).get("scene_line_count", 0) > 1
-        or any(flag in risk_flags for flag in ("physical_support", "prop_transfer", "multi_person"))
-    ):
-        _append(creative_suggestions, creative_reasons, "references/scene-preset-library.md", "scene anchors and usable material detail")
-    _append(
-        creative_suggestions,
-        creative_reasons,
-        "references/color-palette-library.md",
-        "every shot requires independent palette, tonal, and lighting design",
-    )
-    if seedance_target in {"2.5", "both"}:
-        _append(on_demand, reasons, "references/seedance-target-adaptation.md", f"explicit target: {seedance_target}")
+        return {"pass": False, "mode": mode, "blocking": intake.get("blocking", []), "source_intake": _minimal_intake(intake)}
+    resolved_target = "2.0" if seedance_target == "auto" else seedance_target
 
     return {
         "pass": True,
         "mode": "generate",
-        "seedance_target": seedance_target,
+        "requested_seedance_target": seedance_target,
+        "seedance_target": resolved_target,
+        "target_resolution": (
+            "auto resolves deterministically to the 2.0 compatibility baseline; use --seedance-target 2.5 when the active interface is confirmed"
+            if seedance_target == "auto" else "explicit target"
+        ),
         "skill_root": str(Path(__file__).resolve().parents[1]),
         "read_first": BASE_READ,
-        "read_on_demand": on_demand,
-        "routing_reasons": reasons,
-        "creative_reference_suggestions": creative_suggestions,
-        "creative_suggestion_reasons": creative_reasons,
-        "run_before_generation": [
-            "<skill_root>/scripts/source_gate.py --source <source> --compact --report <reports>/source-gate.json"
-        ],
+        "read_before_delivery": ["references/output-template.md", "references/seedance-target-adaptation.md"],
+        "read_on_demand": [],
+        "routing_reasons": {},
+        "run_before_generation": [],
         "optional_spatial_workflow": {
-            "when": "spatial geometry materially affects blocking, boundary, occlusion, or camera FOV",
+            "selection": "none|2d|3d|both",
+            "when": "select one mode after scene understanding; use both only when 2D and 3D prove different facts",
             "selection_owner": "model; never source-keyword auto-routing",
             "designer": "model chooses positions, facings, posture, gaze, hand contacts, camera, and FOV",
             "base_render": "scripts/render_blocking_reference.py",
+            "base_read_when_selected": "references/blocking-facing-reference.md",
             "vtk_render": "scripts/render_mannequin_reference.py",
             "vtk_read_when_selected": "references/mannequin-blocking.md",
             "vtk_when": "2D cannot prove posture/support, body-versus-head facing, hand contact, prop height, occlusion, or actual camera projection",
@@ -172,7 +134,7 @@ def route(mode: str, source: str | None = None, seedance_target: str = "auto") -
             "physical_state_hash_deduplication": True,
             "shared_scene_multiple_camera_views": True,
             "explicit_shot_id_required": True,
-            "frame_contract": {
+            "clean_frame_contract": {
                 "width": 1920,
                 "height": 1080,
                 "aspect": "16:9",
@@ -184,8 +146,13 @@ def route(mode: str, source: str | None = None, seedance_target: str = "auto") -
             "browser_required": False,
             "html_output": False,
             "staging_only": True,
-            "validator_scope": ["collision", "clearance", "occlusion", "axis_side", "field_of_view", "label_layout"],
+            "blocking_scope": ["collision", "solid_intersection", "blocked_view", "declared_axis_side"],
+            "advisory_scope": ["clearance", "composition_ratio", "mutual_facing_tolerance", "edge_clipping", "label_layout"],
             "visual_review_before_promotion": True,
+            "blocking_png_promotion": (
+                "scripts/promote_blocking_reference.py promote --review <reports>/blocking.review.json "
+                "--delivery-dir <delivery>/approved-jimeng-2d --compact --report <reports>/blocking.promote.json"
+            ),
             "mannequin_review_record": (
                 "scripts/promote_mannequin_reference.py record --render-report <mannequin-report.json> "
                 "--screenshot-dir <delivery>/staging/mannequin --decision <PASS|REVISE> "
@@ -196,6 +163,7 @@ def route(mode: str, source: str | None = None, seedance_target: str = "auto") -
                 "--delivery-dir <delivery>/approved-mannequin --compact --report <reports>/mannequin.promote.json"
             ),
             "audit_images_promoted": False,
+            "blocking_png_generation_reference_allowed_after_review": True,
             "clean_images_generation_reference_allowed_after_review": True,
         },
         "run_after_generation": [
@@ -206,10 +174,8 @@ def route(mode: str, source: str | None = None, seedance_target: str = "auto") -
         "run_after_review": [
             "scripts/review_manifest.py create --source <source> --output <output.md> --manifest <manifest.json> "
             "--review-mode <independent|self_check> --design-review <PASS|REVISE> "
-            "--visual-review <PASS|REVISE|NOT_RUN> --delivery-root <delivery_dir> "
+            "--visual-review <PASS|REVISE|NOT_APPLICABLE|NOT_RUN> --delivery-root <delivery_dir> "
             "--compact --report <reports>/manifest.create.json",
-            "scripts/review_manifest.py verify --manifest <manifest.json> --delivery-root <delivery_dir> "
-            "--compact --report <reports>/manifest.verify.json",
             "scripts/validate_delivery.py --source <source> --storyboard <output.md> "
             "--seedance-target <target> --final --review-manifest <manifest.json> "
             "--compact --report <reports>/delivery.final.json",
@@ -225,7 +191,7 @@ def route(mode: str, source: str | None = None, seedance_target: str = "auto") -
             "source_gate_cache": "reuse while source SHA-256 is unchanged",
             "reports": "full JSON on disk; compact terminal summary",
         },
-        "source_gate": intake,
+        "source_intake": _minimal_intake(intake),
     }
 
 

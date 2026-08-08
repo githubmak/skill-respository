@@ -48,8 +48,9 @@ description: >
    当前创作执行，不能静默等待。不得调用本地关键词分镜生成器代替模型创作。
    `waiting_for_workers` 是内部等待状态，只有路由明确返回 `needs_user_confirm=true` 时才提问；宿主必须
    每 10 秒或 worker 状态变化后立即继续轮询 supervisor，不能把等待状态当作静默暂停。
-5. supervisor 返回 `host_dispatch_required` 时，按 `references/agent_protocol.md` 处理每个
-   packet：注册 Agent、立即记录存活心跳，并在每个主镜/Editor 窗口完成后原子落盘当前集合、记录内容进度，
+5. supervisor 返回 `host_dispatch_required` 时，按 `references/agent_protocol.md` 处理 `worker_leases`：
+   每个租约只 spawn 一个长驻 Agent，先登记全部 packet；每个 packet 真正开始前再启动其绝对计时并记录存活心跳。
+   在每个主镜/Editor 场景窗口完成后原子落盘当前集合、记录内容进度，
    等待完整 batch、记录 provenance，然后立即继续 supervisor。普通心跳不能代替内容增长：5 分钟无首个
    非空检查点或已有产出后 3 分钟无增长时定点重派。
    packet 的绝对超时不会被心跳延长；到期后必须中断旧 worker，并使用 supervisor 生成的新 UUID packet
@@ -63,7 +64,9 @@ description: >
    合同错误禁止 partial 复用。任何增量通过都不能替代最终全量 Validate。
 7. Editor 只做独立验收：失败时输出 `creative_cause`、`affected_shot_ids` 和模型决定的
    `return_to_phase: orchestrator | master_production`，不得返回替代提示词或字段补丁。全局理解问题重新创作
-   Director Blueprint，单镜实现问题由 Master 整镜重做；工程只按模型显式路由。
+   Director Blueprint，单镜实现问题由 Master 整镜重做；工程只按模型显式路由。同一责任阶段与同一
+   `creative_cause` 最多重写两轮，第三次立即熔断。Editor 按连续场景窗口复审，输出的
+   `reviewed_shot_ids` 必须逐字覆盖输入 `shot_ids`，最终覆盖全集后才允许 Validate。
 8. Validate 全部通过后，才调用 `export_with_validation.py` 写入配置中已确认的交付路径；导出目标由确认过的
    `seedance_target: auto | 2.0 | 2.5 | both` 决定。`auto` 生成一份 dual-safe 文件，`2.0`/`2.5`
    生成单一优化文件，`both` 从同一份合同原子生成两份可独立投喂 Markdown 和一个非投喂索引。
@@ -71,7 +74,8 @@ description: >
    120 秒调度不确定性带，它不得延长硬截止。按剩余未验证批次、最多三个 worker 和阶段预算确认已无法
    按时完成时，停止派发，写 `.cache/control/fuse_report.json` 并向用户报告；禁止静默续跑。最终 Export
    验证通过后必须持久化 `pipeline_status=completed`，耗时使用最终阶段真实完成时间，不使用后续查询时间。
-10. Validate 通过后调用 `verified_reuse.py publish` 登记当前运行。复用索引只保存哈希、路径和验证身份，
+10. Validate 通过后调用 `verified_reuse.py publish` 登记当前运行。复用索引使用独立于交付目录的稳定缓存根，
+    只保存哈希、路径和验证身份；发布失败会阻断 Validate，不能静默失去后续复用。
     不改写提示词；阶段报告必须分别记录状态初始化后的管线墙钟、至少一个 worker 活跃的并集时间、Agent
     阶段空转时间、复用阶段数和复用条目数。真实端到端基准另记配置确认与进程启动在内的外部墙钟；
     后续 worker 注册不得覆盖阶段首次启动时间。

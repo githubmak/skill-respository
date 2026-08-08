@@ -13,6 +13,9 @@ from pathlib import Path
 from render_blocking_reference import BLOCKING_GATE_VERSION
 
 
+SCHEMA_VERSION = 2
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -40,10 +43,10 @@ def record_review(render_report: str, decision: str, findings: list[str]) -> dic
     if not artifacts:
         raise ValueError("render report has no SVG/PNG artifacts")
     return {
-        "schema_version": 1,
+        "schema_version": SCHEMA_VERSION,
         "blocking_gate_version": BLOCKING_GATE_VERSION,
-        "reference_role": "blocking_geometry_only",
-        "generation_reference_allowed": False,
+        "reference_role": "jimeng_2d_spatial_reference",
+        "generation_reference_allowed": True,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "shot_group": payload.get("shot_group"),
         "geometry_review": "PASS",
@@ -57,18 +60,22 @@ def record_review(render_report: str, decision: str, findings: list[str]) -> dic
 
 def promote(review_path: str, delivery_dir: str, replace: bool = False) -> dict:
     review = json.loads(Path(review_path).expanduser().resolve().read_text(encoding="utf-8"))
+    if review.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("2D spatial review uses a stale schema; rerun record before promotion")
     if review.get("blocking_gate_version") != BLOCKING_GATE_VERSION:
         raise ValueError("visual review uses a stale blocking gate; rerender and review again before promotion")
     if review.get("visual_review") != "PASS" or not review.get("promotion_allowed"):
         raise ValueError("promotion requires geometry PASS and visual_review PASS")
-    if review.get("reference_role") != "blocking_geometry_only" or review.get("generation_reference_allowed") is not False:
-        raise ValueError("blocking artifacts are geometry references only; cinematic/reference promotion requires a separate reviewed asset")
+    if review.get("reference_role") != "jimeng_2d_spatial_reference" or review.get("generation_reference_allowed") is not True:
+        raise ValueError("2D blocking artifacts must be explicitly reviewed as Jimeng spatial references before promotion")
     destination_dir = Path(delivery_dir).expanduser().resolve()
     if "staging" in destination_dir.parts:
         raise ValueError("delivery directory cannot be inside staging")
     destination_dir.mkdir(parents=True, exist_ok=True)
     promoted = []
     for item in review.get("artifacts", []):
+        if Path(item["path"]).suffix.lower() != ".png":
+            continue
         source = Path(item["path"]).expanduser().resolve()
         if sha256_file(source) != item.get("sha256"):
             raise ValueError(f"review artifact changed after visual approval: {source}")
@@ -77,13 +84,16 @@ def promote(review_path: str, delivery_dir: str, replace: bool = False) -> dict:
             raise FileExistsError(f"destination exists; use --replace: {destination}")
         shutil.copy2(source, destination)
         promoted.append({"path": str(destination), "sha256": sha256_file(destination)})
+    if not promoted:
+        raise ValueError("2D Jimeng promotion requires a reviewed PNG artifact")
     return {
         "pass": True,
+        "schema_version": SCHEMA_VERSION,
         "shot_group": review.get("shot_group"),
         "promoted": promoted,
         "visual_review": "PASS",
-        "reference_role": "blocking_geometry_only",
-        "generation_reference_allowed": False,
+        "reference_role": "jimeng_2d_spatial_reference",
+        "generation_reference_allowed": True,
         "primary_storyboard_modified": False,
     }
 

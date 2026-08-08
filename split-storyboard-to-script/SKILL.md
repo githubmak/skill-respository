@@ -10,8 +10,8 @@ description: >
   internal shots. Preserve dialogue/OV/OS and validate character facing, eyelines, action targets,
   lighting, spatial continuity, cuts, camera movement, and timing. Before any processing, require
   the user to provide the final export directory and keep every cache, slice, preview, intermediate,
-  and final artifact inside it. For raw prose that still needs
-  full creative shot-table design, use split-script-to-storyboard first, then use this skill.
+  and final artifact inside it. Raw prose that still needs full creative shot-table
+  design must first pass through an available upstream shot-planning workflow.
 ---
 
 # Split Storyboard to Script
@@ -31,7 +31,7 @@ description: >
 路由边界：
 
 - 用户已经提供可执行镜头/场景，或目标是AI视频提示词、行内子镜头、时间轴与切换：直接使用本技能
-- 用户只提供原始小说/长剧本，要求从零完成完整创意分镜表：先使用 `split-script-to-storyboard`，再回到本技能生成行内子镜头和AI提示词
+- 用户只提供原始小说/长剧本，要求从零完成完整创意分镜表：本技能不假定已删除的固定前置技能；即梦 T2V 项目可先使用 `$ai-video-agent-mode`，其他平台则先取得可执行分镜表，再回到本技能生成行内子镜头和AI提示词
 - 用户说“镜头拆分”但未指定输出形式时，默认输出“主叙事单元 + 时间化子镜头 + 可直接投喂的AI视频提示词”；需要xlsx时再生成五表文件
 
 ## 必读引用

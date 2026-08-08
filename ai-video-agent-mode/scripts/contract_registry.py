@@ -18,6 +18,11 @@ PIPELINE_FORECAST_UNCERTAINTY_SECONDS = 2 * 60
 # supervisor occupies one of them, so a plan that assumes four workers is not
 # executable and systematically underestimates queue waves.
 PIPELINE_WORKER_SLOT_CAP = 3
+WORKER_LEASE_CONTRACT_VERSION = "worker-lease-v1"
+# A lease keeps one model worker alive across several immutable packets.  The
+# packet timeout starts only when that packet transitions from leased to
+# running, so queued work does not expire behind an earlier packet.
+MAX_PACKETS_PER_WORKER_LEASE = 4
 
 # Conservative planning targets used to reject a run that can no longer
 # finish before the hard deadline. They do not relax per-worker timeouts.
@@ -111,6 +116,7 @@ PHASE_STALL_PROGRESS_SECONDS = {
     "master_production": 3 * 60,
     "editor_pass2": 3 * 60,
 }
+MAX_CREATIVE_REAUTHOR_ROUNDS = 2
 PHASE_BATCH_SIZE = {
     spec["name"]: spec["batch_size"]
     for spec in PIPELINE_PHASE_SPECS if "batch_size" in spec
