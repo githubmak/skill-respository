@@ -1,4 +1,4 @@
 interface:
   display_name: "打斗戏视频设计"
-  short_description: "原创打斗、宏大VFX、场面层次与Markdown导出"
-  default_prompt: "Use $fight-scene-video 先由大模型原创打斗、VFX、场面力、空间层次和宏大尺度，再保核收敛为即梦分镜与一键复制的 Markdown 文件。"
+  short_description: "剧本基线优先、宏大VFX与Seedance 2.5独立分镜"
+  default_prompt: "Use $fight-scene-video 以源剧本为最高基线，逐项保真后在剩余生成预算内最大化VFX、粒子、运镜和辅助动作，交付符合Seedance 2.5的独立分镜Markdown。"
