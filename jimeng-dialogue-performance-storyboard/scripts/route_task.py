@@ -43,7 +43,7 @@ CREATIVE_REFERENCE_CATALOG = {
     },
     "camera_grammar": {
         "path": "references/cinematic-grammar-library.md",
-        "when": "the model needs a more expressive or more legible relationship between camera position, movement, focus, blocking, and editing",
+        "when": "the model needs a more expressive or more legible relationship between spatial anchors, camera position or trajectory, focus, emotion propagation, blocking, interaction, and editing",
     },
     "narrative_modes": {
         "path": "references/narrative-mode-routing.md",
