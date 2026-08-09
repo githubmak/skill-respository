@@ -339,7 +339,7 @@ VFX视觉母题：[形态隐喻、行为规律、显化阶段、色彩与材质�
 
 ## 7. 制作镜头与专家协作
 
-需要完整制作时读取 [references/integrated-workflow.md](references/integrated-workflow.md)。先把 `创意导演蓝图` 和 `不可牺牲创意核` 传给所有模块，再传后置工程字段。
+需要完整制作时读取 [references/integrated-workflow.md](references/integrated-workflow.md)。先把 `创意导演蓝图` 和 `不可牺牲创意核` 传给所选模块，再传后置工程字段。按任务实际需要选择模块，不得默认全部调用；未启用的模块不运行，也不输出空字段。
 
 - `frames-analysis`：细化构图、材质、光源和遮挡，不能改写动作或VFX母题。
 - `camera-analysis`：量化已定摄影意图，不能用默认机位替换英雄镜头，也不能裁掉建立宏大感的尺度参照。
