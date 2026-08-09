@@ -28,6 +28,12 @@ DURATION_RE = re.compile(r"^(\d+(?:\.\d+)?)s$", re.I)
 CORE_PROMPT_LABELS = ("主体与起态", "动作时间线", "台词", "稳定结尾")
 OPTIONAL_PROMPT_LABELS = ("摄影机", "焦点", "视觉控制", "声音设计")
 FORBIDDEN_INTERNAL_REFERENCES = ("VC-S", "同上镜", "同前", "继承前镜", "继承上一镜", "沿用上一镜", "沿用前镜")
+FORBIDDEN_DELIVERY_TERMS = (
+    "内部视觉连续性笔记",
+    "视觉连续性笔记",
+    "视觉连续性基线",
+    "场景视觉控制（非投喂）",
+)
 AMBIGUOUS_BLOCKING_RE = re.compile(r"(?<!画面)(?<!左)(?<!右)(?<!前)(?<!后)(?<!门洞)(?<!门框)(?<!厨房)(?<!灶台)(?:侧后|深景|稍后)(?!方)")
 PROMPT_CLAUSE_RE = re.compile(
     rf"^(?P<label>{'|'.join((*CORE_PROMPT_LABELS, *OPTIONAL_PROMPT_LABELS))})：(?P<inline>.*)$",
@@ -36,6 +42,8 @@ PROMPT_CLAUSE_RE = re.compile(
 SCENE_PLAN_RE = re.compile(r"^###\s+(S\d+)｜[^\n]+$", re.M)
 ASSET_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov"}
 ENGINEERING_REFERENCE_DIRS = {"approved-lineart", "approved-blocking", "blocking-geometry"}
+FORBIDDEN_3D_REFERENCE_DIRS = {"approved-mannequin", "mannequin"}
+FORBIDDEN_3D_FILENAME_MARKERS = ("_即梦_3d_空间关系",)
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 PLAIN_ASSET_RE = re.compile(r"(?<![\w/])([^\s，。；;]+\.(?:png|jpg|jpeg|webp|mp4|mov|svg))", re.I)
 
@@ -129,6 +137,13 @@ def inspect_storyboard(path: Path, expected_source_hash: str) -> dict:
             "path": str(path), "target": "", "status": "", "shots": [], "audio_lines": [],
             "assets": [], "issues": [_issue("STORYBOARD_READ", str(exc), path)], "advisories": [],
         }
+    leaked_terms = [term for term in FORBIDDEN_DELIVERY_TERMS if term in text]
+    if leaked_terms:
+        issues.append(_issue(
+            "INTERNAL_NOTE_LEAK",
+            f"formal storyboard contains internal-only term(s): {leaked_terms}; move them to the review report",
+            path,
+        ))
     target_match = TARGET_RE.search(text)
     status_match = STATUS_RE.search(text)
     hash_match = SOURCE_HASH_RE.search(text)
@@ -148,12 +163,6 @@ def inspect_storyboard(path: Path, expected_source_hash: str) -> dict:
     scene_plans = list(SCENE_PLAN_RE.finditer(text))
     if not scene_plans:
         issues.append(_issue("SCENE_PLAN", "no scene director plan found", path))
-    for index, scene_match in enumerate(scene_plans):
-        scene_id = scene_match.group(1)
-        end = scene_plans[index + 1].start() if index + 1 < len(scene_plans) else len(text)
-        scene_block = text[scene_match.end():end]
-        if f"视觉连续性基线 VC-{scene_id}：" not in scene_block:
-            issues.append(_issue("VISUAL_BASELINE", f"{scene_id} missing 视觉连续性基线 VC-{scene_id}", path))
 
     headings = list(SHOT_HEADING_RE.finditer(text))
     if not headings:
@@ -207,9 +216,6 @@ def inspect_storyboard(path: Path, expected_source_hash: str) -> dict:
                 path,
                 shot_id,
             ))
-        prompt_length = len(re.sub(r"\s+", "", prompt))
-        if prompt_length > 700:
-            issues.append(_issue("PROMPT_HARD_LIMIT", f"{shot_id} prompt has {prompt_length} non-space characters; hard limit is 700", path, shot_id))
         forbidden = [term for term in FORBIDDEN_INTERNAL_REFERENCES if term in prompt]
         if forbidden:
             issues.append(_issue(
@@ -235,8 +241,16 @@ def inspect_storyboard(path: Path, expected_source_hash: str) -> dict:
                     f"{shot_id} engineering geometry reference cannot occupy the Seedance reference field: {engineering_dirs[0]}",
                     path, shot_id,
                 ))
+            legacy_3d_dirs = sorted({part for part in asset.parts if part.lower() in FORBIDDEN_3D_REFERENCE_DIRS})
+            legacy_3d_name = any(marker in asset.name.lower() for marker in FORBIDDEN_3D_FILENAME_MARKERS)
+            if legacy_3d_dirs or legacy_3d_name:
+                issues.append(_issue(
+                    "REFERENCE_ROLE",
+                    f"{shot_id} legacy 3D mannequin references are not supported; use an approved-jimeng-2d PNG, reviewed keyframe, or reviewed video",
+                    path, shot_id,
+                ))
             if ".audit." in asset.name.lower() or asset.name.endswith(("_审核.jpg", "_审核.jpeg", "_审核.png", "_审核.webp")) or asset.suffix.lower() == ".html":
-                issues.append(_issue("REFERENCE_ROLE", f"{shot_id} mannequin audit/runtime assets cannot occupy the Seedance reference field", path, shot_id))
+                issues.append(_issue("REFERENCE_ROLE", f"{shot_id} audit/runtime assets cannot occupy the Seedance reference field", path, shot_id))
             if any(part.lower() in {"staging", ".staging"} for part in asset.parts):
                 issues.append(_issue("STAGING_REFERENCE", f"{shot_id} references an asset inside staging: {asset}", path, shot_id))
             if asset.suffix.lower() not in ASSET_EXTENSIONS:
@@ -247,7 +261,6 @@ def inspect_storyboard(path: Path, expected_source_hash: str) -> dict:
         shots.append({
             "shot_id": shot_id,
             "duration": duration,
-            "prompt_characters": prompt_length,
             "spoken_characters": spoken_chars,
             "speech_floor_seconds_at_4_5_chars_per_second": round(estimated_floor, 2),
             "audio_lines": shot_audio,

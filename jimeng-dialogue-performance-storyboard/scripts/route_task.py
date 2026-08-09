@@ -121,30 +121,12 @@ def route(mode: str, source: str | None = None, seedance_target: str = "auto") -
         "routing_reasons": {},
         "run_before_generation": [],
         "optional_spatial_workflow": {
-            "selection": "none|2d|3d|both",
-            "when": "select one mode after scene understanding; use both only when 2D and 3D prove different facts",
+            "selection": "none|2d",
+            "when": "use none when the shot is spatially unambiguous; use 2d when plan-view positions, body facings, boundaries, axis side, camera position, or FOV need visual proof",
             "selection_owner": "model; never source-keyword auto-routing",
-            "designer": "model chooses positions, facings, posture, gaze, hand contacts, camera, and FOV",
+            "designer": "model chooses positions, body facings, boundaries, camera, and FOV; text owns posture, head direction, gaze, hand contacts, and prop height",
             "base_render": "scripts/render_blocking_reference.py",
             "base_read_when_selected": "references/blocking-facing-reference.md",
-            "vtk_render": "scripts/render_mannequin_reference.py",
-            "vtk_read_when_selected": "references/mannequin-blocking.md",
-            "vtk_when": "2D cannot prove posture/support, body-versus-head facing, hand contact, prop height, occlusion, or actual camera projection",
-            "vtk_per_shot_mandatory": False,
-            "physical_state_hash_deduplication": True,
-            "shared_scene_multiple_camera_views": True,
-            "explicit_shot_id_required": True,
-            "clean_frame_contract": {
-                "width": 1920,
-                "height": 1080,
-                "aspect": "16:9",
-                "capture_scope": "direct 1920x1080 renderer output",
-            },
-            "automatic_capture_required": True,
-            "automatic_capture_owner": "render_mannequin_reference.py",
-            "manual_user_capture": False,
-            "browser_required": False,
-            "html_output": False,
             "staging_only": True,
             "blocking_scope": ["collision", "solid_intersection", "blocked_view", "declared_axis_side"],
             "advisory_scope": ["clearance", "composition_ratio", "mutual_facing_tolerance", "edge_clipping", "label_layout"],
@@ -153,18 +135,9 @@ def route(mode: str, source: str | None = None, seedance_target: str = "auto") -
                 "scripts/promote_blocking_reference.py promote --review <reports>/blocking.review.json "
                 "--delivery-dir <delivery>/approved-jimeng-2d --compact --report <reports>/blocking.promote.json"
             ),
-            "mannequin_review_record": (
-                "scripts/promote_mannequin_reference.py record --render-report <mannequin-report.json> "
-                "--screenshot-dir <delivery>/staging/mannequin --decision <PASS|REVISE> "
-                "--review <reports>/mannequin.review.json --compact --report <reports>/mannequin.record.json"
-            ),
-            "mannequin_clean_promotion": (
-                "scripts/promote_mannequin_reference.py promote --review <reports>/mannequin.review.json "
-                "--delivery-dir <delivery>/approved-mannequin --compact --report <reports>/mannequin.promote.json"
-            ),
             "audit_images_promoted": False,
             "blocking_png_generation_reference_allowed_after_review": True,
-            "clean_images_generation_reference_allowed_after_review": True,
+            "complex_pose_fallback": "write named facts in the direct prompt, split the shot, or use an already reviewed keyframe/reference video",
         },
         "run_after_generation": [
             "scripts/validate_delivery.py --source <source> --storyboard <output.md> "
