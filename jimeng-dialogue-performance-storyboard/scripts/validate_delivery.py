@@ -25,6 +25,9 @@ FIELD_RE = re.compile(r"^【([^】]+)】\s*$", re.M)
 TARGET_RE = re.compile(r"^-\s*Seedance\s*目标：\s*(2\.0|2\.5)\s*$", re.M)
 SOURCE_HASH_RE = re.compile(r"^-\s*源文\s*SHA-256：\s*([0-9a-fA-F]{64})\s*$", re.M)
 STATUS_RE = re.compile(r"^-\s*交付状态：\s*(DRAFT|PROVISIONAL|FINAL)\s*$", re.M)
+EPISODE_RE = re.compile(r"^-\s*集数：\s*第(\d{2})集\s*$", re.M)
+TOTAL_DURATION_RE = re.compile(r"^-\s*分镜总时长：\s*(\d+)秒\s*$", re.M)
+DELIVERY_FILENAME_RE = re.compile(r"^第(\d{2})集_总时长(\d+)秒_即梦Seedance分镜\.md$")
 DURATION_RE = re.compile(r"^(\d+(?:\.\d+)?)s$", re.I)
 CORE_PROMPT_LABELS = ("主体与起态", "动作时间线", "台词", "视觉控制", "稳定结尾")
 OPTIONAL_PROMPT_LABELS = ("摄影机", "焦点", "声音设计")
@@ -206,6 +209,9 @@ def inspect_storyboard(path: Path, expected_source_hash: str, max_shot_duration:
         ))
     target_match = TARGET_RE.search(text)
     status_match = STATUS_RE.search(text)
+    episode_match = EPISODE_RE.search(text)
+    total_duration_match = TOTAL_DURATION_RE.search(text)
+    filename_match = DELIVERY_FILENAME_RE.fullmatch(path.name)
     hash_match = SOURCE_HASH_RE.search(text)
     target = target_match.group(1) if target_match else ""
     status = status_match.group(1) if status_match else ""
@@ -213,6 +219,16 @@ def inspect_storyboard(path: Path, expected_source_hash: str, max_shot_duration:
         issues.append(_issue("TARGET_MARKER", "missing or invalid Seedance target marker", path))
     if not status:
         issues.append(_issue("DELIVERY_STATUS", "missing or invalid delivery status", path))
+    if not episode_match:
+        issues.append(_issue("EPISODE_MARKER", "missing or invalid episode marker such as - 集数：第01集", path))
+    if not total_duration_match:
+        issues.append(_issue("TOTAL_DURATION_MARKER", "missing or invalid total duration marker such as - 分镜总时长：34秒", path))
+    if not filename_match:
+        issues.append(_issue(
+            "DELIVERY_FILENAME",
+            "storyboard filename must match 第{两位集数}集_总时长{整数秒}秒_即梦Seedance分镜.md",
+            path,
+        ))
     if not hash_match:
         issues.append(_issue("SOURCE_HASH", "missing source SHA-256 marker", path))
     elif hash_match.group(1).lower() != expected_source_hash:
@@ -391,6 +407,29 @@ def inspect_storyboard(path: Path, expected_source_hash: str, max_shot_duration:
             "duration": duration,
             "audio_lines": shot_audio,
         })
+    valid_durations = [shot["duration"] for shot in shots if shot["duration"] is not None]
+    if len(valid_durations) == len(shots):
+        rounded_total = int(sum(valid_durations) + 0.5)
+        declared_total = int(total_duration_match.group(1)) if total_duration_match else None
+        filename_total = int(filename_match.group(2)) if filename_match else None
+        if declared_total is not None and declared_total != rounded_total:
+            issues.append(_issue(
+                "TOTAL_DURATION_MISMATCH",
+                f"declared total duration {declared_total}s does not equal rounded shot sum {rounded_total}s",
+                path,
+            ))
+        if filename_total is not None and filename_total != rounded_total:
+            issues.append(_issue(
+                "FILENAME_DURATION_MISMATCH",
+                f"filename total duration {filename_total}s does not equal rounded shot sum {rounded_total}s",
+                path,
+            ))
+    if episode_match and filename_match and episode_match.group(1) != filename_match.group(1):
+        issues.append(_issue(
+            "FILENAME_EPISODE_MISMATCH",
+            f"filename episode {filename_match.group(1)} does not match body episode {episode_match.group(1)}",
+            path,
+        ))
     return {
         "path": str(path), "target": target, "status": status, "shots": shots,
         "audio_lines": audio_lines, "assets": assets, "issues": issues, "advisories": advisories,
