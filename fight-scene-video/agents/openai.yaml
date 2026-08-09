@@ -1,4 +1,4 @@
 interface:
   display_name: "打斗戏视频设计"
-  short_description: "剧本基线优先、宏大VFX与Seedance 2.5独立分镜"
-  default_prompt: "Use $fight-scene-video 以源剧本为最高基线，逐项保真后在剩余生成预算内最大化VFX、粒子、运镜和辅助动作，交付符合Seedance 2.5的独立分镜Markdown。"
+  short_description: "原剧情零改写、30秒连续多镜、高视觉表达低微动作控制"
+  default_prompt: "Use $fight-scene-video 以原剧情为最高基线，生成不超过30秒的连续多镜Seedance提示词；保持高视觉表达密度，只锁关键动作控制点并保留模型自然补间空间。"
