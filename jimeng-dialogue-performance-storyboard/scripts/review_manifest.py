@@ -10,19 +10,30 @@ import json
 from pathlib import Path
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 DESIGN_STATES = ("PASS", "REVISE")
 VISUAL_STATES = ("PASS", "REVISE", "NOT_APPLICABLE", "NOT_RUN")
 REVIEW_MODES = ("independent", "self_check")
 DELIVERY_EXTENSIONS = {".md", ".svg", ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".xlsx"}
 NON_DELIVERY_DIRECTORIES = {"reports", "staging", ".staging"}
 VISUAL_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov"}
+VIDEO_EXTENSIONS = {".mp4", ".mov"}
 
 
 def delivery_status(design_review: str, visual_review: str) -> str:
     """Visual review is required only when visual evidence is part of delivery."""
     visual_complete = visual_review in {"PASS", "NOT_APPLICABLE"}
     return "FINAL" if design_review == "PASS" and visual_complete else "PROVISIONAL"
+
+
+def evidence_scope(visual_review: str, visual_outputs: list[Path]) -> str:
+    if visual_review == "PASS" and any(path.suffix.lower() in VIDEO_EXTENSIONS for path in visual_outputs):
+        return "RENDER_REVIEWED"
+    if visual_review == "PASS":
+        return "REFERENCE_REVIEWED"
+    if visual_review == "NOT_APPLICABLE":
+        return "TEXT_ONLY"
+    return "INCOMPLETE"
 
 
 def sha256_file(path: Path) -> str:
@@ -59,6 +70,7 @@ def _delivery_inventory(root: Path) -> set[Path]:
 def build_manifest(
     source: str | Path,
     outputs: list[str | Path],
+    review_reports: list[str | Path],
     review_mode: str,
     design_review: str,
     visual_review: str,
@@ -79,7 +91,12 @@ def build_manifest(
         raise ValueError("independent review requires reviewer_context_id")
     if not outputs:
         raise ValueError("at least one output is required")
+    if not review_reports:
+        raise ValueError("at least one review report is required")
     resolved_outputs = [Path(path).expanduser().resolve() for path in outputs]
+    resolved_review_reports = [Path(path).expanduser().resolve() for path in review_reports]
+    if set(resolved_outputs) & set(resolved_review_reports):
+        raise ValueError("review reports must be separate from formal outputs")
     visual_outputs = [path for path in resolved_outputs if path.suffix.lower() in VISUAL_EXTENSIONS]
     if visual_review == "NOT_APPLICABLE" and visual_outputs:
         raise ValueError("visual_review=NOT_APPLICABLE is invalid when visual outputs are registered")
@@ -88,19 +105,26 @@ def build_manifest(
     resolved_root = Path(delivery_root).expanduser().resolve() if delivery_root else None
     if resolved_root and any(not _within(path, resolved_root) for path in resolved_outputs):
         raise ValueError("all outputs must be inside delivery_root")
+    if resolved_root and any(not _within(path, resolved_root) for path in resolved_review_reports):
+        raise ValueError("all review reports must be inside delivery_root")
     if resolved_root:
         for path in resolved_outputs:
             relative = path.relative_to(resolved_root)
             if relative.parts and relative.parts[0] in NON_DELIVERY_DIRECTORIES:
                 raise ValueError("reviewed outputs must be promoted out of staging/reports before delivery manifest creation")
+        for path in resolved_review_reports:
+            relative = path.relative_to(resolved_root)
+            if not relative.parts or relative.parts[0] != "reports":
+                raise ValueError("review reports must be stored under delivery_root/reports")
     return {
         "schema_version": SCHEMA_VERSION,
         "record_type": "review_attestation",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "source": _file_record(source),
         "outputs": [_file_record(path) for path in resolved_outputs],
+        "review_reports": [_file_record(path) for path in resolved_review_reports],
         "delivery_root": str(resolved_root) if resolved_root else "",
-        "inventory_policy": "all deliverable files outside reports/staging must be registered",
+        "inventory_policy": "all deliverable files outside reports/staging are registered; review reports are hash-bound separately",
         "review": {
             "mode": review_mode,
             "independent": expected_independent,
@@ -110,10 +134,13 @@ def build_manifest(
             "visual_evidence_count": len(visual_outputs),
         },
         "delivery_status": delivery_status(design_review, visual_review),
+        "evidence_scope": evidence_scope(visual_review, visual_outputs),
         "limitations": [
             "This record attests declared review results; it does not prove review quality or reviewer independence.",
             "SHA-256 verifies reviewed bytes, not reviewer identity or context freshness.",
-            "Any source or output byte change makes the recorded review stale.",
+            "Any source, output, or review-report byte change makes the recorded review stale.",
+            "TEXT_ONLY means prompt and design review completed without a reviewed Seedance render.",
+            "REFERENCE_REVIEWED means visual references were reviewed but no delivered video render was verified.",
         ],
         "primary_output_modified": False,
     }
@@ -134,11 +161,21 @@ def verify_manifest(path: str | Path, delivery_root: str | Path | None = None) -
     resolved_root = Path(raw_root).expanduser().resolve() if raw_root else None
     records = [("source", payload.get("source", {}))]
     records.extend(("output", item) for item in payload.get("outputs", []))
+    records.extend(("review_report", item) for item in payload.get("review_reports", []))
+    if payload.get("schema_version", 0) < SCHEMA_VERSION:
+        changed.append({"kind": "manifest", "path": str(manifest_path), "reason": "legacy_schema_without_review_report_binding"})
+    if not payload.get("review_reports"):
+        changed.append({"kind": "review_report", "path": "", "reason": "missing_review_report_binding"})
     for kind, record in records:
         target = Path(record.get("path", ""))
-        if kind == "output" and resolved_root and not _within(target.resolve(), resolved_root):
+        if kind in {"output", "review_report"} and resolved_root and not _within(target.resolve(), resolved_root):
             changed.append({"kind": kind, "path": str(target), "reason": "outside_delivery_root"})
             continue
+        if kind == "review_report" and resolved_root:
+            relative = target.resolve().relative_to(resolved_root)
+            if not relative.parts or relative.parts[0] != "reports":
+                changed.append({"kind": kind, "path": str(target), "reason": "outside_reports_directory"})
+                continue
         if not target.is_file():
             changed.append({"kind": kind, "path": str(target), "reason": "missing"})
             continue
@@ -169,6 +206,7 @@ def verify_manifest(path: str | Path, delivery_root: str | Path | None = None) -
         "delivery_root": str(resolved_root) if resolved_root else "",
         "effective_review_status": "STALE" if changed else "CURRENT",
         "delivery_status": "STALE" if changed else payload.get("delivery_status", "PROVISIONAL"),
+        "evidence_scope": payload.get("evidence_scope", "INCOMPLETE"),
         "freshness_proof": "byte_hash_only",
         "primary_output_modified": False,
     }
@@ -180,6 +218,7 @@ def main(argv: list[str] | None = None) -> int:
     create = subparsers.add_parser("create")
     create.add_argument("--source", required=True)
     create.add_argument("--output", action="append", required=True)
+    create.add_argument("--review-report", action="append", required=True)
     create.add_argument("--manifest", required=True)
     create.add_argument("--review-mode", choices=REVIEW_MODES, required=True)
     create.add_argument("--reviewer-context-id", default="")
@@ -204,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
             payload = build_manifest(
                 args.source,
                 args.output,
+                args.review_report,
                 args.review_mode,
                 args.design_review,
                 args.visual_review,
@@ -226,6 +266,7 @@ def main(argv: list[str] | None = None) -> int:
             "status": "PASS" if result.get("pass") else "FAIL",
             "manifest_path": result.get("manifest_path"),
             "delivery_status": result.get("delivery_status"),
+            "evidence_scope": result.get("evidence_scope", "INCOMPLETE"),
             "changed_count": len(result.get("changed", [])),
             "delivery_root": result.get("delivery_root", ""),
             "report": str(Path(report_path).expanduser().resolve()) if report_path else None,

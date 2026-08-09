@@ -139,7 +139,8 @@ def route(mode: str, source: str | None = None, seedance_target: str = "auto") -
         ],
         "read_after_generation": ["references/review-pipeline.md"],
         "run_after_review": [
-            "scripts/review_manifest.py create --source <source> --output <output.md> --manifest <manifest.json> "
+            "scripts/review_manifest.py create --source <source> --output <output.md> "
+            "--review-report <reports>/design-review.md --manifest <manifest.json> "
             "--review-mode <independent|self_check> --design-review <PASS|REVISE> "
             "--visual-review <PASS|REVISE|NOT_APPLICABLE|NOT_RUN> --delivery-root <delivery_dir> "
             "--compact --report <reports>/manifest.create.json",
