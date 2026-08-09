@@ -8,9 +8,7 @@ workflow is allowed to infer production-safe details from the supplied prose.
 
 from __future__ import annotations
 
-import argparse
 import hashlib
-import json
 import re
 from pathlib import Path
 
@@ -31,31 +29,6 @@ STRUCTURAL_SPEAKER_LABELS = {
 }
 AUDIO_CHANNEL_LABELS = {"旁白", "音效", "声音", "系统音", "系统提示", "广播", "画外音"}
 ACTION_RE = re.compile(r"^(?:△|动作[：:])")
-RISK_TERMS = {
-    "physical_support": ("躺", "坐", "靠", "抱", "扶", "摔", "起身", "翻身", "腾空"),
-    "prop_transfer": ("递", "交给", "接过", "接住", "取出", "手机", "付款", "签字"),
-    "screen_or_text": ("手机", "屏幕", "聊天", "来电", "文字", "气泡", "付款码"),
-    "multi_person": ("两人", "三人", "人群", "路人", "围观", "众人"),
-    "lighting_change": ("开门", "车灯", "烛火", "窗光", "云影", "闪烁", "熄灭"),
-}
-RISK_PATTERNS = {
-    "physical_support": (
-        re.compile(r"(?:身体|头|肩|背|腰|臀|膝|脚|手)[^。！？；;\n]{0,18}(?:压在|贴住|抵住|支撑|离地|落地)"),
-    ),
-    "prop_transfer": (
-        re.compile(r"(?:把|将)[^，。！？；;\n]{1,16}(?:递给|交给|塞给|放到|收进)"),
-        re.compile(r"[^，。！？；;\n]{1,12}(?:被递给|递到|交到|转交|易手)"),
-    ),
-    "screen_or_text": (
-        re.compile(r"(?:面板|终端|投影|界面|显示器)[^。！？；;\n]{0,18}(?:显示|出现|弹出|可读|文字)"),
-    ),
-    "multi_person": (
-        re.compile(r"(?:甲|乙|丙|丁|A|B|C|D)[^。！？；;\n]{0,20}(?:与|和|对|向)(?:甲|乙|丙|丁|A|B|C|D)"),
-    ),
-    "lighting_change": (
-        re.compile(r"(?:光源|灯|火|熔岩|荧光|投影)[^。！？；;\n]{0,18}(?:亮起|熄灭|闪动|转暗|转亮|改变|切换)"),
-    ),
-}
 def inspect_text(text: str) -> dict:
     blocking: list[dict] = []
     advisories: list[dict] = []
@@ -94,13 +67,6 @@ def inspect_text(text: str) -> dict:
     if len(text) > 1_000_000:
         advisories.append(_issue("SOURCE_LARGE", "源文较长，先分批读取并冻结跨场景主索引", "advisory"))
 
-    risk_flags: dict[str, list[str]] = {}
-    for key in dict.fromkeys((*RISK_TERMS, *RISK_PATTERNS)):
-        hits = [term for term in RISK_TERMS.get(key, ()) if term in text]
-        for pattern in RISK_PATTERNS.get(key, ()):
-            hits.extend(match.group(0) for match in pattern.finditer(text))
-        if hits:
-            risk_flags[key] = list(dict.fromkeys(hits))[:16]
     if not speakers and dialogue_lines:
         advisories.append(_issue("SPEAKER_UNCERTAIN", "对白存在但说话者标签不稳定；原样保留并在使用说明记录疑点", "advisory"))
 
@@ -119,7 +85,6 @@ def inspect_text(text: str) -> dict:
             "performance_cue_count": len(performance_cues),
         },
         "performance_cues": performance_cues,
-        "risk_flags": risk_flags,
         "source_fidelity": {
             "raw_text_preserved": True,
             "dialogue_should_be_copied_verbatim": bool(dialogue_lines),
@@ -178,7 +143,7 @@ def _dialogue_match(line: str):
     return match if raw_speaker in AUDIO_CHANNEL_LABELS or normalize_speaker(match.group("speaker")) else None
 
 
-def inspect_path(source_path: str, report_path: str | None = None, include_text: bool = False) -> dict:
+def inspect_path(source_path: str) -> dict:
     path = Path(source_path).expanduser()
     if not path.is_file():
         result = inspect_text("")
@@ -187,8 +152,6 @@ def inspect_path(source_path: str, report_path: str | None = None, include_text:
         try:
             source_text = path.read_text(encoding="utf-8-sig")
             result = inspect_text(source_text)
-            if include_text:
-                result["_source_text"] = source_text
         except (OSError, UnicodeDecodeError) as exc:
             result = inspect_text("")
             result["blocking"] = [_issue("SOURCE_READ", "读取源文失败：%s" % exc)]
@@ -200,41 +163,8 @@ def inspect_path(source_path: str, report_path: str | None = None, include_text:
             result["source_sha256"] = None
     else:
         result["source_sha256"] = None
-    if report_path:
-        destination = Path(report_path).expanduser()
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        result["report_path"] = str(destination)
     return result
 
 
 def _issue(code: str, message: str, severity: str = "blocking") -> dict:
     return {"code": code, "severity": severity, "message": message}
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--source", required=True)
-    parser.add_argument("--report")
-    parser.add_argument("--compact", action="store_true")
-    args = parser.parse_args(argv)
-    if not args.compact or not args.report:
-        parser.error("legacy source-gate output is disabled; --compact and --report are required")
-    result = inspect_path(args.source, args.report)
-    if args.compact:
-        print(json.dumps({
-            "status": "PASS" if result.get("pass") else "FAIL",
-            "source": result.get("source_path"),
-            "source_sha256": result.get("source_sha256"),
-            "risk_flags": sorted(result.get("risk_flags", {})),
-            "blocking_count": len(result.get("blocking", [])),
-            "advisory_count": len(result.get("advisories", [])),
-            "report": result.get("report_path") or args.report,
-        }, ensure_ascii=False, separators=(",", ":")))
-    else:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if result.get("pass") else 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

@@ -51,6 +51,6 @@
 python3 scripts/render_blocking_reference.py <spec.json> --storyboard <计划输出.md> --png --replace --compact --report <reports>/<镜头组>.blocking.json
 ```
 
-脚本在 Markdown 父目录的 `staging/blocking/` 输出同源 SVG/PNG。失败报告只描述碰撞、净距、遮挡、轴侧、通视、视场或标签错误；模型决定如何修订。提交候选前可运行 `blocking_repair_preflight.py` 核对几何修改范围。
+脚本在 Markdown 父目录的 `staging/blocking/` 输出同源 SVG/PNG。失败报告只描述碰撞、净距、遮挡、轴侧、通视、视场或标签错误；模型决定如何修订并重新渲染候选。
 
 查看 PNG 并确认姓名、平面位置、躯干方向箭头、机位、视锥、实体与边界清楚后，使用 `promote_blocking_reference.py record` 记录真实画面结论，再用 `promote` 提升到 `approved-jimeng-2d/`。提升后的 PNG 文件角色为 `jimeng_2d_spatial_reference`，`generation_reference_allowed=true`，可写入 `【审核后参考素材】`；SVG 仅保留为审核证据，不进入投喂字段。

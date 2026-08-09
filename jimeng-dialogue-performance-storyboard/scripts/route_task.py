@@ -49,10 +49,6 @@ CREATIVE_REFERENCE_CATALOG = {
         "path": "references/narrative-mode-routing.md",
         "when": "information order, family or ensemble response, comedy, silence, suspense, montage, or non-dialogue causality needs development",
     },
-    "seedance_expression_examples": {
-        "path": "references/seedance-example-patterns.md",
-        "when": "a finished director design contains complex subject ownership, timing, paths, reference frames, props, focus, lighting stability, or reference assets",
-    },
     "generation_diagnostics": {
         "path": "references/seedance-generation-diagnostics.md",
         "when": "an actual keyframe or video has identity, occlusion, framing, action, camera, focus, exposure, material, or reference-conflict failures that need model-led diagnosis",
@@ -66,7 +62,6 @@ def _minimal_intake(intake: dict) -> dict:
         "stats": intake.get("stats", {}),
         "blocking": intake.get("blocking", []),
         "advisory_codes": [item.get("code") for item in intake.get("advisories", [])],
-        "risk_signals": sorted(intake.get("risk_flags", {})),
     }
 
 
@@ -79,8 +74,7 @@ def route(mode: str, source: str | None = None, seedance_target: str = "auto") -
             "mode": mode,
             "read_first": ["references/review-pipeline.md"],
             "read_on_demand": [],
-            "run_only": ["scripts/review_video.py"],
-            "objective_metrics_only": True,
+            "run_only": [],
             "model_visual_review_required": True,
             "creative_decisions_modified": False,
         }
@@ -161,7 +155,7 @@ def route(mode: str, source: str | None = None, seedance_target: str = "auto") -
             "creative_scores_or_quotas": False,
             "contract_recovery": False,
             "per_shot_validator_loop": False,
-            "source_gate_cache": "reuse while source SHA-256 is unchanged",
+            "source_intake_cache": "reuse while source SHA-256 is unchanged",
             "reports": "full JSON on disk; compact terminal summary",
         },
         "source_intake": _minimal_intake(intake),
