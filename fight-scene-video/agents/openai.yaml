@@ -1,4 +1,4 @@
 interface:
   display_name: "打斗戏视频设计"
   short_description: "原剧情零改写、宏大斗法、连续成片与低抽卡稳定交付"
-  default_prompt: "Use $fight-scene-video 以原剧情和特效事实为最高基线，设计精品漫剧打斗/斗法分镜；动态强化动作、慢镜、宏大VFX、真实粒子、打击反馈和压迫感，保持镜间空间连续，自动修复漏演、穿帮和无法合并问题后输出可直接复制的Seedance提示词。"
+  default_prompt: "Use $fight-scene-video 先锁定原剧情，再独立设计精品漫剧打斗/斗法；后置参考优秀案例的表现标准但不复刻具体元素，强化动作气质、宏大VFX、真实粒子、打击反馈、多人活性和压迫感，自动修复漏演、穿帮与镜间断裂后输出可直接复制的Seedance提示词。"

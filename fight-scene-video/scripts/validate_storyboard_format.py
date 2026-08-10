@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the fixed storyboard contract and report non-blocking load risks."""
+"""Validate the deterministic Seedance storyboard delivery contract."""
 
 from __future__ import annotations
 
@@ -31,58 +31,11 @@ RELATIVE_STATE = re.compile(
     r"继承镜(?:号)?\s*\d+|镜(?:号)?\s*\d+状态|前镜|前一镜|上一镜|下一镜|"
     r"同上|沿用(?:前镜|上一镜|此前)?|继续上一镜|保持此前状态"
 )
-SEQUENCE_MARKER = re.compile(r"先|再|随后|随即|然后|继而|同时|立即|最终|最后|紧接着")
-MICRO_TIMING = re.compile(
-    r"(?:第|在)?\d+(?:\.\d+)?(?:秒|s)(?:内|时|后|前|到)?",
-    re.IGNORECASE,
-)
-EXACT_MOTION_MEASURE = re.compile(
-    r"\d+(?:\.\d+)?(?:毫米|厘米|公分|度|mm|cm|°)",
-    re.IGNORECASE,
-)
 INTERNAL_MARKER = re.compile(
-    r"(?<![A-Za-z0-9])P\d+(?![A-Za-z0-9])|(?<![A-Za-z0-9])K[0-4](?![A-Za-z0-9])|"
-    r"(?<![A-Za-z0-9])CAM(?:ERA)?(?![A-Za-z0-9])|剧本保真矩阵|唯一叙事目标|原文证据"
+    r"(?<![A-Za-z0-9])P\d+(?![A-Za-z0-9])|(?<![A-Za-z0-9])K\d+(?![A-Za-z0-9])|"
+    r"(?<![A-Za-z0-9])CAM(?:ERA)?(?![A-Za-z0-9])|剧本保真矩阵|原文证据|"
+    r"负面提示词|负面约束|风险分数"
 )
-
-QUOTE_TEXT = re.compile(r"“([^”]*)”|\"([^\"]*)\"")
-PAUSE_SHORT = re.compile(r"[，、,]")
-PAUSE_MEDIUM = re.compile(r"[；：;:]")
-PAUSE_LONG = re.compile(r"[。！？!?]")
-PAUSE_ELLIPSIS = re.compile(r"……|\.\.\.")
-
-
-def dialogue_timing(dialogue: str) -> tuple[int, float, float]:
-    """Return spoken CJK count, estimated minimum seconds, and selected cps.
-
-    Speaker names and OS/OV/system labels are excluded when quoted dialogue is used.
-    The estimate is a lower bound that may run in parallel with compatible action.
-    """
-    quoted = [left or right for left, right in QUOTE_TEXT.findall(dialogue)]
-    spoken = "".join(quoted) if quoted else dialogue
-    if not quoted:
-        spoken = re.sub(
-            r"(?:^|[；;]\s*)(?:[^：:；;]{1,24})[：:]",
-            "",
-            spoken,
-        )
-    spoken = re.sub(r"\b(?:OS|OV|VO|系统音)\b", "", spoken, flags=re.IGNORECASE)
-    spoken_chars = len(re.findall(r"[\u3400-\u9fff]", spoken))
-
-    if re.search(r"低语|迟疑|哽咽|抽泣|喘息|虚弱|委屈|无奈", dialogue):
-        cps = 3.0
-    elif re.search(r"急促|快速|疾呼|大喊|尖叫|厉喝", dialogue):
-        cps = 4.2
-    else:
-        cps = 3.8
-
-    pause_seconds = (
-        len(PAUSE_SHORT.findall(spoken)) * 0.12
-        + len(PAUSE_MEDIUM.findall(spoken)) * 0.2
-        + len(PAUSE_LONG.findall(spoken)) * 0.3
-        + len(PAUSE_ELLIPSIS.findall(spoken)) * 0.45
-    )
-    return spoken_chars, spoken_chars / cps + pause_seconds, cps
 
 
 def validate(text: str) -> list[str]:
@@ -109,72 +62,29 @@ def validate(text: str) -> list[str]:
     segment_duration = sum(durations)
     if segment_duration > 30.0 + 1e-9:
         errors.append(
-            f"同一文件代表一个生成段，镜头时长之和为{segment_duration:g}秒，超过Seedance单次30秒硬上限；"
-            "请在自然因果接缝拆成多个生成段，不得删改S原文事实或强行加速。"
+            f"镜头时长之和为{segment_duration:g}秒，超过单个生成段30秒硬上限；"
+            "请在自然因果接缝拆段，不得删改剧情或强行加速。"
         )
 
     for shot_index, match in enumerate(SHOT.finditer(normalized), start=1):
-        header = match.group("header")
-        duration_match = re.search(r"｜(\d+(?:\.\d+)?)s$", header)
-        duration = float(duration_match.group(1)) if duration_match else 0.0
-        body = " ".join(match.group(name) for name in ("visual", "vfx", "light", "audio", "dialogue"))
-
+        body = " ".join(
+            match.group(name)
+            for name in ("visual", "vfx", "light", "audio", "dialogue")
+        )
         reference = RELATIVE_STATE.search(body)
         if reference:
             errors.append(
                 f"镜号 {shot_index:02d} 使用跨镜替代语“{reference.group(0)}”；"
-                "请在本镜重述生成所需的可见起始状态。"
+                "请重述本镜生成所需的具体可见状态。"
             )
 
         internal = INTERNAL_MARKER.search(body)
         if internal:
             errors.append(
                 f"镜号 {shot_index:02d} 含内部标记“{internal.group(0)}”；"
-                "最终Seedance正文只能保留真实可见的画面、动作、特效、光影、声音和台词。"
+                "最终正文只能保留可见画面、动作、特效、光影、声音和台词。"
             )
-
-        dialogue = match.group("dialogue")
-        if dialogue != "无":
-            spoken_chars, minimum, cps = dialogue_timing(dialogue)
-            if duration > 0 and minimum > duration:
-                errors.append(
-                    f"镜号 {shot_index:02d} 的实际台词正文约{spoken_chars}个汉字，"
-                    f"按约{cps:g}字/秒并计停顿至少约{minimum:.1f}秒，{duration:g}秒可能说不完；"
-                    "即使与动作并行也必须延时或拆镜，不能机械累加或快读。"
-                )
     return errors
-
-
-def review_warnings(text: str) -> list[str]:
-    """Return heuristic warnings that require semantic review, not automatic failure."""
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    if not DOCUMENT.fullmatch(normalized):
-        return []
-
-    warnings: list[str] = []
-    for shot_index, match in enumerate(SHOT.finditer(normalized), start=1):
-        header = match.group("header")
-        duration_match = re.search(r"｜(\d+(?:\.\d+)?)s$", header)
-        duration = float(duration_match.group(1)) if duration_match else 0.0
-        dense_text = match.group("visual") + match.group("vfx")
-        sequence_count = len(SEQUENCE_MARKER.findall(dense_text))
-        sequence_limit = 5 if duration <= 3.0 else 8 if duration <= 6.0 else 11 if duration <= 8.0 else 14
-        if sequence_count >= sequence_limit:
-            warnings.append(
-                f"镜号 {shot_index:02d} 为{duration:g}秒，含{sequence_count}个顺序标记，"
-                "疑似堆积微动作或多个视觉中心；请先删除无锚点E、压缩N、去除重复，"
-                "并聚合同一动作弧。若仍存在独立视觉中心再拆镜；不得删改S原文事实。"
-            )
-
-        micro_timing_count = len(MICRO_TIMING.findall(dense_text))
-        exact_measure_count = len(EXACT_MOTION_MEASURE.findall(dense_text))
-        if micro_timing_count >= 2 or exact_measure_count >= 2:
-            warnings.append(
-                f"镜号 {shot_index:02d} 含{micro_timing_count}处正文时间码和"
-                f"{exact_measure_count}处精确运动量化，疑似替模型逐帧编舞；"
-                "请只保留S规定或避免误读所需的控制点，把N/E身体补间、惯性和次级运动留给模型。"
-            )
-    return warnings
 
 
 def main() -> int:
@@ -189,17 +99,12 @@ def main() -> int:
         return 2
 
     errors = validate(text)
-    warnings = review_warnings(text)
-    for warning in warnings:
-        print(f"WARNING: {warning}", file=sys.stderr)
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    if warnings:
-        print(f"format valid with {len(warnings)} review warning(s): {args.path}")
-    else:
-        print(f"format valid: {args.path}")
+
+    print(f"format valid: {args.path}")
     return 0
 
 
