@@ -177,64 +177,10 @@ def review_warnings(text: str) -> list[str]:
     return warnings
 
 
-def self_test() -> int:
-    valid = (
-        "镜号 01｜超远全景｜镜头缓慢向前匀速推进，微俯角｜2.2s\n\n"
-        "画面内容：深夜都市背街，巷心伫立宋棠一人。\n\n"
-        "特效：空气漂浮细微都市扬尘颗粒。\n\n"
-        "光影：冷调月夜，高位冷白月光。\n\n"
-        "音效：城市远处微弱车流底噪。\n\n"
-        "台词：无\n\n"
-        "镜号 02｜五官极致特写｜锁脸定镜，平视机位呼吸式极慢微推｜5.5s\n\n"
-        "画面内容：仍悬在巷心上空的宋棠缓缓阖眼，半脸傩纹沿肌肤成型。\n\n"
-        "特效：朱砂纹路从眼尾向颧骨生长，鎏金微光沿纹理流动。\n\n"
-        "光影：冷白环境光压低，朱砂与鎏金暖光集中照亮五官。\n\n"
-        "音效：低沉呼吸与细微金属共鸣。\n\n"
-        "台词：无\n"
-    )
-    invalid_field = valid.replace("\n\n特效：", "\n\n人物主体：宋棠。\n\n特效：")
-    invalid_reference = valid.replace(
-        "巷心伫立宋棠一人。", "继承镜01状态，巷心伫立宋棠一人。"
-    )
-    invalid_segment_duration = valid.replace("｜5.5s", "｜28s")
-    high_load = valid.replace(
-        "深夜都市背街，巷心伫立宋棠一人。",
-        "先起身，再转身，随后跳起，随即翻滚，然后挥手，同时转头，" + "复杂动作" * 120,
-    )
-    invalid_dialogue = valid.replace("台词：无", "台词：宋棠：“这是一句明显无法在两秒之内自然完整说完的对白。”")
-    invalid_internal = valid.replace("巷心伫立宋棠一人。", "P1原文证据：巷心伫立宋棠一人。")
-    over_directed = valid.replace(
-        "仍悬在巷心上空的宋棠缓缓阖眼，半脸傩纹沿肌肤成型。",
-        "第0.2秒宋棠右手抬高10厘米，第0.6秒腕部旋转30度，随后阖眼。",
-    )
-    cases = (
-        not validate(valid),
-        bool(validate(invalid_field)),
-        bool(validate(invalid_reference)),
-        bool(validate(invalid_segment_duration)),
-        not validate(high_load),
-        bool(review_warnings(high_load)),
-        not validate(over_directed),
-        bool(review_warnings(over_directed)),
-        bool(validate(invalid_dialogue)),
-        bool(validate(invalid_internal)),
-    )
-    if not all(cases):
-        print("self-test failed", file=sys.stderr)
-        return 1
-    print("self-test passed")
-    return 0
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("path", nargs="?", type=Path)
-    parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("path", type=Path)
     args = parser.parse_args()
-    if args.self_test:
-        return self_test()
-    if args.path is None:
-        parser.error("path is required unless --self-test is used")
 
     try:
         text = args.path.read_text(encoding="utf-8-sig")

@@ -28,6 +28,7 @@ STATUS_RE = re.compile(r"^-\s*交付状态：\s*(DRAFT|PROVISIONAL|FINAL)\s*$", 
 EPISODE_RE = re.compile(r"^-\s*集数：\s*第(\d{2})集\s*$", re.M)
 TOTAL_DURATION_RE = re.compile(r"^-\s*分镜总时长：\s*(\d+)秒\s*$", re.M)
 DELIVERY_FILENAME_RE = re.compile(r"^第(\d{2})集_总时长(\d+)秒_即梦Seedance分镜\.md$")
+REQUIRED_GLOBAL_SECTIONS = ("全局视觉基线", "人物资产提示词", "场景资产提示词")
 DURATION_RE = re.compile(r"^(\d+(?:\.\d+)?)s$", re.I)
 CORE_PROMPT_LABELS = ("主体与起态", "动作时间线", "台词", "视觉控制", "稳定结尾")
 OPTIONAL_PROMPT_LABELS = ("摄影机", "焦点", "声音设计")
@@ -233,6 +234,14 @@ def inspect_storyboard(path: Path, expected_source_hash: str, max_shot_duration:
         issues.append(_issue("SOURCE_HASH", "missing source SHA-256 marker", path))
     elif hash_match.group(1).lower() != expected_source_hash:
         issues.append(_issue("SOURCE_HASH", "source SHA-256 marker does not match source bytes", path))
+
+    for section in REQUIRED_GLOBAL_SECTIONS:
+        if not re.search(rf"^##\s+{re.escape(section)}\s*$", text, re.M):
+            issues.append(_issue(
+                "GLOBAL_SECTION_MISSING",
+                f"missing required global section: ## {section}",
+                path,
+            ))
 
     scene_plans = list(SCENE_PLAN_RE.finditer(text))
     if not scene_plans:

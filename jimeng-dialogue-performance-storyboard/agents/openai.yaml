@@ -1,4 +1,4 @@
 interface:
   display_name: "即梦剧情表演分镜"
-  short_description: "低控制密度、保留演绎空间的即梦剧情分镜"
-  default_prompt: "使用 $jimeng-dialogue-performance-storyboard 将这段剧情创作为完整节拍、空间清楚、表演精炼并保留 Seedance 自然演绎空间的正式分镜。"
+  short_description: "低污染、可合并生成的即梦剧情分镜与资产提示"
+  default_prompt: "使用 $jimeng-dialogue-performance-storyboard 将这段剧情创作为完整节拍、空间清楚、可合并生成的 Seedance 正式分镜，并附人物与场景资产提示词。"
