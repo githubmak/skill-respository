@@ -28,6 +28,12 @@ SEEDANCE_PROMPTS = (
     r"  - 正向提示词：[^\r\n]+\n"
     r"  - 负向提示词：[^\r\n]+"
 )
+SCENE_CARD = (
+    r"- 场景 \d{2}｜[^\r\n]+\n"
+    r"  - 场景影调：[^\r\n]+\n"
+    r"  - 场景色卡：[^\r\n]+\n"
+    r"  - 场景光影：[^\r\n]+"
+)
 GLOBAL_PREFIX = re.compile(
     rf"\A{STYLE_LOCK}\n\n{GLOBAL_CARD}\n\n{SEEDANCE_PROMPTS}\n\n"
 )
@@ -54,15 +60,12 @@ BLOCK = (
     r"  - 台词/音效：台词：[^\r\n]+；音效：[^\r\n]+\n"
     r"  - 尾帧：[^\r\n]+"
 )
-LEGACY_DOCUMENT = re.compile(
-    rf"\A{STYLE_LOCK}\n\n{GLOBAL_CARD}\n\n{SEEDANCE_PROMPTS}\n\n"
-    rf"{BLOCK}(?:\n\n{BLOCK})*\n?\Z"
-)
 SEGMENT_HEADER = r"生成段 \d{2}｜[^｜\r\n]+｜\d+(?:\.\d+)?s"
 SEGMENT = rf"{SEGMENT_HEADER}\n\n{BLOCK}(?:\n\n{BLOCK})*"
-MASTER_DOCUMENT = re.compile(
+SCENE_SECTION = rf"{SCENE_CARD}\n\n(?:{SEGMENT}(?:\n\n{SEGMENT})*|{BLOCK}(?:\n\n{BLOCK})*)"
+DOCUMENT = re.compile(
     rf"\A{STYLE_LOCK}\n\n{GLOBAL_CARD}\n\n{SEEDANCE_PROMPTS}\n\n"
-    rf"{SEGMENT}(?:\n\n{SEGMENT})*\n?\Z"
+    rf"{SCENE_SECTION}(?:\n\n{SCENE_SECTION})*\n?\Z"
 )
 SEGMENT_LINE = re.compile(
     r"(?m)^生成段 (?P<number>\d{2})｜(?P<name>[^｜\r\n]+)｜"
@@ -95,20 +98,18 @@ def validate(text: str) -> list[str]:
     errors: list[str] = []
     global_match = GLOBAL_PREFIX.match(normalized)
     content = normalized[global_match.end() :] if global_match else normalized
-    is_master = content.startswith("生成段 ")
-    document_pattern = MASTER_DOCUMENT if is_master else LEGACY_DOCUMENT
-    if not document_pattern.fullmatch(normalized):
+    if not DOCUMENT.fullmatch(normalized):
         errors.append(
             "正文未严格匹配固定列表格式：第一项必须是全局风格锁定，"
             "其下依次写用户指定风格、剧本推断补全、最终执行风格；第二项必须是全局色卡/影调/光影，"
             "其下依次写全局影调、全局色卡、全局光影；第三项必须是Seedance 2.5专属提示词，"
-            "其下写正向提示词和负向提示词；多段文件再写生成段标题和镜头列表项，"
+            "其下写正向提示词和负向提示词；每个场景必须先写“- 场景 NN｜场景名”及场景影调、场景色卡、场景光影；多段文件再写生成段标题和镜头列表项，"
             "单段文件可直接写镜头列表项。每镜使用“- 镜头 NN｜时长s”，其下依次缩进列出起始状态、景别机位、构图/光影、画面/表演、运镜/焦点、特效、台词/音效、尾帧。"
         )
         return errors
 
-    if is_master:
-        segment_headers = list(SEGMENT_LINE.finditer(content))
+    segment_headers = list(SEGMENT_LINE.finditer(normalized))
+    if segment_headers:
         segment_numbers = [int(match.group("number")) for match in segment_headers]
         expected_segments = list(range(1, len(segment_numbers) + 1))
         if segment_numbers != expected_segments:
@@ -119,12 +120,10 @@ def validate(text: str) -> list[str]:
         segments: list[tuple[int, str, float, str]] = []
         for index, match in enumerate(segment_headers):
             body_start = match.end() + 2
-            body_end = (
-                segment_headers[index + 1].start() - 2
-                if index + 1 < len(segment_headers)
-                else len(content)
-            )
-            segment_body = content[body_start:body_end].rstrip("\n")
+            next_segment = segment_headers[index + 1].start() - 2 if index + 1 < len(segment_headers) else len(normalized)
+            next_scene = normalized.find("\n\n- 场景 ", body_start)
+            body_end = min(next_segment, next_scene if next_scene != -1 else len(normalized))
+            segment_body = normalized[body_start:body_end].rstrip("\n")
             segments.append(
                 (
                     int(match.group("number")),
@@ -134,12 +133,17 @@ def validate(text: str) -> list[str]:
                 )
             )
     else:
-        segments = [(1, "单生成段", -1.0, content.rstrip("\n"))]
+        segments = []
 
     numbers = [int(value) for value in re.findall(r"(?m)^- 镜头 (\d{2})｜", content)]
     expected = list(range(1, len(numbers) + 1))
     if numbers != expected:
         errors.append(f"镜头编号必须从01开始连续递增；当前为 {numbers}。")
+
+    scene_numbers = [int(value) for value in re.findall(r"(?m)^- 场景 (\d{2})｜", normalized)]
+    expected_scenes = list(range(1, len(scene_numbers) + 1))
+    if scene_numbers != expected_scenes:
+        errors.append(f"场景编号必须从01开始连续递增；当前为 {scene_numbers}。")
 
     for segment_number, segment_name, declared_duration, segment_body in segments:
         durations = [

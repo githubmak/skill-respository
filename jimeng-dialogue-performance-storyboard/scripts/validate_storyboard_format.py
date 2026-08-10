@@ -23,6 +23,12 @@ GLOBAL_CARD = (
     r"  - 全局色卡：[^\r\n]+\n"
     r"  - 全局光影：[^\r\n]+"
 )
+SCENE_CARD = (
+    r"- 场景 \d{2}｜[^\r\n]+\n"
+    r"  - 场景影调：[^\r\n]+\n"
+    r"  - 场景色卡：[^\r\n]+\n"
+    r"  - 场景光影：[^\r\n]+"
+)
 SEEDANCE_PROMPTS = (
     r"- Seedance 2\.5 专属提示词\n"
     r"  - 正向提示词：[^\r\n]+\n"
@@ -55,7 +61,8 @@ BLOCK = (
 )
 DOCUMENT = re.compile(
     rf"\A{STYLE_LOCK}\n\n{GLOBAL_CARD}\n\n{SEEDANCE_PROMPTS}\n\n"
-    rf"{PERSON_ANCHORS}\n\n{BLOCK}(?:\n\n{BLOCK})*\n?\Z"
+    rf"{PERSON_ANCHORS}\n\n{SCENE_CARD}\n\n{BLOCK}(?:\n\n{BLOCK})*"
+    rf"(?:\n\n{SCENE_CARD}\n\n{BLOCK}(?:\n\n{BLOCK})*)*\n?\Z"
 )
 SHOT = re.compile(
     rf"(?P<header>{HEADER})\n"
@@ -79,7 +86,7 @@ def validate(text: str) -> list[str]:
             "正文未严格匹配固定对白列表模板：第一项必须是全局风格锁定，"
             "其下依次写用户指定风格、剧本推断补全、最终执行风格；第二项必须是全局色卡/影调/光影，"
             "其下依次写全局影调、全局色卡、全局光影；第三项必须是Seedance 2.5专属提示词，"
-            "其下写正向提示词和负向提示词；第四项必须是人物锚点且每名主要人物同时写基准音色和基本性格锚点；每镜必须使用“- 镜头 NN｜时长s”，"
+            "其下写正向提示词和负向提示词；第四项必须是人物锚点且每名主要人物同时写基准音色和基本性格锚点；其后每个场景必须先写“- 场景 NN｜场景名”及场景影调、场景色卡、场景光影；每镜必须使用“- 镜头 NN｜时长s”，"
             "其下依次缩进列出起始状态、景别机位、构图/光影、画面/表演、运镜/焦点、特效、台词/音效、尾帧；最后一镜也必须有尾帧，禁止表格和平铺段落。"
         ]
 
@@ -88,6 +95,11 @@ def validate(text: str) -> list[str]:
     expected = list(range(1, len(numbers) + 1))
     if numbers != expected:
         errors.append(f"镜头编号必须从01开始连续递增；当前为 {numbers}。")
+
+    scene_numbers = [int(value) for value in re.findall(r"(?m)^- 场景 (\d{2})｜", normalized)]
+    expected_scenes = list(range(1, len(scene_numbers) + 1))
+    if scene_numbers != expected_scenes:
+        errors.append(f"场景编号必须从01开始连续递增；当前为 {scene_numbers}。")
 
     for shot_index, shot in enumerate(SHOT.finditer(normalized), start=1):
         start_type = shot.group("start_type")
