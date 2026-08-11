@@ -1,4 +1,4 @@
 interface:
   display_name: "即梦可拍漫剧分镜"
-  short_description: "原文保真、真实可拍、情绪深，含全局与场景视觉方案的 Seedance 漫剧分镜"
-  default_prompt: "使用 $jimeng-dialogue-performance-storyboard 在落稿前做唯一一次内部导演预演；先锁定我提供的风格，只依据剧本补全未定义维度，再联合求解真实可拍空间、情绪行动、多人及OV活性、景别运镜、全局视觉母版、逐场景影调色卡光影、人物锚点和镜尾接力，最后按固定列表模板一次输出。"
+  short_description: "事实与台词保真，强化反转动作、混合情绪和表现性摄影的 Seedance 分镜"
+  default_prompt: "使用 $jimeng-dialogue-performance-storyboard：锁定剧情事实、人物性格及台词/OS/OV，为态度、认知、权力和危险感反转生成面部、道具与空间动作候选，保留旧情绪残留，并拆成摄影冲击镜、人物策略镜和关系结果镜；原文出现【转场】时设计实际编号的声音、动作、物体、遮挡、光影或运动方向承接镜，再大胆使用特写、快速跟拍、急停和全景斜俯，以复杂度按镜交接控制风险，最后按固定八字段列表输出 Seedance 2.5 分镜。"
