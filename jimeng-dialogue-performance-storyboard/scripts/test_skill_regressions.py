@@ -97,6 +97,9 @@ class SkillSourceBaselineTests(unittest.TestCase):
             "禁止用同一中景/中近景加短促推进覆盖 10 秒以上关键反转",
             "禁止在同一镜内连续写 A -> B -> C",
             "环绕运镜只改变摄影机围绕主体的路径与观察方向",
+            "导演直觉首稿",
+            "L0-L3、道具账本、连续性与生成负载是后置护栏",
+            "不可替代的视觉句",
         )
         for marker in required_markers:
             with self.subTest(marker=marker):
@@ -110,6 +113,31 @@ class SkillSourceBaselineTests(unittest.TestCase):
         self.assertTrue(baseline.is_file())
         decision = (SKILL_ROOT / "references" / "beat-shot-mode-decision.md")
         self.assertTrue(decision.is_file())
+
+    def test_director_first_pass_precedes_governance(self) -> None:
+        previs = (
+            SKILL_ROOT / "references" / "one-pass-director-previsualization.md"
+        ).read_text(encoding="utf-8")
+        decision = (
+            SKILL_ROOT / "references" / "beat-shot-mode-decision.md"
+        ).read_text(encoding="utf-8")
+        baseline = (
+            SKILL_ROOT / "references" / "non-regression-baseline.md"
+        ).read_text(encoding="utf-8")
+
+        for marker in (
+            "最强起幅是什么",
+            "唯一主要拍摄主体是谁",
+            "摄影机的一个主视觉动词是什么",
+            "与相邻镜头形成哪一种主要反差",
+            "不惯性保留另一人物肩部",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, previs)
+
+        self.assertIn("本参考在导演直觉首稿之后使用", decision)
+        self.assertIn("分类不是审美配额", decision)
+        self.assertIn("导演视觉首稿先于治理规则", baseline)
 
 
 class ValidatorRegressionTests(unittest.TestCase):
