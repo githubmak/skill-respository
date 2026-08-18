@@ -1,0 +1,4 @@
+interface:
+  display_name: "场景白模构建"
+  short_description: "依据多视角参考图生成忠实的场景白模与人物初始站位图"
+  default_prompt: "使用 $scene-whitebox-builder 根据这些场景参考图生成忠实的场景白模。"
