@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Validate hard storyboard contracts; run creative diagnostics only on request."""
+"""Validate hard storyboard structure and physical continuity contracts."""
 
 from __future__ import annotations
 
 import argparse
-import math
 import re
 import sys
 from pathlib import Path
@@ -81,103 +80,8 @@ RELATIVE_STATE = re.compile(
     r"继续(?:上一镜|前一镜)|保持此前状态|继承镜(?:号)?\s*\d+"
 )
 
-SHOT_SIZE_PATTERNS = (
-    ("大特写", re.compile(r"大特写")),
-    ("局部特写", re.compile(r"局部特写")),
-    ("特写", re.compile(r"特写")),
-    ("大全景", re.compile(r"大全景")),
-    ("中全景", re.compile(r"中全景")),
-    ("全景", re.compile(r"全景")),
-    ("中近景", re.compile(r"中近景")),
-    ("近景", re.compile(r"近景")),
-    ("中景", re.compile(r"中景")),
-)
 SHOT_SIZE_TOKEN = re.compile(
     r"局部特写|大特写|中近景|中全景|大全景|特写|近景|中景|全景"
-)
-CONSERVATIVE_MOVEMENT = re.compile(r"固定|缓慢|平稳|轻轻|轻微")
-EXPRESSIVE_MOVEMENT = re.compile(
-    r"快速(?:跟拍|跟随|推进|靠近|后退|停止)|急停|立即停(?:止|住)|"
-    r"短促|斜俯|甩镜|冲击式|大特写|局部特写"
-)
-STRONG_EXPRESSIVE_MOVEMENT = re.compile(
-    r"急停|立即停(?:止|住)|斜俯|甩镜|冲击式|"
-    r"快速(?:跟拍|跟随|推进|靠近|后退|停止)"
-)
-GLOBAL_MOTION_BAN = re.compile(
-    r"禁止(?:任何|所有)?(?:快速运动|高速运镜|快速运镜|剧烈镜头|剧烈运镜)|"
-    r"不允许(?:任何|所有)?(?:快速运动|高速运镜|快速运镜|剧烈镜头|剧烈运镜)"
-)
-MICRO_ACTION_TERMS = (
-    "看",
-    "视线",
-    "眼神",
-    "皱眉",
-    "眯眼",
-    "嘴角",
-    "微笑",
-    "僵住",
-    "停住",
-    "停顿",
-    "呼吸",
-    "微微",
-    "缓缓",
-    "逐渐",
-    "保持",
-    "维持",
-)
-STRATEGY_ACTION = re.compile(
-    r"走向|走到|跑出|冲向|扑向|飞扑|逼近|靠近|退开|后退|退向|"
-    r"拉开距离|缩短.{0,4}距离|转身|起身|坐下|站起|递出|递回|接过|"
-    r"拿出|放下|推开|推回|拉开|拽住|夺回|扔下|藏起|遮住|挡住|"
-    r"关上|打开|踹开|抱住|拥抱|挣开|让开|跨过|绕到|占住|上车|"
-    r"下车|骑着|刹停|抓住|松开|扶住|压住|指向|迈进|欠身"
-)
-SOURCE_EMOTION_RESULTS = (
-    (
-        "眼眶或眼睛发红",
-        re.compile(r"(?:眼眶|眼睛|眼角|双眼).{0,5}(?:发红|泛红|通红|红了|红着)"),
-    ),
-    ("将要哭泣", re.compile(r"快要哭|要哭出来|泫然欲泣|眼含泪|含着泪|噙着泪")),
-)
-POST_EMOTION_ACTION_SEED = re.compile(
-    r"重心.{0,8}(?:前移|后移|压向|移向|退向|门外|出口|对方)|"
-    r"身体.{0,8}(?:前倾|后撤|转向|朝向|靠向|移向)|"
-    r"肩背.{0,8}(?:前倾|后撤|塌下|绷紧|失去支撑)|"
-    r"手(?:臂|掌|腕)?.{0,10}(?:垂下|放下|松开|收回|抬起|伸向|抓住|扶住|压住|挡住)|"
-    r"迈出|跨出|起步|抬脚|脚步|扑向|飞扑|冲向|逼近|靠近|退开|后退|"
-    r"抱住|拥抱|占住|让开|离开|转身|起身|坐下|站起|推开|拉开|夺回|递出"
-)
-IMPACT_MECHANISMS = (
-    ("短促逼近/冲击逼近", re.compile(r"短促.{0,12}(?:逼近|靠近)|冲击式.{0,12}(?:逼近|靠近)")),
-    ("急停/立即停止", re.compile(r"急停|立即停(?:止|住)|快速停止")),
-    ("斜俯运动", re.compile(r"斜俯")),
-    ("遮挡揭示", re.compile(r"遮挡|门框.{0,12}(?:横移|揭示)|前景.{0,12}(?:移开|揭示)")),
-)
-INDIRECT_CAMERA_DESCRIPTION = re.compile(
-    r"从[^，；]{0,18}(?:身侧|肩后)看[^，；]{0,24}(?:视线|目光)|"
-    r"(?:顺着|跟随)[^，；]{0,12}(?:视线|目光)(?:看|移动|上移|下移|落到|转到)"
-)
-CONCRETE_CAMERA_POSITION = re.compile(
-    r"低机位|高机位|贴地|平视|仰拍|俯拍|斜俯|正面|侧面|侧后方|肩后|"
-    r"门内|门外|门框|桌边|茶几边|车内|车外|车侧|屋内|室内|走廊|"
-    r"人物(?:胸口|腰部|肩部|背后|身后|身侧|前方|后方)"
-)
-ABSTRACT_CAMERA_ENDPOINT = re.compile(
-    r"(?:定格|停(?:在|住)|落幅(?:在|到)?)[^，；。]{0,28}"
-    r"(?:关系|状态|姿态|压迫感|控制感|矛盾感|氛围|格局)(?:[，；。]|$)"
-)
-PERFORMANCE_SEQUENCE_TERMS = re.compile(r"随后|接着|然后|紧接着|立刻|立即|再(?:次|度|向|把|将|抬|转|退|进|松|抓)")
-CRITICAL_BEAT_LANGUAGE = re.compile(
-    r"突然|命中|失效|断裂|断住|截断|震动|提示音|暴露|认出|警觉|危险|"
-    r"反转|改写|扑向|飞扑|报警|控制.{0,6}(?:失去|破裂)|策略.{0,6}(?:改变|失效)"
-)
-PSEUDO_DYNAMIC_MID_MOVEMENT = re.compile(
-    r"固定|短促(?:靠近|推进)|(?:轻微|小幅|缓慢|平稳)(?:靠近|推进|推近)"
-)
-REAL_IMPACT_ROUTE = re.compile(
-    r"快速跟拍|快速横移|快速拉开|斜俯|被动.{0,6}退让|遮挡.{0,8}揭示|"
-    r"局部特写起幅|大特写起幅|特写起幅|终幅为"
 )
 VARIABLE_FRAMING_MOVEMENT = re.compile(
     r"(?:从|由)[^，；。]{1,32}(?:上移|下移|上摇|下摇|推进|靠近|拉开|后退|横移|移动)"
@@ -200,17 +104,6 @@ BODY_REGION_PATTERNS = (
     ("中部", re.compile(r"衣摆|衣料|腰|腹|胸口|手|手指|手臂|袖口")),
     ("上部", re.compile(r"肩|肩颈|脸|面部|眼|眼睛|眼眶|嘴|嘴唇|头|帽|兔耳")),
 )
-EXPLICIT_TRANSITION_MARKER = re.compile(
-    r"【\s*转场\s*】|\[\s*转场\s*\]|转场\s*[：:]"
-)
-TRANSITION_BRIDGE_LANGUAGE = re.compile(
-    r"声音桥|尾音(?:持续|延续)|声音(?:延续|先行|承接)|"
-    r"匹配切|动作匹配|物体匹配|形状匹配|光影匹配|"
-    r"遮挡(?:切换|占满|退开)|占满画面|同方向(?:接住|延续)|"
-    r"运动方向延续|甩镜.{0,10}(?:切|接)|黑场.{0,10}(?:进入|接入)|"
-    r"前景.{0,10}(?:遮满|擦过)|(?:门板|车门).{0,12}(?:合拢|打开).{0,8}(?:尾响|声音)"
-)
-
 PROP_PATTERNS = (
     (
         "手机",
@@ -263,13 +156,6 @@ PROP_BINARY_STATES = (
 )
 
 
-def classify_shot_size(shot_setup: str) -> str | None:
-    for name, pattern in SHOT_SIZE_PATTERNS:
-        if pattern.search(shot_setup):
-            return name
-    return None
-
-
 def shot_size_sequence(value: str) -> list[str]:
     sequence: list[str] = []
     for match in SHOT_SIZE_TOKEN.finditer(value):
@@ -287,17 +173,6 @@ def has_explicit_single_framing_change(value: str) -> bool:
         return True
     between = value[matches[0].end():matches[1].start()]
     return re.search(r"转|到|至", between) is not None
-
-
-def counts_as_expressive_movement(camera_focus: str) -> bool:
-    """Treat mixed 'fast but steady' wording as a review signal, not full impact."""
-    if not STRONG_EXPRESSIVE_MOVEMENT.search(camera_focus):
-        return False
-    if CONSERVATIVE_MOVEMENT.search(camera_focus):
-        return bool(
-            re.search(r"急停|立即停(?:止|住)|斜俯|甩镜|冲击式", camera_focus)
-        )
-    return bool(EXPRESSIVE_MOVEMENT.search(camera_focus))
 
 
 def body_regions(value: str) -> set[str]:
@@ -432,352 +307,6 @@ def prop_state_conflicts(previous: dict[str, str], current: dict[str, str]) -> l
         if before is not None and after is not None and before != after:
             conflicts.append(f"{slot}由“{before}”变成“{after}”")
     return conflicts
-
-
-def conservatism_warnings(text: str, source_text: str | None = None) -> list[str]:
-    """Return non-blocking prompts for a deliberate creative check."""
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    warnings: list[str] = []
-    negative_prompt = re.search(r"(?m)^  - 负向提示词：([^\r\n]+)", normalized)
-    if negative_prompt and GLOBAL_MOTION_BAN.search(negative_prompt.group(1)):
-        warnings.append(
-            "负向提示词无条件禁止快速运动或高速运镜，可能误伤有动机的表现性镜头；"
-            "请改为禁止无动机乱晃、失控抖动、穿墙穿物或运动后无法停稳。"
-        )
-
-    shots = list(SHOT.finditer(normalized))
-    if source_text is not None:
-        source_normalized = source_text.replace("\r\n", "\n").replace("\r", "\n")
-        marker_count = len(EXPLICIT_TRANSITION_MARKER.findall(source_normalized))
-        bridged_transitions = 0
-        for index, shot in enumerate(shots):
-            if shot.group("start_type") != "转场起镜":
-                continue
-            previous = shots[index - 1] if index > 0 else None
-            combined_parts = [
-                shot.group("start_state"),
-                shot.group("composition"),
-                shot.group("visual"),
-                shot.group("camera_focus"),
-                shot.group("audio"),
-            ]
-            if previous is not None:
-                combined_parts.extend(
-                    [
-                        previous.group("camera_focus"),
-                        previous.group("audio"),
-                        previous.group("tail"),
-                    ]
-                )
-            if TRANSITION_BRIDGE_LANGUAGE.search("；".join(combined_parts)):
-                bridged_transitions += 1
-        if marker_count and bridged_transitions < marker_count:
-            warnings.append(
-                f"源文本包含 {marker_count} 处明确【转场】，但成稿只识别到 "
-                f"{bridged_transitions} 处具有声音、动作、物体、遮挡、光影或运动方向承接的转场镜；"
-                "仅使用“转场起镜”标签或直接切新场大全景不算完成。"
-            )
-        active_emotions = [
-            (label, pattern)
-            for label, pattern in SOURCE_EMOTION_RESULTS
-            if pattern.search(source_normalized)
-        ]
-        restated_emotions: list[tuple[int, str]] = []
-        for index, shot in enumerate(shots, start=1):
-            visual = shot.group("visual")
-            tail = shot.group("tail")
-            for label, pattern in active_emotions:
-                match = pattern.search(visual)
-                if match is None:
-                    continue
-                after_result = visual[match.end():] + "；" + tail
-                if POST_EMOTION_ACTION_SEED.search(after_result):
-                    continue
-                restated_emotions.append((index, label))
-                break
-        if restated_emotions:
-            sample = "、".join(
-                f"{index:02d}（{label}）"
-                for index, label in restated_emotions[:6]
-            )
-            warnings.append(
-                f"镜头 {sample} 复用了源文强情绪结果，但其后和尾帧未识别到手臂、重心、"
-                "身体朝向、距离或道具形成的动作起势；请补出旧控制失效与下一行动方向，"
-                "不要只把原词换成近义词，也不要擅自升级为落泪、痛哭或攻击。"
-            )
-    if len(shots) < 6:
-        return warnings
-
-    durations = []
-    for shot in shots:
-        duration_match = re.search(r"｜(\d+(?:\.\d+)?)s", shot.group("header"))
-        durations.append(float(duration_match.group(1)) if duration_match else 0.0)
-
-    average_duration = sum(durations) / len(durations)
-    if len(shots) >= 8 and average_duration < 3.2:
-        warnings.append(
-            f"全片平均镜长仅 {average_duration:.1f} 秒；对白表演可能被切得过碎。"
-            "请先按连续表演单元合并镜头，再保留确有主体、策略、动作结果、"
-            "新事实或转场变化的切点。"
-        )
-
-    short_runs: list[tuple[int, int]] = []
-    run_start: int | None = None
-    for index, duration in enumerate(durations, start=1):
-        if duration <= 3.0:
-            if run_start is None:
-                run_start = index
-            continue
-        if run_start is not None and index - run_start >= 4:
-            short_runs.append((run_start, index - 1))
-        run_start = None
-    if run_start is not None and len(durations) + 1 - run_start >= 4:
-        short_runs.append((run_start, len(durations)))
-    if short_runs:
-        start, end = short_runs[0]
-        warnings.append(
-            f"镜头 {start:02d}-{end:02d} 连续至少四个不超过3秒的短镜；"
-            "三个短镜可以分别承担刺激证据、控制断裂和动作起势/结果，"
-            "从第四个开始请检查是否重复景别、视线、表情或同一策略，并用稳定镜承接余波。"
-        )
-
-    scene_markers = list(re.finditer(r"(?m)^- 场景 \d{2}｜", normalized))
-    scene_ids = [
-        sum(marker.start() < shot.start() for marker in scene_markers)
-        for shot in shots
-    ]
-
-    sizes = [classify_shot_size(shot.group("shot_setup")) for shot in shots]
-    impact_sizes = {"大全景", "特写", "大特写", "局部特写"}
-    middle_sizes = {"中景", "中近景", "近景", "中全景"}
-    known_sizes = [size for size in sizes if size is not None]
-
-    if len(shots) >= 8 and not any(size in impact_sizes for size in known_sizes):
-        warnings.append(
-            "全片未发现大全景、特写、大特写或局部特写；请确认是否遗漏环境尺度、"
-            "身体接触、局部证据或认知冲击。"
-        )
-
-    if known_sizes:
-        middle_count = sum(size in middle_sizes for size in known_sizes)
-        if len(shots) >= 10 and middle_count / len(known_sizes) >= 0.7:
-            warnings.append(
-                "中景、中近景和近景占已识别景别的七成以上；这不是格式错误，"
-                "但应确认观看距离曲线是否有剧情依据。"
-            )
-
-    repeated_runs: list[tuple[int, int, str]] = []
-    run_start = 0
-    for index in range(1, len(sizes) + 1):
-        if index < len(sizes) and sizes[index] == sizes[run_start]:
-            continue
-        if sizes[run_start] is not None and index - run_start >= 4:
-            repeated_runs.append((run_start + 1, index, sizes[run_start]))
-        run_start = index
-    if repeated_runs:
-        start, end, size = repeated_runs[0]
-        warnings.append(
-            f"镜头 {start:02d}-{end:02d} 连续使用{size}；请确认重复是在制造等待或压力，"
-            "而不是默认覆盖。"
-        )
-
-    movements = [shot.group("camera_focus") for shot in shots]
-    conservative_count = sum(bool(CONSERVATIVE_MOVEMENT.search(item)) for item in movements)
-    expressive_count = sum(counts_as_expressive_movement(item) for item in movements)
-    if (
-        len(shots) >= 10
-        and conservative_count / len(shots) >= 0.55
-        and expressive_count / len(shots) < 0.2
-    ):
-        warnings.append(
-            "固定、缓慢或平稳运镜占比较高，而快速跟拍、急停、斜俯或局部爆点较少；"
-            "请确认关键转折是否被低风险表达压平。"
-        )
-
-    visuals = [shot.group("visual") for shot in shots]
-    merge_candidates = []
-    for index in range(len(shots) - 1):
-        current = shots[index]
-        following = shots[index + 1]
-        combined_visual = visuals[index] + "；" + visuals[index + 1]
-        if scene_ids[index] != scene_ids[index + 1]:
-            continue
-        if current.group("start_type") == "转场起镜" or following.group("start_type") == "转场起镜":
-            continue
-        if durations[index] > 4.0 or durations[index + 1] > 4.0:
-            continue
-        if durations[index] + durations[index + 1] > 7.0:
-            continue
-        if STRATEGY_ACTION.search(combined_visual):
-            continue
-        if STRONG_EXPRESSIVE_MOVEMENT.search(
-            current.group("camera_focus") + "；" + following.group("camera_focus")
-        ):
-            continue
-        if not any(term in combined_visual for term in MICRO_ACTION_TERMS):
-            continue
-        merge_candidates.append((index + 1, index + 2))
-    if merge_candidates:
-        sample = "、".join(
-            f"{start:02d}-{end:02d}" for start, end in merge_candidates[:4]
-        )
-        warnings.append(
-            f"镜头对 {sample} 均为同场景短镜，未识别到策略动作或独立摄影冲击，"
-            "可能只在重复表情、视线或相近信息；请证明各镜新增职责，否则合并为镜内变化。"
-        )
-    weak_only = [
-        index
-        for index, visual in enumerate(visuals, start=1)
-        if any(term in visual for term in MICRO_ACTION_TERMS)
-        and not STRATEGY_ACTION.search(visual)
-    ]
-    weak_threshold = max(5, math.ceil(len(shots) * 0.3))
-    if len(weak_only) >= weak_threshold:
-        sample = "、".join(f"{index:02d}" for index in weak_only[:6])
-        warnings.append(
-            f"镜头 {sample} 等较多镜头以看、停、僵住、嘴角或呼吸等微反应为主，"
-            "未发现明确的道具、距离、占位、接触或出口策略动作；请确认关键情绪是否真正推进为行动。"
-        )
-
-    repeated_micro = []
-    repeat_threshold = max(5, math.ceil(len(shots) * 0.28))
-    for term in MICRO_ACTION_TERMS:
-        count = sum(term in visual for visual in visuals)
-        if count >= repeat_threshold:
-            repeated_micro.append(f"{term}（{count}镜）")
-    if repeated_micro:
-        warnings.append(
-            "画面/表演反复依赖 " + "、".join(repeated_micro[:4]) +
-            "；请把其中一部分改为手部/道具、身体重心、人物距离或空间占位变化。"
-        )
-
-    action_runs: list[tuple[int, int]] = []
-    run_start: int | None = None
-    for index, visual in enumerate(visuals, start=1):
-        if not STRATEGY_ACTION.search(visual):
-            if run_start is None:
-                run_start = index
-            continue
-        if run_start is not None and index - run_start >= 4:
-            action_runs.append((run_start, index - 1))
-        run_start = None
-    if run_start is not None and len(visuals) + 1 - run_start >= 4:
-        action_runs.append((run_start, len(visuals)))
-    if action_runs:
-        start, end = action_runs[0]
-        warnings.append(
-            f"镜头 {start:02d}-{end:02d} 连续未识别到改变道具、距离、占位、接触或出口的策略动作；"
-            "对白可以克制，但反转链不能长期只靠面部状态推进。"
-        )
-
-    overloaded = []
-    pseudo_dynamic_critical = []
-    for index, shot in enumerate(shots, start=1):
-        duration = durations[index - 1]
-        visual = shot.group("visual")
-        dialogue = shot.group("dialogue")
-        semantic_breaks = visual.count("；") + len(re.findall(r"[。！？?!]", dialogue))
-        if duration >= 10 and semantic_breaks >= 3:
-            overloaded.append(index)
-        combined_beat = "；".join((visual, dialogue, shot.group("audio")))
-        size = sizes[index - 1]
-        setup = shot.group("shot_setup")
-        camera = shot.group("camera_focus")
-        if (
-            duration >= 10
-            and size in {"中景", "中近景", "近景"}
-            and "起幅" not in setup
-            and "终幅" not in setup
-            and CRITICAL_BEAT_LANGUAGE.search(combined_beat)
-            and PSEUDO_DYNAMIC_MID_MOVEMENT.search(camera)
-            and REAL_IMPACT_ROUTE.search(setup + "；" + camera) is None
-        ):
-            pseudo_dynamic_critical.append(index)
-    if overloaded:
-        sample = "、".join(f"{index:02d}" for index in overloaded[:6])
-        warnings.append(
-            f"镜头 {sample} 时长不少于10秒，且画面动作与台词/OS包含多个语义节拍；"
-            "请确认是否把刺激、控制断裂、策略改变、关系结果或长段旁白塞进同一镜。"
-        )
-    if pseudo_dynamic_critical:
-        sample = "、".join(f"{index:02d}" for index in pseudo_dynamic_critical[:6])
-        warnings.append(
-            f"镜头 {sample} 的关键刺激被困在同一中景/中近景/近景中，"
-            "仅用固定或短促推近承载多个职责；请复核是否需要局部刺激/控制断裂镜、"
-            "叙事性策略或结果镜，或具有不同观看职责的起幅与终幅。"
-            "这是非阻断复核提示；若候选比较证明固定停留最准确，不要为了清除提示机械拆镜。"
-        )
-
-    repeated_mechanisms = []
-    mechanism_threshold = max(4, math.ceil(len(shots) * 0.22))
-    for label, pattern in IMPACT_MECHANISMS:
-        count = sum(bool(pattern.search(movement)) for movement in movements)
-        if count >= mechanism_threshold:
-            repeated_mechanisms.append(f"{label}（{count}镜）")
-    if repeated_mechanisms:
-        warnings.append(
-            "表现性运镜机制重复集中在 " + "、".join(repeated_mechanisms) +
-            "；除非这是明确视觉母题，否则应在声音先行、局部证据、遮挡揭示、"
-            "人物占位、快速行动和关系拉开之间更换主机制。"
-        )
-
-    indirect_camera = []
-    missing_camera_position = []
-    unsplit_composition = []
-    abstract_endpoints = []
-    over_choreographed = []
-    for index, shot in enumerate(shots, start=1):
-        combined = shot.group("shot_setup") + "；" + shot.group("camera_focus")
-        if INDIRECT_CAMERA_DESCRIPTION.search(combined):
-            indirect_camera.append(index)
-        if not CONCRETE_CAMERA_POSITION.search(shot.group("shot_setup")):
-            missing_camera_position.append(index)
-        composition = shot.group("composition")
-        if "构图：" not in composition or "光影：" not in composition:
-            unsplit_composition.append(index)
-        if ABSTRACT_CAMERA_ENDPOINT.search(shot.group("camera_focus")):
-            abstract_endpoints.append(index)
-        if len(PERFORMANCE_SEQUENCE_TERMS.findall(shot.group("visual"))) >= 4:
-            over_choreographed.append(index)
-    if indirect_camera:
-        sample = "、".join(f"{index:02d}" for index in indirect_camera[:6])
-        warnings.append(
-            f"镜头 {sample} 的描述把身侧/肩后机位、人物视线和摄影机路径揉在一起；"
-            "请优先改成“从具体可见起点起镜，直接运动，最终定格具体读点”的短句。"
-        )
-
-    concrete_threshold = max(5, math.ceil(len(shots) * 0.35))
-    if len(missing_camera_position) >= concrete_threshold:
-        sample = "、".join(f"{index:02d}" for index in missing_camera_position[:6])
-        warnings.append(
-            f"镜头 {sample} 等较多景别机位没有识别到低/高机位、俯仰或正侧方向；"
-            "请优先补这些直接摄影信息。只有遮挡、轴线、出入口、接触或空间连续需要时，"
-            "才补门内外、桌边、车内外等相对实体位置。"
-        )
-
-    composition_threshold = max(5, math.ceil(len(shots) * 0.3))
-    if len(unsplit_composition) >= composition_threshold:
-        sample = "、".join(f"{index:02d}" for index in unsplit_composition[:6])
-        warnings.append(
-            f"镜头 {sample} 等较多构图/光影字段未按“构图：……；光影：……”分开描述；"
-            "请分别写前中后景/左右位置，以及实体光源、进入方向、受光对象和阴影结果。"
-        )
-
-    if abstract_endpoints:
-        sample = "、".join(f"{index:02d}" for index in abstract_endpoints[:6])
-        warnings.append(
-            f"镜头 {sample} 的运镜以关系、状态、姿态、压迫感或氛围等抽象意义收尾；"
-            "请改为具体人物、身体部位、道具、门窗、车辆或画面边缘的最终位置。"
-        )
-
-    if over_choreographed:
-        sample = "、".join(f"{index:02d}" for index in over_choreographed[:6])
-        warnings.append(
-            f"镜头 {sample} 的画面/表演包含过多连续步骤词，可能接近逐帧编舞；"
-            "请只冻结刺激、主动作、关键接触、关系结果和尾帧余势，保留自然表演空间。"
-        )
-
-    return warnings
 
 
 def validate(text: str) -> list[str]:
@@ -993,33 +522,12 @@ def validate(text: str) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("path", type=Path)
-    parser.add_argument(
-        "--source",
-        type=Path,
-        help="optional source script used to verify explicit transition markers",
-    )
-    parser.add_argument(
-        "--creative-review",
-        action="store_true",
-        help=(
-            "print non-blocking creative diagnostics; use only when diagnosing an "
-            "existing storyboard, never as a normal generation gate"
-        ),
-    )
     args = parser.parse_args()
     try:
         text = args.path.read_text(encoding="utf-8-sig")
     except OSError as exc:
         print(f"cannot read {args.path}: {exc}", file=sys.stderr)
         return 2
-
-    source_text = None
-    if args.source is not None:
-        try:
-            source_text = args.source.read_text(encoding="utf-8-sig")
-        except OSError as exc:
-            print(f"cannot read source {args.source}: {exc}", file=sys.stderr)
-            return 2
 
     errors = validate(text)
     if errors:
@@ -1028,9 +536,6 @@ def main() -> int:
         return 1
 
     print(f"format valid: {args.path}")
-    if args.creative_review:
-        for warning in conservatism_warnings(text, source_text):
-            print(f"REVIEW: {warning}")
     return 0
 
 
