@@ -68,6 +68,7 @@ FIELD_HEADER = re.compile(r"(?m)^- \*\*(?P<name>[^*\r\n]+)\*\*：(?P<value>[^\r\
 TIMELINE_ROW = re.compile(
     r"(?m)^[ \t]*-\s+`?(?P<start>\d+(?:\.\d+)?)\s*[—–-]\s*"
     r"(?P<end>\d+(?:\.\d+)?)秒\s*｜(?P<stage>[^`\r\n：:]+)`?\s*[：:]"
+    r"(?P<body>[^\r\n]*)"
 )
 SCENE_HEADER = re.compile(r"(?m)^# 场景(?P<label>[^：｜\r\n]*)[：｜](?P<name>[^\r\n]+)$")
 DIRECTOR_SHOT = re.compile(
@@ -88,6 +89,42 @@ RELATIVE_REFERENCE = re.compile(
     r"沿用上一镜|继承上一镜|继续上一镜|同上|参照上一镜|上一镜保持不变"
 )
 EMPTY_EFFECT = re.compile(r"特效\s*[：:]\s*无|本镜无特效|无特效镜头")
+ABSTRACT_PERFORMANCE = re.compile(
+    r"紧张|绷紧|错愕|震惊|惊讶|窘迫|羞耻|慌乱|尴尬|平静|冷静|愤怒|悲伤|痛苦|压迫感|镇定|自尊受挫"
+)
+STABLE_PERFORMANCE = re.compile(
+    r"(?:保持|维持|延续|仍(?:然)?保持|持续处于|处于)[^。；\n]{0,16}"
+    r"(?:平静|冷静|镇定|紧张|绷紧|悲伤|痛苦|愤怒)"
+)
+PERFORMANCE_CARRIER = re.compile(
+    r"视线|目光|眼球|瞳孔|抬眼|低头|呼吸|吸气|停手|抬手|嘴唇|唇线|下颌|眉眼|肩背|肩膀|重心|距离|手指|手掌|握紧|收紧|松开|道具|声线|语速|声量|停顿|尾音|口型|姿态|步幅|身体|转身|停住|看向|移开|锁定"
+)
+PERFORMANCE_TRIGGER = re.compile(
+    r"触发|刺激|听见|看见|意识到|确认|关键词|说到|说前|台词开始|最后一个字|尾音|反应延迟|回应"
+)
+PERFORMANCE_TERMINAL = re.compile(
+    r"停止|停住|停在|保持|落下|结束|结果|残留|余波|锁定|完成|不再|持续|退出状态|镜尾"
+)
+DIALOGUE_BEFORE = re.compile(
+    r"说前|准备|起口前|台词前|开口前|出声前|话音未起|"
+    r"(?:吸气|呼吸|停手|停住|抬眼|收回视线|调整重心)[^。；\n]{0,16}(?:开口|出声|说)"
+)
+DIALOGUE_DURING = re.compile(
+    r"说中|关键词|语义转折|台词开始|重音|说到|语速|声线|声量|音量|"
+    r"字音|句中|开口\s*[：:]|[：:]\s*[“\"]"
+)
+DIALOGUE_AFTER = re.compile(
+    r"说后|反应延迟|最后一个字|尾音|余波|残留|话落|句末|说完|说罢|"
+    r"台词结束|嘴唇闭合|闭口|收声"
+)
+LIVE_DIALOGUE = re.compile(
+    r"人物台词|仅[^；。\n]{0,24}(?:准确)?口型|"
+    r"(?:^|[；。\n])[^：:\n]{1,16}[：:]\s*[“\"]"
+)
+SHOT_SIZE_STRUCTURE = re.compile(
+    r"\d+(?:\.\d+)?\s*[—–-]\s*\d+(?:\.\d+)?秒|"
+    r"直接切(?:至|到|回)|切入|切回|内部切点|主体交接|焦点(?:从|由).{0,20}(?:转移|交接|落到)"
+)
 DIRECT_DIALOGUE_AUDIT = re.compile(
     r"(?:原句|处理方式|事实依据|最终执行句)\s*[：:]"
 )
@@ -329,12 +366,41 @@ def validate_direct(text: str, source_text: str | None = None) -> list[str]:
                     f"镜头 {shot.shot_id} 的时间线末段必须到达镜头总时长 {shot.duration} 秒。"
                 )
 
+            timeline_text = "\n".join(row.group(0) for row in timeline_rows)
+            for row in timeline_rows:
+                row_text = row.group(0)
+                if not ABSTRACT_PERFORMANCE.search(row_text):
+                    continue
+                # A maintained emotional baseline is already an executable
+                # state. New emotional changes still need a carrier, while
+                # their trigger and settlement may live in adjacent windows.
+                if STABLE_PERFORMANCE.search(row_text):
+                    continue
+                if (
+                    not PERFORMANCE_CARRIER.search(row_text)
+                    or not PERFORMANCE_TRIGGER.search(timeline_text)
+                    or not PERFORMANCE_TERMINAL.search(timeline_text)
+                ):
+                    errors.append(
+                        f"镜头 {shot.shot_id} 的表演时间窗把情绪压成抽象标签；"
+                        "动态情绪需要可见或可听载体，并在整段时间线中形成可追踪的触发与停止/保持结果。"
+                    )
+                    break
+
+        dialogue = values.get("台词与声音层次", "")
+        if dialogue and "无对白" not in dialogue and LIVE_DIALOGUE.search(dialogue):
+            if not DIALOGUE_BEFORE.search(dialogue) or not DIALOGUE_DURING.search(dialogue) or not DIALOGUE_AFTER.search(dialogue):
+                errors.append(
+                    f"镜头 {shot.shot_id} 的台词与声音层次缺少说前/说中/说后表演链；"
+                    "可使用自然语言表达开口前准备、台词中的声音/策略变化和话落后的余波，不要求固定标签。"
+                )
+
         framing = values.get("摄影与构图", "")
         sizes = shot_size_sequence(framing)
-        if len(sizes) > 2:
+        if len(sizes) > 2 and not SHOT_SIZE_STRUCTURE.search(framing):
             errors.append(
                 f"镜头 {shot.shot_id} 出现三个以上景别（{' -> '.join(sizes)}）；"
-                "单镜只能固定一个景别或完成一次 A 到 B 变化。"
+                "若需要多阶段景别，请用明确时间窗、主体/焦点交接或内部切点写清顺序。"
             )
         landing = values.get("落幅状态", "")
         if re.search(r"自动复位|恢复初始|回到起点", landing):
@@ -352,11 +418,8 @@ def validate_director_pair(direct_text: str, director_text: str) -> list[str]:
     for section in (
         "项目与事实锁",
         "叙事立场",
-        "类型承诺与题材爆点母版",
         "全局摄影圣经",
         "全局视觉结论",
-        "短剧节奏蓝图",
-        "整集/目标片段节奏曲线",
         "时长预算与计算",
         "人物表演与声音锚点",
     ):
@@ -371,13 +434,12 @@ def validate_director_pair(direct_text: str, director_text: str) -> list[str]:
         block = director_text[scene.start():end]
         if "### 场景空间与视觉结论" not in block:
             errors.append(f"导演审核版场景“{scene.group('name')}”缺少“场景空间与视觉结论”。")
-        spectacle_plan = re.search(
-            r"(?ms)^### 爆点与特殊手法计划\s*\n(?P<body>.*?)(?=^### |\Z)",
+        asset_prompt = re.search(
+            r"(?ms)^### 场景资产图提示词\s*\n(?P<body>.*?)(?=^### |\Z)",
             block,
         )
-        if spectacle_plan is None:
-            errors.append(f"导演审核版场景“{scene.group('name')}”缺少“爆点与特殊手法计划”。")
-
+        if asset_prompt is None or not asset_prompt.group("body").strip():
+            errors.append(f"导演审核版场景“{scene.group('name')}”缺少“场景资产图提示词”。")
     direct = [(s.shot_id, s.duration) for s in parse_shots(direct_text)]
     director_matches = list(DIRECTOR_SHOT.finditer(director_text))
     director = [
@@ -405,12 +467,8 @@ def validate_director_pair(direct_text: str, director_text: str) -> list[str]:
         dialogue_mapping = re.search(r"(?m)^- 台词事实映射：(?P<value>[^\r\n]+)$", block)
         if dialogue_mapping is not None:
             value = dialogue_mapping.group("value")
-            if "无对白" not in value:
-                for marker in ("原句", "事实依据", "最终执行句", "动作功能"):
-                    if marker not in value:
-                        errors.append(
-                            f"导演审核版镜头 {shot_id} 的台词事实映射缺少“{marker}”。"
-                        )
+            if not value.strip():
+                errors.append(f"导演审核版镜头 {shot_id} 的台词事实映射不得为空。")
     return errors
 
 

@@ -112,7 +112,7 @@ def direct_document(
 - **摄影与构图**：{photography}。
 - **光影/色彩/材质**：右侧窗光横过桌面，林岚面部按中全景级保护保持自然肤色和暗侧可读，人物移动只连续改变受光面；当前光区为右侧窗光与左墙反射交界，文件纸面和暗木桌材质保持真实摩擦与反射，关键手部受光连续，面部处于可读中间调。
 - **画面与表演时间线**：{timeline}。
-- **台词与声音层次**：周启：“你一直都知道。”语速平稳，重音落在“知道”，仅周启准确口型；纸张摩擦声在近处出现，林岚脚步声来自门口方向，室内底噪在关键词处让位。
+- **台词与声音层次**：说前周启停住脚步并吸气，林岚保持视线侧避；说中周启：“你一直都知道。”语速平稳，关键词“知道”时重音加重；说后保留尾音和林岚手指张力，受话者延迟0.3秒；仅周启准确口型；纸张摩擦声在近处出现，林岚脚步声来自门口方向，室内底噪在关键词处让位。
 - **落幅状态**：文件停在周启一侧但周启尚未触碰，控制者仍为林岚，文件保持平整未开合、未破损；林岚退到门口附近，身体朝出口、头仍侧向周启；摄影机稳定保持两人、文件与出口，面部和纸面材质保持当前光区。{extra_fields}
 """
 
@@ -156,6 +156,9 @@ def director_document(duration: str = "4") -> str:
 ### 场景空间与视觉结论
 - 空间依据为剧本推导；双方隔桌，门口在林岚身后，摄影机保持桌面关系轴，越轴须经正面中性机位。光影变化触发为林岚退向门口后进入较窄窗光，停步后稳定。
 
+### 场景资产图提示词
+- 无人物客厅场景资产图，隔桌关系明确，门口位于桌后右侧，桌面与文件作为固定空间锚点，右侧窗光斜入、左墙有柔和反射，冷灰蓝背景与暖白人物活动区形成层次，写实三维电影质感，竖屏构图安全区，禁止人物、文字、Logo、重复家具和新增出口。
+
 ### 爆点与特殊手法计划
 - 本场类型职责为兑现；都市情感的类型承诺通过文件控制权与离场选择完成兑现。峰值镜号 S1-01；主机制为文件退回与人物退步形成的重动作爆点；剧情证据来自关键词和文件归属变化；第一读点是手部控制断裂；信息收益是关系主动权改变；与前后稳定段形成静动反差；本场不重复同类机制；人物动作承担高负载，摄影机只做一次横移急停；直投映射进入摄影、表演时间线和声音字段。
 
@@ -171,31 +174,28 @@ def director_document(duration: str = "4") -> str:
 class SkillSourceTests(unittest.TestCase):
     def test_new_authoritative_references_are_required(self) -> None:
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-        engine = (
-            SKILL_ROOT / "references" / "ai-manga-dramatic-direction-engine.md"
+        contract = (
+            SKILL_ROOT / "references" / "production-contract.md"
         ).read_text(encoding="utf-8")
-        authoritative_source = f"{skill}\n{engine}"
+        authoritative_source = f"{skill}\n{contract}"
         for marker in (
+            "references/production-contract.md",
             "references/visual-input-governance.md",
             "references/ai-manga-dramatic-direction-engine.md",
             "references/seedance-dual-delivery-contract.md",
             "references/ai-manga-duration-budget.md",
             "references/shooting-method-reference.md",
             "references/wide-empty-shot-grammar.md",
-            "一镜可包含时长能够承载的同因果子动作",
-            "证据化增强",
+            "刺激进入 -> 确认或误判 -> 第一冲动",
+            "摄影机不得穿墙",
             "全局摄影圣经",
-            "手机端",
             "作品名_导演审核版.md",
             "作品名_Seedance独立直投版.md",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, authoritative_source)
-        contract = (
-            SKILL_ROOT / "references" / "seedance-dual-delivery-contract.md"
-        ).read_text(encoding="utf-8")
         self.assertIn("本镜特殊正向约束", contract)
-        self.assertIn("不写“无”", contract)
+        self.assertIn("不写空标签或“无”", contract)
 
     def test_dual_contract_carries_binge_and_visual_system_fields(self) -> None:
         contract = (
@@ -216,13 +216,13 @@ class SkillSourceTests(unittest.TestCase):
 
     def test_bold_camera_is_source_generation_not_optional_review(self) -> None:
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-        engine = (SKILL_ROOT / "references" / "ai-manga-dramatic-direction-engine.md").read_text(
+        contract = (SKILL_ROOT / "references" / "production-contract.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("必须在源头蓝图内成立", skill)
-        self.assertIn("特效与运镜不能代替这条因果", engine)
-        self.assertIn("不以低风险为理由默认中景", engine)
-        self.assertIn("至少在主体、观看距离、空间关系", engine)
+        self.assertIn("从同一份内部镜头蓝图联合设计", skill)
+        self.assertIn("炫技必须服务剧情读取", skill)
+        self.assertIn("摄影机不得穿墙、穿物或从不可达区域拍摄", contract)
+        self.assertIn("复杂信息若无法共享观看目标时串行或拆镜", contract)
 
 
 class DeliveryValidatorTests(unittest.TestCase):
@@ -265,6 +265,34 @@ class DeliveryValidatorTests(unittest.TestCase):
         errors = VALIDATOR.validate_direct(direct_document(timeline=timeline))
         self.assertTrue(any("时间窗不连续" in error for error in errors))
         self.assertTrue(any("必须到达镜头总时长" in error for error in errors))
+
+    def test_flat_abstract_emotion_is_rejected(self) -> None:
+        timeline = (
+            "\n  - `0.0—2.0秒｜情绪`：林岚紧张地看向周启。"
+            "\n  - `2.0—4.0秒｜台词`：周启平静地质问并保持。"
+        )
+        errors = VALIDATOR.validate_direct(direct_document(timeline=timeline))
+        self.assertTrue(any("抽象标签" in error for error in errors))
+
+    def test_causal_emotion_chain_is_accepted(self) -> None:
+        timeline = (
+            "\n  - `0.0—1.0秒｜刺激进入`：林岚看见文件被推回，呼吸停住并保持视线落在纸面。"
+            "\n  - `1.0—2.0秒｜认知与泄漏`：林岚意识到周启已经知情，瞳孔轻微收缩，错愕停在眉眼。"
+            "\n  - `2.0—3.0秒｜控制与新策略`：林岚确认退路仍在门口，压住第一冲动，手指松开文件后停住。"
+            "\n  - `3.0—4.0秒｜镜尾残留`：林岚侧身退开并保持身体朝向出口，目光仍锁定周启。"
+        )
+        errors = VALIDATOR.validate_direct(
+            direct_document(timeline=timeline, with_space=True)
+        )
+        self.assertEqual([], errors)
+
+    def test_dialogue_requires_performance_chain(self) -> None:
+        text = direct_document().replace(
+            "说前周启停住脚步并吸气，林岚保持视线侧避；说中周启：“你一直都知道。”语速平稳，关键词“知道”时重音加重；说后保留尾音和林岚手指张力，受话者延迟0.3秒；仅周启准确口型；",
+            "周启：“你一直都知道。”语速平稳，重音落在“知道”，仅周启准确口型；",
+        )
+        errors = VALIDATOR.validate_direct(text)
+        self.assertTrue(any("说前/说中/说后" in error for error in errors))
 
     def test_special_constraint_must_not_repeat_global_template(self) -> None:
         extra = (
@@ -357,11 +385,36 @@ class DeliveryValidatorTests(unittest.TestCase):
         errors = VALIDATOR.validate_direct(direct_document(global_negative=negative))
         self.assertTrue(any("面部稳定负面模板" in error for error in errors))
 
-    def test_three_shot_sizes_are_blocked(self) -> None:
+    def test_three_shot_sizes_require_structure(self) -> None:
         errors = VALIDATOR.validate_direct(
-            direct_document(photography="全景起幅推进到中景，再停为眼部特写")
+            direct_document(photography="0.0—1.0秒全景起幅，1.0—2.0秒推进到中景，2.0—4.0秒切入眼部特写并停稳")
+        )
+        self.assertFalse(any("三个以上景别" in error for error in errors))
+
+    def test_unstructured_three_shot_sizes_are_rejected(self) -> None:
+        errors = VALIDATOR.validate_direct(
+            direct_document(photography="全景、中景、眼部特写，电影感构图")
         )
         self.assertTrue(any("三个以上景别" in error for error in errors))
+
+    def test_stable_emotion_baseline_is_accepted(self) -> None:
+        timeline = (
+            "\n  - `0.0—2.0秒｜基线`：林岚保持平静姿态，视线停在文件上。"
+            "\n  - `2.0—4.0秒｜镜尾保持`：林岚仍维持平静，手指轻压文件边缘。"
+        )
+        self.assertEqual([], VALIDATOR.validate_direct(direct_document(timeline=timeline, with_space=True)))
+
+    def test_natural_dialogue_chain_is_accepted_without_fixed_labels(self) -> None:
+        dialogue = (
+            "周启停住脚步，吸气后才开口：“你一直都知道。”"
+            "说到“知道”时声线压低，林岚慢半拍收紧手指；话落后尾音留在室内，"
+            "双方保持当前距离，仅周启准确口型。"
+        )
+        text = direct_document().replace(
+            "说前周启停住脚步并吸气，林岚保持视线侧避；说中周启：“你一直都知道。”语速平稳，关键词“知道”时重音加重；说后保留尾音和林岚手指张力，受话者延迟0.3秒；仅周启准确口型；",
+            dialogue,
+        )
+        self.assertFalse(any("说前/说中/说后" in error for error in VALIDATOR.validate_direct(text)))
 
     def test_director_duration_mismatch_is_blocked(self) -> None:
         errors = VALIDATOR.validate_director_pair(direct_document(), director_document("5"))
@@ -408,14 +461,23 @@ class DeliveryValidatorTests(unittest.TestCase):
         errors = VALIDATOR.validate_director_pair(direct_document(with_space=True), director)
         self.assertTrue(any("台词事实映射" in error for error in errors))
 
-    def test_director_scene_requires_spectacle_plan(self) -> None:
+    def test_director_scene_spectacle_plan_is_optional(self) -> None:
         director = re_sub_once(
             r"(?ms)^### 爆点与特殊手法计划\n.*?(?=^### 镜头)",
             "",
             director_document(),
         )
         errors = VALIDATOR.validate_director_pair(direct_document(with_space=True), director)
-        self.assertTrue(any("爆点与特殊手法计划" in error for error in errors))
+        self.assertFalse(any("爆点与特殊手法计划" in error for error in errors))
+
+    def test_director_scene_requires_scene_asset_prompt(self) -> None:
+        director = re_sub_once(
+            r"(?ms)^### 场景资产图提示词\n.*?(?=^### 镜头)",
+            "",
+            director_document(),
+        )
+        errors = VALIDATOR.validate_director_pair(direct_document(with_space=True), director)
+        self.assertTrue(any("场景资产图提示词" in error for error in errors))
 
     def test_director_requires_duration_budget(self) -> None:
         director = re_sub_once(

@@ -1,4 +1,4 @@
 interface:
   display_name: "即梦AI漫剧类型导演分镜"
-  short_description: "观众回收、深度表演、非同构摄影与滤镜光影双文件分镜"
-  default_prompt: "使用 $jimeng-dialogue-performance-storyboard 从唯一导演源联合设计观众预期与公平回收、人物选择代价、视觉母题、节奏波形、深度表演、非同构摄影、完整光影和滤镜/后期影像，并输出导演审核版与 Seedance 独立直投版。"
+  short_description: "剧情节奏、因果表演、可实现摄影与Seedance双文件分镜"
+  default_prompt: "使用 $jimeng-dialogue-performance-storyboard 将给定剧情导演化为有节奏、有因果表演、机位可实现且跨镜连续的分镜，并输出导演审核版与 Seedance 独立直投版。"
