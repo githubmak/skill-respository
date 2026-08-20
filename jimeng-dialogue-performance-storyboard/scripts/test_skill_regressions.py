@@ -34,11 +34,24 @@ class StreamlinedSkillTests(unittest.TestCase):
         self.assertIn("name: jimeng-dialogue-performance-storyboard", self.skill)
         self.assertIn("即梦 Seedance AI 漫剧/短剧分镜", self.skill)
 
-    def test_default_runtime_reads_only_the_short_contract(self) -> None:
-        self.assertIn("普通任务完整读取本文件和", self.skill)
+    def test_runtime_delays_delivery_contract_until_blueprint_freeze(self) -> None:
+        self.assertIn("蓝图冻结前只使用本文件", self.skill)
         self.assertIn("references/production-contract.md", self.skill)
-        self.assertIn("不要预加载其他参考", self.skill)
-        self.assertLessEqual(len(self.contract.splitlines()), 180)
+        self.assertIn("冻结后需要正式交付时，再完整读取生产合同", self.skill)
+        self.assertIn("不预填交付字段", self.skill)
+        self.assertLessEqual(len(self.contract.splitlines()), 190)
+
+    def test_single_source_compile_and_review_cannot_flatten_direction(self) -> None:
+        combined = f"{self.skill}\n{self.contract}"
+        for marker in (
+            "蓝图冻结后，编译只能展开已有过程",
+            "不重新选择镜头",
+            "栏目编译映射",
+            "审核必须指出具体失败",
+            "不得改写已冻结的长镜头、留白、静止、特殊机位",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, combined)
 
     def test_all_linked_references_exist(self) -> None:
         links = re.findall(r"\[[^]]+\]\((references/[^)]+)\)", self.skill)
@@ -50,8 +63,8 @@ class StreamlinedSkillTests(unittest.TestCase):
     def test_facts_and_dialogue_are_protected(self) -> None:
         for marker in (
             "不改人物、身份、性格、关系、知情、事件顺序、因果",
-            "不得新增秘密、罪名、承诺、关系、结论或事件",
-            "OS、OV 默认逐字保留",
+            "台词、OS、OV 默认逐字、逐句、按原归属和顺序保留",
+            "不删减、合并、润色、证据化增强或替换措辞",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, self.skill)
@@ -83,7 +96,15 @@ class StreamlinedSkillTests(unittest.TestCase):
         self.assertIn("不含人物的场景资产图提示词", combined)
         self.assertIn("正向提示词", combined)
         self.assertIn("负向约束", combined)
+        self.assertIn("关键道具资产提示词", combined)
+        self.assertIn("导演审核版与 Seedance 直投版每场都独立输出", combined)
         self.assertIn("不输出俯视调度图", combined)
+
+    def test_model_semantic_review_replaces_external_runtime_validation(self) -> None:
+        combined = f"{self.skill}\n{self.contract}"
+        self.assertIn("正常工作流不调用外部技能、代理或脚本校验器", combined)
+        self.assertIn("模型语义复审", combined)
+        self.assertIn("不能用关键词命中代替导演判断", combined)
 
     def test_optional_references_have_explicit_triggers(self) -> None:
         for trigger in (

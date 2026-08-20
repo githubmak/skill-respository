@@ -197,19 +197,21 @@ class SkillSourceTests(unittest.TestCase):
         self.assertIn("本镜特殊正向约束", contract)
         self.assertIn("不写空标签或“无”", contract)
 
-    def test_dual_contract_carries_binge_and_visual_system_fields(self) -> None:
+    def test_dual_contract_keeps_optional_story_tools_and_visual_system_fields(self) -> None:
         contract = (
             SKILL_ROOT / "references" / "seedance-dual-delivery-contract.md"
         ).read_text(encoding="utf-8")
         for marker in (
-            "## 爆款观众收益与留存设计",
-            "五轨节奏",
-            "角色传播记忆资产",
+            "## 观众收益与留存设计（按需）",
+            "不要求固定五轨结构",
+            "不强制两秒公式",
+            "不锁定百分比",
             "场景轴/人物轴/光影轴",
             "主要奇观",
             "全景/远景分别承担",
             "条件大气介质",
             "逐时间窗主驱动力及交接触发",
+            "## 【关键道具资产提示词】",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, contract)
@@ -219,7 +221,8 @@ class SkillSourceTests(unittest.TestCase):
         contract = (SKILL_ROOT / "references" / "production-contract.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("从同一份内部镜头蓝图联合设计", skill)
+        self.assertIn("同一份内部镜头蓝图联合冻结", skill)
+        self.assertIn("不重新选择镜头", skill)
         self.assertIn("炫技必须服务剧情读取", skill)
         self.assertIn("摄影机不得穿墙、穿物或从不可达区域拍摄", contract)
         self.assertIn("复杂信息若无法共享观看目标时串行或拆镜", contract)
