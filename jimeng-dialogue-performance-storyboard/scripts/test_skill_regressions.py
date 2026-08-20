@@ -41,14 +41,16 @@ class StreamlinedSkillTests(unittest.TestCase):
         self.assertIn("不预填交付字段", self.skill)
         self.assertLessEqual(len(self.contract.splitlines()), 190)
 
-    def test_single_source_compile_and_review_cannot_flatten_direction(self) -> None:
+    def test_single_source_compile_is_stable_but_allows_evidence_based_reopening(self) -> None:
         combined = f"{self.skill}\n{self.contract}"
         for marker in (
-            "蓝图冻结后，编译只能展开已有过程",
-            "不重新选择镜头",
+            "编译不无因重新选择镜头",
+            "不限于硬错误",
+            "具体创作失败",
+            "局部重开",
             "栏目编译映射",
             "审核必须指出具体失败",
-            "不得改写已冻结的长镜头、留白、静止、特殊机位",
+            "没有实际失败时，不得改写已冻结的长镜头、留白、静止、特殊机位",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, combined)
@@ -76,6 +78,19 @@ class StreamlinedSkillTests(unittest.TestCase):
             "刺激进入 -> 确认或误判 -> 第一冲动",
             "说前刺激/准备 -> 台词开始 -> 关键词或语义转折",
             "停止或保持状态",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, combined)
+
+    def test_performance_emotion_and_dialogue_tone_share_one_source(self) -> None:
+        combined = f"{self.skill}\n{self.contract}"
+        for marker in (
+            "外在策略与内在压力",
+            "旧情绪残留",
+            "该句在当下要完成的现实作用",
+            "开口基线 -> 关键词/语义转折 -> 话落状态",
+            "标点只提供语法边界",
+            "不以微动作数量为准",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, combined)
@@ -135,6 +150,20 @@ class StreamlinedSkillTests(unittest.TestCase):
             with self.subTest(marker=marker):
                 self.assertIn(marker, self.contract)
 
+    def test_direct_schema_uses_complete_merged_execution_fields(self) -> None:
+        self.assertIn("**起幅与连续性**", self.contract)
+        self.assertIn("**光影、环境色彩与材质**", self.contract)
+        self.assertIn("第一帧完整执行快照", self.contract)
+        self.assertIn("本镜完整执行快照", self.contract)
+        for retired in (
+            "**本镜环境色彩**",
+            "**当前资产与连续性**",
+            "**起幅状态**",
+            "**光影/色彩/材质**",
+        ):
+            with self.subTest(retired=retired):
+                self.assertNotIn(retired, self.contract)
+
     def test_fixed_templates_match_validator(self) -> None:
         for template in (
             VALIDATOR.IDENTITY_TEMPLATE,
@@ -144,6 +173,16 @@ class StreamlinedSkillTests(unittest.TestCase):
         ):
             with self.subTest(template=template[:20]):
                 self.assertEqual(1, self.contract.count(template))
+
+    def test_identity_template_locks_identity_without_freezing_performance(self) -> None:
+        self.assertIn("表情肌肉、眼球视线、眼睑、嘴唇、下颌、头颈姿态与呼吸按剧情自然联动", VALIDATOR.IDENTITY_TEMPLATE)
+        self.assertIn("不得改变人物身份、五官基础比例", VALIDATOR.IDENTITY_TEMPLATE)
+        self.assertNotIn("仅面部肌肉做表情运动", VALIDATOR.IDENTITY_TEMPLATE)
+        self.assertNotIn("只改变表情肌肉", VALIDATOR.IDENTITY_TEMPLATE)
+
+    def test_shot_specific_constraints_are_optional_and_risk_triggered(self) -> None:
+        self.assertIn("仅有本镜新增风险时保留", self.contract)
+        self.assertIn("不存在的 OS、OV、BGM、特效或特殊约束删除整项", self.contract)
 
     def test_runtime_contract_keeps_direct_output_clean(self) -> None:
         for marker in (
