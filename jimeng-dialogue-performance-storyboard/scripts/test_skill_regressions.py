@@ -96,6 +96,10 @@ class StoryboardSkillTests(unittest.TestCase):
             "狭道追逐",
             "安静早餐",
             "复用院落资产",
+            "宴会权力入场",
+            "被忽视之物成为宝贝",
+            "五秒满载归途",
+            "村巷流言升级",
         )
         self.assertIn("合成压力测试集", BASELINE)
         for case in cases:
@@ -122,6 +126,100 @@ class StoryboardSkillTests(unittest.TestCase):
         self.assertIn("三人以上反应传播", SKILL)
         self.assertIn("普通对白、单次情绪变化和已经成立的关键镜不加载", DRAMATIC)
         self.assertLessEqual(len(DRAMATIC.splitlines()), 150)
+
+    def test_pressure_transmission_is_conditional_and_same_source(self) -> None:
+        combined = f"{SKILL}\n{CONTRACT}\n{DRAMATIC}\n{BASELINE}"
+        for concept in ("压力来源", "主压力方向", "受限选择", "人物压向空间", "空间/群体压向人物", "人物揭示"):
+            self.assertIn(concept, combined)
+        for false_signal in ("推近", "暗光", "慢动作", "全员转头"):
+            self.assertIn(false_signal, combined)
+        self.assertIn("安静早餐", BASELINE)
+        self.assertIn("不单独触发", combined)
+        self.assertNotIn("所有场景必须有压力", combined)
+
+    def test_every_shot_is_directed_during_generation_not_enriched_in_review(self) -> None:
+        combined = f"{SKILL}\n{SHOOTING}\n{CONTRACT}\n{DRAMATIC}\n{DURATION}\n{GENRE}\n{SPECTACLE}\n{BASELINE}"
+        for concept in ("逐镜导演命题", "观众怎样看见并感受什么", "简单完整", "人物做事方式", "动作清单", "价值重估"):
+            self.assertIn(concept, combined)
+        self.assertIn("复审不负责临时创造", SKILL)
+        self.assertIn("复审不得通过临时增加", CONTRACT)
+        self.assertNotIn("每镜固定四层景深", combined)
+        self.assertNotIn("每镜至少三个动作", combined)
+
+    def test_generation_unit_can_choose_continuity_internal_cuts_or_split(self) -> None:
+        combined = f"{SKILL}\n{SHOOTING}\n{CONTRACT}\n{BASELINE}"
+        for concept in (
+            "视频生成单元",
+            "不自动等于一次连续摄影镜头",
+            "连续长镜头",
+            "时间线内有因切镜",
+            "拆成独立镜头",
+            "子镜A/子镜B",
+            "切前落态",
+            "切后起态",
+            "声音桥",
+        ):
+            with self.subTest(concept=concept):
+                self.assertIn(concept, combined)
+        self.assertIn("每次切换须新增信息、触感、情绪、关系或结果", CONTRACT)
+        self.assertNotIn("短镜优先一条物理连续的主摄影路径", combined)
+
+    def test_non_plot_world_texture_is_allowed_and_bounded(self) -> None:
+        combined = f"{SKILL}\n{SHOOTING}\n{CONTRACT}\n{LIGHTING}\n{VISUAL}\n{BASELINE}"
+        for concept in (
+            "氛围性世界细节",
+            "不改剧情",
+            "时代、地域、季节、地点",
+            "炊烟",
+            "环境生活声",
+            "人物知情",
+            "连续状态",
+        ):
+            with self.subTest(concept=concept):
+                self.assertIn(concept, combined)
+        self.assertIn("鸡叫", BASELINE)
+        self.assertNotIn("不得无因改成夕阳", combined)
+        self.assertNotIn("不得为质感无因改动时段、天气", combined)
+
+    def test_scene_arc_precedes_shot_design_and_avoids_repetitive_escalation(self) -> None:
+        combined = f"{SKILL}\n{SHOOTING}\n{CONTRACT}\n{DRAMATIC}\n{BASELINE}"
+        for concept in (
+            "场景级导演曲线",
+            "进入秩序",
+            "离场结果",
+            "镜头组",
+            "不可替代职责",
+            "递进、错峰或释放",
+            "骤停",
+            "声音抽空",
+            "连续慢推",
+            "重复特写",
+        ):
+            with self.subTest(concept=concept):
+                self.assertIn(concept, combined)
+        self.assertRegex(combined, r"无冲突场景.{0,30}(?:不强造|不得.*强造)")
+        self.assertIn("村巷流言升级", BASELINE)
+        self.assertIn("重磅信息命中", BASELINE)
+
+    def test_rich_execution_is_preserved_without_load_based_compression(self) -> None:
+        combined = f"{SKILL}\n{SHOOTING}\n{CONTRACT}\n{BASELINE}"
+        for concept in (
+            "观众能够感知的叙事性视听承载",
+            "主导轴、辅助轴",
+            "景别只决定可见粒度",
+            "至少两个真正参与叙事的空间层次",
+            "底层环境",
+            "静默或声音抽空",
+            "不设人为字数、字段长度或细节数量上限",
+            "导演版承担创作指导",
+            "直投版删除分析过程但完整保留",
+            "有效手法可以在同题材复用",
+        ):
+            with self.subTest(concept=concept):
+                self.assertIn(concept, combined)
+        for forbidden in ("生成负载", "组合负载过高", "AI 负载", "Seedance 负载"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, combined)
 
     def test_shooting_comparison_is_conditional_not_a_quota(self) -> None:
         combined = f"{SKILL}\n{SHOOTING}\n{DRAMATIC}"
@@ -222,10 +320,11 @@ class StoryboardSkillTests(unittest.TestCase):
         for concept in ("安静生活状态", "中性表情", "不套固定阶段数量", "不是每场或每集配额"):
             self.assertIn(concept, GENRE)
 
-    def test_spectacle_engine_is_self_contained_and_load_aware(self) -> None:
+    def test_spectacle_engine_is_self_contained_and_attention_aware(self) -> None:
         self.assertNotIn("ai-manga-dramatic-direction-engine.md", SPECTACLE)
         self.assertIn("不假定任何其他导演参考已经运行", SPECTACLE)
-        self.assertIn("语义负载应按因果交接", SPECTACLE)
+        self.assertIn("阅读信息应按因果交接", SPECTACLE)
+        self.assertIn("不是以 Seedance 执行负担为由限制复杂度", SPECTACLE)
         self.assertIn("不为层数齐全", SPECTACLE)
 
     def test_blocking_diagrams_require_an_explicit_user_request(self) -> None:
