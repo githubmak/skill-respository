@@ -43,8 +43,9 @@ IDENTITY_TEMPLATE = (
     "所有镜头人物面部基准统一"
 )
 CG3D_TEMPLATE = (
-    "3D CG写实电影渲染，人物建模采用高精度次世代角色标准，8K纹理贴图，皮肤细腻完整，"
-    "均匀皮肤光照，柔和面部补光，次表面散射皮肤，干净面部光影，皮肤纹理稳定"
+    "3D CG写实电影渲染，人物建模采用高精度次世代角色标准，稳定清晰的皮肤材质与五官结构，"
+    "自然方向性面部受光，暗侧保留连续纹理，合理的皮肤次表面散射，受控高光与干净面部光影，"
+    "跨镜皮肤质感稳定"
 )
 FACE_NEGATIVE_TEMPLATE = (
     "面部斑驳，脸部黑斑，脏色块，皮肤阴影斑块，面部噪点，脸部脏污，跨镜头人脸不一致，同人物多张脸"
@@ -297,6 +298,14 @@ def validate_direct(text: str, source_text: str | None = None) -> list[str]:
                     errors.append(
                         f"场景“{scene.group('name')}”的空间位置关系缺少“空间依据”（场景图锁定/剧本推导/混合建立）。"
                     )
+        scene_asset = re.search(
+            r"(?ms)^## 【场景资产图提示词】\s*\n(?P<body>.*?)(?=^## 【Seedance完整独立镜头】|^## 【关键道具资产提示词】|\Z)",
+            block,
+        )
+        if scene_asset is None or not scene_asset.group("body").strip():
+            errors.append(f"场景“{scene.group('name')}”缺少【场景资产图提示词】。")
+        elif not re.search(r"(?m)^- 拓扑共识：\S", scene_asset.group("body")):
+            errors.append(f"场景“{scene.group('name')}”的场景资产图提示词缺少“拓扑共识”。")
 
     shots = parse_shots(normalized)
     if not shots:
@@ -388,10 +397,10 @@ def validate_direct(text: str, source_text: str | None = None) -> list[str]:
 
         dialogue = values.get("台词与声音层次", "")
         if dialogue and "无对白" not in dialogue and LIVE_DIALOGUE.search(dialogue):
-            if not DIALOGUE_BEFORE.search(dialogue) or not DIALOGUE_DURING.search(dialogue) or not DIALOGUE_AFTER.search(dialogue):
+            if not DIALOGUE_DURING.search(dialogue) or not DIALOGUE_AFTER.search(dialogue):
                 errors.append(
-                    f"镜头 {shot.shot_id} 的台词与声音层次缺少说前/说中/说后表演链；"
-                    "可使用自然语言表达开口前准备、台词中的声音/策略变化和话落后的余波，不要求固定标签。"
+                    f"镜头 {shot.shot_id} 的台词与声音层次缺少台词进行与话落结果；"
+                    "用自然语言保留实际存在的开口基线、声音/策略推进和话落余波，不要求短反应强加说前动作。"
                 )
 
         framing = values.get("摄影与构图", "")
@@ -439,6 +448,8 @@ def validate_director_pair(direct_text: str, director_text: str) -> list[str]:
         )
         if asset_prompt is None or not asset_prompt.group("body").strip():
             errors.append(f"导演审核版场景“{scene.group('name')}”缺少“场景资产图提示词”。")
+        elif not re.search(r"(?m)^- 拓扑共识：\S", asset_prompt.group("body")):
+            errors.append(f"导演审核版场景“{scene.group('name')}”的场景资产图提示词缺少“拓扑共识”。")
     direct = [(s.shot_id, s.duration) for s in parse_shots(direct_text)]
     director_matches = list(DIRECTOR_SHOT.finditer(director_text))
     director = [

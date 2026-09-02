@@ -48,8 +48,9 @@ def direct_document(
     )
     if use_realistic_3d:
         default_positive += (
-            "3D CG写实电影渲染，人物建模采用高精度次世代角色标准，8K纹理贴图，皮肤细腻完整，"
-            "均匀皮肤光照，柔和面部补光，次表面散射皮肤，干净面部光影，皮肤纹理稳定；"
+            "3D CG写实电影渲染，人物建模采用高精度次世代角色标准，稳定清晰的皮肤材质与五官结构，"
+            "自然方向性面部受光，暗侧保留连续纹理，合理的皮肤次表面散射，受控高光与干净面部光影，"
+            "跨镜皮肤质感稳定；"
         )
     default_positive += "口型与说话者一致，材质和帧间身份稳定"
     positive = default_positive if global_positive is None else global_positive
@@ -102,6 +103,11 @@ def direct_document(
 - 场景环境色彩：低饱和冷灰蓝落在窗外和背景空气，柔和暖白只落在室内灯区，不覆盖资产固有色。
 - 场景光影：右侧窗光为主光，左侧墙面产生低强度自然反射，桌面形成连续软阴影。
 - 光影变化触发：关键词后林岚退向门口，窗光在她侧脸形成更窄的亮面，停步后稳定。
+
+## 【场景资产图提示词】
+- 拓扑共识：客厅只有右后方门口和右侧窗，暗木桌位于中央，门口与桌右侧之间保留通行区，摄影机可在桌前与左侧活动，右侧窗为固定主光源。
+- 正向提示词：无人物客厅，中央暗木桌、右后方门口、右侧窗和左墙位置稳定，冷灰蓝背景与暖白人物活动区，写实三维电影质感，竖屏安全构图。
+- 负向约束：人物、文字、Logo、水印、重复家具、错误出口、拓扑漂移、新增光源。
 
 ## 【Seedance完整独立镜头】
 
@@ -156,7 +162,9 @@ def director_document(duration: str = "4") -> str:
 - 空间依据为剧本推导；双方隔桌，门口在林岚身后，摄影机保持桌面关系轴，越轴须经正面中性机位。光影变化触发为林岚退向门口后进入较窄窗光，停步后稳定。
 
 ### 场景资产图提示词
-- 无人物客厅场景资产图，隔桌关系明确，门口位于桌后右侧，桌面与文件作为固定空间锚点，右侧窗光斜入、左墙有柔和反射，冷灰蓝背景与暖白人物活动区形成层次，写实三维电影质感，竖屏构图安全区，禁止人物、文字、Logo、重复家具和新增出口。
+- 拓扑共识：客厅只有右后方门口和右侧窗，暗木桌位于中央，门口与桌右侧之间保留通行区，摄影机可在桌前与左侧活动，右侧窗为固定主光源。
+- 正向提示词：无人物客厅，中央暗木桌、右后方门口、右侧窗和左墙位置稳定，冷灰蓝背景与暖白人物活动区，写实三维电影质感，竖屏安全构图。
+- 负向约束：人物、文字、Logo、水印、重复家具、错误出口、拓扑漂移、新增光源。
 
 ### 爆点与特殊手法计划
 - 本场类型职责为兑现；都市情感的类型承诺通过文件控制权与离场选择完成兑现。峰值镜号 S1-01；主机制为文件退回与人物退步形成的重动作爆点；剧情证据来自关键词和文件归属变化；第一读点是手部控制断裂；信息收益是关系主动权改变；与前后稳定段形成静动反差；本场不重复同类机制；人物动作承担高负载，摄影机只做一次横移急停；直投映射进入摄影、表演时间线和声音字段。
@@ -181,7 +189,6 @@ class SkillSourceTests(unittest.TestCase):
             "references/production-contract.md",
             "references/visual-input-governance.md",
             "references/ai-manga-dramatic-direction-engine.md",
-            "references/seedance-dual-delivery-contract.md",
             "references/ai-manga-duration-budget.md",
             "references/shooting-method-reference.md",
             "references/wide-empty-shot-grammar.md",
@@ -196,24 +203,10 @@ class SkillSourceTests(unittest.TestCase):
         self.assertIn("本镜特殊正向约束", contract)
         self.assertIn("不写空标签或“无”", contract)
 
-    def test_dual_contract_keeps_optional_story_tools_and_visual_system_fields(self) -> None:
-        contract = (
-            SKILL_ROOT / "references" / "seedance-dual-delivery-contract.md"
-        ).read_text(encoding="utf-8")
-        for marker in (
-            "## 观众收益与留存设计（按需）",
-            "不要求固定五轨结构",
-            "不强制两秒公式",
-            "不锁定百分比",
-            "场景轴/人物轴/光影轴",
-            "主要奇观",
-            "全景/远景分别承担",
-            "条件大气介质",
-            "逐时间窗主驱动力及交接触发",
-            "## 【关键道具资产提示词】",
-        ):
-            with self.subTest(marker=marker):
-                self.assertIn(marker, contract)
+    def test_historical_delivery_copy_is_not_a_runtime_dependency(self) -> None:
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertNotIn("seedance-dual-delivery-contract.md", skill)
+        self.assertIn("运行时交付规范只有本入口与生产合同", skill)
 
     def test_bold_camera_is_source_generation_not_optional_review(self) -> None:
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -294,7 +287,15 @@ class DeliveryValidatorTests(unittest.TestCase):
             "周启：“你一直都知道。”语速平稳，重音落在“知道”，仅周启准确口型；",
         )
         errors = VALIDATOR.validate_direct(text)
-        self.assertTrue(any("说前/说中/说后" in error for error in errors))
+        self.assertTrue(any("台词进行与话落结果" in error for error in errors))
+
+    def test_short_reply_does_not_require_a_generic_preparation_action(self) -> None:
+        text = direct_document().replace(
+            "说前周启停住脚步并吸气，林岚保持视线侧避；说中周启：“你一直都知道。”语速平稳，关键词“知道”时重音加重；说后保留尾音和林岚手指张力，受话者延迟0.3秒；仅周启准确口型；",
+            "周启对林岚完成确认，开口说：“什么？”句尾自然上扬；话落后保持视线等待，仅周启准确口型；",
+        )
+        errors = VALIDATOR.validate_direct(text)
+        self.assertFalse(any("台词进行与话落结果" in error for error in errors))
 
     def test_special_constraint_must_not_repeat_global_template(self) -> None:
         extra = (
@@ -445,6 +446,11 @@ class DeliveryValidatorTests(unittest.TestCase):
     def test_scene_space_is_required_without_uploaded_image(self) -> None:
         errors = VALIDATOR.validate_direct(direct_document(with_space=False))
         self.assertTrue(any("无场景图时也必须按剧本推导" in error for error in errors))
+
+    def test_scene_asset_requires_topology_consensus(self) -> None:
+        text = direct_document(with_space=True).replace("- 拓扑共识：", "- 空间摘要：", 1)
+        errors = VALIDATOR.validate_direct(text)
+        self.assertTrue(any("场景资产图提示词缺少“拓扑共识”" in error for error in errors))
 
     def test_direct_must_not_leak_dialogue_audit(self) -> None:
         text = direct_document(with_space=True).replace(
