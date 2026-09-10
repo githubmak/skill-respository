@@ -1,0 +1,7 @@
+interface:
+  display_name: "漫剧全剧视觉圣经"
+  short_description: "从完整故事建立全剧视觉母版并衔接跨平台生图与视频生产"
+  default_prompt: "Use $dynamic-manga-visual-bible to analyze this complete story and build a versioned visual master workflow."
+
+policy:
+  allow_implicit_invocation: true

@@ -53,15 +53,15 @@ class StoryboardSkillTests(unittest.TestCase):
                 self.assertTrue((ROOT / relative).is_file())
 
     def test_contract_is_loaded_only_after_blueprint_freeze(self) -> None:
-        before, after = SKILL.split("## 分阶段单源工作流", maxsplit=1)
-        self.assertIn("蓝图冻结前", before)
+        before, after = SKILL.split("## 整集—场景—镜头生成链", maxsplit=1)
+        self.assertIn("底稿冻结前", before)
         self.assertIn("不读取", before)
         self.assertIn("冻结后需要正式交付", before)
         self.assertIn("production-contract.md", after)
         self.assertLessEqual(len(CONTRACT.splitlines()), 200)
 
     def test_independent_md_exits_without_merging(self) -> None:
-        boundary = SKILL[SKILL.index("## 输入与边界") : SKILL.index("## 分阶段单源工作流")]
+        boundary = SKILL[SKILL.index("## 输入与边界") : SKILL.index("## 整集—场景—镜头生成链")]
         for concept in ("退出本技能", "不加载本技能入口或任何内部参考", "不把两套规则合并"):
             self.assertIn(concept, boundary)
 
@@ -204,13 +204,13 @@ class StoryboardSkillTests(unittest.TestCase):
     def test_rich_execution_is_preserved_without_load_based_compression(self) -> None:
         combined = f"{SKILL}\n{SHOOTING}\n{CONTRACT}\n{BASELINE}"
         for concept in (
-            "观众能够感知的叙事性视听承载",
-            "主导轴、辅助轴",
+            "观众能够感知的主要呈现方式",
+            "主节奏、观众观看关系与主要呈现方式",
             "景别只决定可见粒度",
             "至少两个真正参与叙事的空间层次",
             "底层环境",
             "静默或声音抽空",
-            "不设人为字数、字段长度或细节数量上限",
+            "细节多少不设人为字数、输出栏目长度或细节数量上限",
             "导演版承担创作指导",
             "直投版删除分析过程但完整保留",
             "有效手法可以在同题材复用",
@@ -254,7 +254,7 @@ class StoryboardSkillTests(unittest.TestCase):
         for concept in ("说话身份", "语义分组", "咬字", "气息连接", "句尾", "关系差异"):
             self.assertIn(concept, combined)
         self.assertIn("不是固定语速或音高", SKILL)
-        self.assertIn("逐句偏离锚点时", CONTRACT)
+        self.assertIn("偏离人物表演基线时", CONTRACT)
 
     def test_dialogue_and_performance_have_character_swap_checks(self) -> None:
         combined = f"{SKILL}\n{CONTRACT}\n{DRAMATIC}"
@@ -401,6 +401,104 @@ class StoryboardSkillTests(unittest.TestCase):
         self.assertIn("不能用关键词命中代替导演判断", SKILL)
         self.assertIn("只局部重开", combined)
         self.assertIn("没有实际失败时，不得改写", CONTRACT)
+
+    def test_default_delivery_is_single_direct_main_with_optional_director(self) -> None:
+        combined = f"{SKILL}\n{CONTRACT}"
+        self.assertIn("默认输出 `作品名_Seedance独立直投版.md`", SKILL)
+        self.assertIn("仅在用户要求导演分析、人工审核或双版本时", SKILL)
+        self.assertIn("导演审核版（按需）", CONTRACT)
+        self.assertNotIn("完整项目输出双文件", combined)
+
+    def test_project_scene_shot_chain_preserves_directing_and_state(self) -> None:
+        combined = f"{SKILL}\n{CONTRACT}"
+        for concept in (
+            "整集—场景—镜头",
+            "每场先在内部冻结一句本场核心变化",
+            "每镜须新增信息、关系、压力",
+            "长项目按场景",
+            "不重新导演",
+            "未受刺激者继续任务",
+            "不让配角木讷",
+        ):
+            self.assertIn(concept, combined)
+
+    def test_core_facts_are_locked_while_audiovisual_expression_is_free(self) -> None:
+        combined = f"{SKILL}\n{CONTRACT}"
+        for concept in (
+            "关键动作/信息",
+            "关系变化",
+            "怎样表达",
+            "影视化改编",
+            "核心信息",
+            "到达时点",
+            "关系策略",
+            "人物口吻",
+        ):
+            self.assertIn(concept, combined)
+
+    def test_advanced_sound_grammar_is_conditional(self) -> None:
+        combined = f"{SKILL}\n{CONTRACT}"
+        for concept in ("声画反差", "主观", "J-Cut", "L-Cut", "声音匹配切"):
+            self.assertIn(concept, combined)
+        self.assertIn("不强制使用", SKILL)
+        self.assertIn("不作为固定配置", CONTRACT)
+
+    def test_global_and_shot_negative_rules_have_distinct_scope(self) -> None:
+        combined = f"{SKILL}\n{CONTRACT}"
+        self.assertIn("全局负向只集中", combined)
+        self.assertIn("本镜特殊负向只处理该镜新增风险", CONTRACT)
+        self.assertIn("不把摄影选择写成全局禁令", CONTRACT)
+
+    def test_splus_compaction_preserves_directing_core(self) -> None:
+        combined = f"{SKILL}\n{CONTRACT}\n{BASELINE}"
+        for concept in (
+            "S+ 保护",
+            "题材专属拍法",
+            "人物专属演绎",
+            "关键动作",
+            "唯美构图",
+            "运镜触发/路径",
+            "台词声音弧线",
+            "色影差量",
+            "镜尾余波",
+            "连续接点",
+            "不可压缩的主执行层",
+        ):
+            self.assertIn(concept, combined)
+        for forbidden_shortcut in ("情绪升级", "镜头推近", "人物爆发"):
+            self.assertIn(forbidden_shortcut, combined)
+
+    def test_three_level_inheritance_reduces_repetition_without_ellipsis(self) -> None:
+        combined = f"{SKILL}\n{CONTRACT}\n{BASELINE}"
+        for concept in (
+            "三级继承",
+            "全剧层",
+            "场景层",
+            "镜头层",
+            "同一执行事实",
+            "简洁完整句",
+            "不用省略指代",
+        ):
+            self.assertIn(concept, combined)
+
+    def test_beautiful_composition_is_story_driven_not_a_style_quota(self) -> None:
+        combined = f"{SKILL}\n{BASELINE}"
+        for concept in (
+            "构图策略",
+            "主体与负空间",
+            "几何秩序",
+            "颜色面积",
+            "人物—环境尺度",
+            "视觉秩序变化",
+            "唯美不得退化",
+        ):
+            self.assertIn(concept, combined)
+
+    def test_heavy_reference_overlap_is_not_loaded_preemptively(self) -> None:
+        self.assertIn("先读取能解决主要难题的最窄一份专项参考", SKILL)
+        self.assertIn("仍存在具体未解决", SKILL)
+        self.assertIn("不再为了“更丰富”叠加", SKILL)
+        self.assertIn("不按场重新加载或重新设计", SKILL)
 
 
 if __name__ == "__main__":

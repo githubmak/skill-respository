@@ -213,8 +213,8 @@ class SkillSourceTests(unittest.TestCase):
         contract = (SKILL_ROOT / "references" / "production-contract.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("同一份内部镜头蓝图联合冻结", skill)
-        self.assertIn("具体失败时才局部回源", skill)
+        self.assertIn("同一份内部镜头设计底稿联合冻结", skill)
+        self.assertIn("具体失败时才局部回到底稿", skill)
         self.assertIn("炫技必须服务剧情读取", skill)
         self.assertIn("摄影机不得穿墙、穿物或从不可达区域拍摄", contract)
         self.assertIn("复杂信息若无法共享观看目标时串行或拆镜", contract)
