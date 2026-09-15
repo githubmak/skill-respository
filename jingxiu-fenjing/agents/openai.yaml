@@ -1,0 +1,4 @@
+interface:
+  display_name: "精修分镜"
+  short_description: "保留有效名场面，针对弱点重做演绎、峰值镜头组与高级声画"
+  default_prompt: "使用 $jingxiu-fenjing 按完整导演核心审视这份分镜，保留成立的名场面与摄影，针对弱点重做人物演绎、燃点爆点和高级运镜空境氛围，无明确收益保留合法原设计，另存同格式精修稿。"
