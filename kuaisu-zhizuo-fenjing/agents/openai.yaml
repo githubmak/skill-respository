@@ -1,4 +1,0 @@
-interface:
-  display_name: "快速制作分镜"
-  short_description: "按完整导演核心制作生产稿、燃点爆点名场面与全部资产提示词"
-  default_prompt: "使用 $kuaisu-zhizuo-fenjing 按内置分镜.md完整核心，根据剧本、色卡、影调和导出目录制作可直接使用的Seedance分镜、全局锁定与资产提示词，不把精彩程度留待精修。"
