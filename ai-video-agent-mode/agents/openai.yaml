@@ -1,4 +1,0 @@
-interface:
-  display_name: "AI Video Agent Mode"
-  short_description: "模型主导创作、工程可靠交付的即梦视频提示词生产管线"
-  default_prompt: "Use $ai-video-agent-mode to turn my script into a model-led Jimeng T2V prompt package with expressive shots, emotion, performance, continuity, and reliable Markdown/XLSX delivery."
