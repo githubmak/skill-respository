@@ -1,4 +1,4 @@
 interface:
-  display_name: "Voice Analysis"
-  short_description: "为角色设计自然无AI腔的声线、语速与台词演绎提示词"
-  default_prompt: "Use $voice-analysis to design a natural character voice and dialogue delivery prompt."
+  display_name: "角色声线设计skill"
+  short_description: "设计自然无AI腔的角色声音与台词演绎"
+  default_prompt: "使用 $voice-analysis（/声线设计）根据角色信息设计自然的声线和台词演绎提示词。"

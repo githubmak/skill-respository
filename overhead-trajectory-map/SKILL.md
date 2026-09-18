@@ -1,6 +1,6 @@
 ---
 name: overhead-trajectory-map
-description: "Generate AI-ready combined trajectory reference sheets from a storyboard shot, script beat, shot table row, or AI video prompt: one image containing a top-down orthographic plan-view trajectory map plus a front/elevation trajectory view. Explicit slash commands include /俯视, /俯视轨迹, /正视轨迹, /轨迹俯视图, /俯视轨迹图, /上帝视角, /上帝视角调度图, /人物运动轨迹, /摄像机运动轨迹, /镜头轨迹图, /人物布局图, /调度图, /调度俯视图, and /AI视频调度图. Use when the user asks for 俯视, 正视, 双视图轨迹图, 俯视+正视轨迹图, 轨迹调度参考图, blocking diagram, overhead map, front-view trajectory, camera path reference, AI视频角色位置统一调度参考图, or wants a prompt/spec that creates one combined reference image with a realistic vertical top-down scene base, a front/elevation height-and-depth view, colored dashed character routes, white camera rails, start/end markers, fixed spatial anchors, height markers, and side legends."
+description: 将分镜、动作节拍或 AI 视频提示词转换为包含俯视图和正视图的双视图人物与摄影机轨迹调度参考图，锁定左右、前后、高度、路线、障碍和镜头轨道。用户要求轨迹图、调度图或使用 /俯视轨迹、/正视轨迹、/双视图调度、/人物运动路线 时使用。
 ---
 
 # 轨迹调度参考图

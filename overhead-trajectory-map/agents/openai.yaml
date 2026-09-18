@@ -1,4 +1,4 @@
 interface:
-  display_name: "双视图轨迹调度图"
-  short_description: "生成俯视+正视同图轨迹调度参考图"
-  default_prompt: "Use $overhead-trajectory-map 将这个镜头生成一张包含俯视轨迹和正视轨迹的组合式调度参考图。"
+  display_name: "双视图轨迹调度图skill"
+  short_description: "生成俯视与正视合一的人物镜头调度图"
+  default_prompt: "使用 $overhead-trajectory-map（/俯视轨迹）将这个镜头生成包含俯视轨迹和正视轨迹的调度参考图。"

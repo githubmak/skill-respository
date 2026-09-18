@@ -1,0 +1,4 @@
+interface:
+  display_name: "分镜台词配音设计skill"
+  short_description: "设计分镜对白旁白的停连、语气、情绪层次和配音演绎标注"
+  default_prompt: "使用 /台词配音 调用 $dialogue-dubbing，为这段台词设计自然的停连、语气、情绪和配音演绎标注。"

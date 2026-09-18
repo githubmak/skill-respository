@@ -1,13 +1,6 @@
 ---
 name: frames-analysis
-description: >
-  Single-shot frame content, spatial layering, lighting, composition, character blocking,
-  and visual continuity analyzer for AI storyboard production. Returns quantified foreground/
-  midground/background layers, lighting design with color temperature, composition rules,
-  character positions and actions, prop states, and visual-side continuity anchors for one
-  shot. Also handles adjacent-shot pair analysis for lighting/composition/action matching.
-  Can be called by an upstream storyboard workflow during shot design or used standalone
-  for frame composition and lighting planning.
+description: 面向 AI 分镜制作的单镜画面分析，设计前景、中景、背景、光影、构图、人物调度、道具状态和视觉连续性，并支持相邻镜头匹配。用户要求画面分析、构图规划、光影设计或使用 /画面分析、/构图分析、/光影分析、/画面连续性 时使用。
 ---
 
 <!-- PIPELINE_KERNEL:START -->

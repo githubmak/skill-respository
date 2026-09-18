@@ -1,0 +1,4 @@
+interface:
+  display_name: "镜头摄影分析设计skill"
+  short_description: "设计单镜头景别、机位、焦距、运镜并检查镜头连续性"
+  default_prompt: "使用 /镜头分析 调用 $camera-analysis，为这个镜头设计景别、机位、焦距和运镜，并检查相邻镜头连续性。"

@@ -1,6 +1,6 @@
 ---
 name: cinematic-character-prompt
-description: Generate cinematic AI image prompts for human or humanoid character portraits and scenes with selectable Eastern, Western, or hybrid aesthetics, detailed costume design, natural expressions, film lighting, camera language, color grading, composition, and negative prompts. Explicit slash commands include /角色, /角色生图, /角色提示词, /人物生图, /人物提示词, /cinematic-character-prompt, and /character-prompt. Use when the user asks for AI image prompts, character visuals, portrait prompts, movie-like人物画面, 角色生图提示词, cinematic stills, fashion/period character looks, or prompts for Midjourney, SD, Flux, Sora, Runway, 即梦, 可灵, or similar image/video generation tools.
+description: 为人类或类人角色设计电影感 AI 生图提示词，涵盖服装、表情、灯光、镜头语言、调色、构图和负面提示词，支持东方、西方与混合审美。用户要求角色视觉、人物肖像、电影感人物画面或 Midjourney、SD、Flux、Sora、Runway、即梦、可灵等平台的人物提示词，或使用 /角色生图、/人物生图、/角色提示词、/人物提示词 时使用。
 ---
 
 # Cinematic Character Prompt
@@ -154,5 +154,4 @@ Before finalizing, confirm the prompt includes:
 - Camera shot, focal length or lens feel, composition, and depth, such as 85mm portrait lens, f/1.8, shallow depth of field, crisp subject focus, and soft bokeh when appropriate
 - Negative prompt targeting common failures
 - For four-view output: two-column panel order is locked; side and back panels are explicitly full-body head-to-toe views; identity/costume consistency is stated in both positive and negative prompts
-
 

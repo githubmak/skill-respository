@@ -1,12 +1,6 @@
 ---
 name: camera-analysis
-description: >
-  Single-shot camera, lens, shot-size, and movement analyzer for AI storyboard production.
-  Returns quantified shot size, camera angle, lens/focal length, movement parameters,
-  axis rule check, transition type, shot-size gradient check, and 3D virtual-set camera
-  coordinates for one shot. Also handles adjacent-shot pair analysis for continuity validation.
-  Can be called by an upstream storyboard workflow during shot design or used standalone
-  for camera and movement planning.
+description: 面向 AI 分镜制作的单镜头摄影分析，设计景别、机位、角度、焦距、运镜和三维虚拟片场摄影机坐标，并检查轴线、转场及相邻镜头连续性。用户要求镜头摄影设计、机位规划、运镜分析或镜头衔接检查，或使用 /镜头分析、/运镜分析、/机位分析、/镜头连续性 时使用。
 ---
 
 <!-- PIPELINE_KERNEL:START -->

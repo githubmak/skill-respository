@@ -1,14 +1,6 @@
 ---
 name: emotion-analysis
-description: >
-  Single-shot emotion, performance, and dialogue-delivery analyzer for AI storyboard production.
-  Produces structured pause annotations, intonation markings, expression causality chains,
-  micro-expression selections, psychology timeline entries, and performance control sheets
-  for one storyboard shot at a time. Also provides a standardized emotion library with
-  11 copy-paste AI prompt templates for short-drama facial expressions, character archetype
-  emotion presets, cinematic micro-expression techniques, lighting/color-grading tables,
-  and one-click universal prompt templates. Can be called by an upstream storyboard workflow
-  during shot design or used standalone for dialogue rehearsal and character emotion breakdown.
+description: 面向 AI 分镜制作的单镜头角色情绪与表演分析，设计停顿、语调、表情因果链、微表情、心理变化和表演控制，并提供可复用的短剧表情提示词。用户要求拆解角色心理、情绪递进、微表情或台词表演，或使用 /情绪分析、/表演分析、/微表情、/情绪演绎 时使用。
 ---
 
 <!-- PIPELINE_KERNEL:START -->

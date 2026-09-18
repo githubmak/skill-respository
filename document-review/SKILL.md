@@ -1,6 +1,6 @@
 ---
 name: document-review
-description: 文案审核与校对，专注于剧情bug、错别字、语法错误、设定矛盾和时间线冲突，并标注具体修改位置。支持直接文本及 txt/docx/md 文件。用户要求“审核文案”“校对”“检查小说”“有没有语病/错别字”“人设或时间线是否冲突”，或使用 /check、/review、proofread、fact-check、consistency check 时使用。
+description: 审核并校对文案、小说或剧本，检查剧情漏洞、错别字、语法错误、人物设定矛盾和时间线冲突，并标注具体修改位置；支持直接文本及 txt、docx、md 文件。用户要求校对文字、检查小说、排查语病错字或核对剧情设定，或使用 /文案校对、/小说校对、/剧情检查、/设定检查 时使用。
 ---
 
 # document-review — 文案审核与校对

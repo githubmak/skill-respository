@@ -1,4 +1,4 @@
 interface:
-  display_name: "打斗戏视频设计"
-  short_description: "动作事实保真、情绪战术鲜明、全提示词语义化的 Seedance 打斗分镜"
-  default_prompt: "使用 $fight-scene-video：锁定剧情事实、能力规则、伤势、胜负和结果，先从威胁判断、战术目标、混合情绪与控制权推导动作及多人反应，再联合设计承载动作因果和情绪冲击的起幅景别、运镜、焦点与终幅景别，反向完成物理连续的攻防、VFX 和环境反馈；以我提供的风格为主补全全局与逐场景视觉及 Seedance 2.5 提示词，最终只用 AI 语义化自然语言按固定列表模板一次输出。"
+  display_name: "打斗分镜设计skill"
+  short_description: "设计连续、清晰、可生成的打斗与斗法分镜"
+  default_prompt: "使用 $fight-scene-video（/打斗分镜）锁定剧情事实、能力规则、伤势、胜负和结果，设计物理连续的攻防、反应、VFX与Seedance提示词。"

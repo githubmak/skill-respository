@@ -1,12 +1,6 @@
 ---
 name: dialogue-dubbing
-description: >
-  Single-shot dialogue dubbing and voiceover analyzer for AI storyboard and video production.
-  Produces punctuation-controlled pause timing, emotion-stratified delivery, tone subdivision,
-  standardized line annotation format, and pitfall avoidance for manhua-style storyboard
-  dialogue. Adapts output for Jimeng (即梦) and all major AI dubbing tools. Can be
-  called by an upstream storyboard workflow when a shot contains dialogue, OV, or OS,
-  or used standalone for dialogue rehearsal and voiceover planning.
+description: 面向 AI 分镜和视频制作的单镜头台词配音设计，通过标点控制停顿，细分情绪和语气，输出标准台词演绎标注，并适配即梦及主流 AI 配音工具。用户要求设计对白、旁白、OV、OS 的停连、语气或配音表演，或使用 /台词配音、/对白演绎、/旁白配音、/配音分析 时使用。
 ---
 
 <!-- PIPELINE_KERNEL:START -->
