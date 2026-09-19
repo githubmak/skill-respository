@@ -1,4 +1,4 @@
 interface:
-  display_name: "镜头摄影分析设计skill"
-  short_description: "设计单镜头景别、机位、焦距、运镜并检查镜头连续性"
-  default_prompt: "使用 /镜头分析 调用 $camera-analysis，为这个镜头设计景别、机位、焦距和运镜，并检查相邻镜头连续性。"
+  display_name: "单镜头指向性摄影精修skill"
+  short_description: "单镜头高级运镜推荐、确认与定向摄影精修"
+  default_prompt: "使用 $camera-analysis 分析这个单镜头；若我未指定目标运镜，先推荐高级运镜候选并等我确认，确认后再按原格式修改。"

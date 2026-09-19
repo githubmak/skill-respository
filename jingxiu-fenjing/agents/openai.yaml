@@ -1,4 +1,4 @@
 interface:
   display_name: "分镜脚本精修skill"
-  short_description: "在保留原结构的基础上精修表演与声画镜头"
-  default_prompt: "使用 $jingxiu-fenjing（/精修分镜）读取完整分镜 Markdown，精修表演、镜头、节奏、光影和声音，并保持原栏目结构。"
+  short_description: "整剧精修生成单元，统筹表演、镜头、节奏与声画"
+  default_prompt: "使用 $jingxiu-fenjing（/精修分镜）读取完整分镜 Markdown，按原“### 生成单元”模板统筹精修整剧的表演、动作、镜头、节奏、光影材质与声音；全局素材和单元外栏目原样保留。"
