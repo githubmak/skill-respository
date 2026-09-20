@@ -1,4 +1,4 @@
 interface:
-  display_name: "双视图轨迹调度图skill"
-  short_description: "生成俯视与正视合一的人物镜头调度图"
-  default_prompt: "使用 $overhead-trajectory-map（/俯视轨迹）将这个镜头生成包含俯视轨迹和正视轨迹的调度参考图。"
+  display_name: "场景关键帧与轨迹"
+  short_description: "生成含人物道具的起幅、中间关键帧和落幅"
+  default_prompt: "使用 $overhead-trajectory-map，根据场景、人物和道具参考图生成含完整人物与物件的起幅、中间关键帧和落幅 PNG，检查形体与连续性；仅在我明确要求时绘制调度图。"

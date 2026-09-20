@@ -1,59 +1,70 @@
-# Visual Specification
+# 调度图 PNG 视觉规范（仅显式请求时使用）
 
-Use this reference when generating a full prompt or detailed layout for a trajectory overhead map.
+只有用户明确要求俯视轨迹图、正视轨迹图、双视图调度图、人物运动路线图或摄影机轨迹图时，才读取并执行本规范。默认含人物与道具的多关键帧模式不得生成调度图。
 
-## Image Grammar
+## 交付物
 
-The image must read as a production blocking reference, not as a beauty still.
+- 默认交付一张横向合并式调度 PNG，推荐 `2400×1600` 或更高。
+- 若用户明确要求模型版与导演版，才输出两张内容同源的 PNG。
+- 不生成或交付 SVG 源文件。
+- 可在内部使用 Canvas、HTML 或临时矢量几何进行确定性渲染，但最终交付只有 PNG。
 
-Required visual structure:
+推荐文件名：
 
-- Vertical orthographic top-down view, pure god-view plan, no perspective tilt.
-- Full realistic scene base: architecture, floor texture, stalls, furniture, props, doors, walls, vehicles, trees, terrain, or palace structures.
-- Top-down full-body silhouettes or simplified overhead human figures at start/end positions.
-- Colored dashed lines for character movement.
-- White solid line for camera movement.
-- Arrowheads showing direction of travel.
-- Circular start and end markers for each moving subject.
-- Side legend outside or along the least important edge of the scene.
-- Annotation layers clear enough to guide AI video generation.
+- 单图：`{镜号}_{场景名}_调度图.png`
+- 显式双版本：`{镜号}_{场景名}_模型参考调度图.png`、`{镜号}_{场景名}_导演调度图.png`
 
-## Recommended Line System
+## 组合图语法
 
-- 人物1: blue dashed route, blue `S1` and `E1` circles.
-- 人物2: yellow dashed route, yellow `S2` and `E2` circles.
-- 人物3: red dashed route, red `S3` and `E3` circles.
-- 群演/人群: gray dotted route or translucent group zone.
-- 摄像机: white solid rail with `CAM S` and `CAM E`.
-- Fixed props/anchors: thin black or dark-gray labels.
-- Forbidden/blocked zones: translucent red hatch only when useful.
-- Field of view: faint white wedge if the camera direction matters.
+- 同一张画布分成两个同步面板。
+- 左栏：垂直正交纯上帝俯视图，`orthographic top-down plan view`，`no perspective horizon`。
+- 右栏：正视或侧向正交立面轨迹图，`orthographic front/side elevation view`，`no perspective depth distortion`。
+- 两栏共享同一人物编号、颜色、S/E 起终点、箭头和图例。
+- 俯视栏锁定左右、前后、入口、障碍和水平路线；正视栏锁定地面线、高度、台阶、遮挡和腾空/落点关系。
 
-## Prompt Pattern
+## 线条系统
 
-Use this structure and fill only what the source supports:
+- 人物1：蓝色虚线，蓝色 `S1`、`E1`。
+- 人物2：黄色虚线，黄色 `S2`、`E2`。
+- 人物3：红色虚线，红色 `S3`、`E3`。
+- 群演：灰色点线或半透明区域。
+- 摄影机：白色实线轨道，标注 `CAM S`、`CAM E`。
+- 视线：绿色箭头。
+- 禁入区：必要时使用半透明红色斜线。
 
-```text
-垂直正交纯上帝俯视图，orthographic top-down plan view, no perspective horizon, complete realistic [scene/location] base map, [fixed spatial anchors], overhead full-body silhouettes of [characters], [character 1] marked with blue dashed movement trajectory from S1 to E1, circular start and end markers, arrowheads along the path, [character 2] marked with yellow dashed movement trajectory from S2 to E2, [camera movement] shown as a white solid camera rail from CAM S to CAM E with arrowheads, side legend explaining blue/yellow/white route meanings, layered production blocking annotations, clean readable Chinese labels, annotations do not cover important scene anchors, realistic ground texture, fixed building/stall/prop layout, AI video continuity reference map
-```
+只要出现推、拉、横移、跟拍、环绕、升降或手持移动，就必须绘制白色实线摄影机轨道；纯摇镜、纯俯仰或固定镜头才使用固定机位点与视锥。
 
-## Negative Prompt Pattern
+## 场景底图与精确层
 
-```text
-倾斜俯拍, oblique aerial view, perspective horizon, first-person view, front-facing character portrait, blank diagram, empty floor plan, missing realistic scene base, cropped scene, unreadable labels, overlapping labels, cluttered arrows, same color paths, missing start markers, missing end markers, missing camera rail, decorative infographic only, no spatial anchors, route lines covering key props, inconsistent scale
-```
+- 建筑边界、门窗、入口、角色点位、路线、摄影机轨道、FOV、时间点和文字必须由确定性几何绘制。
+- AI 只能提供无人物、无文字、无箭头的低权重场景底图，不负责几何或中文标注。
+- 若 AI 底图改变建筑数量、门宽、门窗数量、道路方向、树位或主要比例，丢弃 AI 底图并使用纯矢量/Canvas 底图。
+- 不要求为了调度 PNG 额外生成独立 AI 俯视或立面底图；只有确实提高辨识度时才生成。
 
-## Layout Reasoning Rules
+## 布局
 
-- Keep the scene north-up unless the source defines a more important orientation.
-- Place entrances and exits on map edges when possible.
-- Place power centers such as throne, dais, altar, office desk, gate, or market stall as fixed anchors before placing characters.
-- Draw routes around obstacles unless the script says a character crosses, jumps, crashes through, or breaks them.
-- Use curved paths for chase, avoidance, hesitation, or following action; use straight paths for formal approach, command, attack, or direct confrontation.
-- Use short route segments for subtle body shifts; avoid exaggerating a small gesture into a long walk.
-- If multiple characters cross paths, offset dashed lines slightly and use numbered arrows.
-- If the camera follows a character, keep the white rail near but not on top of that character's colored route.
-- If the shot is a push-in (dolly-in), draw a white solid rail with arrowhead toward the subject — mandatory rail, not optional. Push-in physically moves the camera, so a fixed position is NEVER correct.
-- Handheld shake is an overlay on the primary movement rail — never drop the rail because of handheld. Draw the main trajectory as white solid, then annotate ±Xpx vibration marks alongside.
-- If the shot is an orbit, draw a white arc around the subject and label clockwise/counterclockwise.
-- If the shot is locked-off (static, no movement at all, or pure pan/tilt rotation), draw a camera point and view wedge instead of a rail.
+- 深色外框、浅色场景底图，确保白色摄影机轨道清楚。
+- 左栏约占 55%—62%，右栏约占 38%—45%。
+- 底部可保留统一时间轴与图例。
+- 入口尽量靠图面边缘；标签避开路线交叉和关键锚点。
+- 正视图标明必要的地面线、高度线、台阶、平台、墙顶或遮挡物高度。
+
+## 模型版与导演版（仅显式双版本）
+
+- 模型版：保留场景锚点、人物标记、朝向、路线、摄影机轨道、S/E、焦段和短标签。
+- 导演版：增加人物全名、时间节拍、任务分工、遮挡说明和连续性约束。
+- 两版几何、路线、相机点、颜色和编号必须完全一致。
+
+## 视觉检查
+
+交付前打开 PNG 检查：
+
+- 文字无截断且缩略图可读；
+- 路线不遮挡主体或入口；
+- 箭头尺寸正常；
+- 两栏 S/E 编号一致；
+- 移动镜头具有可辨识白色轨道；
+- 图例完整且不遮挡主要调度区；
+- 建筑、门窗、入口、道路与参考图一致。
+
+发现问题后修正并重新渲染；未检查的 PNG 不得标为完成。
