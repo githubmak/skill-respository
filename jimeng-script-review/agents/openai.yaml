@@ -1,4 +1,4 @@
 interface:
   display_name: "即梦剧本审核skill"
-  short_description: "检查剧本的即梦平台风险并给出合规改写"
+  short_description: "检查即梦剧本风险并提供问题定位、合规改写与复审结论"
   default_prompt: "使用 $jimeng-script-review（/剧本审核）审核这份剧本，列出风险位置、对照改写和复审建议。"

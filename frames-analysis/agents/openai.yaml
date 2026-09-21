@@ -1,7 +1,0 @@
-interface:
-  display_name: "画面构图分析skill"
-  short_description: "分析分镜画面、构图、光影与视觉连续性"
-  default_prompt: "使用 $frames-analysis（/画面分析）规划这个镜头的空间分层、构图、光影和人物画面连续性。"
-
-policy:
-  allow_implicit_invocation: true

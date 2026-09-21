@@ -1,4 +1,4 @@
 interface:
   display_name: "角色声线设计skill"
-  short_description: "生成有实体感、低AI感的角色声线与台词"
+  short_description: "生成有实体感、低 AI 感的角色声线与台词演绎提示词"
   default_prompt: "使用 $voice-analysis（/声线设计）从角色信息生成有实体感、低AI感的声线和台词演绎提示词，控制风格叠加与机械韵律。"

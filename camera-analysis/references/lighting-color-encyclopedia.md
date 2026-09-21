@@ -1,6 +1,6 @@
 # 画面光影百科 (Frames & Lighting Encyclopedia)
 
-> 这是 frames-analysis 技能的详细参考内容，仅在需要查找精确光色、软硬分级、专属效果模板、标准光源描述时才读取。
+> 这是 camera-analysis 技能的画面与光色参考内容，仅在需要查找精确光色、软硬分级、专属效果模板、标准光源描述时才读取。
 > 常规执行时不需要加载此文件——kernel 规则 + contracts + 核心规则已在 SKILL.md 中内联。
 
 ---

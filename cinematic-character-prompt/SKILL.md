@@ -7,6 +7,12 @@ description: 为人类或类人角色设计电影感 AI 生图提示词，涵盖
 
 ## Core Workflow
 
+## File Output Boundary
+
+- 默认只在对话中输出提示词，不自动生成或保存图片文件。
+- 只有用户明确要求生成/保存图像时，才写入指定目录；未指定时使用当前工作区的 `outputs/`。
+- 不覆盖参考图或已有资产；完成后报告实际生成的文件路径。
+
 1. Extract the user's explicit requirements: character identity, age range, gender presentation, era, culture, mood, pose/action, scene, platform, language, aspect ratio, and any required aesthetic direction.
 2. Guide the user to choose the desired image style and layout before writing the final prompt when these are not already specified.
    - Image style options should be concise and useful, such as: cinematic realistic portrait, refined Chinese fantasy/court, Western historical fantasy, modern editorial, dark epic, soft romantic, or hybrid East-West.
@@ -154,4 +160,3 @@ Before finalizing, confirm the prompt includes:
 - Camera shot, focal length or lens feel, composition, and depth, such as 85mm portrait lens, f/1.8, shallow depth of field, crisp subject focus, and soft bokeh when appropriate
 - Negative prompt targeting common failures
 - For four-view output: two-column panel order is locked; side and back panels are explicitly full-body head-to-toe views; identity/costume consistency is stated in both positive and negative prompts
-

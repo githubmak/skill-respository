@@ -220,6 +220,12 @@ def validate(text: str) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("path", type=Path)
+    parser.add_argument(
+        "--mode",
+        choices=["rapid", "refined"],
+        default="refined",
+        help="统一调用接口参数；本校验器两种模式使用同一结构校验。",
+    )
     args = parser.parse_args()
 
     try:

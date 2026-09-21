@@ -86,4 +86,4 @@
 - 全局和场景视觉、Seedance 提示词、生成段、镜头编号及时长结构完整。
 - 每镜八字段顺序正确，台词/OS/OV 未改，所有镜头包括末镜都有具体尾帧。
 - 扫描正文，确认没有工程参数、内部分类、候选分析、检查表、风险标签或校验记录。
-- 运行 `python3 scripts/validate_storyboard_format.py <成品.md>`。脚本只检查机器可判定的结构，不触发成稿后的二次导演改写。
+- 运行 `SKILL_DIR="<fight-scene-video 技能目录>"; python3 "$SKILL_DIR/scripts/validate_storyboard.py" <成品.md> --mode refined`。脚本只检查机器可判定的结构，不触发成稿后的二次导演改写。

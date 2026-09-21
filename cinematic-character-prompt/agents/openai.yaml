@@ -1,6 +1,6 @@
 interface:
   display_name: "角色生图设计skill"
-  short_description: "生成角色形象、服装设计、表情提示词"
+  short_description: "生成电影感角色形象、服装、表情、灯光与镜头生图提示词"
   default_prompt: "使用 /角色生图 调用 $cinematic-character-prompt，为这个人物设计电影感角色形象和可直接使用的生图提示词。"
 
 policy:

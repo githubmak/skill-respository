@@ -1,4 +1,4 @@
 interface:
   display_name: "角色情绪表演设计skill"
-  short_description: "拆解单镜角色情绪、心理变化、微表情和台词表演控制"
+  short_description: "拆解单镜角色情绪、心理变化、微表情与台词表演控制方案"
   default_prompt: "使用 /情绪分析 调用 $emotion-analysis，拆解这个镜头的角色情绪、心理变化、微表情和台词表演。"

@@ -1,4 +1,4 @@
 interface:
-  display_name: "单镜头指向性摄影精修skill"
-  short_description: "单镜头高级运镜推荐、确认与定向摄影精修"
-  default_prompt: "使用 $camera-analysis 分析这个单镜头；若我未指定目标运镜，先推荐高级运镜候选并等我确认，确认后再按原格式修改。"
+  display_name: "单镜头摄影与画面精修skill"
+  short_description: "整合单镜头画面构图、光影、运镜与摄影连续性的精修工具"
+  default_prompt: "使用 $camera-analysis 分析这个单镜头的画面、构图、光影与摄影；若我未指定目标运镜，先推荐候选并等我确认，确认后再按原格式修改。"

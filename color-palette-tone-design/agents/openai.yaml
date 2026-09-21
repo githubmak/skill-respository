@@ -1,0 +1,4 @@
+interface:
+  display_name: "色卡影调设计skill"
+  short_description: "根据剧情内容生成两张独立的全剧色卡与影调视觉规范图"
+  default_prompt: "使用 $color-palette-tone-design 根据我提供的整剧内容，生成两张独立的 2560×1440 全剧色卡图和全剧影调图。"
