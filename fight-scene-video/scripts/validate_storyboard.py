@@ -71,6 +71,25 @@ SEGMENT_LINE = re.compile(
     r"(?m)^生成段 (?P<number>\d{2})｜(?P<name>[^｜\r\n]+)｜"
     r"(?P<duration>\d+(?:\.\d+)?)s$"
 )
+SINGLE_UNIT = re.compile(
+    r"^###\s+生成单元\s+(G\d+)\s*[｜|]\s*时长[：:]\s*"
+    r"(\d+(?:\.\d+)?)\s*秒\s*[｜|]\s*承载[：:]\s*([^\n]+)$",
+    re.M,
+)
+SINGLE_WINDOW = re.compile(
+    r"^\s{2,}-\s*(\d+(?:\.\d+)?)\s*[—–-]\s*(\d+(?:\.\d+)?)\s*秒\s*[｜|]\s*(.+)$",
+    re.M,
+)
+SINGLE_FIELDS = [
+    "起幅与连续性",
+    "摄影与构图",
+    "光影、环境色彩与材质",
+    "画面与表演时间线",
+    "台词与声音层次",
+    "落幅状态",
+]
+SHOT_SIZES = re.compile(r"大特写|特写|近景|中近景|中景|中全景|全景|大远景|远景|半身")
+FOCAL_LENGTH = re.compile(r"\d+(?:\.\d+)?\s*(?:mm|毫米)")
 SHOT = re.compile(
     rf"(?P<header>{HEADER})\n"
     rf"  - 起始状态：(?P<start_type>{START_TYPES})｜(?P<start_state>[^\r\n]+)\n"
@@ -91,6 +110,51 @@ INTERNAL_MARKER = re.compile(
     r"(?<![A-Za-z0-9])CAM(?:ERA)?(?![A-Za-z0-9])|剧本保真矩阵|原文证据|"
     r"负面提示词|负面约束|风险分数"
 )
+
+
+def validate_single(text: str) -> list[str]:
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    errors: list[str] = []
+    units = list(SINGLE_UNIT.finditer(normalized))
+    if not units:
+        return ["未找到单生成单元标题；格式应为 ### 生成单元 G…｜时长：X秒｜承载：…"]
+    for index, match in enumerate(units):
+        unit_id = match.group(1).strip()
+        duration = float(match.group(2))
+        if duration <= 0 or duration > 35:
+            errors.append(f"生成单元 {unit_id} 时长必须大于0且不超过35秒。")
+        end = units[index + 1].start() if index + 1 < len(units) else len(normalized)
+        body = normalized[match.end():end].strip()
+        for field in SINGLE_FIELDS:
+            if not re.search(r"^- " + re.escape(field) + r"[：:]", body, re.M):
+                errors.append(f"生成单元 {unit_id} 缺少字段：{field}。")
+        timeline = re.search(r"^- 画面与表演时间线[：:]\s*\n(.*?)(?=^- \S|\Z)", body, re.S | re.M)
+        if not timeline:
+            errors.append(f"生成单元 {unit_id} 缺少嵌套时间线。")
+            continue
+        windows = list(SINGLE_WINDOW.finditer(timeline.group(1)))
+        if not windows:
+            errors.append(f"生成单元 {unit_id} 没有可解析的时间段。")
+            continue
+        previous = 0.0
+        for window in windows:
+            start, stop = float(window.group(1)), float(window.group(2))
+            detail = window.group(3)
+            if abs(start - previous) > 0.05 or stop <= start:
+                errors.append(f"生成单元 {unit_id} 时间段不连续或起止无效：{start:g}-{stop:g}秒。")
+            previous = stop
+            if not FOCAL_LENGTH.search(detail):
+                errors.append(f"生成单元 {unit_id} 时间段缺少焦段：{detail}。")
+            if not SHOT_SIZES.search(detail):
+                errors.append(f"生成单元 {unit_id} 时间段缺少中文景别：{detail}。")
+            parts = [part.strip() for part in re.split(r"[｜|]", detail)]
+            if len(parts) < 3 or not parts[0] or not parts[1] or not "".join(parts[2:]).strip():
+                errors.append(f"生成单元 {unit_id} 时间段必须包含承载镜号、焦段/景别和画面执行描述。")
+            if not re.search(r"声音[：:]", detail):
+                errors.append(f"生成单元 {unit_id} 时间段缺少声音描述。")
+        if abs(previous - duration) > 0.05:
+            errors.append(f"生成单元 {unit_id} 标题时长{duration:g}秒与时间线结束{previous:g}秒不一致。")
+    return errors
 
 
 def validate(text: str) -> list[str]:
@@ -222,9 +286,9 @@ def main() -> int:
     parser.add_argument("path", type=Path)
     parser.add_argument(
         "--mode",
-        choices=["rapid", "refined"],
+        choices=["rapid", "refined", "single"],
         default="refined",
-        help="统一调用接口参数；本校验器两种模式使用同一结构校验。",
+        help="rapid/refined 校验连续战斗固定结构；single 校验单生成单元结构。",
     )
     args = parser.parse_args()
 
@@ -234,7 +298,7 @@ def main() -> int:
         print(f"cannot read {args.path}: {exc}", file=sys.stderr)
         return 2
 
-    errors = validate(text)
+    errors = validate_single(text) if args.mode == "single" else validate(text)
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)

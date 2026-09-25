@@ -1,4 +1,4 @@
 interface:
   display_name: "打斗分镜设计skill"
-  short_description: "设计连续、清晰、可生成的武侠斗法与多人战斗导演分镜"
-  default_prompt: "使用 $fight-scene-video（/打斗分镜）锁定剧情事实、能力规则、伤势、胜负和结果，设计物理连续的攻防、反应、VFX与Seedance提示词。"
+  short_description: "设计连续斗法或单生成单元玄幻镜头"
+  default_prompt: "使用 $fight-scene-video（/打斗分镜或/单镜斗法）锁定事实、能力和结果；输入完整战斗时设计连续攻防，输入单个生成单元时精修玄幻画面、构图、运镜、VFX与声音。"
