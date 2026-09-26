@@ -1,4 +1,4 @@
 interface:
   display_name: "单镜头摄影与画面精修skill"
-  short_description: "整合单镜头画面构图、光影、运镜与摄影连续性的精修工具"
-  default_prompt: "使用 $camera-analysis 分析这个单镜头的画面、构图、光影与摄影；若我未指定目标运镜，先推荐候选并等我确认，确认后再按原格式修改。"
+  short_description: "单镜完整精修，自动优选运镜并处理构图、局部光影与连续性"
+  default_prompt: "使用 $camera-analysis 精修这个单镜头并交付完整结果；若我未指定运镜，请比较候选、推荐并直接采用最优方案，按原格式完成摄影、构图、局部光影与连续性设计。"

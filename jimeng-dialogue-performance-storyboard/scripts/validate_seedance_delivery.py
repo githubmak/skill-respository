@@ -16,7 +16,6 @@ GLOBAL_SECTIONS = (
     "全局影调",
     "全局光影",
     "全局环境色彩",
-    "分场光影继承表",
     "全局正向提示词",
     "全局负面提示词",
 )
@@ -37,20 +36,21 @@ DIRECTOR_FIELDS = (
     "直投保护",
 )
 IDENTITY_TEMPLATE = (
-    "人物面部身份与识别特征严格继承参考图，脸型及眉眼鼻唇的基础比例、轮廓和相对位置保持稳定；"
-    "表情肌肉、眼球视线、眼睑、嘴唇、下颌、头颈姿态与呼吸按剧情自然联动，允许受光、泪光、"
-    "伤势和动作产生真实变化，但不得改变人物身份、五官基础比例或重新采样面部结构；"
-    "所有镜头人物面部基准统一"
+    "人物面部身份与识别特征全程保持稳定；有用户提供的人物参考图或确认的角色首帧时，继承其脸型及眉眼鼻唇的基础比例、轮廓和相对位置；"
+    "无参考图或确认首帧时，只建立角色识别所需的最小面部连续性，不主动补造未确认的年龄、体型、肤色、发型或服装；"
+    "表情肌肉、眼球视线、眼睑、嘴唇、下颌、头颈姿态与呼吸按剧情自然联动，允许受光、泪光、伤势和动作产生真实变化，"
+    "但不得改变人物身份、五官基础比例或重新采样面部结构；所有镜头人物面部基准统一"
 )
 CG3D_TEMPLATE = (
-    "3D CG写实电影渲染，人物建模采用高精度次世代角色标准，稳定清晰的皮肤材质与五官结构，"
-    "自然方向性面部受光，暗侧保留连续纹理，合理的皮肤次表面散射，受控高光与干净面部光影，"
-    "跨镜皮肤质感稳定"
+    "3D CG写实电影渲染，人物建模采用高精度次世代角色标准，稳定清晰的皮肤材质与五官结构，自然方向性面部受光；"
+    "允许由真实光源形成的连续面部明暗关系，暗侧保留连续纹理；禁止随机黑斑、脏灰暗块、彩色杂点、局部脏色、"
+    "皮肤生成噪点和跨帧跳变阴影；合理的皮肤次表面散射，受控高光与干净面部光影，跨镜皮肤质感稳定"
 )
 FACE_NEGATIVE_TEMPLATE = (
-    "面部斑驳，脸部黑斑，脏色块，皮肤阴影斑块，面部噪点，脸部脏污，跨镜头人脸不一致，同人物多张脸"
+    "无剧情依据的面部斑驳与随机黑斑，非设定脏色块，随机皮肤阴影斑块，脏灰暗块，彩色杂点，局部脏色，"
+    "面部生成噪点，跨帧跳变阴影，无依据或跨镜漂移的脸部污迹，跨镜头人脸不一致，同人物多张脸"
 )
-CG3D_NEGATIVE = "法线错误，贴图错乱"
+
 NON_REALISTIC_3D_STYLE = re.compile(
     r"卡通\s*3D|3D\s*卡通|黏土|粘土|低多边形|low[\s-]*poly|非写实\s*(?:3D|三维)",
     re.IGNORECASE,
@@ -61,10 +61,9 @@ REALISTIC_3D_STYLE = re.compile(
 )
 
 SHOT_HEADER = re.compile(
-    r"(?m)^### 镜头S(?P<scene>\d+)-(?P<number>\d+)｜(?:时长：)?"
-    r"(?P<duration>\d+(?:\.\d+)?)秒｜(?P<label>[^\r\n]+)$"
+    r"(?m)^### 生成单元\s+G(?P<unit>\d+)\s*｜时长：(?P<duration>\d+(?:\.\d+)?)\s*秒｜承载：.*?镜头\s*S(?P<scene>\d+)-(?P<number>\d+).*?｜(?P<label>[^\r\n]+)$"
 )
-FIELD_HEADER = re.compile(r"(?m)^- \*\*(?P<name>[^*\r\n]+)\*\*：(?P<value>[^\r\n]*)$")
+FIELD_HEADER = re.compile(r"(?m)^- (?:\*\*)?(?P<name>[^*\r\n：]+)(?:\*\*)?：(?P<value>[^\r\n]*)$")
 TIMELINE_ROW = re.compile(
     r"(?m)^[ \t]*-\s+`?(?P<start>\d+(?:\.\d+)?)\s*[—–-]\s*"
     r"(?P<end>\d+(?:\.\d+)?)秒\s*｜(?P<stage>[^`\r\n：:]+)`?\s*[：:]"
@@ -219,23 +218,23 @@ def validate_direct(text: str, source_text: str | None = None) -> list[str]:
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
     errors: list[str] = []
 
-    if "Seedance独立直投版" not in normalized[:200]:
+    if not re.search(r"Seedance\s*独立直投版", normalized[:200]):
         errors.append("标题必须明确标注“Seedance独立直投版”。")
 
     positions: list[int] = []
     for heading in GLOBAL_SECTIONS:
-        marker = f"## 【{heading}】"
-        count = normalized.count(marker)
+        marker_re = re.compile(rf"(?m)^## (?:【)?{re.escape(heading)}(?:】)?\s*$")
+        count = len(marker_re.findall(normalized))
         if count != 1:
             errors.append(f"全局章节“{heading}”必须且只能出现一次；当前出现 {count} 次。")
             continue
-        positions.append(normalized.index(marker))
+        positions.append(marker_re.search(normalized).start())
         body = section_body(normalized, heading)
         if body is None or not body:
             errors.append(f"全局章节“{heading}”不得为空。")
     if len(positions) == len(GLOBAL_SECTIONS) and positions != sorted(positions):
         errors.append(
-            "全局章节顺序错误；必须按项目直投参数、摄影规则、影调、光影、环境色彩、分场光影继承表、正向、负向排列。"
+            "全局章节顺序错误；必须按项目直投参数、摄影规则、影调、光影、环境色彩、正向、负向排列。"
         )
 
     internal_hits = sorted(set(match.group(0) for match in INTERNAL_MARKERS.finditer(normalized)))
@@ -273,21 +272,15 @@ def validate_direct(text: str, source_text: str | None = None) -> list[str]:
     for index, scene in enumerate(scenes):
         end = scenes[index + 1].start() if index + 1 < len(scenes) else len(normalized)
         block = normalized[scene.start():end]
-        if "## 【场景视觉方案】" not in block:
-            errors.append(f"场景“{scene.group('name')}”缺少【场景视觉方案】。")
-        else:
-            for item in ("场景影调", "场景环境色彩", "场景光影", "光影变化触发"):
-                if not re.search(rf"(?m)^- {item}：\S", block):
-                    errors.append(f"场景“{scene.group('name')}”的视觉方案缺少“{item}”。")
-        if "## 【Seedance完整独立镜头】" not in block:
-            errors.append(f"场景“{scene.group('name')}”缺少【Seedance完整独立镜头】。")
-        if "## 【场景空间位置关系】" not in block:
+        if "## Seedance 独立直投生成单元" not in block:
+            errors.append(f"场景“{scene.group('name')}”缺少“Seedance 独立直投生成单元”。")
+        if "## 场景空间位置关系" not in block:
             errors.append(
                 f"场景“{scene.group('name')}”缺少【场景空间位置关系】；无场景图时也必须按剧本推导。"
             )
         else:
             space = re.search(
-                r"(?ms)^## 【场景空间位置关系】\s*\n(?P<body>.*?)(?=^## 【场景视觉方案】)",
+                r"(?ms)^## 场景空间位置关系\s*\n(?P<body>.*?)(?=^## 场景资产图提示词|^## Seedance 独立直投生成单元|\Z)",
                 block,
             )
             if space is None or not space.group("body").strip():
@@ -299,7 +292,7 @@ def validate_direct(text: str, source_text: str | None = None) -> list[str]:
                         f"场景“{scene.group('name')}”的空间位置关系缺少“空间依据”（场景图锁定/剧本推导/混合建立）。"
                     )
         scene_asset = re.search(
-            r"(?ms)^## 【场景资产图提示词】\s*\n(?P<body>.*?)(?=^## 【Seedance完整独立镜头】|^## 【关键道具资产提示词】|\Z)",
+            r"(?ms)^## 场景资产图提示词[^\n]*\s*\n(?P<body>.*?)(?=^## 道具资产图提示词|^## 场景空间位置关系|^## Seedance 独立直投生成单元|\Z)",
             block,
         )
         if scene_asset is None or not scene_asset.group("body").strip():
@@ -309,14 +302,8 @@ def validate_direct(text: str, source_text: str | None = None) -> list[str]:
 
     shots = parse_shots(normalized)
     if not shots:
-        errors.append("未找到符合“### 镜头S1-01｜X秒｜短语描述”的镜头。")
-    expected_by_scene: dict[int, int] = {}
+        errors.append("未找到符合“### 生成单元 G1 ｜时长：X 秒｜承载：镜头 S1-01｜短语描述”的生成单元。")
     for shot in shots:
-        expected = expected_by_scene.get(shot.scene, 1)
-        if shot.number != expected:
-            errors.append(f"镜头 {shot.shot_id} 编号不连续；场景 S{shot.scene} 期望 {expected:02d}。")
-        expected_by_scene[shot.scene] = shot.number + 1
-
         names = [name for name, _ in shot.fields]
         core_names = [name for name in names if name in CORE_FIELDS]
         if core_names != list(CORE_FIELDS):

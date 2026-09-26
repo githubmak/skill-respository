@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 UNIT = re.compile(
-    r"^###\s+(生成单元|镜头)\s+([^｜|\n]+?)\s*[｜|]\s*时长[：:]\s*"
+    r"^###\s+(生成单元)\s+([^｜|\n]+?)\s*[｜|]\s*时长[：:]\s*"
     r"(\d+(?:\.\d+)?)\s*(?:秒|[sS])([^\n]*)",
     re.M,
 )
@@ -24,14 +24,7 @@ def validate(raw, mode):
     errors = []
     comments = re.findall(r"<!--.*?-->", raw, re.S)
     body = re.sub(r"<!--.*?-->", "", raw, flags=re.S).lstrip()
-    if mode == "rapid":
-        if not comments or not raw.lstrip().startswith("<!--"):
-            errors.append("快速包顶部缺少完整HTML交接区")
-        else:
-            for key in ["交付信息", "来源原文", "不可修改", "必须覆盖", "场级导演设计源", "允许精修", "导出目录", "时长来源"]:
-                if key not in comments[0]:
-                    errors.append("交接区缺少：" + key)
-    elif comments:
+    if comments:
         errors.append("精修正文仍包含HTML交接注释")
     is_project = bool(
         re.match(r"# 《.+》[^\n]*Seedance 独立直投版", body)
@@ -64,7 +57,7 @@ def validate(raw, mode):
         errors.append("正文包含写作指令，请转换为实际画面")
     matches = list(UNIT.finditer(body))
     if not matches:
-        errors.append("未找到“### 生成单元”或兼容的“### 镜头”标题")
+        errors.append("未找到“### 生成单元”标题")
         return errors
     ids = set()
     total = 0.0
@@ -130,9 +123,8 @@ def validate(raw, mode):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("path", type=Path)
-    parser.add_argument("--mode", choices=["rapid", "refined"], default="refined")
     args = parser.parse_args()
-    errors = validate(args.path.read_text(encoding="utf-8"), args.mode)
+    errors = validate(args.path.read_text(encoding="utf-8"), "refined")
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
