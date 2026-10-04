@@ -1,6 +1,6 @@
 # Preferred Look Profile
 
-Use this as the user's default visual taste anchor when completing cinematic character prompts. Apply it unless the user explicitly asks for a different style.
+Use this as the user's default visual taste anchor when completing cinematic character prompts. Apply it only when compatible with the user’s stated character identity, age, gender presentation, culture, role, and references. Any explicit character or style constraint overrides this default profile.
 
 ## Overall Taste
 

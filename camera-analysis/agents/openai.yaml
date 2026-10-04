@@ -1,4 +1,4 @@
 interface:
-  display_name: "单镜头摄影与画面精修skill"
-  short_description: "单镜完整精修，自动优选运镜并处理构图、局部光影与连续性"
-  default_prompt: "使用 $camera-analysis 精修这个单镜头并交付完整结果；若我未指定运镜，请比较候选、推荐并直接采用最优方案，按原格式完成摄影、构图、局部光影与连续性设计。"
+  display_name: "单镜摄影、表演与配音"
+  short_description: "精修单镜摄影、角色情绪表演及台词配音"
+  default_prompt: "使用 $camera-analysis 完成这个单镜头任务；综合精修时交付完整结果，纯配音或情绪表演请求使用对应专项模式。若未指定运镜，比较候选后直接采用最合适方案。"
