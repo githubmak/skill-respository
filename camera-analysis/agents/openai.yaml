@@ -1,4 +1,4 @@
 interface:
   display_name: "单镜摄影、表演与配音"
-  short_description: "精修单镜摄影、角色情绪表演及台词配音"
-  default_prompt: "使用 $camera-analysis 完成这个单镜头任务；综合精修时交付完整结果，纯配音或情绪表演请求使用对应专项模式。若未指定运镜，比较候选后直接采用最合适方案。"
+  short_description: "精修单镜摄影与配音，按需设计配乐提示词"
+  default_prompt: "使用 $camera-analysis 完成单镜头精修；综合任务交付完整结果，纯配音、配乐或情绪请求使用对应专项模式。用户要求配乐时写本镜纯音乐提示词及声画接点；未指定运镜时比较候选并直接采用。"

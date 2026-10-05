@@ -78,6 +78,8 @@ def validate(raw, mode):
         for field in FIELDS:
             if not re.search(r"^- " + re.escape(field) + r"[：:]", text, re.M):
                 errors.append(sid + "：缺少字段 " + field)
+        if re.search(r"(?m)^- 配乐/音效协同[：:]", text):
+            errors.append(sid + "：配乐/音效协同须写入对应镜头时间窗的声音内容，不单设字段")
         timeline = re.search(r"^- 画面与表演时间线[：:]\s*\n(.*?)(?=^- \S|\Z)", text, re.S | re.M)
         if not timeline:
             errors.append(sid + "：时间线必须使用嵌套条目，不能写成同行概述")
@@ -88,6 +90,7 @@ def validate(raw, mode):
             errors.append(sid + "：缺少嵌套时间段")
             continue
         previous = 0.0
+        music_windows = 0
         for j, window in enumerate(windows):
             start, end = float(window.group(1)), float(window.group(2))
             window_text = window.group(3)
@@ -98,6 +101,8 @@ def validate(raw, mode):
                 errors.append(sid + "：时间段须明确焦距、景别和运镜")
             segment = content[window.end():windows[j+1].start() if j+1 < len(windows) else len(content)]
             compiled = window_text + "\n" + segment
+            if "配乐：" in compiled:
+                music_windows += 1
             if not re.search(r"声音[：:]", compiled):
                 errors.append(sid + "：时间段缺少声音描述")
             visual = re.split(r"声音[：:]", compiled, maxsplit=1)[0].strip()
@@ -113,6 +118,8 @@ def validate(raw, mode):
                 errors.append(sid + "：存在“固定机位/镜头”与位移运镜并存的术语矛盾")
         if abs(previous - duration) > 0.05:
             errors.append(sid + "：时间线镜尾与标题时长不一致")
+        if music_windows and music_windows != len(windows):
+            errors.append(sid + "：配乐开启时须在每个镜内时间窗写配乐子项；静默镜可写配乐：无")
     declared = re.search(r"(?:实际总时长|成片时长|总时长)[：:]\s*(?:约\s*)?(\d+(?:\.\d+)?)\s*秒", body)
     if is_project and not declared:
         errors.append("项目参数须明确写出 实际总时长：X秒")

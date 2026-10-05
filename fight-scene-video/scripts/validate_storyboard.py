@@ -28,6 +28,7 @@ SEEDANCE_PROMPTS = (
     r"  - 正向提示词：[^\r\n]+\n"
     r"  - 负向提示词：[^\r\n]+"
 )
+MUSIC_PROMPT = r"(?:\n\n- 配乐总提示词：[^\r\n]+)?"
 SCENE_CARD = (
     r"- 场景 \d{2}｜[^\r\n]+\n"
     r"  - 场景影调：[^\r\n]+\n"
@@ -35,7 +36,7 @@ SCENE_CARD = (
     r"  - 场景光影：[^\r\n]+"
 )
 GLOBAL_PREFIX = re.compile(
-    rf"\A{STYLE_LOCK}\n\n{GLOBAL_CARD}\n\n{SEEDANCE_PROMPTS}\n\n"
+    rf"\A{STYLE_LOCK}\n\n{GLOBAL_CARD}\n\n{SEEDANCE_PROMPTS}{MUSIC_PROMPT}\n\n"
 )
 EMPTY_TAIL_VALUES = {
     "无",
@@ -57,14 +58,14 @@ BLOCK = (
     r"  - 画面/表演：[^\r\n]+\n"
     r"  - 运镜/焦点：[^\r\n]+\n"
     r"  - 特效：[^\r\n]+\n"
-    r"  - 台词/音效：台词：[^\r\n]+；音效：[^\r\n]+\n"
+    r"  - 台词/音效：台词：[^\r\n]+；音效：[^\r\n]+?(?:；配乐：[^\r\n]+)?\n"
     r"  - 尾帧：[^\r\n]+"
 )
 SEGMENT_HEADER = r"生成段 \d{2}｜[^｜\r\n]+｜\d+(?:\.\d+)?s"
 SEGMENT = rf"{SEGMENT_HEADER}\n\n{BLOCK}(?:\n\n{BLOCK})*"
 SCENE_SECTION = rf"{SCENE_CARD}\n\n{SEGMENT}(?:\n\n{SEGMENT})*"
 DOCUMENT = re.compile(
-    rf"\A{STYLE_LOCK}\n\n{GLOBAL_CARD}\n\n{SEEDANCE_PROMPTS}\n\n"
+    rf"\A{STYLE_LOCK}\n\n{GLOBAL_CARD}\n\n{SEEDANCE_PROMPTS}{MUSIC_PROMPT}\n\n"
     rf"{SCENE_SECTION}(?:\n\n{SCENE_SECTION})*\n?\Z"
 )
 SEGMENT_LINE = re.compile(
@@ -99,7 +100,7 @@ SHOT = re.compile(
     r"  - 画面/表演：(?P<visual>[^\r\n]+)\n"
     r"  - 运镜/焦点：(?P<camera_focus>[^\r\n]+)\n"
     r"  - 特效：(?P<vfx>[^\r\n]+)\n"
-    r"  - 台词/音效：台词：(?P<dialogue>[^\r\n]+)；音效：(?P<audio>[^\r\n]+)\n"
+    r"  - 台词/音效：台词：(?P<dialogue>[^\r\n]+)；音效：(?P<audio>[^\r\n]+?)(?:；配乐：(?P<music>[^\r\n]+))?\n"
     r"  - 尾帧：(?P<tail>[^\r\n]+)"
 )
 RELATIVE_STATE = re.compile(
@@ -133,12 +134,13 @@ def validate_single(text: str, max_unit_seconds: float = 35.0, require_focal_len
         body = normalized[match.end():end].strip()
         field_matches = list(re.finditer(r"(?m)^- ([^：:\n]+)[：:]", body))
         actual_fields = [item.group(1) for item in field_matches]
-        for field in SINGLE_FIELDS:
+        expected_fields = SINGLE_FIELDS
+        for field in expected_fields:
             if field not in actual_fields:
                 errors.append(f"生成单元 {unit_id} 缺少字段：{field}。")
-        if actual_fields[: len(SINGLE_FIELDS)] != SINGLE_FIELDS:
-            errors.append(f"生成单元 {unit_id} 六个核心字段顺序不正确。")
-        extras = actual_fields[len(SINGLE_FIELDS) :]
+        if actual_fields[: len(expected_fields)] != expected_fields:
+            errors.append(f"生成单元 {unit_id} 核心字段顺序不正确。")
+        extras = actual_fields[len(expected_fields) :]
         allowed_extras = ["本生成单元特殊正向约束", "本生成单元特殊负面约束"]
         if extras != [field for field in allowed_extras if field in extras] or len(extras) != len(set(extras)):
             errors.append(f"生成单元 {unit_id} 含未知、重复或乱序字段。")
@@ -151,6 +153,7 @@ def validate_single(text: str, max_unit_seconds: float = 35.0, require_focal_len
             errors.append(f"生成单元 {unit_id} 没有可解析的时间段。")
             continue
         previous = 0.0
+        music_windows = 0
         for window in windows:
             start, stop = float(window.group(1)), float(window.group(2))
             detail = window.group(3)
@@ -166,8 +169,12 @@ def validate_single(text: str, max_unit_seconds: float = 35.0, require_focal_len
                 errors.append(f"生成单元 {unit_id} 时间段必须包含承载镜号、景别和画面执行描述。")
             if not re.search(r"声音[：:]", detail):
                 errors.append(f"生成单元 {unit_id} 时间段缺少声音描述。")
+            if "配乐：" in detail:
+                music_windows += 1
         if abs(previous - duration) > 0.05:
             errors.append(f"生成单元 {unit_id} 标题时长{duration:g}秒与时间线结束{previous:g}秒不一致。")
+        if music_windows and music_windows != len(windows):
+            errors.append(f"生成单元 {unit_id} 配乐开启时须在每个镜内时间窗写配乐子项；静默镜可写配乐：无。")
     return errors
 
 
@@ -185,6 +192,12 @@ def validate(text: str, max_segment_seconds: float = 30.0) -> list[str]:
             "每镜使用“- 镜头 NN｜时长s”，其下依次缩进列出起始状态、景别机位、构图/光影、画面/表演、运镜/焦点、特效、台词/音效、尾帧。"
         )
         return errors
+
+    has_global_music = bool(re.search(r"(?m)^- 配乐总提示词：", normalized))
+    shot_music_count = len(re.findall(r"(?m)^  - 台词/音效：[^\n]+；配乐：", normalized))
+    shot_count = len(re.findall(r"(?m)^- 镜头 \d{2}｜", normalized))
+    if (has_global_music and shot_music_count != shot_count) or (not has_global_music and shot_music_count):
+        errors.append("配乐开启时须有全局配乐提示词及每镜台词/音效字段内的配乐子项；关闭时两者均不出现。")
 
     segment_headers = list(SEGMENT_LINE.finditer(normalized))
     if segment_headers:
