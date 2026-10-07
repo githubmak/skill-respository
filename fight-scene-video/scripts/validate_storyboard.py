@@ -86,6 +86,7 @@ SINGLE_FIELDS = [
     "起幅与连续性",
     "摄影与构图",
     "光影、环境色彩与材质",
+    "特效与粒子",
     "画面与表演时间线",
     "台词与声音层次",
     "落幅状态",
@@ -114,7 +115,12 @@ INTERNAL_MARKER = re.compile(
 )
 
 
-def validate_single(text: str, max_unit_seconds: float = 35.0, require_focal_length: bool = False) -> list[str]:
+def validate_single(
+    text: str,
+    max_unit_seconds: float = 35.0,
+    require_focal_length: bool = False,
+    require_first_unit: bool = False,
+) -> list[str]:
     normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()
     errors: list[str] = []
     units = list(SINGLE_UNIT.finditer(normalized))
@@ -125,6 +131,8 @@ def validate_single(text: str, max_unit_seconds: float = 35.0, require_focal_len
     ids = [int(match.group(1)[1:]) for match in units]
     if ids != list(range(ids[0], ids[0] + len(ids))):
         errors.append(f"生成单元编号必须连续递增；当前为 {ids}。")
+    if require_first_unit and ids[0] != 1:
+        errors.append("完整连续战斗须从 G1 开始；指定单元请使用 --mode single。")
     for index, match in enumerate(units):
         unit_id = match.group(1).strip()
         duration = float(match.group(2))
@@ -140,6 +148,9 @@ def validate_single(text: str, max_unit_seconds: float = 35.0, require_focal_len
                 errors.append(f"生成单元 {unit_id} 缺少字段：{field}。")
         if actual_fields[: len(expected_fields)] != expected_fields:
             errors.append(f"生成单元 {unit_id} 核心字段顺序不正确。")
+        vfx_field = re.search(r"(?m)^- 特效与粒子[：:]([^\r\n]*)$", body)
+        if vfx_field and not vfx_field.group(1).strip():
+            errors.append(f"生成单元 {unit_id} 的特效与粒子栏目不能为空；无主动特效时写无。")
         extras = actual_fields[len(expected_fields) :]
         allowed_extras = ["本生成单元特殊正向约束", "本生成单元特殊负面约束"]
         if extras != [field for field in allowed_extras if field in extras] or len(extras) != len(set(extras)):
@@ -154,6 +165,7 @@ def validate_single(text: str, max_unit_seconds: float = 35.0, require_focal_len
             continue
         previous = 0.0
         music_windows = 0
+        timeline_shots: list[str] = []
         for window in windows:
             start, stop = float(window.group(1)), float(window.group(2))
             detail = window.group(3)
@@ -167,10 +179,20 @@ def validate_single(text: str, max_unit_seconds: float = 35.0, require_focal_len
             parts = [part.strip() for part in re.split(r"[｜|]", detail)]
             if len(parts) < 3 or not parts[0] or not parts[1] or not "".join(parts[2:]).strip():
                 errors.append(f"生成单元 {unit_id} 时间段必须包含承载镜号、景别和画面执行描述。")
+            elif re.fullmatch(r"S\d+-\d+", parts[0]):
+                timeline_shots.append(parts[0])
+            else:
+                errors.append(f"生成单元 {unit_id} 时间段镜号须为 S1-01 这类格式：{parts[0]}。")
             if not re.search(r"声音[：:]", detail):
                 errors.append(f"生成单元 {unit_id} 时间段缺少声音描述。")
             if "配乐：" in detail:
                 music_windows += 1
+        header_shots = re.findall(r"S\d+-\d+", match.group(3))
+        if not header_shots or list(dict.fromkeys(timeline_shots)) != header_shots:
+            errors.append(
+                f"生成单元 {unit_id} 标题承载镜号 {header_shots} "
+                f"与时间线镜号 {list(dict.fromkeys(timeline_shots))} 不一致。"
+            )
         if abs(previous - duration) > 0.05:
             errors.append(f"生成单元 {unit_id} 标题时长{duration:g}秒与时间线结束{previous:g}秒不一致。")
         if music_windows and music_windows != len(windows):
@@ -321,9 +343,9 @@ def main() -> int:
     parser.add_argument("path", type=Path)
     parser.add_argument(
         "--mode",
-        choices=["rapid", "refined", "single"],
-        default="refined",
-        help="rapid/refined 校验连续战斗固定结构；single 校验单生成单元结构。",
+        choices=["units", "single", "rapid", "refined"],
+        default="units",
+        help="units 校验完整连续战斗的 G 单元结构；single 校验指定单元；rapid/refined 兼容历史八字段稿。",
     )
     parser.add_argument("--max-segment-seconds", type=float, default=30.0)
     parser.add_argument("--max-unit-seconds", type=float, default=35.0)
@@ -339,8 +361,10 @@ def main() -> int:
         return 2
 
     errors = (
-        validate_single(text, args.max_unit_seconds, args.require_focal_length)
-        if args.mode == "single"
+        validate_single(
+            text, args.max_unit_seconds, args.require_focal_length, args.mode == "units"
+        )
+        if args.mode in {"units", "single"}
         else validate(text, args.max_segment_seconds)
     )
     if errors:
