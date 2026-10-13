@@ -6,21 +6,24 @@ import sys
 from pathlib import Path
 
 UNIT = re.compile(
-    r"^###\s+(生成单元)\s+([^｜|\n]+?)\s*[｜|]\s*时长[：:]\s*"
+    r"^###\s+(生成单元|镜头)\s+([^｜|\n]+?)\s*[｜|]\s*时长[：:]\s*"
     r"(\d+(?:\.\d+)?)\s*(?:秒|[sS])([^\n]*)",
     re.M,
 )
-WINDOW = re.compile(r"^\s{2,}-\s*(\d+(?:\.\d+)?)\s*[—–-]\s*(\d+(?:\.\d+)?)秒\s*[｜|]\s*(.+)$", re.M)
+WINDOW = re.compile(r"^\s*(?:-\s*)?(\d+(?:\.\d+)?)\s*秒?\s*[—–-]\s*(\d+(?:\.\d+)?)\s*秒\s*[｜|]\s*(.+)$", re.M)
 SIZES = re.compile(r"大特写|特写|近中景|中近景|近景|中全景|大全景|全景|中景|远景|半身")
-MOVEMENTS = re.compile(r"固定|静止|推|拉|移|跟拍|环绕|升降|摇|俯仰|甩|穿越|变焦|手持|轨道|航拍|锁定|急停")
+MOVEMENTS = re.compile(r"固定|静止|推|拉|移|跟拍|跟随|环绕|短弧|升降|升机|降机|后退|前移|摇|俯仰|甩|穿越|变焦|手持|轨道|航拍|锁定|急停")
 CONTRADICTIONS = re.compile(
     r"固定(?:机位|镜头)(?:缓慢|快速|持续|同时)?"
     r"(?:横移|侧移|推进|推近|拉远|后退|环绕|升降|跟拍)"
 )
 FIELDS = ["起幅与连续性", "摄影与构图", "光影、环境色彩与材质", "画面与表演时间线", "台词与声音层次", "落幅状态"]
-GLOBAL = ["项目直投参数", "全局摄影规则", "全局影调", "全局光影", "全局环境色彩", "全局正向提示词", "全局负面提示词"]
+GLOBAL_COMMON = ["项目直投参数", "全局摄影规则"]
+GLOBAL_LEGACY_LIGHT = ["全局影调", "全局光影", "全局环境色彩"]
+GLOBAL_CURRENT_LIGHT = ["全局光色与影调基线"]
+GLOBAL_END = ["全局正向提示词", "全局负面提示词"]
 
-def validate(raw, mode):
+def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=True, schema="auto"):
     errors = []
     comments = re.findall(r"<!--.*?-->", raw, re.S)
     body = re.sub(r"<!--.*?-->", "", raw, flags=re.S).lstrip()
@@ -31,11 +34,18 @@ def validate(raw, mode):
         or re.search(r"^## 项目直投参数\s*$", body, re.M)
         or re.search(r"^# 场景[^\n]+", body, re.M)
     )
-    if is_project:
+    if is_project and schema != "generic":
         if not re.match(r"# 《.+》[^\n]*Seedance 独立直投版", body):
             errors.append("正式标题不符合Seedance独立直投版格式")
         positions = []
-        for key in GLOBAL:
+        headings = set(re.findall(r"^## (.+?)\s*$", body, re.M))
+        if schema == "current" or (schema == "auto" and "全局光色与影调基线" in headings):
+            light = GLOBAL_CURRENT_LIGHT
+        elif schema == "legacy" or any(key in headings for key in GLOBAL_LEGACY_LIGHT):
+            light = GLOBAL_LEGACY_LIGHT
+        else:
+            light = []  # Preserve a user-provided custom lighting header.
+        for key in GLOBAL_COMMON + light + GLOBAL_END:
             found = re.search(r"^## " + re.escape(key) + r"\s*$", body, re.M)
             if not found:
                 errors.append("缺少全局栏目：" + key)
@@ -61,6 +71,7 @@ def validate(raw, mode):
         return errors
     ids = set()
     total = 0.0
+    shot_focal_tail = {}  # Same shot can span windows or generation units.
     for i, match in enumerate(matches):
         kind = match.group(1)
         sid = match.group(2).strip()
@@ -72,10 +83,10 @@ def validate(raw, mode):
             errors.append(sid + "：镜号重复")
         ids.add(sid)
         total += duration
-        if duration <= 0 or duration > 35:
-            errors.append(sid + "：生成单元时长必须大于0且不超过35秒")
+        if duration <= 0 or (kind == "生成单元" and duration > max_unit_seconds):
+            errors.append(sid + "：时长必须大于0，生成单元不得超过" + str(max_unit_seconds) + "秒")
         text = body[match.end():matches[i+1].start() if i+1 < len(matches) else len(body)]
-        for field in FIELDS:
+        for field in (FIELDS if schema != "generic" else ["画面与表演时间线"]):
             if not re.search(r"^- " + re.escape(field) + r"[：:]", text, re.M):
                 errors.append(sid + "：缺少字段 " + field)
         if re.search(r"(?m)^- 配乐/音效协同[：:]", text):
@@ -97,10 +108,28 @@ def validate(raw, mode):
             if abs(start - previous) > 0.05 or end <= start:
                 errors.append(sid + "：时间段不连续或起止无效")
             previous = end
-            if not re.search(r"\d+(?:\.\d+)?\s*mm", window_text) or not SIZES.search(window_text):
-                errors.append(sid + "：时间段须明确焦距、景别和运镜")
+            if not SIZES.search(window_text):
+                errors.append(sid + "：时间段须明确景别")
+            focal_parts = re.split(r"[｜|]", window_text)
+            focal_text = focal_parts[1] if len(focal_parts) > 1 else ""
+            focal_values = re.findall(r"(-?\d+(?:\.\d+)?)\s*(?:mm|毫米)", focal_text, re.I)
+            if not focal_values or any(float(value) <= 0 for value in focal_values):
+                errors.append(sid + "：时间段须填写正数焦段，单位支持mm或毫米")
             segment = content[window.end():windows[j+1].start() if j+1 < len(windows) else len(content)]
             compiled = window_text + "\n" + segment
+            shot_key = focal_parts[0].strip() if focal_parts else ""
+            if shot_key and focal_values and all(float(value) > 0 for value in focal_values):
+                focal_numbers = [float(value) for value in focal_values]
+                zoom = "变焦" in compiled or "→" in focal_text
+                prior = shot_focal_tail.get(shot_key)
+                if len(focal_numbers) > 1:
+                    if not zoom:
+                        errors.append(sid + "：同一时间窗多个焦段须明确连续变焦")
+                    if prior is not None and abs(prior - focal_numbers[0]) > 0.01:
+                        errors.append(sid + "：同镜变焦起值与前窗/前单元焦段不接续")
+                elif prior is not None and abs(prior - focal_numbers[0]) > 0.01 and not zoom:
+                    errors.append(sid + "：同镜焦段无变焦说明却跨窗/跨单元跳变")
+                shot_focal_tail[shot_key] = focal_numbers[-1]
             if "配乐：" in compiled:
                 music_windows += 1
             if not re.search(r"声音[：:]", compiled):
@@ -120,8 +149,8 @@ def validate(raw, mode):
             errors.append(sid + "：时间线镜尾与标题时长不一致")
         if music_windows and music_windows != len(windows):
             errors.append(sid + "：配乐开启时须在每个镜内时间窗写配乐子项；静默镜可写配乐：无")
-    declared = re.search(r"(?:实际总时长|成片时长|总时长)[：:]\s*(?:约\s*)?(\d+(?:\.\d+)?)\s*秒", body)
-    if is_project and not declared:
+    declared = re.search(r"(?:实际总时长|成片时长|总时长)[：:]?\s*(?:约\s*)?(\d+(?:\.\d+)?)\s*秒", body)
+    if is_project and schema != "generic" and not declared:
         errors.append("项目参数须明确写出 实际总时长：X秒")
     elif declared and abs(float(declared.group(1)) - total) > 0.5:
         errors.append("总时长与镜长之和不一致：镜头合计 " + str(round(total, 2)) + " 秒")
@@ -130,8 +159,14 @@ def validate(raw, mode):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("path", type=Path)
+    parser.add_argument("--mode", choices=["refined"], default="refined", help="兼容技能的精修入口")
+    parser.add_argument("--max-unit-seconds", type=float, default=35.0, help="当前采用的生成单元上限")
+    parser.add_argument("--require-focal-length", action="store_true", default=True, help="旧命令兼容；数值焦段始终强制校验，支持mm或毫米")
+    parser.add_argument("--schema", choices=["auto", "current", "legacy", "generic"], default="auto", help="项目格式；generic保留自定义栏目")
     args = parser.parse_args()
-    errors = validate(args.path.read_text(encoding="utf-8"), "refined")
+    if args.max_unit_seconds <= 0:
+        parser.error("--max-unit-seconds 必须大于0")
+    errors = validate(args.path.read_text(encoding="utf-8"), args.mode, args.max_unit_seconds, args.require_focal_length, args.schema)
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
