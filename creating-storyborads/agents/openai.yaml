@@ -1,0 +1,3 @@
+interface:
+  display_name: "制作分镜"
+  short_description: "将剧本导演化为可制作的AI短漫剧分镜，默认配乐，支持关闭与连续性核对"

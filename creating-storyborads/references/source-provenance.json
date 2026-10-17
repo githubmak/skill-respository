@@ -1,0 +1,88 @@
+{
+  "version": "1.1.0",
+  "created": "2026-10-17",
+  "sources": [
+    {
+      "path": "/Volumes/漫剧/提示词/分镜-配乐-fast.md",
+      "sha256": "27d7b5868c63361d31b1a5f8c1225f3a009165b96388bddfd167632550eba019",
+      "bytes": 126537
+    },
+    {
+      "path": "/Volumes/漫剧/提示词/分镜-细节-fast.md",
+      "sha256": "d1401769fa11c766fbc8b7d3088f156bd622b015c3f5e2d4ca9798659654a742",
+      "bytes": 121354
+    },
+    {
+      "path": "/Volumes/漫剧/提示词/分镜-细节.md",
+      "sha256": "02d5a4da7a91b63c0f2947e493373ee8dcdd311ed0db7d4b6e3a27cbef66a733",
+      "bytes": 123336
+    },
+    {
+      "path": "/Volumes/漫剧/提示词/分镜-配乐.md",
+      "sha256": "84516f570779973386a94f97b425cc07514e2a758f3556a6eedc19ca4b533cc8",
+      "bytes": 129238
+    }
+  ],
+  "decisions": [
+    "共同导演规范以细节-fast为底稿，保留完整事实、表演、摄影、光影、声音、连续性及验收规则。",
+    "标准版校对完整性；fast版提供停止条件、增量编译和局部复验。",
+    "配乐版提供详细音乐设计；配乐-fast提供普通镜增量表达；统一改为默认开启、支持按范围关闭。",
+    "35秒只限制生成单元，不限制成片镜头；不继承旧技能30秒上限、逐镜完整心理链、普遍禁用剧情回声或强制独立投喂。",
+    "旧技能仅提取适用导演机制，专项参考在本技能内独立维护；不调用旧技能入口。",
+    "1.1.0：输出第6章按实际配乐范围选择配乐/细节原文，撤销自创无配乐声音全局栏和可解析U编号/JSON话语行；机器定位仅在工作记录。"
+  ],
+  "consulted_skill_resources": [
+    {
+      "path": "/Users/tangxinghao/.codex/skills/skill-respository/jimeng-dialogue-performance-storyboard/SKILL.md",
+      "sha256": "c533888b79f2d5026c66e096f30d8c6428e2181edbadadf10dfd17e09120175f"
+    },
+    {
+      "path": "/Users/tangxinghao/.codex/skills/skill-respository/jimeng-dialogue-performance-storyboard/references/performance-voice-cues.md",
+      "sha256": "a657540c6097968a9b95e53a39105becab9e90f9ac02874523b0290cca6857f9"
+    },
+    {
+      "path": "/Users/tangxinghao/.codex/skills/skill-respository/jimeng-dialogue-performance-storyboard/references/ai-manga-duration-budget.md",
+      "sha256": "4c052bcceb8c187798088308254327ed6ba547b4d0b91f719976b8eaeceef321"
+    },
+    {
+      "path": "/Users/tangxinghao/.codex/skills/skill-respository/jimeng-dialogue-performance-storyboard/references/ai-manga-dramatic-direction-engine.md",
+      "sha256": "0e06f8f509496169d313bd14a3f2cb4352e0e0a8439ccc6e21c1a641b4537b72"
+    },
+    {
+      "path": "/Users/tangxinghao/.codex/skills/skill-respository/jimeng-dialogue-performance-storyboard/references/shooting-method-reference.md",
+      "sha256": "dafa8325eeb6a26fb3f0e8f816773262443b927c44ef2572c9e2a48e18c878cf"
+    },
+    {
+      "path": "/Users/tangxinghao/.codex/skills/skill-respository/jimeng-dialogue-performance-storyboard/references/genre-story-spectacle-engine.md",
+      "sha256": "75a6afa5bf6e8d66e6af6d48dbd23960ec0f3ab882b69905461a7e58c170b523"
+    },
+    {
+      "path": "/Users/tangxinghao/.codex/skills/skill-respository/jimeng-dialogue-performance-storyboard/references/entity-prop-continuity.md",
+      "sha256": "57eb852782e943367a9e7baac1715bfe3c312e608cd83e17c168eb3a5cf025ba"
+    },
+    {
+      "path": "/Users/tangxinghao/.codex/skills/skill-respository/jimeng-dialogue-performance-storyboard/references/cinematic-lighting-color-bible.md",
+      "sha256": "c53c3df50ef184031c8c3dd83d20227ba934d3aa6bea35ae0b9689d9f994ed62"
+    },
+    {
+      "path": "/Users/tangxinghao/.codex/skills/skill-respository/jimeng-dialogue-performance-storyboard/references/expression-performance-cases.md",
+      "sha256": "16263e5f897bdf264767eb16509afb8fdd60fa75b834732f23e4f0d958315024"
+    }
+  ],
+  "exclusions": [
+    "不继承旧案例中的固定表演编码、固定反应顺序、眼睛总先行或身体姿态决定固定声量等未经验证的通用断言。",
+    "不复制旧技能入口的独立MD退出流程、交付合同和运行限制作为本技能的第二真源。"
+  ],
+  "output_contracts": {
+    "output-music.md": {
+      "source": "/Volumes/漫剧/提示词/分镜-配乐.md",
+      "chapter": "6",
+      "sha256": "0edddfb88335d52adc9cb899b38253c5188c0f8972ce8a66f1161fa42b3bcda9"
+    },
+    "output-detail.md": {
+      "source": "/Volumes/漫剧/提示词/分镜-细节.md",
+      "chapter": "6",
+      "sha256": "5f378e5434e92c8c7707cff2e68d87aa23dba62f33583d69737ab5e52db780bb"
+    }
+  }
+}
