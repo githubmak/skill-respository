@@ -33,7 +33,46 @@ def dec(s):
     return Decimal(str(s))
 
 
+def voice_records(text, speakers):
+    """Read whole attributed utterances, never punctuation/word substrings.
+
+    Accept both timestamp-first lines and ordinary speaker/time prose. Delivery
+    ids stay in the ledger; performance notes after a quoted utterance are not
+    dialogue. Matching consumes each record once, including real repetitions.
+    """
+    if not speakers:
+        return []
+    names = '|'.join(re.escape(s) for s in sorted(set(speakers), key=len, reverse=True))
+    header = re.compile(
+        rf'^[ \t]*(?:[-*][ \t]+)?(?:{RANGE}[ \t]*｜[ \t]*)?'
+        rf'(?P<speaker>{names})(?P<meta>[^\n：:]*)[：:][ \t]*(?P<words>[^\n]*)', re.M)
+    records = []
+    for match in header.finditer(text):
+        words = match['words'].strip()
+        raw_words = words
+        if words[:1] in ('“', '「', '『', '"'):
+            opening = words[0]
+            closing = {'“':'”', '「':'」', '『':'』', '"':'"'}[opening]
+            depth = 1
+            for at, char in enumerate(words[1:], 1):
+                if char == closing:
+                    depth -= 1
+                    if not depth:
+                        words = words[1:at]
+                        break
+                elif opening != closing and char == opening:
+                    depth += 1
+        meta = match['meta']
+        kind = ('OS' if re.search(r'(?<![A-Za-z])OS(?![A-Za-z])|内心独白', meta, re.I) else
+                'OV' if re.search(r'(?<![A-Za-z])OV(?![A-Za-z])', meta, re.I) else
+                '旁白' if '旁白' in meta or match['speaker'] == '旁白' else '对白')
+        records.append(dict(speaker=match['speaker'], kind=kind, text=words, raw_text=raw_words))
+    return records
+
+
 def validate(markdown, source_bytes, ledger):
+    # Normalize presentation newlines only; source bytes/offsets stay untouched.
+    markdown = markdown.lstrip('\ufeff').replace('\r\n', '\n').replace('\r', '\n')
     errors, notes = [], []
     def fail(code, where, message):
         errors.append({'code':code, 'where':where, 'message':message})
@@ -77,7 +116,16 @@ def validate(markdown, source_bytes, ledger):
     raw_unit_headers = re.findall(r'^###\s+生成单元[^\n]*',markdown,re.M)
     if len(raw_unit_headers) != len(matches):
         fail('unit_syntax','document','存在无法解析的生成单元标题。')
+    allocations = ledger.get('delivery', [])
+    if not isinstance(allocations, list):
+        raise ValueError('delivery must be a list')
+    for item in allocations:
+        if (not isinstance(item, dict) or item.get('id') not in expected or
+                not isinstance(item.get('unit'), str) or
+                not isinstance(item.get('text'), str) or not item['text']):
+            raise ValueError('invalid delivery allocation')
     unit_ids, seen_shots, occurrences = [], [], []
+    consumed = set()
     focal_end, last_shot = {}, None
     total = Decimal(0)
     for i,m in enumerate(matches):
@@ -165,28 +213,36 @@ def validate(markdown, source_bytes, ledger):
         if mapped != unit_shots:
             fail('shot_mapping',uid,'标题承载镜号与时间线镜号或顺序不一致。')
         voice_text = fields.get('台词与声音层次','')
-        # Public dialogue remains natural prose. Optional split allocations live only
-        # in the internal ledger; never impose ids or JSON strings on the manuscript.
-        allocations = ledger.get('delivery', [])
-        targets = [x for x in allocations if x.get('unit') == uid] if allocations else [
-            dict(id=k, text=u['text']) for k,u in expected.items() if u['text'] in voice_text]
-        located = []
-        for item in targets:
-            vid, text = item.get('id'), item.get('text')
-            if vid not in expected or not isinstance(text,str) or not text:
-                fail('delivery_index',uid,'内部台词分配索引无效。')
+        # Match complete attributed records once, in their actual delivery order.
+        # A lone "？" cannot match a question mark inside a longer utterance.
+        targets = ([x for x in allocations if x['unit'] == uid] if allocations else
+                   [dict(id=k, text=u['text']) for k,u in expected.items() if k not in consumed])
+        used = set()
+        for record in voice_records(voice_text, [u['speaker'] for u in expected.values()]):
+            candidates = [n for n,item in enumerate(targets) if n not in used and
+                          item['text'] in (record['raw_text'], record['text']) and
+                          record['speaker'] == expected[item['id']]['speaker'] and
+                          record['kind'] == expected[item['id']]['kind']]
+            if not candidates:
+                fail('dialogue_exact',uid,'存在未匹配的完整话语、重复发言、改字或说话人/OS归属不符。')
                 continue
-            positions = [x.start() for x in re.finditer(re.escape(text),voice_text)]
-            if len(positions) != 1:
-                fail('dialogue_exact',uid+'/'+vid,'声音栏台词片段缺失或重复；有同句重复时需人工核对归属。')
-            for at in positions:
-                located.append((at,vid,text))
-        occurrences.extend((vid,text) for at,vid,text in sorted(located))
+            at = candidates[0]
+            used.add(at)
+            item = targets[at]
+            consumed.add(item['id'])
+            occurrences.append((item['id'], item['text']))
+        if allocations:
+            for at,item in enumerate(targets):
+                if at not in used:
+                    fail('dialogue_exact',uid+'/'+item['id'],'该次完整话语或原文片段未出现，或归属不符。')
     if len(unit_ids)!=len(set(unit_ids)):
         fail('unit_duplicate','document','生成单元编号重复。')
     for uid in overrides:
         if uid not in unit_ids:
             fail('music_scope',uid,'配乐覆盖指向不存在的单元。')
+    for item in allocations:
+        if item['unit'] not in unit_ids:
+            fail('delivery_index',item['unit'],'台词分配指向不存在的生成单元。')
     groups, order = defaultdict(list), []
     for vid,text in occurrences:
         groups[vid].append(text)

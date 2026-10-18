@@ -22,7 +22,7 @@ def fixture(music=True):
     ledger=dict(version=1,source_sha256=hashlib.sha256(source).hexdigest(),music=music,unit_music={},max_unit_seconds=35,utterances=utterances)
     bgm='配乐：钢琴短音型持续，字头减薄；场末收束。\n' if music else ''
     sound='## 全局配音、配乐与声音规则\n- 配音基线：人声优先。\n- 配乐主题：克制。\n- 乐器与音色分工：钢琴。\n- 声层与接续原则：避让对白。\n' if music else ''
-    template=(Path(v.__file__).parent.parent/'references/output-detail.md').read_text().split('```')[1]
+    template=(Path(v.__file__).parent.parent/'references/output-detail.md').read_text(encoding='utf-8').split('```')[1]
     scene='## '+template.split('# 场景',1)[1].split('## ',1)[1].split('### 生成单元',1)[0]
     scene=scene.replace('- 拓扑共识：','- 拓扑共识：二人隔桌相对。').replace('- 正向提示词：','- 正向提示词：房间。').replace('- 负向约束：','- 负向约束：不增加人物。')
     md=f'''# 《测试》Seedance 独立直投版
@@ -118,21 +118,86 @@ class ValidationTests(unittest.TestCase):
         l['delivery'][0]['text']='不来'
         self.assert_code(self.run_case(md,s,l),'dialogue_exact')
 
+
+    def custom_dialogue(self, entries, allocated=False):
+        md, _, ledger = fixture()
+        source_text = '\n'.join(sp + ('OS' if kind == 'OS' else '') + '：' + words for sp, kind, words in entries)
+        source = source_text.encode('utf-8')
+        ledger['source_sha256'] = hashlib.sha256(source).hexdigest()
+        ledger['utterances'] = []
+        cursor = 0
+        lines = []
+        for number, (speaker, kind, words) in enumerate(entries, 1):
+            start = source_text.index(words, cursor)
+            cursor = start + len(words)
+            ledger['utterances'].append(dict(id=f'U{number:03}', speaker=speaker, kind=kind, text=words, source_start=start, source_end=cursor))
+            lines.append(f'{speaker}在0.2—1.8秒' + ('OS' if kind == 'OS' else '说') + f'：“{words}”自然说完。')
+        start = md.index('- 台词与声音层次：') + len('- 台词与声音层次：')
+        end = md.index('- 落幅状态：', start)
+        md = md[:start] + '\n' + '\n'.join(lines) + '\n' + md[end:]
+        if allocated:
+            ledger['delivery'] = [dict(id=u['id'], unit='G1', text=u['text']) for u in ledger['utterances']]
+        return md, source, ledger
+
+    def test_punctuation_and_short_utterances_are_whole_records(self):
+        for allocated in (False, True):
+            for long, short in [('你来吗？', '？'), ('等等……好吧。', '……'), ('真的好。', '好。')]:
+                with self.subTest(allocated=allocated, short=short):
+                    case = self.custom_dialogue([('林岚', '对白', long), ('周远', '对白', short)], allocated)
+                    self.assertTrue(self.run_case(*case)['static_pass'], self.run_case(*case))
+                    md, source, ledger = case
+                    line = next(x for x in md.splitlines() if x.startswith('周远在'))
+                    self.assert_code(self.run_case(md.replace(line, ''), source, ledger), 'dialogue_exact')
+
+    def test_real_repetitions_consumed_once(self):
+        for allocated in (False, True):
+            md, source, ledger = self.custom_dialogue([('林岚', '对白', '好。'), ('林岚', '对白', '好。')], allocated)
+            self.assertTrue(self.run_case(md, source, ledger)['static_pass'])
+            line = next(x for x in md.splitlines() if x.startswith('林岚在'))
+            self.assert_code(self.run_case(md.replace(line, '', 1), source, ledger), 'dialogue_exact')
+            self.assert_code(self.run_case(md.replace(line, line+'\n'+line, 1), source, ledger), 'dialogue_exact')
+
+    def test_wrong_speaker_and_kind(self):
+        md, source, ledger = fixture()
+        for before, after in [('林岚在0.2', '周远在0.2'), ('秒OS：', '秒说：')]:
+            self.assert_code(self.run_case(md.replace(before, after), source, ledger), 'dialogue_exact')
+
+    def test_notes_and_nested_quotes(self):
+        md, source, ledger = self.custom_dialogue([('林岚', '对白', '他说“走吧”。')])
+        self.assertTrue(self.run_case(md, source, ledger)['static_pass'])
+        md = md.replace('自然说完。', '自然说完；“他说“走吧”。”是演绎说明中的引用。')
+        self.assertTrue(self.run_case(md, source, ledger)['static_pass'])
+
+    def test_markdown_bom_and_windows_newlines(self):
+        md, source, ledger = fixture()
+        self.assertTrue(self.run_case('\ufeff'+md.replace('\n', '\r\n'), source, ledger)['static_pass'])
+
+    def test_cross_unit_split(self):
+        md, source, ledger = self.custom_dialogue([('林岚', '对白', '不来了。')], True)
+        start = md.index('### 生成单元 G1')
+        unit = md[start:]
+        first = unit.replace('：“不来了。”', '：“不来”')
+        second = unit.replace('G1', 'G2').replace('S1-01', 'S1-02').replace('：“不来了。”', '：“了。”')
+        md = md[:start].replace('成片总时长：6秒', '成片总时长：12秒').replace('生成单元数：1', '生成单元数：2').replace('成片镜头数：1', '成片镜头数：2') + first + '\n' + second
+        ledger['delivery'] = [dict(id='U001', unit='G1', text='不来'), dict(id='U001', unit='G2', text='了。')]
+        self.assertTrue(self.run_case(md, source, ledger)['static_pass'], self.run_case(md, source, ledger))
+        self.assert_code(self.run_case(md.replace('：“了。”', '：“了”'), source, ledger), 'dialogue_exact')
+
     def test_cli_report_does_not_overwrite_input(self):
         md,s,l=fixture()
         import json
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)
-            (p/'main.md').write_text(md)
+            (p/'main.md').write_text(md,encoding='utf-8')
             (p/'source.txt').write_bytes(s)
-            (p/'ledger.json').write_text(json.dumps(l,ensure_ascii=False))
+            (p/'ledger.json').write_text(json.dumps(l,ensure_ascii=False),encoding='utf-8')
             cmd=[sys.executable,str(Path(v.__file__)),str(p/'main.md'),'--source',str(p/'source.txt'),'--ledger',str(p/'ledger.json')]
             run=subprocess.run(cmd+['--report',str(p/'source.txt')],capture_output=True)
             self.assertEqual(run.returncode,2)
             self.assertEqual((p/'source.txt').read_bytes(),s)
             run=subprocess.run(cmd+['--report',str(p/'report.json')],capture_output=True)
             self.assertEqual(run.returncode,0,run.stderr)
-            self.assertTrue(json.loads((p/'report.json').read_text())['static_pass'])
+            self.assertTrue(json.loads((p/'report.json').read_text(encoding='utf-8'))['static_pass'])
 
 if __name__=='__main__':
     unittest.main()
