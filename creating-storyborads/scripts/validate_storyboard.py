@@ -297,7 +297,12 @@ def main():
         inputs=[args.markdown.resolve(),args.source.resolve(),args.ledger.resolve()]
         if args.report and args.report.resolve() in inputs:
             raise ValueError('report path must not overwrite an input')
-        report=validate(args.markdown.read_bytes().decode('utf-8'),args.source.read_bytes(),json.loads(args.ledger.read_bytes()))
+        # Read once: validation and fingerprints must describe the same bytes.
+        snapshots = {name: path.read_bytes() for name, path in
+                     [('markdown', args.markdown), ('source', args.source), ('ledger', args.ledger)]}
+        report=validate(snapshots['markdown'].decode('utf-8'),snapshots['source'],json.loads(snapshots['ledger']))
+        report['input_sha256'] = {name: hashlib.sha256(data).hexdigest()
+                                  for name, data in snapshots.items()}
         result=json.dumps(report,ensure_ascii=False,indent=2)+'\n'
         if args.report:
             args.report.parent.mkdir(parents=True,exist_ok=True)

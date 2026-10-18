@@ -197,7 +197,21 @@ class ValidationTests(unittest.TestCase):
             self.assertEqual((p/'source.txt').read_bytes(),s)
             run=subprocess.run(cmd+['--report',str(p/'report.json')],capture_output=True)
             self.assertEqual(run.returncode,0,run.stderr)
-            self.assertTrue(json.loads((p/'report.json').read_text(encoding='utf-8'))['static_pass'])
+            report=json.loads((p/'report.json').read_text(encoding='utf-8'))
+            self.assertTrue(report['static_pass'])
+            paths={'markdown':p/'main.md','source':p/'source.txt','ledger':p/'ledger.json'}
+            for name,path in paths.items():
+                self.assertEqual(report['input_sha256'][name],hashlib.sha256(path.read_bytes()).hexdigest())
+            # An innocuous edit still invalidates the old report's fingerprint.
+            before=report['input_sha256']['markdown']
+            (p/'main.md').write_bytes((p/'main.md').read_bytes()+b'\n')
+            self.assertNotEqual(before,hashlib.sha256((p/'main.md').read_bytes()).hexdigest())
+            run=subprocess.run(cmd+['--report',str(p/'report.json')],capture_output=True)
+            self.assertEqual(run.returncode,0,run.stderr)
+            current=json.loads((p/'report.json').read_text(encoding='utf-8'))
+            self.assertNotEqual(before,current['input_sha256']['markdown'])
+            self.assertEqual(current['input_sha256']['source'],report['input_sha256']['source'])
+            self.assertEqual(current['input_sha256']['ledger'],report['input_sha256']['ledger'])
 
 if __name__=='__main__':
     unittest.main()
