@@ -25,6 +25,7 @@ def fixture(music=True):
     template=(Path(v.__file__).parent.parent/'references/output-detail.md').read_text(encoding='utf-8').split('```')[1]
     scene='## '+template.split('# 场景',1)[1].split('## ',1)[1].split('### 生成单元',1)[0]
     scene=scene.replace('- 拓扑共识：','- 拓扑共识：二人隔桌相对。').replace('- 正向提示词：','- 正向提示词：房间。').replace('- 负向约束：','- 负向约束：不增加人物。')
+    scene=scene.replace('## 场景空间位置关系\n', '## 场景空间位置关系\n二人隔桌相对，摄影机在轴线南侧。\n')
     md=f'''# 《测试》Seedance 独立直投版
 ## 项目直投参数
 - 成片总时长：6秒
@@ -103,6 +104,51 @@ class ValidationTests(unittest.TestCase):
         md,s,l=fixture()
         self.assert_code(self.run_case(md.replace('- 落幅状态：','- 结果：'),s,l),'fields')
         self.assert_code(self.run_case(md.replace('林岚将书袋交还，周远接住。',''),s,l),'picture_empty')
+
+    def test_empty_sound_and_global_items_do_not_consume_next_line(self):
+        md,s,l=fixture()
+        self.assert_code(self.run_case(md.replace('声音：话语U001后接U002，布料接触声。','声音：'),s,l),'sound')
+        self.assert_code(self.run_case(md.replace('- 配音基线：人声优先。','- 配音基线：'),s,l),'global_sound')
+        self.assert_code(self.run_case(md.replace('轴线南侧。\n## 全局光色','\n## 全局光色'),s,l),'global_empty')
+
+    def test_empty_document_returns_errors_not_traceback(self):
+        _,s,l=fixture()
+        self.assert_code(self.run_case('',s,l),'no_units')
+        self.assert_code(self.run_case('',s,l),'title_format')
+
+    def test_new_explicit_speaker_is_not_silently_ignored(self):
+        md,s,l=fixture()
+        for line in ['陌生人 对白（4.0—5.0秒）：「新增一句。」',
+                     '陌生人在4.0—5.0秒说：“新增一句。”',
+                     '林岚母亲 对白（4.0—5.0秒）：「新增一句。」']:
+            self.assert_code(self.run_case(md.replace('- 落幅状态：',line+'\n- 落幅状态：'),s,l),'dialogue_exact')
+        l['utterances']=[]
+        start=md.index('- 台词与声音层次：')+len('- 台词与声音层次：')
+        end=md.index('- 落幅状态：',start)
+        md=md[:start]+'\n陌生人 对白：「新增一句。」\n'+md[end:]
+        self.assert_code(self.run_case(md,s,l),'dialogue_exact')
+
+    def test_first_assets_cannot_borrow_prop_labels(self):
+        md,s,l=fixture()
+        md=md.replace('- 正向提示词：房间。','- 正向提示词：',1)
+        self.assert_code(self.run_case(md,s,l),'scene_assets')
+
+    def test_reused_scene_accepts_change_only_assets(self):
+        md,s,l=fixture()
+        scene=md[md.index('# 场景一｜'):]
+        scene=scene.replace('# 场景一｜房间·日','# 场景二｜房间·夜').replace('G1','G2').replace('S1-01','S2-01')
+        start=scene.index('## 场景资产图提示词')
+        content_start=scene.index('\n',start)+1
+        end=scene.index('## 道具资产图提示词',content_start)
+        scene=scene[:content_start]+'\n复用房间，仅改为夜晚窗光。\n'+scene[end:]
+        start=scene.index('- 台词与声音层次：')+len('- 台词与声音层次：')
+        end=scene.index('- 落幅状态：',start)
+        scene=scene[:start]+'\n无新增对白。\n'+scene[end:]
+        md=md.replace('成片总时长：6秒','成片总时长：12秒').replace('生成单元数：1','生成单元数：2').replace('成片镜头数：1','成片镜头数：2')+scene
+        self.assertTrue(self.run_case(md,s,l)['static_pass'],self.run_case(md,s,l))
+        # An empty final scene must not pass merely by copying its headings.
+        empty=scene[:scene.index('### 生成单元')]
+        self.assert_code(self.run_case(md+empty.replace('场景二','场景三'),s,l),'scene_units')
     def test_missing_global_and_scene_columns(self):
         md,s,l=fixture()
         self.assert_code(self.run_case(md.replace('## 全局摄影规则','## 摄影'),s,l),'global_format')
@@ -168,6 +214,46 @@ class ValidationTests(unittest.TestCase):
         md = md.replace('自然说完。', '自然说完；“他说“走吧”。”是演绎说明中的引用。')
         self.assertTrue(self.run_case(md, source, ledger)['static_pass'])
 
+    def test_colons_in_parenthetical_performance_notes(self):
+        md,s,l=fixture()
+        for header in ['林岚（0.2—1.8秒，语气：平静）说：',
+                       '林岚 (0.2—1.8秒，读法: 自然(不抢话))说：']:
+            case=md.replace('林岚在0.2—1.8秒说：',header)
+            self.assertTrue(self.run_case(case,s,l)['static_pass'],self.run_case(case,s,l))
+
+    def test_bare_new_speaker_and_same_line_extra_speech(self):
+        md,s,l=fixture()
+        self.assert_code(self.run_case(md.replace('- 落幅状态：','陌生人：“新增一句。”\n- 落幅状态：'),s,l),'dialogue_exact')
+        line=next(x for x in md.splitlines() if x.startswith('林岚在'))
+        self.assert_code(self.run_case(md.replace(line,line+' 陌生人说：“新增一句。”'),s,l),'dialogue_exact')
+
+    def test_same_line_source_dialogue_and_timestamp_first(self):
+        md,s,l=fixture()
+        one=next(x for x in md.splitlines() if x.startswith('林岚在'))
+        two=next(x for x in md.splitlines() if x.startswith('周远在'))
+        case=md.replace(one+'\n'+two,one+' '+two)
+        self.assertTrue(self.run_case(case,s,l)['static_pass'],self.run_case(case,s,l))
+        case=md.replace(one,'0.2—1.8秒｜林岚 对白：“不来了。”自然说完。')
+        self.assertTrue(self.run_case(case,s,l)['static_pass'],self.run_case(case,s,l))
+
+    def test_attributed_quotes_inside_notes_are_not_extra_speech(self):
+        md,s,l=fixture()
+        suffix='\n演绎说明：“陌生人说：‘新增一句。’”只是引用示例。\n读法：“不来了。”应当自然。\n'
+        case=md.replace('- 落幅状态：',suffix+'- 落幅状态：')
+        self.assertTrue(self.run_case(case,s,l)['static_pass'],self.run_case(case,s,l))
+        line=next(x for x in md.splitlines() if x.startswith('林岚在'))
+        case=md.replace(line,line+' 演绎说明：“陌生人说：新增一句。”')
+        self.assertTrue(self.run_case(case,s,l)['static_pass'],self.run_case(case,s,l))
+
+    def test_ambiguous_quotes_produce_explicit_manual_notes(self):
+        md,s,l=fixture()
+        for extra in ['一个人 在背后低声回答：“新增一句。”',
+                      '陌生人 对白：“未闭合。',
+                      '陌生人（语气：平静：新句']:
+            case=md.replace('- 落幅状态：',extra+'\n- 落幅状态：')
+            result=self.run_case(case,s,l)
+            self.assertIn('voice_parse_manual',[x['code'] for x in result['notes']])
+
     def test_markdown_bom_and_windows_newlines(self):
         md, source, ledger = fixture()
         self.assertTrue(self.run_case('\ufeff'+md.replace('\n', '\r\n'), source, ledger)['static_pass'])
@@ -182,6 +268,17 @@ class ValidationTests(unittest.TestCase):
         ledger['delivery'] = [dict(id='U001', unit='G1', text='不来'), dict(id='U001', unit='G2', text='了。')]
         self.assertTrue(self.run_case(md, source, ledger)['static_pass'], self.run_case(md, source, ledger))
         self.assert_code(self.run_case(md.replace('：“了。”', '：“了”'), source, ledger), 'dialogue_exact')
+
+    def test_split_allocation_can_mix_with_unsplit_utterance(self):
+        md,source,ledger=fixture()
+        start=md.index('### 生成单元 G1'); unit=md[start:]
+        line=next(x for x in unit.splitlines() if x.startswith('周远在'))
+        first=unit.replace('：“不来了。”','：“不来”').replace(line,'')
+        second=unit.replace('G1','G2').replace('S1-01','S1-02').replace('：“不来了。”','：“了。”')
+        md=md[:start].replace('成片总时长：6秒','成片总时长：12秒').replace('生成单元数：1','生成单元数：2').replace('成片镜头数：1','成片镜头数：2')+first+'\n'+second
+        ledger['delivery']=[dict(id='U001',unit='G1',text='不来'),dict(id='U001',unit='G2',text='了。')]
+        self.assertTrue(self.run_case(md,source,ledger)['static_pass'],self.run_case(md,source,ledger))
+        self.assert_code(self.run_case(md.replace(line,''),source,ledger),'dialogue_exact')
 
     def test_cli_report_does_not_overwrite_input(self):
         md,s,l=fixture()
@@ -212,6 +309,12 @@ class ValidationTests(unittest.TestCase):
             self.assertNotEqual(before,current['input_sha256']['markdown'])
             self.assertEqual(current['input_sha256']['source'],report['input_sha256']['source'])
             self.assertEqual(current['input_sha256']['ledger'],report['input_sha256']['ledger'])
+            # Different path names can still be the same input inode.
+            hardlink=p/'linked-report.json'
+            hardlink.hardlink_to(p/'source.txt')
+            run=subprocess.run(cmd+['--report',str(hardlink)],capture_output=True)
+            self.assertEqual(run.returncode,2,run.stderr)
+            self.assertEqual((p/'source.txt').read_bytes(),s)
 
 if __name__=='__main__':
     unittest.main()

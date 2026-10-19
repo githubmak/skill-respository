@@ -1,6 +1,10 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import json
+import subprocess
+import sys
+import tempfile
 spec=importlib.util.spec_from_file_location('indexer',Path(__file__).with_name('index_dialogue.py'))
 i=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(i)
@@ -27,4 +31,30 @@ class IndexTests(unittest.TestCase):
         source='甲：好。乙：再见。'.encode()
         with self.assertRaises(ValueError):
             i.build(source,[dict(id='U001',speaker='乙',kind='对白',text='再见。'),dict(id='U002',speaker='甲',kind='对白',text='好。')])
+
+    def test_cli_preserves_existing_music_settings_and_overrides(self):
+        with tempfile.TemporaryDirectory() as folder:
+            p=Path(folder)
+            source=p/'source.txt'; rows=p/'rows.json'; output=p/'dialogue.json'
+            source.write_text('甲：好。',encoding='utf-8')
+            rows.write_text(json.dumps([dict(id='U001',speaker='甲',kind='对白',text='好。')]),encoding='utf-8')
+            output.write_text(json.dumps(dict(music=False,max_unit_seconds=8,unit_music={'G2':True})),encoding='utf-8')
+            cmd=[sys.executable,str(Path(i.__file__)),str(source),str(rows),str(output)]
+            run=subprocess.run(cmd,capture_output=True)
+            self.assertEqual(run.returncode,0,run.stderr)
+            result=json.loads(output.read_bytes())
+            self.assertFalse(result['music']); self.assertEqual(result['max_unit_seconds'],8)
+            self.assertEqual(result['unit_music'],{'G2':True})
+            run=subprocess.run(cmd+['--music','on','--max-unit-seconds','12'],capture_output=True)
+            self.assertEqual(run.returncode,0,run.stderr)
+            result=json.loads(output.read_bytes())
+            self.assertTrue(result['music']); self.assertEqual(result['max_unit_seconds'],12)
+            self.assertEqual(result['unit_music'],{'G2':True})
+            link=p/'linked.json'; link.hardlink_to(source)
+            run=subprocess.run(cmd[:-1]+[str(link)],capture_output=True)
+            self.assertEqual(run.returncode,2,run.stderr)
+            self.assertEqual(source.read_text(encoding='utf-8'),'甲：好。')
+
+    def test_boolean_limit_is_not_a_duration(self):
+        with self.assertRaises(ValueError):i.build(b'',[],max_unit_seconds=True)
 if __name__=='__main__': unittest.main()

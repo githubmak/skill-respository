@@ -13,7 +13,7 @@ import sys
 
 def build(source_bytes, utterances, music=True, max_unit_seconds=35):
     source=source_bytes.decode('utf-8')
-    if type(music) is not bool or not isinstance(max_unit_seconds,(int,float)) or not 0<max_unit_seconds<float('inf'):
+    if type(music) is not bool or type(max_unit_seconds) not in (int,float) or not 0<max_unit_seconds<float('inf'):
         raise ValueError('music must be boolean and max unit seconds positive/finite')
     if not isinstance(utterances,list):
         raise ValueError('input must be a JSON utterance list')
@@ -48,13 +48,24 @@ def main():
     p.add_argument('source',type=Path)
     p.add_argument('utterances',type=Path)
     p.add_argument('output',type=Path)
-    p.add_argument('--music',choices=('on','off'),default='on')
-    p.add_argument('--max-unit-seconds',type=float,default=35)
+    p.add_argument('--music',choices=('on','off'),default=None)
+    p.add_argument('--max-unit-seconds',type=float,default=None)
     a=p.parse_args()
     try:
-        if a.output.resolve() in (a.source.resolve(),a.utterances.resolve()):
+        inputs = (a.source.resolve(),a.utterances.resolve())
+        if a.output.resolve() in inputs or (a.output.exists() and
+                any(a.output.samefile(path) for path in inputs)):
             raise ValueError('output must not overwrite source or extracted utterances')
-        ledger,contexts=build(a.source.read_bytes(),json.loads(a.utterances.read_bytes()),a.music=='on',a.max_unit_seconds)
+        existing = json.loads(a.output.read_bytes()) if a.output.exists() else {}
+        if not isinstance(existing, dict):
+            raise ValueError('existing ledger must be an object; refusing to replace invalid settings')
+        overrides = existing.get('unit_music', {})
+        if not isinstance(overrides, dict) or any(type(x) is not bool for x in overrides.values()):
+            raise ValueError('existing unit_music must map unit ids to booleans')
+        music = a.music == 'on' if a.music is not None else existing.get('music', True)
+        limit = a.max_unit_seconds if a.max_unit_seconds is not None else existing.get('max_unit_seconds', 35)
+        ledger,contexts=build(a.source.read_bytes(),json.loads(a.utterances.read_bytes()),music,limit)
+        ledger['unit_music'] = overrides
         a.output.parent.mkdir(parents=True,exist_ok=True)
         a.output.write_text(json.dumps(ledger,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         print(json.dumps({'indexed':len(contexts),'review_contexts':contexts,'manual_required':'核对提取覆盖、说话者、类型与出处；脚本不推断这些事实。'},ensure_ascii=False,indent=2))

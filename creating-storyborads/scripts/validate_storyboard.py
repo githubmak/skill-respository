@@ -33,40 +33,109 @@ def dec(s):
     return Decimal(str(s))
 
 
-def voice_records(text, speakers):
-    """Read whole attributed utterances, never punctuation/word substrings.
+QUOTES = {'“':'”', '「':'」', '『':'』', '"':'"'}
+NOTE_LABELS = {'说明','演绎说明','读法','语气','口型','停连','备注','提示','注意','声音','配乐'}
 
-    Accept both timestamp-first lines and ordinary speaker/time prose. Delivery
-    ids stay in the ledger; performance notes after a quoted utterance are not
-    dialogue. Matching consumes each record once, including real repetitions.
+
+def quoted_end(line, start):
+    """Find the closing quote, respecting nested Chinese quotes and escapes."""
+    stack = [QUOTES[line[start]]]
+    at = start + 1
+    while at < len(line):
+        char = line[at]
+        if char == '\\':
+            at += 2
+            continue
+        if char == stack[-1]:
+            stack.pop()
+            if not stack:
+                return at + 1
+        elif char in QUOTES:
+            stack.append(QUOTES[char])
+        at += 1
+    return None
+
+
+def attributed_header(prefix, speakers):
+    prefix = re.sub(r'^[ \t]*[-*][ \t]+', '', prefix).strip()
+    prefix = re.sub(rf'^{RANGE}[ \t]*｜[ \t]*', '', prefix)
+    for speaker in sorted(set(speakers), key=len, reverse=True):
+        if prefix.startswith(speaker):
+            meta = prefix[len(speaker):]
+            if not meta or meta[0] in ' \t（(在' or re.match(r'对白|OS|OV|旁白|说',meta,re.I):
+                return speaker, meta
+    match = re.fullmatch(
+        rf'(?P<speaker>[\w·]+?)(?P<meta>[ \t]*(?:(?:对白|OS|OV|旁白|说)'
+        rf'(?=[ \t（(]|$)|在(?=\d)|[（(]).*)', prefix, re.I)
+    if match:
+        return match['speaker'], match['meta']
+    if re.fullmatch(r'[\w·]+', prefix):
+        return prefix, ''
+    return None
+
+
+def voice_records(text, speakers, issues=None):
+    """Parse top-level attributions, not colons/quotes inside notes or speech.
+
+    Quoted records may share a line. Unquoted prose remains line-scoped;
+    ambiguous attributions are reported for human review, never guessed.
     """
-    if not speakers:
-        return []
-    names = '|'.join(re.escape(s) for s in sorted(set(speakers), key=len, reverse=True))
-    header = re.compile(
-        rf'^[ \t]*(?:[-*][ \t]+)?(?:{RANGE}[ \t]*｜[ \t]*)?'
-        rf'(?P<speaker>{names})(?P<meta>[^\n：:]*)[：:][ \t]*(?P<words>[^\n]*)', re.M)
     records = []
-    for match in header.finditer(text):
-        words = match['words'].strip()
-        raw_words = words
-        if words[:1] in ('“', '「', '『', '"'):
-            opening = words[0]
-            closing = {'“':'”', '「':'」', '『':'』', '"':'"'}[opening]
-            depth = 1
-            for at, char in enumerate(words[1:], 1):
-                if char == closing:
-                    depth -= 1
-                    if not depth:
-                        words = words[1:at]
+    for number, line in enumerate(text.splitlines(), 1):
+        at, segment, brackets = 0, 0, []
+        while at < len(line):
+            char = line[at]
+            if char in '（(':
+                brackets.append(char)
+            elif char in '）)' and brackets:
+                brackets.pop()
+            elif not brackets and char in QUOTES:
+                # Unattributed quotations in performance notes are not dialogue.
+                at = quoted_end(line, at) or len(line)
+                continue
+            elif not brackets and char in '；;。！？!?｜':
+                # A timestamp prefix contains ｜; keep it until its first colon.
+                if char != '｜' or not re.match(rf'^[ \t]*{RANGE}',line[segment:at]):
+                    segment = at + 1
+            elif not brackets and char in '：:':
+                prefix = line[segment:at].strip()
+                header = attributed_header(prefix, speakers)
+                value = at + 1
+                while value < len(line) and line[value] in ' \t':
+                    value += 1
+                if prefix in NOTE_LABELS and prefix not in speakers:
+                    break
+                if header is None:
+                    if value < len(line) and line[value] in QUOTES and issues is not None:
+                        issues.append((number,'引语前归属无法可靠解析，需人工核对。'))
+                    segment = at + 1
+                    at += 1
+                    continue
+                speaker, meta = header
+                if value < len(line) and line[value] in QUOTES:
+                    end = quoted_end(line, value)
+                    if end is None:
+                        if issues is not None:
+                            issues.append((number,'话语引号未闭合，需人工核对。'))
                         break
-                elif opening != closing and char == opening:
-                    depth += 1
-        meta = match['meta']
-        kind = ('OS' if re.search(r'(?<![A-Za-z])OS(?![A-Za-z])|内心独白', meta, re.I) else
-                'OV' if re.search(r'(?<![A-Za-z])OV(?![A-Za-z])', meta, re.I) else
-                '旁白' if '旁白' in meta or match['speaker'] == '旁白' else '对白')
-        records.append(dict(speaker=match['speaker'], kind=kind, text=words, raw_text=raw_words))
+                    words = line[value+1:end-1]
+                else:
+                    # A bare unknown label followed by prose could be a note.
+                    if speaker not in speakers and not meta.strip():
+                        if issues is not None:
+                            issues.append((number,'未标类型的非来源名称与未加引号正文，需人工确认是否发言。'))
+                        break
+                    end = len(line)
+                    words = line[value:end].strip()
+                kind = ('OS' if re.search(r'(?<![A-Za-z])OS(?![A-Za-z])|内心独白',meta,re.I) else
+                        'OV' if re.search(r'(?<![A-Za-z])OV(?![A-Za-z])',meta,re.I) else
+                        '旁白' if '旁白' in meta or speaker == '旁白' else '对白')
+                records.append(dict(speaker=speaker,kind=kind,text=words,raw_text=line[value:end].strip()))
+                at, segment = end, end
+                continue
+            at += 1
+        if brackets and issues is not None:
+            issues.append((number,'括号未闭合，话语归属可能未解析，需人工核对。'))
     return records
 
 
@@ -124,6 +193,7 @@ def validate(markdown, source_bytes, ledger):
                 not isinstance(item.get('unit'), str) or
                 not isinstance(item.get('text'), str) or not item['text']):
             raise ValueError('invalid delivery allocation')
+    allocated_ids = {item['id'] for item in allocations}
     unit_ids, seen_shots, occurrences = [], [], []
     consumed = set()
     focal_end, last_shot = {}, None
@@ -196,8 +266,8 @@ def validate(markdown, source_bytes, ledger):
             if not any(s in details for s in ('大远景','远景','全景','中全景','中景','中近景','近景','特写')):
                 fail('shot_size',where,'焦段之后须同时指定景别。')
             block=timeline[w.end():windows[wi+1].start() if wi+1<len(windows) else len(timeline)]
-            sound = re.search(r'^\s*声音[：:]\s*(\S[^\n]*)',block,re.M)
-            music = re.search(r'^\s*配乐[：:]\s*(\S[^\n]*)',block,re.M)
+            sound = re.search(r'^[ \t]*声音[：:][ \t]*(\S[^\n]*)',block,re.M)
+            music = re.search(r'^[ \t]*配乐[：:][ \t]*(\S[^\n]*)',block,re.M)
             picture = re.split(r'^\s*(?:声音|配乐)[：:]',block,maxsplit=1,flags=re.M)[0]
             if not picture.strip():
                 fail('picture_empty',where,'时间窗只有标题，缺少可执行画面。')
@@ -215,10 +285,12 @@ def validate(markdown, source_bytes, ledger):
         voice_text = fields.get('台词与声音层次','')
         # Match complete attributed records once, in their actual delivery order.
         # A lone "？" cannot match a question mark inside a longer utterance.
-        targets = ([x for x in allocations if x['unit'] == uid] if allocations else
-                   [dict(id=k, text=u['text']) for k,u in expected.items() if k not in consumed])
+        targets = ([x for x in allocations if x['unit'] == uid] +
+                   [dict(id=k, text=u['text']) for k,u in expected.items()
+                    if k not in allocated_ids and k not in consumed])
         used = set()
-        for record in voice_records(voice_text, [u['speaker'] for u in expected.values()]):
+        voice_issues = []
+        for record in voice_records(voice_text, [u['speaker'] for u in expected.values()], voice_issues):
             candidates = [n for n,item in enumerate(targets) if n not in used and
                           item['text'] in (record['raw_text'], record['text']) and
                           record['speaker'] == expected[item['id']]['speaker'] and
@@ -231,9 +303,12 @@ def validate(markdown, source_bytes, ledger):
             item = targets[at]
             consumed.add(item['id'])
             occurrences.append((item['id'], item['text']))
+        for line_number, message in voice_issues:
+            notes.append({'code':'voice_parse_manual','where':f'{uid}/声音栏第{line_number}行',
+                          'message':message})
         if allocations:
             for at,item in enumerate(targets):
-                if at not in used:
+                if item.get('unit') == uid and at not in used:
                     fail('dialogue_exact',uid+'/'+item['id'],'该次完整话语或原文片段未出现，或归属不符。')
     if len(unit_ids)!=len(set(unit_ids)):
         fail('unit_duplicate','document','生成单元编号重复。')
@@ -266,23 +341,50 @@ def validate(markdown, source_bytes, ledger):
     actual = re.findall(r'^## (.+)$',header,re.M)
     if actual != global_names:
         fail('global_format','document','全局栏目名称、顺序须严格遵循所选原文模板。')
-    if not re.match(r'^# 《.+》Seedance 独立直投版\s*$',markdown.splitlines()[0]):
+    global_sections = list(re.finditer(r'^## (.+)$', header, re.M))
+    for i, section in enumerate(global_sections):
+        end = global_sections[i+1].start() if i+1 < len(global_sections) else len(header)
+        if not header[section.end():end].strip():
+            fail('global_empty',section[1],'全局栏目为空。')
+    first_line = markdown.splitlines()[0] if markdown.splitlines() else ''
+    if not re.match(r'^# 《.+》Seedance 独立直投版\s*$',first_line):
         fail('title_format','document','作品标题须遵循原文模板。')
     if any_music:
         for label in ('配音基线','配乐主题','乐器与音色分工','声层与接续原则'):
-            if not re.search(r'^- '+label+r'：\s*\S',header,re.M):
+            if not re.search(r'^- '+label+r'：[ \t]*\S',header,re.M):
                 fail('global_sound','document','全局声音规则缺少'+label+'。')
     scene_names = re.findall(r'^## (.+)$',template.split('# 场景',1)[1],re.M)
     scenes = list(re.finditer(r'^# 场景[^\n]*',markdown,re.M))
     if not scenes:
         fail('scene_format','document','缺少场景标题和场景栏目。')
+    established_scenes = set()
     for i,scene in enumerate(scenes):
         body=markdown[scene.end():scenes[i+1].start() if i+1<len(scenes) else len(markdown)]
         if re.findall(r'^## (.+)$',body,re.M) != scene_names:
             fail('scene_format',scene.group(),'场景栏目名称或顺序与原文模板不一致。')
-        for label in ('拓扑共识','正向提示词','负向约束'):
-            if not re.search(r'^- '+label+r'：\s*\S',body,re.M):
-                fail('scene_assets',scene.group(),'场景资产缺少'+label+'。')
+        sections = list(re.finditer(r'^## (.+)$', body, re.M))
+        contents = {}
+        for si, section in enumerate(sections):
+            end = sections[si+1].start() if si+1 < len(sections) else len(body)
+            content = body[section.end():end]
+            contents[section[1]] = content
+            if not content.strip():
+                fail('scene_empty',scene.group()+'/'+section[1],'场景栏目为空。')
+        if not UNIT.search(body):
+            fail('scene_units',scene.group(),'场景没有生成单元。')
+        asset = contents.get(scene_names[0], '')
+        identity = scene.group().split('｜', 1)[-1].rsplit('·', 1)[0].strip()
+        reused = identity in established_scenes
+        explicit_reuse = '复用' in asset and i > 0
+        missing = [label for label in ('拓扑共识','正向提示词','负向约束')
+                   if not re.search(r'^- '+label+r'：[ \t]*\S',asset,re.M)]
+        if missing and not (reused or explicit_reuse):
+            for label in missing:
+                fail('scene_assets',scene.group(),'首次场景资产缺少'+label+'。')
+        elif missing and explicit_reuse and not reused:
+            notes.append({'code':'scene_reuse_manual','where':scene.group(),
+                          'message':'复用名称不同；人工确认引用的是此前已建立资产，变化说明完整。'})
+        established_scenes.add(identity)
     return {'static_pass':not errors,'errors':errors,'notes':notes,'counts':{'units':len(matches),'shots':len(set(seen_shots)),'seconds':str(total),'source_utterances':len(expected)},'manual_required':MANUAL}
 
 
@@ -295,8 +397,10 @@ def main():
     args=parser.parse_args()
     try:
         inputs=[args.markdown.resolve(),args.source.resolve(),args.ledger.resolve()]
-        if args.report and args.report.resolve() in inputs:
-            raise ValueError('report path must not overwrite an input')
+        if args.report:
+            if args.report.resolve() in inputs or (args.report.exists() and
+                    any(args.report.samefile(path) for path in inputs)):
+                raise ValueError('report path must not overwrite an input (including hard links)')
         # Read once: validation and fingerprints must describe the same bytes.
         snapshots = {name: path.read_bytes() for name, path in
                      [('markdown', args.markdown), ('source', args.source), ('ledger', args.ledger)]}
