@@ -68,6 +68,15 @@ class ValidationTests(unittest.TestCase):
         return v.validate(md,source,ledger)
     def assert_code(self,result,code):
         self.assertIn(code,[x['code'] for x in result['errors']])
+    def test_camera_mode_is_explicit(self):
+        md, source, ledger = fixture()
+        missing = md.replace('｜固定', '｜切到林岚')
+        self.assert_code(self.run_case(missing, source, ledger), 'camera_mode')
+        actor = missing.replace('林岚将书袋交还，周远接住。', '林岚推开书袋，周远拉住书袋。')
+        self.assert_code(self.run_case(actor, source, ledger), 'camera_mode')
+        body = missing.replace('林岚将书袋交还', '摄影机固定观察。林岚将书袋交还')
+        self.assertTrue(self.run_case(body, source, ledger)['static_pass'])
+
     def test_music_on_and_off(self):
         for music in (True,False):
             r=self.run_case(*fixture(music))
