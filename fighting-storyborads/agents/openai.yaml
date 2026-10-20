@@ -1,0 +1,4 @@
+interface:
+  display_name: "打斗分镜设计skill"
+  short_description: "自动选择四类规范，创作导演分镜或转译 Seedance 工程包"
+  default_prompt: "使用 $fighting-storyborads，按战斗内容选择玄幻、古代武打、科幻异能或西方魔幻规范。默认 A 导演模式；要求转译时按最新完整导演稿进入 B，输出规范要求的工程分镜和实际投喂包；规范优先于补充资料，保留剧情、力量、表演和连续性。"
