@@ -51,5 +51,4 @@ python -X utf8 <SKILL_DIR>/scripts/validate_storyboard.py <B稿.md> --mode b --g
 ## 回归与证据边界
 
 - `python -X utf8 <SKILL_DIR>/scripts/test_storyboard_validator.py --json <结果.json>`：结构、边界及解析重复性；不评创意。
-- `python -X utf8 <SKILL_DIR>/scripts/render_regression_cases.py --output-dir <测试输出目录>`：重建 `scripts/fixtures/combat_cases.json` 中四类已审读样稿，检查 A/B 结构。静态样稿重建不算重新采样模型，也不证明自由创作稳定。
 - 实际行为测试按[测试与审核](testing-and-review.md)执行；样稿与确定性测试不能替代新请求、多次独立输出及成片检查。
