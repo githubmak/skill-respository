@@ -20,6 +20,7 @@ WINDOW = re.compile(rf'^\s*{RANGE}\s*｜\s*(?:镜头\s*)?(S\d+-\d+)\s*｜([^\n]+
 FIELDS = ['起幅与连续性','摄影与构图','光影、环境色彩与材质','画面与表演时间线','台词与声音层次','落幅状态']
 FIELD = re.compile(r'^\s*-\s*('+'|'.join(FIELDS+['本生成单元特殊正向约束','本生成单元特殊负面约束'])+r')[：:]\s*', re.M)
 LENS = re.compile(rf'({NUM})\s*(?:mm|毫米)', re.I)
+MOVEMENTS = re.compile(r"固定|静止|推|拉|移|跟拍|跟随|环绕|短弧|升降|升机|降机|后退|前移|摇|俯仰|甩|穿越|变焦|手持|轨道|航拍|锁定|急停")
 MANUAL = [
     '人工从源稿核对所有发言提取覆盖、说话者/OS/OV归属及非对白关键事实。',
     '人工核对源稿外的重复引语、自然语气与时长、信息到达、取景可见性、物理空间及跨镜状态。',
@@ -271,6 +272,11 @@ def validate(markdown, source_bytes, ledger):
             picture = re.split(r'^\s*(?:声音|配乐)[：:]',block,maxsplit=1,flags=re.M)[0]
             if not picture.strip():
                 fail('picture_empty',where,'时间窗只有标题，缺少可执行画面。')
+            camera_parts = re.split(r'[｜|]', details, maxsplit=1)
+            camera_text = camera_parts[1] if len(camera_parts) > 1 else ''
+            camera_lines = re.findall(r'(?:摄影机|摄像机|镜头)(?:[^。\n]*)(?:固定|静止|推进|推近|拉远|后退|横移|侧移|跟拍|环绕|摇摄|升降)[^。\n]*', picture)
+            if not MOVEMENTS.search(camera_text + ' '.join(camera_lines)):
+                fail('camera_mode',where,'须明确运镜或固定方式；剪切与人物推拉动作不能代替摄影说明。')
             if not sound:
                 fail('sound',where,'缺少实际声音/有因静默说明。')
             if music_on and not music:
