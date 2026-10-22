@@ -26,6 +26,8 @@ def fixture(music=True):
     scene='## '+template.split('# 场景',1)[1].split('## ',1)[1].split('### 生成单元',1)[0]
     scene=scene.replace('- 拓扑共识：','- 拓扑共识：二人隔桌相对。').replace('- 正向提示词：','- 正向提示词：房间。').replace('- 负向约束：','- 负向约束：不增加人物。')
     scene=scene.replace('## 场景空间位置关系\n', '## 场景空间位置关系\n二人隔桌相对，摄影机在轴线南侧。\n')
+    scene=scene.replace('## 场景摄影规则\n', '## 场景摄影规则\n摄影机在对话轴南侧，手部交接入画。\n')
+    scene=scene.replace('## 场景光色与影调基线\n', '## 场景光色与影调基线\n左窗日光柔照，亮侧到暗侧缓过渡，木桌反射柔哑。\n')
     md=f'''# 《测试》Seedance 独立直投版
 ## 项目直投参数
 - 成片总时长：6秒
@@ -33,10 +35,8 @@ def fixture(music=True):
 - 成片镜头数：1
 - 生成单元时长上限：35秒
 - 背景配乐：{'开启' if music else '关闭'}
-## 全局摄影规则
-轴线南侧。
-## 全局光色与影调基线
-日光。
+## 项目共用视觉规则
+二维漫剧，资产固有色与线条保持连续。
 {sound}## 全局正向提示词
 二维漫剧。
 ## 全局负面提示词
@@ -118,7 +118,7 @@ class ValidationTests(unittest.TestCase):
         md,s,l=fixture()
         self.assert_code(self.run_case(md.replace('声音：话语U001后接U002，布料接触声。','声音：'),s,l),'sound')
         self.assert_code(self.run_case(md.replace('- 配音基线：人声优先。','- 配音基线：'),s,l),'global_sound')
-        self.assert_code(self.run_case(md.replace('轴线南侧。\n## 全局光色','\n## 全局光色'),s,l),'global_empty')
+        self.assert_code(self.run_case(md.replace('二维漫剧，资产固有色与线条保持连续。',''),s,l),'global_empty')
 
     def test_empty_document_returns_errors_not_traceback(self):
         _,s,l=fixture()
@@ -160,8 +160,35 @@ class ValidationTests(unittest.TestCase):
         self.assert_code(self.run_case(md+empty.replace('场景二','场景三'),s,l),'scene_units')
     def test_missing_global_and_scene_columns(self):
         md,s,l=fixture()
-        self.assert_code(self.run_case(md.replace('## 全局摄影规则','## 摄影'),s,l),'global_format')
+        self.assert_code(self.run_case(md.replace('## 项目共用视觉规则','## 摄影'),s,l),'global_format')
         self.assert_code(self.run_case(md.replace('## 场景空间位置关系','## 空间'),s,l),'scene_format')
+    def test_scene_visual_baselines_required_in_both_music_modes(self):
+        for music in (True, False):
+            md,s,l=fixture(music)
+            for heading,content in [
+                ('场景摄影规则','摄影机在对话轴南侧，手部交接入画。'),
+                ('场景光色与影调基线','左窗日光柔照，亮侧到暗侧缓过渡，木桌反射柔哑。'),
+            ]:
+                self.assert_code(self.run_case(md.replace(content,''),s,l),'scene_empty')
+                self.assert_code(self.run_case(md.replace('## '+heading,'## 缺失栏目'),s,l),'scene_format')
+
+    def test_later_scene_cannot_borrow_visual_baselines_from_first(self):
+        md,s,l=fixture()
+        scene=md[md.index('# 场景一｜'):]
+        scene=scene.replace('# 场景一｜房间·日','# 场景二｜浴室·夜').replace('G1','G2').replace('S1-01','S2-01')
+        start=scene.index('- 台词与声音层次：')+len('- 台词与声音层次：')
+        end=scene.index('- 落幅状态：',start)
+        scene=scene[:start]+'\n无新增对白。\n'+scene[end:]
+        md=md.replace('成片总时长：6秒','成片总时长：12秒').replace('生成单元数：1','生成单元数：2').replace('成片镜头数：1','成片镜头数：2')
+        self.assertTrue(self.run_case(md+scene,s,l)['static_pass'])
+        missing=scene.replace('左窗日光柔照，亮侧到暗侧缓过渡，木桌反射柔哑。','')
+        report=self.run_case(md+missing,s,l)
+        self.assertTrue(any(e['code']=='scene_empty' and '场景二' in e['where'] for e in report['errors']))
+
+    def test_legacy_visual_globals_are_not_current_contract(self):
+        md,s,l=fixture()
+        legacy=md.replace('## 项目共用视觉规则','## 全局摄影规则\n固定。\n## 全局光色与影调基线')
+        self.assert_code(self.run_case(legacy,s,l),'global_format')
     def test_off_has_no_extra_sound_heading(self):
         md,s,l=fixture(False)
         self.assertNotIn('## 全局配音',md)

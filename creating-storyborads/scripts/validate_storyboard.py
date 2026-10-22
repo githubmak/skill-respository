@@ -26,6 +26,7 @@ MANUAL = [
     '人工核对源稿外的重复引语、自然语气与时长、信息到达、取景可见性、物理空间及跨镜状态。',
     '人工评估题材收益、人物专属性、观看节奏、情绪/喜剧兑现及配乐与表演关系。',
     '连续音轨的完整覆盖、口型/后期接续与局部混合配乐边界须人工核对。',
+    '人工核对本场摄影/光色没有混入其他房间条件，参考图指代确为生成端已提供素材；结构检查不能证明其语义正确。',
     '未执行动态预演、视频/声音生成和实际混音，不证明成片、无缝或S+爆款。',
 ]
 
@@ -346,7 +347,7 @@ def validate(markdown, source_bytes, ledger):
     global_names = re.findall(r'^## (.+)$', template.split('# 场景',1)[0],re.M)
     actual = re.findall(r'^## (.+)$',header,re.M)
     if actual != global_names:
-        fail('global_format','document','全局栏目名称、顺序须严格遵循所选原文模板。')
+        fail('global_format','document','项目共用栏目名称、顺序须遵循当前输出合同。')
     global_sections = list(re.finditer(r'^## (.+)$', header, re.M))
     for i, section in enumerate(global_sections):
         end = global_sections[i+1].start() if i+1 < len(global_sections) else len(header)
@@ -354,7 +355,7 @@ def validate(markdown, source_bytes, ledger):
             fail('global_empty',section[1],'全局栏目为空。')
     first_line = markdown.splitlines()[0] if markdown.splitlines() else ''
     if not re.match(r'^# 《.+》Seedance 独立直投版\s*$',first_line):
-        fail('title_format','document','作品标题须遵循原文模板。')
+        fail('title_format','document','作品标题须遵循当前输出合同。')
     if any_music:
         for label in ('配音基线','配乐主题','乐器与音色分工','声层与接续原则'):
             if not re.search(r'^- '+label+r'：[ \t]*\S',header,re.M):
@@ -367,7 +368,7 @@ def validate(markdown, source_bytes, ledger):
     for i,scene in enumerate(scenes):
         body=markdown[scene.end():scenes[i+1].start() if i+1<len(scenes) else len(markdown)]
         if re.findall(r'^## (.+)$',body,re.M) != scene_names:
-            fail('scene_format',scene.group(),'场景栏目名称或顺序与原文模板不一致。')
+            fail('scene_format',scene.group(),'场景栏目名称或顺序与当前输出合同不一致；每场须有“场景摄影规则”和“场景光色与影调基线”。')
         sections = list(re.finditer(r'^## (.+)$', body, re.M))
         contents = {}
         for si, section in enumerate(sections):
@@ -378,7 +379,8 @@ def validate(markdown, source_bytes, ledger):
                 fail('scene_empty',scene.group()+'/'+section[1],'场景栏目为空。')
         if not UNIT.search(body):
             fail('scene_units',scene.group(),'场景没有生成单元。')
-        asset = contents.get(scene_names[0], '')
+        asset_name = next((name for name in scene_names if name.startswith('场景资产图提示词')), '')
+        asset = contents.get(asset_name, '')
         identity = scene.group().split('｜', 1)[-1].rsplit('·', 1)[0].strip()
         reused = identity in established_scenes
         explicit_reuse = '复用' in asset and i > 0

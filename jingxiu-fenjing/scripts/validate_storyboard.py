@@ -19,7 +19,10 @@ CONTRADICTIONS = re.compile(
     r"(?:横移|侧移|推进|推近|拉远|后退|环绕|升降|跟拍)"
 )
 FIELDS = ["起幅与连续性", "摄影与构图", "光影、环境色彩与材质", "画面与表演时间线", "台词与声音层次", "落幅状态"]
-GLOBAL_COMMON = ["项目直投参数", "全局摄影规则"]
+GLOBAL_COMMON = ["项目直投参数", "项目共用视觉规则"]
+GLOBAL_OLD_COMMON = ["项目直投参数", "全局摄影规则"]
+SCENE_CURRENT = ["场景摄影规则", "场景光色与影调基线", "场景资产图提示词", "道具资产图提示词", "场景空间位置关系", "Seedance 独立直投生成单元"]
+LIGHT_VALUE = re.compile(r"\d+(?:\.\d+)?\s*(?:[—–~～至到-]\s*\d+(?:\.\d+)?)?\s*[Kk]\b|\d+\s*开尔文|纯色(?:灯|光)|单色(?:灯|光)|无有效(?:光源|照明)")
 GLOBAL_LEGACY_LIGHT = ["全局影调", "全局光影", "全局环境色彩"]
 GLOBAL_CURRENT_LIGHT = ["全局光色与影调基线"]
 GLOBAL_END = ["全局正向提示词", "全局负面提示词"]
@@ -36,35 +39,54 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
     is_project = bool(
         re.match(r"# 《.+》[^\n]*Seedance 独立直投版", body)
         or re.search(r"^## 项目直投参数\s*$", body, re.M)
-        or re.search(r"^# 场景[^\n]+", body, re.M)
     )
+    current = schema != "legacy"
     if is_project and schema != "generic":
         if not re.match(r"# 《.+》[^\n]*Seedance 独立直投版", body):
             errors.append("正式标题不符合Seedance独立直投版格式")
         positions = []
         headings = set(re.findall(r"^## (.+?)\s*$", body, re.M))
-        if schema == "current" or (schema == "auto" and "全局光色与影调基线" in headings):
-            light = GLOBAL_CURRENT_LIGHT
-        elif schema == "legacy" or any(key in headings for key in GLOBAL_LEGACY_LIGHT):
-            light = GLOBAL_LEGACY_LIGHT
-        else:
-            light = []  # Preserve a user-provided custom lighting header.
-        for key in GLOBAL_COMMON + light + GLOBAL_END:
-            found = re.search(r"^## " + re.escape(key) + r"\s*$", body, re.M)
+        common = GLOBAL_COMMON if current else GLOBAL_OLD_COMMON
+        light = [] if current else (GLOBAL_CURRENT_LIGHT if "全局光色与影调基线" in headings else GLOBAL_LEGACY_LIGHT)
+        global_head = body.split("\n# 场景", 1)[0]
+        expected = common + (["全局配音、配乐与声音规则"] if "全局配音、配乐与声音规则" in headings else []) + light + GLOBAL_END
+        for key in expected:
+            found = re.search(r"^## " + re.escape(key) + r"\s*$", global_head, re.M)
             if not found:
                 errors.append("缺少全局栏目：" + key)
             else:
                 positions.append(found.start())
+                tail = global_head[found.end():]
+                value = re.split(r"^#{1,2} ", tail, maxsplit=1, flags=re.M)[0].strip()
+                if not value:
+                    errors.append("全局栏目为空：" + key)
         if positions != sorted(positions):
             errors.append("全局栏目顺序不正确")
+        if current and any(key in headings for key in ["全局摄影规则"] + GLOBAL_CURRENT_LIGHT + GLOBAL_LEGACY_LIGHT):
+            errors.append("当前格式须将具体摄影与光色移入各场，不保留旧全局摄影/光色栏目")
+    if schema != "generic" and (is_project or re.search(r"^# 场景", body, re.M)):
         scenes = list(re.finditer(r"^# 场景[^\n]+", body, re.M))
         if not scenes:
             errors.append("缺少场景标题")
         for i, scene in enumerate(scenes):
             section = body[scene.end():scenes[i+1].start() if i+1 < len(scenes) else len(body)]
-            for key in ["场景资产图提示词", "道具资产图提示词", "场景空间位置关系"]:
-                if not re.search(r"^## " + re.escape(key), section, re.M):
+            scene_positions = []
+            for key in (SCENE_CURRENT if current else ["场景资产图提示词", "道具资产图提示词", "场景空间位置关系"]):
+                found = re.search(r"^## " + re.escape(key) + r"[^\n]*$", section, re.M)
+                if not found:
                     errors.append(scene.group(0) + "：缺少场景栏目 " + key)
+                    continue
+                scene_positions.append(found.start())
+                value = re.split(r"^#{1,2} ", section[found.end():], maxsplit=1, flags=re.M)[0].strip()
+                if not value:
+                    errors.append(scene.group(0) + "：场景栏目为空 " + key)
+                if current and key == "场景光色与影调基线" and not LIGHT_VALUE.search(value):
+                    errors.append(scene.group(0) + "：光色基线缺少主光色温设计或纯色光/无有效照明例外")
+            if scene_positions != sorted(scene_positions):
+                errors.append(scene.group(0) + "：场景栏目顺序不正确")
+
+    if is_project and schema != "generic" and current and re.search(r"配乐[：:]", body) and "全局配音、配乐与声音规则" not in headings:
+        errors.append("配乐版缺少全局配音、配乐与声音规则")
     if re.search(r"^## (?:场景级导演设计源|场级导演设计源|来源原文)", body, re.M):
         errors.append("来源/导演设计源泄漏到正式正文")
     if re.search(r"脸部只写|按本技能|只在此栏|不得被省略|使用\s+\$", body):
@@ -100,6 +122,10 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
                 errors.append(sid + "：缺少字段 " + field)
             elif not fields[field]:
                 errors.append(sid + "：字段为空 " + field)
+        if schema not in ("generic", "legacy"):
+            lighting = fields.get("光影、环境色彩与材质", "")
+            if lighting and not LIGHT_VALUE.search(lighting):
+                errors.append(sid + "：光影栏缺少当前主光色温设计或纯色光/无有效照明例外")
         if re.search(r"(?m)^- 配乐/音效协同[：:]", text):
             errors.append(sid + "：配乐/音效协同须写入对应镜头时间窗的声音内容，不单设字段")
         timeline = re.search(r"^- 画面与表演时间线[：:]\s*\n(.*?)(?=^- \S|\Z)", text, re.S | re.M)
@@ -170,6 +196,8 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
                 declared_shots = [re.sub(r"^镜头\s*", "", item.strip()) for item in re.split(r"[、,，/\s]+", carried.group(1).strip()) if item.strip() and item.strip() != "镜头"]
                 if list(dict.fromkeys(declared_shots)) != list(dict.fromkeys(unit_shots)):
                     errors.append(sid + "：标题承载镜号与时间线镜号或顺序不一致")
+        if is_project and schema not in ("generic", "legacy") and "全局配音、配乐与声音规则" in body and music_windows != len(windows):
+            errors.append(sid + "：配乐版每个时间窗须写配乐状态，包括停奏")
         if abs(previous - duration) > 0.05:
             errors.append(sid + "：时间线镜尾与标题时长不一致")
         if music_windows and music_windows != len(windows):
@@ -187,7 +215,7 @@ def main():
     parser.add_argument("--mode", choices=["refined"], default="refined", help="兼容技能的精修入口")
     parser.add_argument("--max-unit-seconds", type=float, default=35.0, help="当前采用的生成单元上限")
     parser.add_argument("--require-focal-length", action="store_true", default=True, help="旧命令兼容；数值焦段始终强制校验，支持mm或毫米")
-    parser.add_argument("--schema", choices=["auto", "current", "legacy", "generic"], default="auto", help="项目格式；generic保留自定义栏目")
+    parser.add_argument("--schema", choices=["auto", "current", "legacy", "generic"], default="auto", help="auto/current检查当前场景级格式；legacy仅供明确保留的旧版，generic保留用户锁定自定义栏目")
     args = parser.parse_args()
     if not math.isfinite(args.max_unit_seconds) or args.max_unit_seconds <= 0:
         parser.error("--max-unit-seconds 必须大于0")
