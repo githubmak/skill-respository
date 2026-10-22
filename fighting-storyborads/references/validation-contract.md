@@ -50,5 +50,5 @@ python -X utf8 <SKILL_DIR>/scripts/validate_storyboard.py <B稿.md> --mode b --g
 
 ## 回归与证据边界
 
-- `python -X utf8 <SKILL_DIR>/scripts/test_storyboard_validator.py --json <结果.json>`：结构、边界及解析重复性；不评创意。
+- 使用上述实际稿件校验命令检查结构与边界；结果不代表创意或成片质量。
 - 实际行为测试按[测试与审核](testing-and-review.md)执行；样稿与确定性测试不能替代新请求、多次独立输出及成片检查。
