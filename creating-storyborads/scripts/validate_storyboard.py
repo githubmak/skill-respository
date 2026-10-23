@@ -22,6 +22,7 @@ FIELD = re.compile(r'^\s*-\s*('+'|'.join(FIELDS+['本生成单元特殊正向约
 LENS = re.compile(rf'({NUM})\s*(?:mm|毫米)', re.I)
 MOVEMENTS = re.compile(r"固定|静止|推|拉|移|跟拍|跟随|环绕|短弧|升降|升机|降机|后退|前移|摇|俯仰|甩|穿越|变焦|手持|轨道|航拍|锁定|急停")
 MANUAL = [
+    '逐镜核对近景/面部特写在摄影栏中的焦点、实际入画后景与清晰层次；无后景须有实际依据，场景总则不能替代，结构校验不判断几何或景深是否成立。',
     '人工从源稿核对所有发言提取覆盖、说话者/OS/OV归属及非对白关键事实。',
     '人工核对源稿外的重复引语、自然语气与时长、信息到达、取景可见性、物理空间及跨镜状态。',
     '人工评估题材收益、人物专属性、观看节奏、情绪/喜剧兑现及配乐与表演关系。',
@@ -29,6 +30,12 @@ MANUAL = [
     '人工核对本场摄影/光色没有混入其他房间条件，参考图指代确为生成端已提供素材；结构检查不能证明其语义正确。',
     '未执行动态预演、视频/声音生成和实际混音，不证明成片、无缝或S+爆款。',
 ]
+
+
+def canonical_heading(name):
+    if name.startswith(("场景资产图提示词", "道具资产图提示词")):
+        return re.sub(r"[（(].*[）)]\s*$", "", name).strip()
+    return name.strip()
 
 
 def dec(s):
@@ -360,21 +367,21 @@ def validate(markdown, source_bytes, ledger):
         for label in ('配音基线','配乐主题','乐器与音色分工','声层与接续原则'):
             if not re.search(r'^- '+label+r'：[ \t]*\S',header,re.M):
                 fail('global_sound','document','全局声音规则缺少'+label+'。')
-    scene_names = re.findall(r'^## (.+)$',template.split('# 场景',1)[1],re.M)
+    scene_names = [canonical_heading(n) for n in re.findall(r'^## (.+)$',template.split('# 场景',1)[1],re.M)]
     scenes = list(re.finditer(r'^# 场景[^\n]*',markdown,re.M))
     if not scenes:
         fail('scene_format','document','缺少场景标题和场景栏目。')
     established_scenes = set()
     for i,scene in enumerate(scenes):
         body=markdown[scene.end():scenes[i+1].start() if i+1<len(scenes) else len(markdown)]
-        if re.findall(r'^## (.+)$',body,re.M) != scene_names:
+        if [canonical_heading(n) for n in re.findall(r'^## (.+)$',body,re.M)] != scene_names:
             fail('scene_format',scene.group(),'场景栏目名称或顺序与当前输出合同不一致；每场须有“场景摄影规则”和“场景光色与影调基线”。')
         sections = list(re.finditer(r'^## (.+)$', body, re.M))
         contents = {}
         for si, section in enumerate(sections):
             end = sections[si+1].start() if si+1 < len(sections) else len(body)
             content = body[section.end():end]
-            contents[section[1]] = content
+            contents[canonical_heading(section[1])] = content
             if not content.strip():
                 fail('scene_empty',scene.group()+'/'+section[1],'场景栏目为空。')
         if not UNIT.search(body):

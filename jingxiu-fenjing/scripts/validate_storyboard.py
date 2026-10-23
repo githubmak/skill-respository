@@ -27,8 +27,11 @@ GLOBAL_LEGACY_LIGHT = ["全局影调", "全局光影", "全局环境色彩"]
 GLOBAL_CURRENT_LIGHT = ["全局光色与影调基线"]
 GLOBAL_END = ["全局正向提示词", "全局负面提示词"]
 
-def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=True, schema="auto"):
+def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=True, schema="auto", music="auto", unit_music=None):
     errors = []
+    unit_music = unit_music or {}
+    if music not in ("auto", "on", "off") or any(v not in ("on", "off") for v in unit_music.values()):
+        return ["配乐设置须为auto/on/off，单元覆盖须为on/off"]
     if not math.isfinite(max_unit_seconds) or max_unit_seconds <= 0:
         return ["生成单元时长上限必须为有限正数"]
     raw = raw.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
@@ -96,6 +99,9 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
         errors.append("未找到“### 生成单元”标题")
         return errors
     ids = set()
+    unknown_music = set(unit_music) - {m.group(2).strip() for m in matches}
+    if unknown_music:
+        errors.append("配乐覆盖引用不存在单元：" + ",".join(sorted(unknown_music)))
     total = 0.0
     shot_focal_tail = {}  # Same shot can span windows or generation units.
     for i, match in enumerate(matches):
@@ -196,12 +202,15 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
                 declared_shots = [re.sub(r"^镜头\s*", "", item.strip()) for item in re.split(r"[、,，/\s]+", carried.group(1).strip()) if item.strip() and item.strip() != "镜头"]
                 if list(dict.fromkeys(declared_shots)) != list(dict.fromkeys(unit_shots)):
                     errors.append(sid + "：标题承载镜号与时间线镜号或顺序不一致")
-        if is_project and schema not in ("generic", "legacy") and "全局配音、配乐与声音规则" in body and music_windows != len(windows):
-            errors.append(sid + "：配乐版每个时间窗须写配乐状态，包括停奏")
+        music_mode = unit_music.get(sid, music)
+        if music_mode == "auto":
+            music_mode = "on" if (is_project and "全局配音、配乐与声音规则" in body) or music_windows else "off"
+        if music_mode == "on" and music_windows != len(windows):
+            errors.append(sid + "：配乐开启时每窗须写实际音乐状态，包括有因停奏")
+        if music_mode == "off" and music_windows:
+            errors.append(sid + "：配乐关闭范围不得新增配乐行")
         if abs(previous - duration) > 0.05:
             errors.append(sid + "：时间线镜尾与标题时长不一致")
-        if music_windows and music_windows != len(windows):
-            errors.append(sid + "：配乐开启时须在每个镜内时间窗写配乐子项；静默镜可写配乐：无")
     declared = re.search(r"(?:实际总时长|成片时长|总时长)[：:]?\s*(?:约\s*)?(\d+(?:\.\d+)?)\s*秒", body)
     if is_project and schema != "generic" and not declared:
         errors.append("项目参数须明确写出已有总时长字段及秒数（如成片总时长或实际总时长）")
@@ -216,14 +225,22 @@ def main():
     parser.add_argument("--max-unit-seconds", type=float, default=35.0, help="当前采用的生成单元上限")
     parser.add_argument("--require-focal-length", action="store_true", default=True, help="旧命令兼容；数值焦段始终强制校验，支持mm或毫米")
     parser.add_argument("--schema", choices=["auto", "current", "legacy", "generic"], default="auto", help="auto/current检查当前场景级格式；legacy仅供明确保留的旧版，generic保留用户锁定自定义栏目")
+    parser.add_argument("--music", choices=["auto", "on", "off"], default="auto", help="继承实际项目开关；auto从现有音乐栏目推定")
+    parser.add_argument("--unit-music", action="append", default=[], metavar="G1=off", help="明确的单元配乐覆盖，可重复；不改变正文格式")
     args = parser.parse_args()
+    overrides = {}
+    for setting in args.unit_music:
+        parts = setting.split("=", 1)
+        if len(parts) != 2 or not parts[0].strip() or parts[1] not in ("on", "off"):
+            parser.error("--unit-music 使用 G1=on 或 G1=off")
+        overrides[parts[0].strip()] = parts[1]
     if not math.isfinite(args.max_unit_seconds) or args.max_unit_seconds <= 0:
         parser.error("--max-unit-seconds 必须大于0")
-    errors = validate(args.path.read_text(encoding="utf-8"), args.mode, args.max_unit_seconds, args.require_focal_length, args.schema)
+    errors = validate(args.path.read_text(encoding="utf-8"), args.mode, args.max_unit_seconds, args.require_focal_length, args.schema, args.music, overrides)
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
-    print("结构与时间校验通过；仍须复查来源、人物演绎、导演效果和连续状态。")
+    print("结构与时间校验通过；仍须逐镜复查近景/面部特写的焦点、实际后景与清晰层次，以及来源、人物演绎、导演效果和连续状态。")
     return 0
 
 if __name__ == "__main__":

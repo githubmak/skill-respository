@@ -90,7 +90,7 @@ def validate_a(text,cap=LIMIT,genre="eastern"):
     for m,body in shots:
         body=re.split(r'(?m)^\s*#{1,6}\s*生成单元\b',body)[0]
         key=f'{int(m[1]):02d}';seen.append(key);value=duration(m[2]);times[key]=value
-        check_duration(value,f'A 镜头 {key}',errors,cap)
+        check_duration(value,f'A 镜头 {key}',errors,float('inf'))
         # Seven numbered fields, not arbitrary occurrences in prose.
         numbered=list(re.finditer(r'(?m)^\s*([1-7])[.、．]\s*(.+)',clean(body)))
         if [int(x[1]) for x in numbered]!=list(range(1,8)):
@@ -103,15 +103,36 @@ def validate_a(text,cap=LIMIT,genre="eastern"):
     if len(seen)!=len(set(seen)):errors.append('A 镜号重复，可能重复附了全文。')
     if '【可复制存档区' in text:errors.append('A 不再附独立存档块，正文即完整源稿。')
     if not units:errors.append('A 缺少生成单元及其时长，无法检查 35 秒分组。')
-    used=[]
+    used=[]; spans={}; direct_used=[]
     for m,body in units:
         value=duration(m[2]);check_duration(value,m[1],errors,cap)
         local=[(x,duration(x[2])) for x in HEADER.finditer(body)]
-        if not local:errors.append(f'{m[1]}没有导演镜头。')
-        used.extend(f'{int(x[1]):02d}' for x,_ in local)
-        if value is not None and all(v is not None for _,v in local) and abs(sum(v for _,v in local)-value)>0.05:
-            errors.append(f'{m[1]}单元时长与镜头合计不一致。')
-    if sorted(used)!=sorted(seen):errors.append('A 有镜头未分配到生成单元。')
+        span = re.search(r'承载镜号[：:]\s*(\d+)\s*[｜|]\s*成片区间[：:]\s*(\d+(?:\.\d+)?)\s*[—–-]\s*(\d+(?:\.\d+)?)\s*秒', m[2])
+        if local and span:
+            errors.append(f'{m[1]}不得同时重复列镜头全文与长镜片段映射。')
+        if span:
+            key=f'{int(span[1]):02d}';start=float(span[2]);end=float(span[3])
+            spans.setdefault(key,[]).append((start,end));used.append(key)
+            if key not in times or end<=start or start<0 or (times.get(key) is not None and end>times[key]+0.05):
+                errors.append(f'{m[1]}长镜片段区间无效或引用无源镜号。')
+            if value is not None and abs(end-start-value)>0.05:
+                errors.append(f'{m[1]}包时长与成片区间不一致。')
+        else:
+            if not local:errors.append(f'{m[1]}没有导演镜头或长镜片段映射。')
+            local_ids=[f'{int(x[1]):02d}' for x,_ in local]
+            used.extend(local_ids);direct_used.extend(local_ids)
+            if value is not None and all(v is not None for _,v in local) and abs(sum(v for _,v in local)-value)>0.05:
+                errors.append(f'{m[1]}单元时长与镜头合计不一致。')
+    if set(direct_used) & set(spans):
+        errors.append("同一镜头不能同时按完整镜长分组又按片段重复计时。")
+    for key, intervals in spans.items():
+        previous=0.0
+        for start,end in intervals:
+            if abs(start-previous)>0.05:errors.append(f'A 镜头 {key}分包区间重叠、倒序或有缺口。')
+            previous=end
+        if times.get(key) is not None and abs(previous-times[key])>0.05:
+            errors.append(f'A 镜头 {key}分包未覆盖完整镜长。')
+    if set(used)!=set(seen):errors.append('A 有镜头未分配到生成单元。')
     if len({m[1] for m,_ in units})!=len(units):errors.append('生成单元编号重复。')
     total=re.search(r'导演稿总时长\s*[：:]\s*([^\n]+)',text)
     if not total:errors.append('缺少导演稿总时长。')
@@ -158,7 +179,7 @@ def validate_b(text,source,cap=LIMIT,genre='eastern'):
         aid=ids(a[1]) if a else []
         if eid in estate:errors.append(f'工程镜号 {eid} 重复。')
         estate[eid]=(aid,duration(header));mapped+=aid
-        check_duration(duration(header),eid,errors,cap)
+        check_duration(duration(header),eid,errors,float('inf'))
         if not aid:errors.append(f'{eid}缺对应 A 镜号。')
         if len(aid)!=len(set(aid)):errors.append(f'{eid}的 A 镜号重复。')
         for variants in B_FIELDS_BY_GENRE[genre]:
