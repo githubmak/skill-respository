@@ -27,7 +27,7 @@ GLOBAL_LEGACY_LIGHT = ["全局影调", "全局光影", "全局环境色彩"]
 GLOBAL_CURRENT_LIGHT = ["全局光色与影调基线"]
 GLOBAL_END = ["全局正向提示词", "全局负面提示词"]
 
-def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=True, schema="auto", music="auto", unit_music=None):
+def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=True, schema="auto", music="on", unit_music=None):
     errors = []
     unit_music = unit_music or {}
     if music not in ("auto", "on", "off") or any(v not in ("on", "off") for v in unit_music.values()):
@@ -122,7 +122,13 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
         field_matches = list(re.finditer(r"^- ([^\n：:]+)[：:][ \t]*", text, re.M))
         fields = {}
         for fi, fm in enumerate(field_matches):
+            if fm.group(1) in fields:
+                errors.append(sid + "：字段重复 " + fm.group(1))
             fields[fm.group(1)] = text[fm.end():field_matches[fi+1].start() if fi+1 < len(field_matches) else len(text)].strip()
+        if schema not in ("generic", "legacy"):
+            actual_fields = [fm.group(1) for fm in field_matches if fm.group(1) in FIELDS]
+            if actual_fields != FIELDS:
+                errors.append(sid + "：核心字段缺失、重复或顺序错误")
         for field in (FIELDS if schema != "generic" else ["画面与表演时间线"]):
             if field not in fields:
                 errors.append(sid + "：缺少字段 " + field)
@@ -140,6 +146,9 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
             continue
         content = timeline.group(1)
         windows = list(WINDOW.finditer(content))
+        for line in content.splitlines():
+            if re.match(r"^\s*(?:-\s*)?[+-]?\d[^\n]*[｜|]", line) and not WINDOW.fullmatch(line):
+                errors.append(sid + "：存在无法解析的时间段：" + line.strip())
         if not windows:
             errors.append(sid + "：缺少嵌套时间段")
             continue
@@ -176,7 +185,7 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
                 elif prior is not None and abs(prior - focal_numbers[0]) > 0.01 and not zoom:
                     errors.append(sid + "：同镜焦段无变焦说明却跨窗/跨单元跳变")
                 shot_focal_tail[shot_key] = focal_numbers[-1]
-            if "配乐：" in compiled:
+            if re.search(r"配乐[：:][ \t]*\S", compiled):
                 music_windows += 1
             sound = re.search(r"声音[：:][ \t]*([^\n]+)", compiled)
             if not sound or not sound.group(1).strip() or re.match(r"配乐[：:]", sound.group(1).strip()):
@@ -199,7 +208,12 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
         if kind == "生成单元":
             carried = re.search(r"[｜|]\s*承载[：:]\s*([^｜|]*)", title_tail)
             if carried:
-                declared_shots = [re.sub(r"^镜头\s*", "", item.strip()) for item in re.split(r"[、,，/\s]+", carried.group(1).strip()) if item.strip() and item.strip() != "镜头"]
+                # Parenthetical fragment descriptions are metadata, not shot IDs.
+                mapping_text = re.sub(r"（[^）]*）|\([^)]*\)", "", carried.group(1))
+                declared_shots = re.findall(r"(?<![\w-])S\d+-\d+(?![\w-])", mapping_text)
+                if not declared_shots:
+                    # Preserve custom IDs in explicitly retained templates.
+                    declared_shots = [re.sub(r"^镜头\s*", "", item.strip()) for item in re.split(r"[、,，/\s]+", mapping_text.strip()) if item.strip() and item.strip() != "镜头"]
                 if list(dict.fromkeys(declared_shots)) != list(dict.fromkeys(unit_shots)):
                     errors.append(sid + "：标题承载镜号与时间线镜号或顺序不一致")
         music_mode = unit_music.get(sid, music)
@@ -225,7 +239,7 @@ def main():
     parser.add_argument("--max-unit-seconds", type=float, default=35.0, help="当前采用的生成单元上限")
     parser.add_argument("--require-focal-length", action="store_true", default=True, help="旧命令兼容；数值焦段始终强制校验，支持mm或毫米")
     parser.add_argument("--schema", choices=["auto", "current", "legacy", "generic"], default="auto", help="auto/current检查当前场景级格式；legacy仅供明确保留的旧版，generic保留用户锁定自定义栏目")
-    parser.add_argument("--music", choices=["auto", "on", "off"], default="auto", help="继承实际项目开关；auto从现有音乐栏目推定")
+    parser.add_argument("--music", choices=["auto", "on", "off"], default="on", help="传入已解析的项目开关，未设置默认on；auto仅兼容历史稿推定")
     parser.add_argument("--unit-music", action="append", default=[], metavar="G1=off", help="明确的单元配乐覆盖，可重复；不改变正文格式")
     args = parser.parse_args()
     overrides = {}

@@ -25,13 +25,19 @@ def clean(text):
     return re.sub(r'[*_`>【】\[\]]','',text)
 
 def ids(text,prefix=''):
-    return [f'{prefix}{int(n):02d}' for n in re.findall(r'(?<!\d)(?:'+prefix+r')?(\d+)(?!\d)',text)]
+    if prefix:
+        return [f'{prefix}{int(n):02d}' for n in re.findall(r'(?<![A-Za-z0-9_-])(?:'+prefix+r')?(\d+)(?![A-Za-z0-9_-])',text)]
+    tokens = re.findall(r'(?<![A-Za-z0-9_-])(?:S\d+-\d+|\d+)(?![A-Za-z0-9_-])', text)
+    return [token if token.startswith('S') else f'{int(token):02d}' for token in tokens]
 
 def field(body,label):
     m=re.search(r'(?m)^\s*'+re.escape(label)+r'[^：:\n]*[：:][^\S\n]*(.*)',clean(body))
     if not m:return ''
     rest=clean(body)[m.end():]
-    stop=re.search(r'(?m)^\s*(?:#{1,6}\s|[^\n：:]{1,25}[：:])',rest)
+    # Time labels and dialogue colons belong to the Prompt. Only real package
+    # fields or section headings terminate it.
+    labels = '目标|投喂 Prompt|参考资产|必要约束|验收点|风险与备选|接缝|阶段覆盖'
+    stop=re.search(r'(?m)^[ \t]*(?:#{1,6}\s|(?:'+labels+r')[ \t]*[：:])',rest)
     return (m[1]+'\n'+(rest[:stop.start()] if stop else rest)).strip()
 
 def check_duration(value,label,errors,cap):
@@ -163,15 +169,56 @@ def mapping_totals(left_times, right_times, links, label, errors):
         if all(v is not None for v in lv+rv) and abs(sum(lv)-sum(rv))>0.05:
             errors.append(f'{label}时长不守恒：{",".join(sorted(left))} 与 {",".join(sorted(right))} 合计不一致。')
 
-def validate_b(text,source,cap=LIMIT,genre='eastern'):
+def source_shots(source, source_format, genre, errors, notes):
+    """Read IDs/times without rewriting external scripts into our A schema."""
+    numeric = list(HEADER.finditer(source))
+    if source_format == 'auto':
+        labels = ('战斗总基调', '角色战前处境与情绪', '战斗节奏选型',
+                  '全片节奏峰值点位', '战前处境', '选定打法', '节奏峰值')
+        source_format = 'a' if ('导演稿总时长' in source or
+                                  sum(bool(re.search(label+r'\s*[：:]', clean(source)))
+                                      for label in labels) >= 2) else 'external'
+    if source_format == 'a':
+        errors.extend('A 源稿无效：'+error for error in validate_a(source,LIMIT,genre))
+        return {f'{int(m[1]):02d}':duration(m[2]) for m in numeric}
+    header = re.compile(r'^[ \t]*(?:#{1,6}[ \t]*)?【?镜头[ \t]*(S\d+-\d+|\d+)[ \t]*[｜|]([^\n]+)', re.M)
+    times = {}
+    for m in header.finditer(source):
+        key = ids(m[1])[0]
+        if key in times:
+            errors.append(f'外部源稿镜号 {key} 重复；须明确唯一来源定位。')
+        value = duration(m[2])
+        if value is not None and value <= 0:
+            errors.append(f'外部源稿镜号 {key} 时长须为正数。')
+        times[key] = value
+    # Historical G scripts carry shot IDs in their timeline. Sum each shot's
+    # fragments, but never count the unit header or its carried-ID list again.
+    timeline = re.compile(r'^[ \t]*(?:-[ \t]*)?(\d+(?:\.\d+)?)[ \t]*(?:秒)?[ \t]*[—–-][ \t]*(\d+(?:\.\d+)?)[ \t]*秒[ \t]*[｜|][ \t]*(?:镜头[ \t]*)?(S\d+-\d+)[ \t]*[｜|]', re.M)
+    fragments = {}
+    for m in timeline.finditer(source):
+        start, end = float(m[1]), float(m[2])
+        if end <= start:
+            errors.append(f'外部源稿镜号 {m[3]} 时间窗起止无效。')
+        fragments[m[3]] = fragments.get(m[3], 0.0) + end - start
+    for key, value in fragments.items():
+        if key not in times or times[key] is None:
+            times[key] = value
+    if not times:
+        errors.append('外部源稿没有可识别的唯一镜号；保留原稿，补充对应关系后再校验。')
+    notes.append('外部/历史源稿仅校验可识别镜号、已明确时长与B映射；来源完整性、时间窗连续性及语义保真须人工核对。')
+    if any(value is None for value in times.values()):
+        notes.append('部分源镜未提供可识别秒数，对应A→工程时长守恒未覆盖；不得虚构源时长。')
+    return times
+
+def validate_b(text,source,cap=LIMIT,genre='eastern',source_format='auto',notes=None):
     errors=[];engines=sections(text,ENGINE);packs=sections(text,UNIT)
+    notes = notes if notes is not None else []
     if not engines:errors.append('缺少逐镜工程分镜。')
     if not packs:errors.append('缺少实际投喂包。')
     if not re.search(r'正向提示词|全局正向制作基线',text):errors.append('缺少全局正向制作基线。')
-    source_ids={f'{int(m[1]):02d}' for m in HEADER.finditer(source)} if source else set()
-    if not source_ids:errors.append('B 完整校验须提供含完整镜号的 --source-a。')
-    else:
-        errors.extend('A 源稿无效：'+error for error in validate_a(source,LIMIT,genre))
+    source_times = source_shots(source, source_format, genre, errors, notes) if source else {}
+    source_ids=set(source_times)
+    if not source_ids:errors.append('B 校验须提供可定位镜号的完整 --source-a；外部稿不强制采用当前A模板。')
     estate={}; mapped=[]
     for m,body in engines:
         body=re.split(r'(?m)^\s*#{1,6}\s*生成单元\b',body)[0]
@@ -186,7 +233,6 @@ def validate_b(text,source,cap=LIMIT,genre='eastern'):
             if not has_engineering_field(body,variants):errors.append(f'{eid}缺少工程字段：{variants[0]}。')
         if genre=='eastern' and '本镜头底线强制关键词' not in body:errors.append(f'{eid}缺玄幻规范的底线关键词。')
     if set(mapped)!=source_ids:errors.append('工程稿对 A 源镜号覆盖不完整或存在无源镜号。')
-    source_times={f'{int(m[1]):02d}':duration(m[2]) for m in HEADER.finditer(source)}
     mapping_totals({eid:value[1] for eid,value in estate.items()},source_times,{eid:value[0] for eid,value in estate.items()},'工程→A',errors)
     covered=[];pack_ids=[];pack_times={};pack_links={}
     for m,body in packs:
@@ -217,6 +263,7 @@ def main():
     parser.add_argument('--mode',required=True,choices=['a','b','units','single','rapid','refined'])
     parser.add_argument('--genre',choices=['eastern','wuxia','scifi','western'],default='eastern')
     parser.add_argument('--source-a',type=Path)
+    parser.add_argument('--source-format',choices=['auto','a','external'],default='auto',help='auto识别当前A或外部/历史导演稿；a强制完整A结构，external保留原稿并核对可识别镜号/时长')
     parser.add_argument('--max-unit-seconds',type=float,default=LIMIT)
     parser.add_argument('--max-segment-seconds',type=float,default=LIMIT)
     parser.add_argument('--require-focal-length',action='store_true')
@@ -228,7 +275,9 @@ def main():
         text=args.path.read_text(encoding='utf-8-sig')
         source=args.source_a.read_text(encoding='utf-8-sig') if args.source_a else ''
     except OSError as exc:parser.error(str(exc))
-    errors=validate_a(text,args.max_unit_seconds,args.genre) if args.mode=='a' else validate_b(text,source,args.max_unit_seconds,args.genre)
+    notes=[]
+    errors=validate_a(text,args.max_unit_seconds,args.genre) if args.mode=='a' else validate_b(text,source,args.max_unit_seconds,args.genre,args.source_format,notes)
+    for note in notes:print('NOTE:',note)
     for e in errors:print('ERROR:',e,file=sys.stderr)
     if not errors:print('结构检查通过；剧情、受力、空间、时序语义及成片效果仍须审读。')
     return int(bool(errors))

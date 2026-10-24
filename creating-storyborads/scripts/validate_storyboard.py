@@ -19,7 +19,7 @@ UNIT = re.compile(rf'^###\s+生成单元\s+(G\d+)\s*｜\s*时长[：:]\s*({NUM})
 WINDOW = re.compile(rf'^\s*{RANGE}\s*｜\s*(?:镜头\s*)?(S\d+-\d+)\s*｜([^\n]+)', re.M)
 FIELDS = ['起幅与连续性','摄影与构图','光影、环境色彩与材质','画面与表演时间线','台词与声音层次','落幅状态']
 FIELD = re.compile(r'^\s*-\s*('+'|'.join(FIELDS+['本生成单元特殊正向约束','本生成单元特殊负面约束'])+r')[：:]\s*', re.M)
-LENS = re.compile(rf'({NUM})\s*(?:mm|毫米)', re.I)
+LENS = re.compile(rf'(?<![A-Za-z0-9_.])([+\-−－]?{NUM})\s*(?:mm|毫米)(?![A-Za-z])', re.I)
 MOVEMENTS = re.compile(r"固定|静止|推|拉|移|跟拍|跟随|环绕|短弧|升降|升机|降机|后退|前移|摇|俯仰|甩|穿越|变焦|手持|轨道|航拍|锁定|急停")
 MANUAL = [
     '逐镜核对近景/面部特写在摄影栏中的焦点、实际入画后景与清晰层次；无后景须有实际依据，场景总则不能替代，结构校验不判断几何或景深是否成立。',
@@ -260,7 +260,7 @@ def validate(markdown, source_bytes, ledger):
             last_shot = shot
             if shot not in unit_shots:
                 unit_shots.append(shot)
-            lenses = [dec(x) for x in LENS.findall(details)]
+            lenses = [dec(x.replace('−', '-').replace('－', '-')) for x in LENS.findall(details)]
             if not lenses or any(x <= 0 for x in lenses):
                 fail('lens',where,'缺少正数mm/毫米焦段。')
             else:
@@ -343,9 +343,16 @@ def validate(markdown, source_bytes, ledger):
         if ''.join(groups[vid]) != u['text']:
             fail('dialogue_exact',vid,'分配片段拼接不等于来源原文，存在漏字、改写或重复。')
     values={'成片总时长':total,'生成单元数':len(matches),'成片镜头数':len(set(seen_shots)),'生成单元时长上限':limit}
+    aliases = {
+        '成片总时长': ('成片总时长', '实际总时长', '总时长', '成片时长'),
+        '生成单元数': ('生成单元数', '生成单元数量', '单元数'),
+        '成片镜头数': ('成片镜头数', '成片镜头数量', '镜头数'),
+        '生成单元时长上限': ('生成单元时长上限', '单元时长上限', '单元上限'),
+    }
     header=markdown.split('# 场景',1)[0]
     for key,value in values.items():
-        vals=re.findall(rf'{key}[：:]\s*({NUM})',header)
+        labels = '|'.join(map(re.escape, aliases[key]))
+        vals=re.findall(rf'(?<![\w])(?:{labels})[：:]\s*({NUM})',header)
         if len(vals)!=1 or dec(vals[0])!=value:
             fail('statistics',key,'项目统计缺失、重复或与正文/配置不一致。')
     any_music=any(overrides.get(uid,ledger['music']) for uid in unit_ids)

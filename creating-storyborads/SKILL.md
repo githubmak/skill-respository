@@ -9,7 +9,7 @@ description: 将剧本、分场稿或片段制作成可拍摄、可生成、可�
 
 ## 规范与读取
 
-1. 首次执行、新会话、上下文压缩后无法确认全文仍可用，或规范版本变化时，**完整读取** [共同导演规范](references/director-standard.md)、[联合视觉设计与正文兑现](references/visual-design-contract.md) 与 [执行、状态与程序核对](references/execution-workflow.md)。工具输出截断时按行分段补齐，不能把路径、摘要或检索命中当作全文。版本 2.0.4。
+1. 首次执行、新会话、上下文压缩后无法确认全文仍可用，或规范版本变化时，**完整读取** [共同导演规范](references/director-standard.md)、[联合视觉设计与正文兑现](references/visual-design-contract.md) 与 [执行、状态与程序核对](references/execution-workflow.md)。工具输出截断时按行分段补齐，不能把路径、摘要或检索命中当作全文。版本 2.0.5。
 2. 当前会话已完整读取且版本未变，续接只读取工作记录、当前场来源与必要相邻接点；出现来源反证再定向回读。全文件约束持续有效。
 3. 正式编译前必须按实际配乐范围完整读取唯一输出合同：有开启范围用 [配乐版格式](references/output-music.md)，全部关闭用 [细节版格式](references/output-detail.md)。二者以源MD第6章为底，按用户授权改为“项目共用视觉规则＋各场的“场景摄影规则”“场景光色与影调基线”＋资产/空间＋详细G单元”。严格执行当前合同的标题、栏目、顺序和层级；G单元、时间线及自然语言台词格式保留，不为脚本加入U编号、JSON原文行或无配乐全局声音栏。
 4. 配乐开启时完整读取 [配乐设计](references/music-design.md)；关闭时跳过。先沿用导演方案中的人物与情绪判断，再设计音乐。
