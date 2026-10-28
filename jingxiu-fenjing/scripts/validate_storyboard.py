@@ -18,11 +18,12 @@ CONTRADICTIONS = re.compile(
     r"固定(?:机位|镜头)(?:缓慢|快速|持续|同时)?"
     r"(?:横移|侧移|推进|推近|拉远|后退|环绕|升降|跟拍)"
 )
-FIELDS = ["起幅与连续性", "摄影与构图", "光影、环境色彩与材质", "画面与表演时间线", "台词与声音层次", "落幅状态"]
+LEGACY_FIELDS = ["起幅与连续性", "摄影与构图", "光影、环境色彩与材质", "画面与表演时间线", "台词与声音层次", "落幅状态"]
+FIELDS = LEGACY_FIELDS[:3] + ["特效、粒子与介质"] + LEGACY_FIELDS[3:]
 GLOBAL_COMMON = ["项目直投参数", "项目共用视觉规则"]
 GLOBAL_OLD_COMMON = ["项目直投参数", "全局摄影规则"]
 SCENE_CURRENT = ["场景摄影规则", "场景光色与影调基线", "场景资产图提示词", "道具资产图提示词", "场景空间位置关系", "Seedance 独立直投生成单元"]
-LIGHT_VALUE = re.compile(r"\d+(?:\.\d+)?\s*(?:[—–~～至到-]\s*\d+(?:\.\d+)?)?\s*[Kk]\b|\d+\s*开尔文|纯色(?:灯|光)|单色(?:灯|光)|无有效(?:光源|照明)")
+LIGHT_VALUE = re.compile(r"\d+(?:\.\d+)?\s*(?:[—–~～至到-]\s*\d+(?:\.\d+)?)?\s*[Kk](?![A-Za-z0-9_])|\d+\s*开尔文|纯色(?:灯|光)|单色(?:灯|光)|无有效(?:光源|照明)")
 GLOBAL_LEGACY_LIGHT = ["全局影调", "全局光影", "全局环境色彩"]
 GLOBAL_CURRENT_LIGHT = ["全局光色与影调基线"]
 GLOBAL_END = ["全局正向提示词", "全局负面提示词"]
@@ -44,6 +45,7 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
         or re.search(r"^## 项目直投参数\s*$", body, re.M)
     )
     current = schema != "legacy"
+    required_fields = FIELDS if current else LEGACY_FIELDS
     if is_project and schema != "generic":
         if not re.match(r"# 《.+》[^\n]*Seedance 独立直投版", body):
             errors.append("正式标题不符合Seedance独立直投版格式")
@@ -88,8 +90,6 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
             if scene_positions != sorted(scene_positions):
                 errors.append(scene.group(0) + "：场景栏目顺序不正确")
 
-    if is_project and schema != "generic" and current and re.search(r"配乐[：:]", body) and "全局配音、配乐与声音规则" not in headings:
-        errors.append("配乐版缺少全局配音、配乐与声音规则")
     if re.search(r"^## (?:场景级导演设计源|场级导演设计源|来源原文)", body, re.M):
         errors.append("来源/导演设计源泄漏到正式正文")
     if re.search(r"脸部只写|按本技能|只在此栏|不得被省略|使用\s+\$", body):
@@ -104,6 +104,7 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
         errors.append("配乐覆盖引用不存在单元：" + ",".join(sorted(unknown_music)))
     total = 0.0
     shot_focal_tail = {}  # Same shot can span windows or generation units.
+    any_music_enabled = False
     for i, match in enumerate(matches):
         kind = match.group(1)
         sid = match.group(2).strip()
@@ -121,15 +122,21 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
         text = re.split(r"^# 场景[^\n]*", text, maxsplit=1, flags=re.M)[0]
         field_matches = list(re.finditer(r"^- ([^\n：:]+)[：:][ \t]*", text, re.M))
         fields = {}
+        field_names = []
         for fi, fm in enumerate(field_matches):
-            if fm.group(1) in fields:
-                errors.append(sid + "：字段重复 " + fm.group(1))
-            fields[fm.group(1)] = text[fm.end():field_matches[fi+1].start() if fi+1 < len(field_matches) else len(text)].strip()
+            name = fm.group(1).strip()
+            canonical = re.sub(r"[（(][^\n）)]*[）)]$", "", name).strip()
+            if canonical in FIELDS + ["本生成单元特殊正向约束", "本生成单元特殊负面约束"]:
+                name = canonical
+            field_names.append(name)
+            if name in fields:
+                errors.append(sid + "：字段重复 " + name)
+            fields[name] = text[fm.end():field_matches[fi+1].start() if fi+1 < len(field_matches) else len(text)].strip()
         if schema not in ("generic", "legacy"):
-            actual_fields = [fm.group(1) for fm in field_matches if fm.group(1) in FIELDS]
-            if actual_fields != FIELDS:
+            actual_fields = [name for name in field_names if name in required_fields]
+            if actual_fields != required_fields:
                 errors.append(sid + "：核心字段缺失、重复或顺序错误")
-        for field in (FIELDS if schema != "generic" else ["画面与表演时间线"]):
+        for field in (required_fields if schema != "generic" else ["画面与表演时间线"]):
             if field not in fields:
                 errors.append(sid + "：缺少字段 " + field)
             elif not fields[field]:
@@ -219,12 +226,15 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
         music_mode = unit_music.get(sid, music)
         if music_mode == "auto":
             music_mode = "on" if (is_project and "全局配音、配乐与声音规则" in body) or music_windows else "off"
+        any_music_enabled = any_music_enabled or music_mode == "on"
         if music_mode == "on" and music_windows != len(windows):
             errors.append(sid + "：配乐开启时每窗须写实际音乐状态，包括有因停奏")
         if music_mode == "off" and music_windows:
             errors.append(sid + "：配乐关闭范围不得新增配乐行")
         if abs(previous - duration) > 0.05:
             errors.append(sid + "：时间线镜尾与标题时长不一致")
+    if is_project and schema != "generic" and current and any_music_enabled and "全局配音、配乐与声音规则" not in headings:
+        errors.append("配乐版缺少全局配音、配乐与声音规则")
     declared = re.search(r"(?:实际总时长|成片时长|总时长)[：:]?\s*(?:约\s*)?(\d+(?:\.\d+)?)\s*秒", body)
     if is_project and schema != "generic" and not declared:
         errors.append("项目参数须明确写出已有总时长字段及秒数（如成片总时长或实际总时长）")
@@ -254,7 +264,7 @@ def main():
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
-    print("结构与时间校验通过；仍须逐镜复查近景/面部特写的焦点、实际后景与清晰层次，以及来源、人物演绎、导演效果和连续状态。")
+    print("结构与时间校验通过；仍须人工核对实际受光、特效/介质形态与尺度及持续/退出，并逐镜复查焦点、实际后景、来源、人物演绎和连续状态；非空与关键词不证明创作质量。")
     return 0
 
 if __name__ == "__main__":

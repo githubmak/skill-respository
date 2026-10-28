@@ -17,11 +17,12 @@ NUM = r'\d+(?:\.\d+)?'
 RANGE = rf'({NUM})\s*(?:秒\s*)?[—–~～-]\s*({NUM})\s*秒'
 UNIT = re.compile(rf'^###\s+生成单元\s+(G\d+)\s*｜\s*时长[：:]\s*({NUM})\s*秒\s*｜\s*承载[：:]([^\n]+)', re.M)
 WINDOW = re.compile(rf'^\s*{RANGE}\s*｜\s*(?:镜头\s*)?(S\d+-\d+)\s*｜([^\n]+)', re.M)
-FIELDS = ['起幅与连续性','摄影与构图','光影、环境色彩与材质','画面与表演时间线','台词与声音层次','落幅状态']
-FIELD = re.compile(r'^\s*-\s*('+'|'.join(FIELDS+['本生成单元特殊正向约束','本生成单元特殊负面约束'])+r')[：:]\s*', re.M)
+FIELDS = ['起幅与连续性','摄影与构图','光影、环境色彩与材质','特效、粒子与介质','画面与表演时间线','台词与声音层次','落幅状态']
+FIELD = re.compile(r'^\s*-\s*('+'|'.join(FIELDS+['本生成单元特殊正向约束','本生成单元特殊负面约束'])+r')(?:[（(][^\n）)]*[）)])?[：:]\s*', re.M)
 LENS = re.compile(rf'(?<![A-Za-z0-9_.])([+\-−－]?{NUM})\s*(?:mm|毫米)(?![A-Za-z])', re.I)
 MOVEMENTS = re.compile(r"固定|静止|推|拉|移|跟拍|跟随|环绕|短弧|升降|升机|降机|后退|前移|摇|俯仰|甩|穿越|变焦|手持|轨道|航拍|锁定|急停")
 MANUAL = [
+    '人工核对各镜实际受光、人景明暗及适用材质结果；特效、粒子与介质栏和时间线合看须有适用的形态、尺度、来源、演化与持续/退出证据。无主效不排除环境介质；栏目非空或关键词数量不证明质量。',
     '逐镜核对近景/面部特写在摄影栏中的焦点、实际入画后景与清晰层次；无后景须有实际依据，场景总则不能替代，结构校验不判断几何或景深是否成立。',
     '人工从源稿核对所有发言提取覆盖、说话者/OS/OV归属及非对白关键事实。',
     '人工核对源稿外的重复引语、自然语气与时长、信息到达、取景可见性、物理空间及跨镜状态。',
@@ -67,7 +68,7 @@ def quoted_end(line, start):
 
 def attributed_header(prefix, speakers):
     prefix = re.sub(r'^[ \t]*[-*][ \t]+', '', prefix).strip()
-    prefix = re.sub(rf'^{RANGE}[ \t]*｜[ \t]*', '', prefix)
+    prefix = re.sub(rf'^{RANGE}[ \t]*[｜，,][ \t]*', '', prefix)
     for speaker in sorted(set(speakers), key=len, reverse=True):
         if prefix.startswith(speaker):
             meta = prefix[len(speaker):]
@@ -146,6 +147,24 @@ def voice_records(text, speakers, issues=None):
         if brackets and issues is not None:
             issues.append((number,'括号未闭合，话语归属可能未解析，需人工核对。'))
     return records
+
+
+def statistic_values(header, key, aliases):
+    """Read explicit numeric statistics, including prose counts, without guessing.
+
+    Two declarations remain two declarations even when their values agree.
+    The same numeric token in '单元数：1个生成单元' is counted only once.
+    """
+    labels = '|'.join(map(re.escape, aliases))
+    patterns = [rf'(?<![A-Za-z0-9_])(?:{labels})[：:]?[ \t]*(?:约[ \t]*)?({NUM})(?![\d.])']
+    counted = {'生成单元数': '生成单元', '成片镜头数': '成片镜头'}
+    if key in counted:
+        patterns.append(rf'(?<![A-Za-z0-9_.+\-−])({NUM})[ \t]*个[ \t]*{counted[key]}')
+    tokens = {}
+    for pattern in patterns:
+        for match in re.finditer(pattern, header):
+            tokens[match.span(1)] = match[1]
+    return [tokens[span] for span in sorted(tokens)]
 
 
 def validate(markdown, source_bytes, ledger):
@@ -351,8 +370,7 @@ def validate(markdown, source_bytes, ledger):
     }
     header=markdown.split('# 场景',1)[0]
     for key,value in values.items():
-        labels = '|'.join(map(re.escape, aliases[key]))
-        vals=re.findall(rf'(?<![\w])(?:{labels})[：:]\s*({NUM})',header)
+        vals=statistic_values(header, key, aliases[key])
         if len(vals)!=1 or dec(vals[0])!=value:
             fail('statistics',key,'项目统计缺失、重复或与正文/配置不一致。')
     any_music=any(overrides.get(uid,ledger['music']) for uid in unit_ids)
