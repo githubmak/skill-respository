@@ -1,0 +1,4 @@
+interface:
+  display_name: "电影场景美术设计"
+  short_description: "重构场景美术与电影摄影，输出Midjourney高清提示词并按出图返修"
+  default_prompt: "使用 $cinematic-scene-design 将这段场景提示词重构为有题材辨识度和电影质感的Midjourney高清生图包，保留剧情空间硬锁。"
