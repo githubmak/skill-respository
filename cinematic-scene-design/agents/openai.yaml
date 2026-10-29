@@ -1,4 +1,4 @@
 interface:
   display_name: "电影场景美术设计"
-  short_description: "重构场景美术与电影摄影，输出Midjourney高清提示词并按出图返修"
-  default_prompt: "使用 $cinematic-scene-design 将这段场景提示词重构为有题材辨识度和电影质感的Midjourney高清生图包，保留剧情空间硬锁。"
+  short_description: "确认题材风格，统一场景美术与拓扑，适配Nano Banana、GPT与MJ提示词"
+  default_prompt: "使用 $cinematic-scene-design 先确认场景题材与风格，再设计美术、空间与摄影，输出Nano Banana、GPT彩色与线稿、MJ高清提示词。"
