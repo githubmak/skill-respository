@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check storyboard structure, timing, basic composition, and language conflicts."""
 import argparse
+import json
 import math
 import re
 import sys
@@ -104,6 +105,7 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
         errors.append("配乐覆盖引用不存在单元：" + ",".join(sorted(unknown_music)))
     total = 0.0
     shot_focal_tail = {}  # Same shot can span windows or generation units.
+    seen_shots, last_shot = set(), None
     any_music_enabled = False
     for i, match in enumerate(matches):
         kind = match.group(1)
@@ -178,19 +180,24 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
             segment = content[window.end():windows[j+1].start() if j+1 < len(windows) else len(content)]
             compiled = window_text + "\n" + segment
             shot_key = re.sub(r"^镜头\s*", "", focal_parts[0].strip()) if focal_parts else ""
+            if shot_key and shot_key != last_shot:
+                if shot_key in seen_shots:
+                    errors.append(sid + "：已结束镜号重新出现；切镜后返回原机位也须使用新镜号")
+                seen_shots.add(shot_key)
+                last_shot = shot_key
             if shot_key and (not unit_shots or unit_shots[-1] != shot_key):
                 unit_shots.append(shot_key)
             if shot_key and focal_values and all(float(value) > 0 for value in focal_values):
                 focal_numbers = [float(value) for value in focal_values]
                 zoom = "变焦" in compiled or "→" in focal_text
                 prior = shot_focal_tail.get(shot_key)
+                if zoom and len(focal_numbers) < 2:
+                    errors.append(sid + "：连续变焦须在变化窗的焦段栏明确起止焦段")
                 if len(focal_numbers) > 1:
                     if not zoom:
                         errors.append(sid + "：同一时间窗多个焦段须明确连续变焦")
-                    if prior is not None and abs(prior - focal_numbers[0]) > 0.01:
-                        errors.append(sid + "：同镜变焦起值与前窗/前单元焦段不接续")
-                elif prior is not None and abs(prior - focal_numbers[0]) > 0.01 and not zoom:
-                    errors.append(sid + "：同镜焦段无变焦说明却跨窗/跨单元跳变")
+                if prior is not None and abs(prior - focal_numbers[0]) > 0.01:
+                    errors.append(sid + "：同镜起始焦段与前窗/前单元末值不接续")
                 shot_focal_tail[shot_key] = focal_numbers[-1]
             if re.search(r"配乐[：:][ \t]*\S", compiled):
                 music_windows += 1
@@ -245,6 +252,8 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("path", type=Path)
+    parser.add_argument("--source", type=Path, help="原文快照；与--ledger一起逐字核对台词")
+    parser.add_argument("--ledger", type=Path, help="按原文建立的version=1台词索引，兼容制作阶段索引")
     parser.add_argument("--mode", choices=["refined"], default="refined", help="兼容技能的精修入口")
     parser.add_argument("--max-unit-seconds", type=float, default=35.0, help="当前采用的生成单元上限")
     parser.add_argument("--require-focal-length", action="store_true", default=True, help="旧命令兼容；数值焦段始终强制校验，支持mm或毫米")
@@ -260,11 +269,35 @@ def main():
         overrides[parts[0].strip()] = parts[1]
     if not math.isfinite(args.max_unit_seconds) or args.max_unit_seconds <= 0:
         parser.error("--max-unit-seconds 必须大于0")
-    errors = validate(args.path.read_text(encoding="utf-8"), args.mode, args.max_unit_seconds, args.require_focal_length, args.schema, args.music, overrides)
+    if bool(args.source) != bool(args.ledger):
+        parser.error("原文台词核对须同时提供--source和--ledger")
+    try:
+        raw = args.path.read_text(encoding="utf-8")
+        errors = validate(raw, args.mode, args.max_unit_seconds, args.require_focal_length, args.schema, args.music, overrides)
+        if args.source:
+            from dialogue_fidelity import verify_layers
+            chunks = []
+            normalized = raw.lstrip('\ufeff').replace('\r\n', '\n').replace('\r', '\n')
+            units = list(UNIT.finditer(normalized))
+            for i, unit in enumerate(units):
+                content = normalized[unit.end():units[i+1].start() if i+1 < len(units) else len(normalized)]
+                content = re.split(r'^# 场景[^\n]*', content, maxsplit=1, flags=re.M)[0]
+                voice = re.search(r'^- 台词与声音层次(?:[（(][^\n）)]*[）)])?[：:][ \t]*(.*?)(?=^- [^\n：:]+[：:]|\Z)', content, re.S | re.M)
+                chunks.append((unit[2].strip(), voice[1].strip() if voice else ''))
+            result = verify_layers([('精修台词栏', chunks)], args.source.read_bytes(), json.loads(args.ledger.read_bytes()))
+            errors.extend(result['errors'])
+            for note in result['notes']:
+                print('NOTE: ' + note)
+        else:
+            print('NOTE: 未提供原文快照与台词索引，仅做结构检查，台词原文核对未执行。')
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        parser.error(str(exc))
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
     print("结构与时间校验通过；仍须人工核对实际受光、特效/介质形态与尺度及持续/退出，并逐镜复查焦点、实际后景、来源、人物演绎和连续状态；非空与关键词不证明创作质量。")
+    if args.source:
+        print('台词已按提供的原文区间核对文字、说话人/类型、顺序及跨镜拼接；原文提取覆盖与归属依据仍须人工确认。')
     return 0
 
 if __name__ == "__main__":

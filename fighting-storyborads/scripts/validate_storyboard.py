@@ -2,6 +2,8 @@
 """Structural checks for four-genre A/B storyboards; semantic review remains required."""
 from __future__ import annotations
 import argparse
+import hashlib
+import json
 import re
 import subprocess
 import sys
@@ -29,6 +31,41 @@ def ids(text,prefix=''):
         return [f'{prefix}{int(n):02d}' for n in re.findall(r'(?<![A-Za-z0-9_-])(?:'+prefix+r')?(\d+)(?![A-Za-z0-9_-])',text)]
     tokens = re.findall(r'(?<![A-Za-z0-9_-])(?:S\d+-\d+|\d+)(?![A-Za-z0-9_-])', text)
     return [token if token.startswith('S') else f'{int(token):02d}' for token in tokens]
+
+def collapsed(sequence):
+    """Consecutive references are legal splits; returning after a cut is not."""
+    return [value for i,value in enumerate(sequence) if not i or sequence[i-1] != value]
+
+def check_order(actual, expected, label, errors):
+    if collapsed(actual) != list(expected):
+        errors.append(label + '顺序与来源不一致；同镜拆包可连续重复，回放/同步或授权重排须提供有来源依据的顺序计划。')
+
+def raw_field(body, label):
+    """Read authoritative speech without stripping literal *_ characters."""
+    decoration = r'[ \t]*(?:[-*>][ \t]*)*(?:\*\*)?'
+    found = re.search(r'(?m)^' + decoration + re.escape(label) + r'(?:\*\*)?[ \t]*[：:][ \t]*(.*)', body)
+    if not found:
+        return ''
+    rest = body[found.end():]
+    labels = r'目标|投喂 Prompt|参考资产|必要约束|验收点|风险与备选|接缝|阶段覆盖'
+    stop = re.search(r'(?m)^[ \t]*(?:#{1,6}\s|' + decoration + r'(?:' + labels + r')(?:\*\*)?[ \t]*[：:])', rest)
+    return (found[1] + '\n' + (rest[:stop.start()] if stop else rest)).strip()
+
+def dialogue_chunks(text, mode):
+    chunks = []
+    if mode == 'b':
+        for match, body in sections(text, UNIT):
+            chunks.append((match[1], raw_field(body, '投喂 Prompt')))
+    else:
+        for match, body in sections(text, HEADER):
+            body = re.split(r'(?m)^\s*#{1,6}\s*生成单元\b', body)[0]
+            seventh = re.search(r'(?m)^\s*(?:>\s*)?7[.、．]\s*([^\n]+)', body)
+            voice = ''
+            if seventh:
+                inline = re.split(r'[：:]', seventh[1], maxsplit=1)
+                voice = (inline[1] if len(inline) > 1 else '') + '\n' + body[seventh.end():]
+            chunks.append((match[1], voice.strip()))
+    return chunks
 
 def field(body,label):
     m=re.search(r'(?m)^\s*'+re.escape(label)+r'[^：:\n]*[：:][^\S\n]*(.*)',clean(body))
@@ -139,6 +176,7 @@ def validate_a(text,cap=LIMIT,genre="eastern"):
         if times.get(key) is not None and abs(previous-times[key])>0.05:
             errors.append(f'A 镜头 {key}分包未覆盖完整镜长。')
     if set(used)!=set(seen):errors.append('A 有镜头未分配到生成单元。')
+    check_order(used,seen,'A 生成单元',errors)
     if len({m[1] for m,_ in units})!=len(units):errors.append('生成单元编号重复。')
     total=re.search(r'导演稿总时长\s*[：:]\s*([^\n]+)',text)
     if not total:errors.append('缺少导演稿总时长。')
@@ -210,7 +248,7 @@ def source_shots(source, source_format, genre, errors, notes):
         notes.append('部分源镜未提供可识别秒数，对应A→工程时长守恒未覆盖；不得虚构源时长。')
     return times
 
-def validate_b(text,source,cap=LIMIT,genre='eastern',source_format='auto',notes=None):
+def validate_b(text,source,cap=LIMIT,genre='eastern',source_format='auto',notes=None,order_plan=None,source_sha256=None):
     errors=[];engines=sections(text,ENGINE);packs=sections(text,UNIT)
     notes = notes if notes is not None else []
     if not engines:errors.append('缺少逐镜工程分镜。')
@@ -233,6 +271,27 @@ def validate_b(text,source,cap=LIMIT,genre='eastern',source_format='auto',notes=
             if not has_engineering_field(body,variants):errors.append(f'{eid}缺少工程字段：{variants[0]}。')
         if genre=='eastern' and '本镜头底线强制关键词' not in body:errors.append(f'{eid}缺玄幻规范的底线关键词。')
     if set(mapped)!=source_ids:errors.append('工程稿对 A 源镜号覆盖不完整或存在无源镜号。')
+    engine_order = list(source_times)
+    package_order = list(estate)
+    if order_plan is not None:
+        fingerprint = source_sha256 or hashlib.sha256(source.encode('utf-8')).hexdigest()
+        if (not isinstance(order_plan,dict) or order_plan.get('version') != 1 or
+                order_plan.get('source_sha256') != fingerprint or
+                order_plan.get('relation') not in ('回放','同步','授权重排') or
+                not isinstance(order_plan.get('reason'),str) or not order_plan['reason'].strip()):
+            errors.append('顺序计划须为version=1，匹配A源稿哈希，并注明回放/同步/授权重排及原文依据。')
+        else:
+            planned_sources = order_plan.get('engine_source_order')
+            planned_engines = order_plan.get('package_engine_order')
+            if (not isinstance(planned_sources,list) or not all(isinstance(x,str) for x in planned_sources) or
+                    set(planned_sources) != source_ids or
+                    not isinstance(planned_engines,list) or not all(isinstance(x,str) for x in planned_engines) or
+                    set(planned_engines) != set(estate)):
+                errors.append('顺序计划须完整列出来源镜号和工程镜号，不能省略或引用无源编号。')
+            else:
+                engine_order, package_order = planned_sources, planned_engines
+                notes.append('采用显式'+order_plan['relation']+'顺序计划；须人工核对其原文/授权依据，计划不允许B新增A以外的事件。')
+    check_order(mapped,engine_order,'工程→A',errors)
     mapping_totals({eid:value[1] for eid,value in estate.items()},source_times,{eid:value[0] for eid,value in estate.items()},'工程→A',errors)
     covered=[];pack_ids=[];pack_times={};pack_links={}
     for m,body in packs:
@@ -243,16 +302,17 @@ def validate_b(text,source,cap=LIMIT,genre='eastern',source_format='auto',notes=
         if len(eids)!=len(set(eids)) or len(aids)!=len(set(aids)):errors.append(f'{pid}的映射编号重复。')
         if not eids:errors.append(f'{pid}缺工程镜号。')
         if not field(body,'目标'):errors.append(f'{pid}缺目标。')
-        expected=set()
+        expected=[]
         for eid in eids:
             if eid not in estate:errors.append(f'{pid}引用不存在的 {eid}。')
-            else:expected.update(estate[eid][0])
+            else:expected.extend(estate[eid][0])
             covered.append(eid)
-        if set(aids)!=expected:errors.append(f'{pid}的 A 镜号与工程镜号映射不一致。')
+        if aids!=collapsed(expected):errors.append(f'{pid}的 A 镜号与工程镜号映射或顺序不一致。')
         prompt=field(body,'投喂 Prompt')
         if not prompt:errors.append(f'{pid}缺完整投喂 Prompt。')
         elif re.search(r'同上|沿用上一镜',prompt):errors.append(f'{pid}的实际 Prompt 含跨包替代语。')
     if set(covered)!=set(estate):errors.append('投喂包未覆盖全部工程镜号。')
+    check_order(covered,package_order,'投喂→工程',errors)
     if len(pack_ids)!=len(set(pack_ids)):errors.append('投喂包单元编号重复。')
     mapping_totals(pack_times,{eid:value[1] for eid,value in estate.items()},pack_links,'投喂→工程',errors)
     return errors
@@ -263,22 +323,39 @@ def main():
     parser.add_argument('--mode',required=True,choices=['a','b','units','single','rapid','refined'])
     parser.add_argument('--genre',choices=['eastern','wuxia','scifi','western'],default='eastern')
     parser.add_argument('--source-a',type=Path)
+    parser.add_argument('--source',type=Path,help='原剧本/用户原文快照，不能以新写A或B替代')
+    parser.add_argument('--ledger',type=Path,help='按原文建立的version=1台词索引')
     parser.add_argument('--source-format',choices=['auto','a','external'],default='auto',help='auto识别当前A或外部/历史导演稿；a强制完整A结构，external保留原稿并核对可识别镜号/时长')
+    parser.add_argument('--order-plan',type=Path,help='有来源依据的回放/同步/授权重排计划；不改变源稿')
     parser.add_argument('--max-unit-seconds',type=float,default=LIMIT)
     parser.add_argument('--max-segment-seconds',type=float,default=LIMIT)
     parser.add_argument('--require-focal-length',action='store_true')
     args=parser.parse_args()
+    if bool(args.source) != bool(args.ledger):parser.error('原文台词核对须同时提供--source和--ledger')
     if args.mode in ['units','single','rapid','refined']:
+        if args.source or args.order_plan:parser.error('原文台词与顺序计划用于当前A/B；历史格式须另行核对，不转发不支持的参数')
         return subprocess.call([sys.executable,'-X','utf8',str(Path(__file__).with_name('validate_legacy_storyboard.py')),*sys.argv[1:]])
     if not 0<args.max_unit_seconds<=LIMIT:parser.error('当前 A/B 上限必须大于 0 且不得超过 35 秒。')
     try:
         text=args.path.read_text(encoding='utf-8-sig')
-        source=args.source_a.read_text(encoding='utf-8-sig') if args.source_a else ''
-    except OSError as exc:parser.error(str(exc))
+        source_bytes=args.source_a.read_bytes() if args.source_a else b''
+        source=source_bytes.decode('utf-8-sig')
+        order_plan=json.loads(args.order_plan.read_bytes()) if args.order_plan else None
+        if args.order_plan and args.mode != 'b': raise ValueError('--order-plan仅用于B映射顺序核对')
+    except (OSError,ValueError) as exc:parser.error(str(exc))
     notes=[]
-    errors=validate_a(text,args.max_unit_seconds,args.genre) if args.mode=='a' else validate_b(text,source,args.max_unit_seconds,args.genre,args.source_format,notes)
+    errors=validate_a(text,args.max_unit_seconds,args.genre) if args.mode=='a' else validate_b(text,source,args.max_unit_seconds,args.genre,args.source_format,notes,order_plan,hashlib.sha256(source_bytes).hexdigest())
+    if args.source:
+        from dialogue_fidelity import verify_layers
+        try:
+            result=verify_layers([('A完整画面' if args.mode=='a' else 'B实际投喂Prompt',dialogue_chunks(text,args.mode))],args.source.read_bytes(),json.loads(args.ledger.read_bytes()))
+        except (OSError,ValueError,TypeError,KeyError) as exc:parser.error(str(exc))
+        errors.extend(result['errors']);notes.extend(result['notes'])
+    else:
+        notes.append('未提供原文快照与台词索引，台词原文核对未执行；--source-a只核对镜号/映射，不能代替原文。')
     for note in notes:print('NOTE:',note)
     for e in errors:print('ERROR:',e,file=sys.stderr)
     if not errors:print('结构检查通过；剧情、受力、空间、时序语义及成片效果仍须审读。')
+    if not errors and args.source:print('台词已按提供的原文区间核对文字、说话人/类型、顺序及跨包拼接；提取覆盖与归属依据仍须人工确认。')
     return int(bool(errors))
 if __name__=='__main__':raise SystemExit(main())

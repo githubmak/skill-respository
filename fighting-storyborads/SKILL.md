@@ -5,7 +5,7 @@ description: 按内容自动选择玄幻、古代武打、科幻异能或西方�
 
 # 打斗与斗法分镜：四题材双模式
 
-规范版本2.0.24。入口或当前必读合同变化时刷新对应全文，不以旧版已读替代。
+规范版本2.0.25。入口或当前必读合同变化时刷新对应全文，不以旧版已读替代。
 
 执行主线：`内部确定来源边界、值得观看的场面与联合打法 → 按当前A或B合同写完整稿 → 内部核对并修好后一次交付正文`。默认不展示设计卡、候选、选案理由、分析或自检，不等待用户选方案；按共用规范的固定交付约定执行。事实、能力及本场对抗的关系与情绪性质在首步核对，感觉判断按[联合视觉合同](references/visual-design-contract.md#当场体验的判断)，不把所有交锋解释为高燃压制；动作连续性和可见性随成镜检查，末步核对正文、映射及机械条件；A→B授权时顺序完成两者，不因直出省略设计或核对，不承诺模型或成片一次生成必达目标。
 
@@ -107,5 +107,5 @@ description: 按内容自动选择玄幻、古代武打、科幻异能或西方�
 
 - 按主规范逐节检查模式、题材、全局说明、完整字段、单份 A 稿或 B 双板块、全部镜号覆盖、时序、空间、归属、伤势、主效、声音与接缝。A 的力度、规模和表演必须进入实际 Prompt。
 - 每个生成单元和实际投喂包均不得超过 35 秒；这是用户硬上限。整场可连续拆分。实际入口更短时按更短限制拆包，不将编排约定宣称为平台能力。
-- 当前 A/B 使用 `scripts/validate_storyboard.py --mode a|b --genre eastern|wuxia|scifi|western` 校验；B 另传 `--source-a <A稿.md>` 检查源镜号覆盖。格式适配及命令见[校验使用说明](references/validation-contract.md)。[旧格式合同](references/copy-ready-markdown.md)和[旧单元合同](references/single-unit-delivery.md)仅供历史稿，旧模式 units/single/rapid/refined 显式调用。机器检查不能代替剧情、受力、空间和创意审读。维护或专项验收时按[测试与审核](references/testing-and-review.md)区分结构、行为、模型重复输出与成片证据。
+- 当前 A/B 使用 `scripts/validate_storyboard.py --mode a|b --genre eastern|wuxia|scifi|western` 校验；B 另传 `--source-a <A稿.md>` 检查源镜号覆盖及来源顺序，同镜连续拆包保留，回放/同步等例外按校验说明的原文顺序计划处理。台词按[原文核对规则](references/dialogue-source-check.md)逐句对照原剧本/用户原文，并传 `--source <原文.txt> --ledger <台词索引.json>`；不以模型新写A/B作为原文自证。格式适配及命令见[校验使用说明](references/validation-contract.md)。[旧格式合同](references/copy-ready-markdown.md)和[旧单元合同](references/single-unit-delivery.md)仅供历史稿，旧模式 units/single/rapid/refined 显式调用。机器检查不能代替剧情、受力、空间和创意审读。维护或专项验收时按[测试与审核](references/testing-and-review.md)区分结构、行为、模型重复输出与成片证据。
 - 默认对话交付；要求保存时按指定路径，否则用当前工作区 `outputs/`，同名递增，不覆盖源剧本。默认直接交付选定模式要求的完整正文；设计卡、候选、选案理由、校验和复审记录内部保留。用户另要方案、诊断或测试报告时才按其范围展开，不用“是否继续”代替已授权正文。
