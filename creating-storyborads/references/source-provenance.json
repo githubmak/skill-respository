@@ -1,5 +1,5 @@
 {
-  "version": "2.0.23",
+  "version": "2.0.35",
   "created": "2026-10-17",
   "sources": [
     {
@@ -101,18 +101,18 @@
       "source": "/Volumes/漫剧/提示词/分镜-配乐.md",
       "chapter": "6",
       "sha256": "0edddfb88335d52adc9cb899b38253c5188c0f8972ce8a66f1161fa42b3bcda9",
-      "adaptation_version": "2.0.23",
+      "adaptation_version": "2.0.35",
       "adaptation": "用户授权的场景级视觉结构；sha256保留原来源章节指纹，adapted_sha256标记当前合同。",
-      "adapted_sha256": "fa2eb3cbc05d88384e9aac92b8ac87f93971f85bef5b56a40ef4e02a2f2cf088"
+      "adapted_sha256": "492a1cc7ad0b6061681e24ae123cac3747ccb2642c59d50199f8d3fb834060a3"
     },
     "output-detail.md": {
       "source": "/Volumes/漫剧/提示词/分镜-细节.md",
       "chapter": "6",
       "sha256": "5f378e5434e92c8c7707cff2e68d87aa23dba62f33583d69737ab5e52db780bb",
-      "adaptation_version": "2.0.23",
+      "adaptation_version": "2.0.35",
       "adaptation": "用户授权的场景级视觉结构；sha256保留原来源章节指纹，adapted_sha256标记当前合同。",
-      "adapted_sha256": "34c6d9a7a735cdaec08ec6445d36c7a2e5c5d97b99447afdfcb82c23bac5bbbd"
+      "adapted_sha256": "f240727f95b79c533d6ae9cca1fdd877dd1e6bc489359bc291b77d6f8a428db0"
     }
   },
-  "active_skill_version": "2.0.23"
+  "active_skill_version": "2.0.35"
 }
