@@ -21,13 +21,13 @@ CONTRADICTIONS = re.compile(
 )
 LEGACY_FIELDS = ["起幅与连续性", "摄影与构图", "光影、环境色彩与材质", "画面与表演时间线", "台词与声音层次", "落幅状态"]
 FIELDS = LEGACY_FIELDS[:3] + ["特效、粒子与介质"] + LEGACY_FIELDS[3:]
-GLOBAL_COMMON = ["项目直投参数", "项目共用视觉规则"]
+GLOBAL_COMMON = ["项目直投参数", "本集共用视觉规则"]
 GLOBAL_OLD_COMMON = ["项目直投参数", "全局摄影规则"]
 SCENE_CURRENT = ["场景摄影规则", "场景光色与影调基线", "场景资产图提示词", "道具资产图提示词", "场景空间位置关系", "Seedance 独立直投生成单元"]
 LIGHT_VALUE = re.compile(r"\d+(?:\.\d+)?\s*(?:[—–~～至到-]\s*\d+(?:\.\d+)?)?\s*[Kk](?![A-Za-z0-9_])|\d+\s*开尔文|纯色(?:灯|光)|单色(?:灯|光)|无有效(?:光源|照明)")
 GLOBAL_LEGACY_LIGHT = ["全局影调", "全局光影", "全局环境色彩"]
 GLOBAL_CURRENT_LIGHT = ["全局光色与影调基线"]
-GLOBAL_END = ["全局正向提示词", "全局负面提示词"]
+GLOBAL_END = ["本集正向提示词", "本集负面提示词"]
 
 def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=True, schema="auto", music="on", unit_music=None):
     errors = []
@@ -55,7 +55,7 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
         common = GLOBAL_COMMON if current else GLOBAL_OLD_COMMON
         light = [] if current else (GLOBAL_CURRENT_LIGHT if "全局光色与影调基线" in headings else GLOBAL_LEGACY_LIGHT)
         global_head = body.split("\n# 场景", 1)[0]
-        expected = common + (["全局配音、配乐与声音规则"] if "全局配音、配乐与声音规则" in headings else []) + light + GLOBAL_END
+        expected = common + (["本集配音、配乐与声音规则"] if "本集配音、配乐与声音规则" in headings else []) + light + GLOBAL_END
         for key in expected:
             found = re.search(r"^## " + re.escape(key) + r"\s*$", global_head, re.M)
             if not found:
@@ -232,7 +232,7 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
                     errors.append(sid + "：标题承载镜号与时间线镜号或顺序不一致")
         music_mode = unit_music.get(sid, music)
         if music_mode == "auto":
-            music_mode = "on" if (is_project and "全局配音、配乐与声音规则" in body) or music_windows else "off"
+            music_mode = "on" if (is_project and "本集配音、配乐与声音规则" in body) or music_windows else "off"
         any_music_enabled = any_music_enabled or music_mode == "on"
         if music_mode == "on" and music_windows != len(windows):
             errors.append(sid + "：配乐开启时每窗须写实际音乐状态，包括有因停奏")
@@ -240,8 +240,8 @@ def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=Tr
             errors.append(sid + "：配乐关闭范围不得新增配乐行")
         if abs(previous - duration) > 0.05:
             errors.append(sid + "：时间线镜尾与标题时长不一致")
-    if is_project and schema != "generic" and current and any_music_enabled and "全局配音、配乐与声音规则" not in headings:
-        errors.append("配乐版缺少全局配音、配乐与声音规则")
+    if is_project and schema != "generic" and current and any_music_enabled and "本集配音、配乐与声音规则" not in headings:
+        errors.append("配乐版缺少本集配音、配乐与声音规则")
     declared = re.search(r"(?:实际总时长|成片时长|总时长)[：:]?\s*(?:约\s*)?(\d+(?:\.\d+)?)\s*秒", body)
     if is_project and schema != "generic" and not declared:
         errors.append("项目参数须明确写出已有总时长字段及秒数（如成片总时长或实际总时长）")
