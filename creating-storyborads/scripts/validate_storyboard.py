@@ -387,7 +387,7 @@ def validate(markdown, source_bytes, ledger):
         if not header[section.end():end].strip():
             fail('global_empty',section[1],'全局栏目为空。')
     first_line = markdown.splitlines()[0] if markdown.splitlines() else ''
-    if not re.match(r'^# 《.+》Seedance 独立直投版\s*$',first_line):
+    if not re.match(r'^# 《.+》SD 独立直投版\s*$',first_line):
         fail('title_format','document','作品标题须遵循当前输出合同。')
     if any_music:
         for label in ('配音基线','配乐主题','乐器与音色分工','声层与接续原则'):
