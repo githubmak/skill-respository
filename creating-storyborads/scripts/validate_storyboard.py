@@ -181,7 +181,7 @@ def validate(markdown, source_bytes, ledger):
     overrides = ledger.get('unit_music', {})
     if not isinstance(overrides, dict) or any(type(v) is not bool for v in overrides.values()):
         raise ValueError('unit_music must map unit ids to booleans')
-    limit = dec(ledger.get('max_unit_seconds', 35))
+    limit = dec(ledger.get('max_unit_seconds', 30))
     if not limit.is_finite() or limit <= 0:
         raise ValueError('max_unit_seconds must be positive and finite')
     source = source_bytes.decode('utf-8')

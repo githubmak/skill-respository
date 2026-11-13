@@ -29,7 +29,7 @@ GLOBAL_LEGACY_LIGHT = ["全局影调", "全局光影", "全局环境色彩"]
 GLOBAL_CURRENT_LIGHT = ["全局光色与影调基线"]
 GLOBAL_END = ["本集正向提示词", "本集负面提示词"]
 
-def validate(raw, mode="refined", max_unit_seconds=35.0, require_focal_length=True, schema="auto", music="on", unit_music=None):
+def validate(raw, mode="refined", max_unit_seconds=30.0, require_focal_length=True, schema="auto", music="on", unit_music=None):
     errors = []
     unit_music = unit_music or {}
     if music not in ("auto", "on", "off") or any(v not in ("on", "off") for v in unit_music.values()):
@@ -255,7 +255,7 @@ def main():
     parser.add_argument("--source", type=Path, help="原文快照；与--ledger一起逐字核对台词")
     parser.add_argument("--ledger", type=Path, help="按原文建立的version=1台词索引，兼容制作阶段索引")
     parser.add_argument("--mode", choices=["refined"], default="refined", help="兼容技能的精修入口")
-    parser.add_argument("--max-unit-seconds", type=float, default=35.0, help="当前采用的生成单元上限")
+    parser.add_argument("--max-unit-seconds", type=float, default=30.0, help="当前采用的生成单元上限")
     parser.add_argument("--require-focal-length", action="store_true", default=True, help="旧命令兼容；数值焦段始终强制校验，支持mm或毫米")
     parser.add_argument("--schema", choices=["auto", "current", "legacy", "generic"], default="auto", help="auto/current检查当前场景级格式；legacy仅供明确保留的旧版，generic保留用户锁定自定义栏目")
     parser.add_argument("--music", choices=["auto", "on", "off"], default="on", help="传入已解析的项目开关，未设置默认on；auto仅兼容历史稿推定")

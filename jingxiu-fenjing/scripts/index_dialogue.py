@@ -11,7 +11,7 @@ from pathlib import Path
 import sys
 
 
-def build(source_bytes, utterances, music=True, max_unit_seconds=35):
+def build(source_bytes, utterances, music=True, max_unit_seconds=30):
     source=source_bytes.decode('utf-8')
     if type(music) is not bool or type(max_unit_seconds) not in (int,float) or not 0<max_unit_seconds<float('inf'):
         raise ValueError('music must be boolean and max unit seconds positive/finite')
@@ -63,7 +63,7 @@ def main():
         if not isinstance(overrides, dict) or any(type(x) is not bool for x in overrides.values()):
             raise ValueError('existing unit_music must map unit ids to booleans')
         music = a.music == 'on' if a.music is not None else existing.get('music', True)
-        limit = a.max_unit_seconds if a.max_unit_seconds is not None else existing.get('max_unit_seconds', 35)
+        limit = a.max_unit_seconds if a.max_unit_seconds is not None else existing.get('max_unit_seconds', 30)
         ledger,contexts=build(a.source.read_bytes(),json.loads(a.utterances.read_bytes()),music,limit)
         ledger['unit_music'] = overrides
         a.output.parent.mkdir(parents=True,exist_ok=True)
