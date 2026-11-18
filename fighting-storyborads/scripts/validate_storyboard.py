@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-LIMIT = 35.0
+LIMIT = 30.0
 HEADER = re.compile(r'^\s*(?:#{1,6}\s*)?【?镜头\s*(\d+)\s*[｜|]([^\n]+)', re.M)
 UNIT = re.compile(r'^\s*#{1,6}\s*生成单元\s+(G\d+)\s*[｜|]([^\n]+)',re.M)
 ENGINE = re.compile(r'^\s*#{1,6}\s*工程镜头\s+(E\d+)\s*[｜|]([^\n]+)',re.M)
@@ -145,7 +145,7 @@ def validate_a(text,cap=LIMIT,genre="eastern"):
             if not segment.strip() and not re.search(r'[：:]\s*\S',x[2]):errors.append(f'A 镜头 {key}第 {i+1} 项为空。')
     if len(seen)!=len(set(seen)):errors.append('A 镜号重复，可能重复附了全文。')
     if '【可复制存档区' in text:errors.append('A 不再附独立存档块，正文即完整源稿。')
-    if not units:errors.append('A 缺少生成单元及其时长，无法检查 35 秒分组。')
+    if not units:errors.append('A 缺少生成单元及其时长，无法检查 30 秒分组。')
     used=[]; spans={}; direct_used=[]
     for m,body in units:
         value=duration(m[2]);check_duration(value,m[1],errors,cap)
@@ -335,7 +335,7 @@ def main():
     if args.mode in ['units','single','rapid','refined']:
         if args.source or args.order_plan:parser.error('原文台词与顺序计划用于当前A/B；历史格式须另行核对，不转发不支持的参数')
         return subprocess.call([sys.executable,'-X','utf8',str(Path(__file__).with_name('validate_legacy_storyboard.py')),*sys.argv[1:]])
-    if not 0<args.max_unit_seconds<=LIMIT:parser.error('当前 A/B 上限必须大于 0 且不得超过 35 秒。')
+    if not 0<args.max_unit_seconds<=LIMIT:parser.error('当前 A/B 上限必须大于 0 且不得超过 30 秒。')
     try:
         text=args.path.read_text(encoding='utf-8-sig')
         source_bytes=args.source_a.read_bytes() if args.source_a else b''
@@ -343,7 +343,8 @@ def main():
         order_plan=json.loads(args.order_plan.read_bytes()) if args.order_plan else None
         if args.order_plan and args.mode != 'b': raise ValueError('--order-plan仅用于B映射顺序核对')
     except (OSError,ValueError) as exc:parser.error(str(exc))
-    notes=[]
+    from editorial_hints import editorial_hints
+    notes=editorial_hints(text)
     errors=validate_a(text,args.max_unit_seconds,args.genre) if args.mode=='a' else validate_b(text,source,args.max_unit_seconds,args.genre,args.source_format,notes,order_plan,hashlib.sha256(source_bytes).hexdigest())
     if args.source:
         from dialogue_fidelity import verify_layers

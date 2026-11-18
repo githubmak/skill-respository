@@ -34,7 +34,7 @@ def validate(raw, mode="refined", max_unit_seconds=30.0, require_focal_length=Tr
     unit_music = unit_music or {}
     if music not in ("auto", "on", "off") or any(v not in ("on", "off") for v in unit_music.values()):
         return ["配乐设置须为auto/on/off，单元覆盖须为on/off"]
-    if not math.isfinite(max_unit_seconds) or max_unit_seconds <= 0:
+    if not math.isfinite(max_unit_seconds) or max_unit_seconds <= 0 or max_unit_seconds > 30:
         return ["生成单元时长上限必须为有限正数"]
     raw = raw.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
     comments = re.findall(r"<!--.*?-->", raw, re.S)
@@ -267,8 +267,8 @@ def main():
         if len(parts) != 2 or not parts[0].strip() or parts[1] not in ("on", "off"):
             parser.error("--unit-music 使用 G1=on 或 G1=off")
         overrides[parts[0].strip()] = parts[1]
-    if not math.isfinite(args.max_unit_seconds) or args.max_unit_seconds <= 0:
-        parser.error("--max-unit-seconds 必须大于0")
+    if not math.isfinite(args.max_unit_seconds) or args.max_unit_seconds <= 0 or args.max_unit_seconds > 30:
+        parser.error("--max-unit-seconds 必须大于0且不得超过30")
     if bool(args.source) != bool(args.ledger):
         parser.error("原文台词核对须同时提供--source和--ledger")
     try:
@@ -292,6 +292,9 @@ def main():
             print('NOTE: 未提供原文快照与台词索引，仅做结构检查，台词原文核对未执行。')
     except (OSError, ValueError, TypeError, KeyError) as exc:
         parser.error(str(exc))
+    from editorial_hints import editorial_hints
+    for hint in editorial_hints(raw):
+        print('HINT: ' + hint)
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1

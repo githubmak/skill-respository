@@ -182,8 +182,8 @@ def validate(markdown, source_bytes, ledger):
     if not isinstance(overrides, dict) or any(type(v) is not bool for v in overrides.values()):
         raise ValueError('unit_music must map unit ids to booleans')
     limit = dec(ledger.get('max_unit_seconds', 30))
-    if not limit.is_finite() or limit <= 0:
-        raise ValueError('max_unit_seconds must be positive and finite')
+    if not limit.is_finite() or limit <= 0 or limit > 30:
+        raise ValueError('max_unit_seconds must be positive, finite and no greater than 30')
     source = source_bytes.decode('utf-8')
     if hashlib.sha256(source_bytes).hexdigest() != ledger.get('source_sha256'):
         fail('source_hash','source','来源快照哈希不一致；确认工作稿版本，不以修改索引迁就成稿。')
@@ -446,6 +446,8 @@ def main():
         snapshots = {name: path.read_bytes() for name, path in
                      [('markdown', args.markdown), ('source', args.source), ('ledger', args.ledger)]}
         report=validate(snapshots['markdown'].decode('utf-8'),snapshots['source'],json.loads(snapshots['ledger']))
+        from editorial_hints import editorial_hints
+        report['editorial_hints'] = editorial_hints(snapshots['markdown'].decode('utf-8'))
         report['input_sha256'] = {name: hashlib.sha256(data).hexdigest()
                                   for name, data in snapshots.items()}
         result=json.dumps(report,ensure_ascii=False,indent=2)+'\n'
