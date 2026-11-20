@@ -1,0 +1,362 @@
+#!/usr/bin/env python3
+"""Structural checks for four-genre A/B storyboards; semantic review remains required."""
+from __future__ import annotations
+import argparse
+import hashlib
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+LIMIT = 30.0
+HEADER = re.compile(r'^\s*(?:#{1,6}\s*)?【?镜头\s*(\d+)\s*[｜|]([^\n]+)', re.M)
+UNIT = re.compile(r'^\s*#{1,6}\s*生成单元\s+(G\d+)\s*[｜|]([^\n]+)',re.M)
+ENGINE = re.compile(r'^\s*#{1,6}\s*工程镜头\s+(E\d+)\s*[｜|]([^\n]+)',re.M)
+TIME = re.compile(r'(?<![\d.])([+-]?\d+(?:\.\d+)?)\s*(?:秒|s)(?!\w)',re.I)
+
+def duration(text):
+    m=TIME.search(text)
+    return float(m[1]) if m else None
+
+def sections(text,pattern):
+    matches=list(pattern.finditer(text))
+    return [(m,text[m.end():matches[i+1].start() if i+1<len(matches) else len(text)]) for i,m in enumerate(matches)]
+
+def clean(text):
+    return re.sub(r'[*_`>【】\[\]]','',text)
+
+def ids(text,prefix=''):
+    if prefix:
+        return [f'{prefix}{int(n):02d}' for n in re.findall(r'(?<![A-Za-z0-9_-])(?:'+prefix+r')?(\d+)(?![A-Za-z0-9_-])',text)]
+    tokens = re.findall(r'(?<![A-Za-z0-9_-])(?:S\d+-\d+|\d+)(?![A-Za-z0-9_-])', text)
+    return [token if token.startswith('S') else f'{int(token):02d}' for token in tokens]
+
+def collapsed(sequence):
+    """Consecutive references are legal splits; returning after a cut is not."""
+    return [value for i,value in enumerate(sequence) if not i or sequence[i-1] != value]
+
+def check_order(actual, expected, label, errors):
+    if collapsed(actual) != list(expected):
+        errors.append(label + '顺序与来源不一致；同镜拆包可连续重复，回放/同步或授权重排须提供有来源依据的顺序计划。')
+
+def raw_field(body, label):
+    """Read authoritative speech without stripping literal *_ characters."""
+    decoration = r'[ \t]*(?:[-*>][ \t]*)*(?:\*\*)?'
+    found = re.search(r'(?m)^' + decoration + re.escape(label) + r'(?:\*\*)?[ \t]*[：:][ \t]*(.*)', body)
+    if not found:
+        return ''
+    rest = body[found.end():]
+    labels = r'目标|投喂 Prompt|参考资产|必要约束|验收点|风险与备选|接缝|阶段覆盖'
+    stop = re.search(r'(?m)^[ \t]*(?:#{1,6}\s|' + decoration + r'(?:' + labels + r')(?:\*\*)?[ \t]*[：:])', rest)
+    return (found[1] + '\n' + (rest[:stop.start()] if stop else rest)).strip()
+
+def dialogue_chunks(text, mode):
+    chunks = []
+    if mode == 'b':
+        for match, body in sections(text, UNIT):
+            chunks.append((match[1], raw_field(body, '投喂 Prompt')))
+    else:
+        for match, body in sections(text, HEADER):
+            body = re.split(r'(?m)^\s*#{1,6}\s*生成单元\b', body)[0]
+            seventh = re.search(r'(?m)^\s*(?:>\s*)?7[.、．]\s*([^\n]+)', body)
+            voice = ''
+            if seventh:
+                inline = re.split(r'[：:]', seventh[1], maxsplit=1)
+                voice = (inline[1] if len(inline) > 1 else '') + '\n' + body[seventh.end():]
+            chunks.append((match[1], voice.strip()))
+    return chunks
+
+def field(body,label):
+    m=re.search(r'(?m)^\s*'+re.escape(label)+r'[^：:\n]*[：:][^\S\n]*(.*)',clean(body))
+    if not m:return ''
+    rest=clean(body)[m.end():]
+    # Time labels and dialogue colons belong to the Prompt. Only real package
+    # fields or section headings terminate it.
+    labels = '目标|投喂 Prompt|参考资产|必要约束|验收点|风险与备选|接缝|阶段覆盖'
+    stop=re.search(r'(?m)^[ \t]*(?:#{1,6}\s|(?:'+labels+r')[ \t]*[：:])',rest)
+    return (m[1]+'\n'+(rest[:stop.start()] if stop else rest)).strip()
+
+def check_duration(value,label,errors,cap):
+    if value is None or value<=0:errors.append(f'{label}缺少有效时长（使用秒或 s）。')
+    elif value>cap+1e-6:errors.append(f'{label}时长 {value:g} 秒超过 {cap:g} 秒上限。')
+
+A_FIELDS_BY_GENRE = {
+    'eastern': [('机位&景别&运镜',), ('人物调度与专属身法/战术设计',), ('招式与奇观意象',), ('动作结果与反馈',), ('人物表演细节',), ('情绪锚点', '情绪锚点方法论'), ('画面完整描述',)],
+}
+for _genre in ('wuxia', 'scifi', 'western'):
+    A_FIELDS_BY_GENRE[_genre] = [('机位、景别与运镜',), ('人物调度与专属打法',), ('招式与视觉母题',), ('动作结果与反馈',), ('人物表演细节',), ('情绪锚点',), ('画面完整描述',)]
+B_FIELDS_BY_GENRE = {}
+for _genre, _mechanism in [('eastern', '仙侠招式/真元特征'), ('wuxia', '武学与兵器特征'), ('scifi', '异能/科技机制'), ('western', '法术/武器机制')]:
+    _eastern = _genre == 'eastern'
+    B_FIELDS_BY_GENRE[_genre] = [
+        ('人物面向与轴线',), ('道具归属与状态',), ('预动作微细节',),
+        ('三段体态参考｜起始体态-中段过渡体态-落幅结束体态',) if _eastern else ('三段体态｜起始—过渡—落幅',),
+        ('运镜',), ('镜头变速与动态模糊强度',) if _eastern else ('速度与动态模糊',),
+        ('画面动作',), ('标准化特效层级',) if _eastern else ('视觉与环境层级',),
+        (_mechanism,), ('粒子分级说明',) if _eastern else ('碎屑/粒子说明',),
+        ('特效景深分层说明',) if _eastern else ('景深与遮挡',),
+        ('物理打击反馈',), ('光影色彩',), ('音效参考',) if _eastern else ('声音参考',),
+    ]
+
+def normalized_label(label):
+    return re.sub(r'\s+', '', clean(label)).replace('‑', '-').replace('－', '-')
+
+def has_engineering_field(body, variants):
+    # Stop before packages/footer: a field in another section cannot fill this shot.
+    body = re.split(r'(?m)^\s*#{1,6}\s*(?:生成单元|工程校验|第\s*(?:1\.5|2|3)\s*部分)', body)[0]
+    lines = clean(body).splitlines()
+    wanted = {normalized_label(v) for v in variants}
+    for i, line in enumerate(lines):
+        match = re.match(r'^\s*([^：:]+)[：:](.*)$', line)
+        if not match or normalized_label(match[1]) not in wanted:
+            continue
+        if match[2].strip():
+            return True
+        for continuation in lines[i+1:]:
+            if not continuation.strip():
+                continue
+            if re.match(r'^\s*#{1,6}\s|^\s*[^：:]{1,60}[：:]', continuation):
+                break
+            return True
+    return False
+
+def validate_a(text,cap=LIMIT,genre="eastern"):
+    errors=[]; shots=sections(text,HEADER); units=sections(text,UNIT)
+    global_labels=('战斗总基调','角色战前处境与情绪','战斗节奏选型','全片节奏峰值点位') if genre=='eastern' else ('战斗总基调','战前处境','选定打法','节奏峰值')
+    overview=re.split(r'(?m)^\s*(?:#{1,6}\s*生成单元|【?镜头\s*\d+)',text)[0]
+    for label in global_labels:
+        if not re.search(re.escape(label)+r'\s*[：:]\s*[^\s\n]',clean(overview)):
+            errors.append(f'A 缺少非空全局说明：{label}。')
+    if not shots:errors.append('缺少导演镜头标题。')
+    seen=[]; times={}
+    for m,body in shots:
+        body=re.split(r'(?m)^\s*#{1,6}\s*生成单元\b',body)[0]
+        key=f'{int(m[1]):02d}';seen.append(key);value=duration(m[2]);times[key]=value
+        check_duration(value,f'A 镜头 {key}',errors,float('inf'))
+        # Seven numbered fields, not arbitrary occurrences in prose.
+        numbered=list(re.finditer(r'(?m)^\s*([1-7])[.、．]\s*(.+)',clean(body)))
+        if [int(x[1]) for x in numbered]!=list(range(1,8)):
+            errors.append(f'A 镜头 {key}须依次完整列出 1–7 项。');continue
+        for i,x in enumerate(numbered):
+            segment=clean(body)[x.end():numbered[i+1].start() if i<6 else len(clean(body))]
+            label=x[2].split('：')[0].split(':')[0]
+            if normalized_label(label) not in {normalized_label(k) for k in A_FIELDS_BY_GENRE[genre][i]}:errors.append(f'A 镜头 {key}第 {i+1} 项名称不符。')
+            if not segment.strip() and not re.search(r'[：:]\s*\S',x[2]):errors.append(f'A 镜头 {key}第 {i+1} 项为空。')
+    if len(seen)!=len(set(seen)):errors.append('A 镜号重复，可能重复附了全文。')
+    if '【可复制存档区' in text:errors.append('A 不再附独立存档块，正文即完整源稿。')
+    if not units:errors.append('A 缺少生成单元及其时长，无法检查 30 秒分组。')
+    used=[]; spans={}; direct_used=[]
+    for m,body in units:
+        value=duration(m[2]);check_duration(value,m[1],errors,cap)
+        local=[(x,duration(x[2])) for x in HEADER.finditer(body)]
+        span = re.search(r'承载镜号[：:]\s*(\d+)\s*[｜|]\s*成片区间[：:]\s*(\d+(?:\.\d+)?)\s*[—–-]\s*(\d+(?:\.\d+)?)\s*秒', m[2])
+        if local and span:
+            errors.append(f'{m[1]}不得同时重复列镜头全文与长镜片段映射。')
+        if span:
+            key=f'{int(span[1]):02d}';start=float(span[2]);end=float(span[3])
+            spans.setdefault(key,[]).append((start,end));used.append(key)
+            if key not in times or end<=start or start<0 or (times.get(key) is not None and end>times[key]+0.05):
+                errors.append(f'{m[1]}长镜片段区间无效或引用无源镜号。')
+            if value is not None and abs(end-start-value)>0.05:
+                errors.append(f'{m[1]}包时长与成片区间不一致。')
+        else:
+            if not local:errors.append(f'{m[1]}没有导演镜头或长镜片段映射。')
+            local_ids=[f'{int(x[1]):02d}' for x,_ in local]
+            used.extend(local_ids);direct_used.extend(local_ids)
+            if value is not None and all(v is not None for _,v in local) and abs(sum(v for _,v in local)-value)>0.05:
+                errors.append(f'{m[1]}单元时长与镜头合计不一致。')
+    if set(direct_used) & set(spans):
+        errors.append("同一镜头不能同时按完整镜长分组又按片段重复计时。")
+    for key, intervals in spans.items():
+        previous=0.0
+        for start,end in intervals:
+            if abs(start-previous)>0.05:errors.append(f'A 镜头 {key}分包区间重叠、倒序或有缺口。')
+            previous=end
+        if times.get(key) is not None and abs(previous-times[key])>0.05:
+            errors.append(f'A 镜头 {key}分包未覆盖完整镜长。')
+    if set(used)!=set(seen):errors.append('A 有镜头未分配到生成单元。')
+    check_order(used,seen,'A 生成单元',errors)
+    if len({m[1] for m,_ in units})!=len(units):errors.append('生成单元编号重复。')
+    total=re.search(r'导演稿总时长\s*[：:]\s*([^\n]+)',text)
+    if not total:errors.append('缺少导演稿总时长。')
+    if total and all(v is not None for v in times.values()):
+        v=duration(total[1])
+        if v is None or abs(v-sum(times.values()))>0.05:errors.append('导演稿总时长与逐镜合计不一致。')
+    return errors
+
+def mapping_totals(left_times, right_times, links, label, errors):
+    """Check duration conservation per connected mapping component, including merges/splits."""
+    graph={}
+    for left, rights in links.items():
+        for right in rights:
+            a=('l',left); b=('r',right)
+            graph.setdefault(a,set()).add(b); graph.setdefault(b,set()).add(a)
+    visited=set()
+    for first in graph:
+        if first in visited:continue
+        pending=[first]; component=set()
+        while pending:
+            node=pending.pop()
+            if node in component:continue
+            component.add(node); pending.extend(graph[node]-component)
+        visited.update(component)
+        left=[key for side,key in component if side=='l']
+        right=[key for side,key in component if side=='r']
+        lv=[left_times.get(key) for key in left]; rv=[right_times.get(key) for key in right]
+        if all(v is not None for v in lv+rv) and abs(sum(lv)-sum(rv))>0.05:
+            errors.append(f'{label}时长不守恒：{",".join(sorted(left))} 与 {",".join(sorted(right))} 合计不一致。')
+
+def source_shots(source, source_format, genre, errors, notes):
+    """Read IDs/times without rewriting external scripts into our A schema."""
+    numeric = list(HEADER.finditer(source))
+    if source_format == 'auto':
+        labels = ('战斗总基调', '角色战前处境与情绪', '战斗节奏选型',
+                  '全片节奏峰值点位', '战前处境', '选定打法', '节奏峰值')
+        source_format = 'a' if ('导演稿总时长' in source or
+                                  sum(bool(re.search(label+r'\s*[：:]', clean(source)))
+                                      for label in labels) >= 2) else 'external'
+    if source_format == 'a':
+        errors.extend('A 源稿无效：'+error for error in validate_a(source,LIMIT,genre))
+        return {f'{int(m[1]):02d}':duration(m[2]) for m in numeric}
+    header = re.compile(r'^[ \t]*(?:#{1,6}[ \t]*)?【?镜头[ \t]*(S\d+-\d+|\d+)[ \t]*[｜|]([^\n]+)', re.M)
+    times = {}
+    for m in header.finditer(source):
+        key = ids(m[1])[0]
+        if key in times:
+            errors.append(f'外部源稿镜号 {key} 重复；须明确唯一来源定位。')
+        value = duration(m[2])
+        if value is not None and value <= 0:
+            errors.append(f'外部源稿镜号 {key} 时长须为正数。')
+        times[key] = value
+    # Historical G scripts carry shot IDs in their timeline. Sum each shot's
+    # fragments, but never count the unit header or its carried-ID list again.
+    timeline = re.compile(r'^[ \t]*(?:-[ \t]*)?(\d+(?:\.\d+)?)[ \t]*(?:秒)?[ \t]*[—–-][ \t]*(\d+(?:\.\d+)?)[ \t]*秒[ \t]*[｜|][ \t]*(?:镜头[ \t]*)?(S\d+-\d+)[ \t]*[｜|]', re.M)
+    fragments = {}
+    for m in timeline.finditer(source):
+        start, end = float(m[1]), float(m[2])
+        if end <= start:
+            errors.append(f'外部源稿镜号 {m[3]} 时间窗起止无效。')
+        fragments[m[3]] = fragments.get(m[3], 0.0) + end - start
+    for key, value in fragments.items():
+        if key not in times or times[key] is None:
+            times[key] = value
+    if not times:
+        errors.append('外部源稿没有可识别的唯一镜号；保留原稿，补充对应关系后再校验。')
+    notes.append('外部/历史源稿仅校验可识别镜号、已明确时长与B映射；来源完整性、时间窗连续性及语义保真须人工核对。')
+    if any(value is None for value in times.values()):
+        notes.append('部分源镜未提供可识别秒数，对应A→工程时长守恒未覆盖；不得虚构源时长。')
+    return times
+
+def validate_b(text,source,cap=LIMIT,genre='eastern',source_format='auto',notes=None,order_plan=None,source_sha256=None):
+    errors=[];engines=sections(text,ENGINE);packs=sections(text,UNIT)
+    notes = notes if notes is not None else []
+    if not engines:errors.append('缺少逐镜工程分镜。')
+    if not packs:errors.append('缺少实际投喂包。')
+    if not re.search(r'正向提示词|全局正向制作基线',text):errors.append('缺少全局正向制作基线。')
+    source_times = source_shots(source, source_format, genre, errors, notes) if source else {}
+    source_ids=set(source_times)
+    if not source_ids:errors.append('B 校验须提供可定位镜号的完整 --source-a；外部稿不强制采用当前A模板。')
+    estate={}; mapped=[]
+    for m,body in engines:
+        body=re.split(r'(?m)^\s*#{1,6}\s*生成单元\b',body)[0]
+        eid=m[1];header=m[2];a=re.search(r'对应 A 镜号[：:]\s*([^｜|\n]+)',header)
+        aid=ids(a[1]) if a else []
+        if eid in estate:errors.append(f'工程镜号 {eid} 重复。')
+        estate[eid]=(aid,duration(header));mapped+=aid
+        check_duration(duration(header),eid,errors,float('inf'))
+        if not aid:errors.append(f'{eid}缺对应 A 镜号。')
+        if len(aid)!=len(set(aid)):errors.append(f'{eid}的 A 镜号重复。')
+        for variants in B_FIELDS_BY_GENRE[genre]:
+            if not has_engineering_field(body,variants):errors.append(f'{eid}缺少工程字段：{variants[0]}。')
+        if genre=='eastern' and '本镜头底线强制关键词' not in body:errors.append(f'{eid}缺玄幻规范的底线关键词。')
+    if set(mapped)!=source_ids:errors.append('工程稿对 A 源镜号覆盖不完整或存在无源镜号。')
+    engine_order = list(source_times)
+    package_order = list(estate)
+    if order_plan is not None:
+        fingerprint = source_sha256 or hashlib.sha256(source.encode('utf-8')).hexdigest()
+        if (not isinstance(order_plan,dict) or order_plan.get('version') != 1 or
+                order_plan.get('source_sha256') != fingerprint or
+                order_plan.get('relation') not in ('回放','同步','授权重排') or
+                not isinstance(order_plan.get('reason'),str) or not order_plan['reason'].strip()):
+            errors.append('顺序计划须为version=1，匹配A源稿哈希，并注明回放/同步/授权重排及原文依据。')
+        else:
+            planned_sources = order_plan.get('engine_source_order')
+            planned_engines = order_plan.get('package_engine_order')
+            if (not isinstance(planned_sources,list) or not all(isinstance(x,str) for x in planned_sources) or
+                    set(planned_sources) != source_ids or
+                    not isinstance(planned_engines,list) or not all(isinstance(x,str) for x in planned_engines) or
+                    set(planned_engines) != set(estate)):
+                errors.append('顺序计划须完整列出来源镜号和工程镜号，不能省略或引用无源编号。')
+            else:
+                engine_order, package_order = planned_sources, planned_engines
+                notes.append('采用显式'+order_plan['relation']+'顺序计划；须人工核对其原文/授权依据，计划不允许B新增A以外的事件。')
+    check_order(mapped,engine_order,'工程→A',errors)
+    mapping_totals({eid:value[1] for eid,value in estate.items()},source_times,{eid:value[0] for eid,value in estate.items()},'工程→A',errors)
+    covered=[];pack_ids=[];pack_times={};pack_links={}
+    for m,body in packs:
+        pid=m[1];pack_ids.append(pid);check_duration(duration(m[2]),pid,errors,cap)
+        header=m[2];e=re.search(r'工程镜号[：:]\s*([^｜|\n]+)',header);a=re.search(r'对应 A 镜号[：:]\s*([^｜|\n]+)',header)
+        eids=ids(e[1],'E') if e else []; aids=ids(a[1]) if a else []
+        pack_times[pid]=duration(header);pack_links[pid]=eids
+        if len(eids)!=len(set(eids)) or len(aids)!=len(set(aids)):errors.append(f'{pid}的映射编号重复。')
+        if not eids:errors.append(f'{pid}缺工程镜号。')
+        if not field(body,'目标'):errors.append(f'{pid}缺目标。')
+        expected=[]
+        for eid in eids:
+            if eid not in estate:errors.append(f'{pid}引用不存在的 {eid}。')
+            else:expected.extend(estate[eid][0])
+            covered.append(eid)
+        if aids!=collapsed(expected):errors.append(f'{pid}的 A 镜号与工程镜号映射或顺序不一致。')
+        prompt=field(body,'投喂 Prompt')
+        if not prompt:errors.append(f'{pid}缺完整投喂 Prompt。')
+        elif re.search(r'同上|沿用上一镜',prompt):errors.append(f'{pid}的实际 Prompt 含跨包替代语。')
+    if set(covered)!=set(estate):errors.append('投喂包未覆盖全部工程镜号。')
+    check_order(covered,package_order,'投喂→工程',errors)
+    if len(pack_ids)!=len(set(pack_ids)):errors.append('投喂包单元编号重复。')
+    mapping_totals(pack_times,{eid:value[1] for eid,value in estate.items()},pack_links,'投喂→工程',errors)
+    return errors
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('path',type=Path)
+    parser.add_argument('--mode',required=True,choices=['a','b','units','single','rapid','refined'])
+    parser.add_argument('--genre',choices=['eastern','wuxia','scifi','western'],default='eastern')
+    parser.add_argument('--source-a',type=Path)
+    parser.add_argument('--source',type=Path,help='原剧本/用户原文快照，不能以新写A或B替代')
+    parser.add_argument('--ledger',type=Path,help='按原文建立的version=1台词索引')
+    parser.add_argument('--source-format',choices=['auto','a','external'],default='auto',help='auto识别当前A或外部/历史导演稿；a强制完整A结构，external保留原稿并核对可识别镜号/时长')
+    parser.add_argument('--order-plan',type=Path,help='有来源依据的回放/同步/授权重排计划；不改变源稿')
+    parser.add_argument('--max-unit-seconds',type=float,default=LIMIT)
+    parser.add_argument('--max-segment-seconds',type=float,default=LIMIT)
+    parser.add_argument('--require-focal-length',action='store_true')
+    args=parser.parse_args()
+    if bool(args.source) != bool(args.ledger):parser.error('原文台词核对须同时提供--source和--ledger')
+    if args.mode in ['units','single','rapid','refined']:
+        if args.source or args.order_plan:parser.error('原文台词与顺序计划用于当前A/B；历史格式须另行核对，不转发不支持的参数')
+        return subprocess.call([sys.executable,'-X','utf8',str(Path(__file__).with_name('validate_legacy_storyboard.py')),*sys.argv[1:]])
+    if not 0<args.max_unit_seconds<=LIMIT:parser.error('当前 A/B 上限必须大于 0 且不得超过 30 秒。')
+    try:
+        text=args.path.read_text(encoding='utf-8-sig')
+        source_bytes=args.source_a.read_bytes() if args.source_a else b''
+        source=source_bytes.decode('utf-8-sig')
+        order_plan=json.loads(args.order_plan.read_bytes()) if args.order_plan else None
+        if args.order_plan and args.mode != 'b': raise ValueError('--order-plan仅用于B映射顺序核对')
+    except (OSError,ValueError) as exc:parser.error(str(exc))
+    from editorial_hints import editorial_hints
+    notes=editorial_hints(text)
+    errors=validate_a(text,args.max_unit_seconds,args.genre) if args.mode=='a' else validate_b(text,source,args.max_unit_seconds,args.genre,args.source_format,notes,order_plan,hashlib.sha256(source_bytes).hexdigest())
+    if args.source:
+        from dialogue_fidelity import verify_layers
+        try:
+            result=verify_layers([('A完整画面' if args.mode=='a' else 'B实际投喂Prompt',dialogue_chunks(text,args.mode))],args.source.read_bytes(),json.loads(args.ledger.read_bytes()))
+        except (OSError,ValueError,TypeError,KeyError) as exc:parser.error(str(exc))
+        errors.extend(result['errors']);notes.extend(result['notes'])
+    else:
+        notes.append('未提供原文快照与台词索引，台词原文核对未执行；--source-a只核对镜号/映射，不能代替原文。')
+    for note in notes:print('NOTE:',note)
+    for e in errors:print('ERROR:',e,file=sys.stderr)
+    if not errors:print('结构检查通过；剧情、受力、空间、时序语义及成片效果仍须审读。')
+    if not errors and args.source:print('台词已按提供的原文区间核对文字、说话人/类型、顺序及跨包拼接；提取覆盖与归属依据仍须人工确认。')
+    return int(bool(errors))
+if __name__=='__main__':raise SystemExit(main())
