@@ -1,5 +1,0 @@
-interface:
-  display_name: "打斗斗法联合分镜（备份）"
-  short_description: "备份：自动适配打斗题材，联合创作动作摄影特效，直接输出工程分镜与独立投喂包"
-  default_prompt: "使用 $fighting-storyborads-backup-review-20261120-125313，根据本场剧情联合设计有接触、力量、速度与摄影冲击的交锋，直接交付工程分镜和实际投喂包。"
-
